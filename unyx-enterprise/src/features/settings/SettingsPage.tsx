@@ -752,12 +752,12 @@ function PlanModulesPanel({
         <UsageItem
           label="Filiais ativas"
           current={branches.filter((branch) => branch.active).length}
-          limit={subscription?.max_branches ?? null}
+          limit={currentPlan === "enterprise" ? null : (subscription?.max_branches ?? null)}
         />
         <UsageItem
           label="Colaboradores ativos"
           current={employees.filter((employee) => employee.active).length}
-          limit={subscription?.max_employees ?? null}
+          limit={currentPlan === "enterprise" ? null : (subscription?.max_employees ?? null)}
         />
       </div>
 
