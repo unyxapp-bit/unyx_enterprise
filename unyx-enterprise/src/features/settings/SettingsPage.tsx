@@ -720,10 +720,7 @@ function PlanModulesPanel({
   organization: Organization | null | undefined
   subscription: Subscription | null | undefined
 }) {
-  const { profile: currentProfile } = useAuth()
-  const updatePlan = useUpdateOrganizationPlan()
-  const currentPlan = subscription?.plan ?? organization?.plan ?? "starter"
-  const isOwner = currentProfile?.role === "owner" || currentProfile?.role === "admin"
+  const currentPlan = organization?.plan ?? subscription?.plan ?? "starter"
   const moduleByKey = useMemo(() => {
     const map = new Map<string, OrganizationModule>()
     modules.forEach((module) => {
@@ -764,39 +761,6 @@ function PlanModulesPanel({
         />
       </div>
 
-      {isOwner ? (
-        <div className="rounded-lg border border-violet-200 bg-violet-50 p-3 space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <div className="text-sm font-medium text-violet-900">Plano de acesso</div>
-              <div className="text-xs text-violet-700">
-                Altere o plano para liberar todos os modulos durante os testes.
-              </div>
-            </div>
-            <Badge variant="outline" className="shrink-0">
-              {planLabel[currentPlan]}
-            </Badge>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {(["starter", "growth", "enterprise"] as const).map((plan) => (
-              <Button
-                key={plan}
-                size="sm"
-                variant={currentPlan === plan ? "default" : "outline"}
-                disabled={updatePlan.isPending || currentPlan === plan}
-                onClick={() => updatePlan.mutate(plan)}
-              >
-                {planLabel[plan]}
-              </Button>
-            ))}
-          </div>
-          {updatePlan.error ? (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-              {updatePlan.error.message}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
 
       <div className="space-y-4">
         {productModuleGroups.map((group) => (
@@ -893,6 +857,52 @@ function auditLabel(map: Record<string, string>, key: string) {
   return map[key] ?? key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
+function PlanSwitcherCard({ currentPlan }: { currentPlan: SubscriptionPlan }) {
+  const updatePlan = useUpdateOrganizationPlan()
+
+  return (
+    <Card className="border bg-white shadow-sm">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <CreditCard className="size-5" />
+          Plano de acesso
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-sm text-muted-foreground">
+          Altere o plano para liberar todos os modulos durante os testes.
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          {(["starter", "growth", "enterprise"] as const).map((plan) => (
+            <Button
+              key={plan}
+              size="sm"
+              variant={currentPlan === plan ? "default" : "outline"}
+              disabled={updatePlan.isPending || currentPlan === plan}
+              onClick={() => updatePlan.mutate(plan)}
+            >
+              {planLabel[plan]}
+            </Button>
+          ))}
+          <span className="ml-1 text-xs text-muted-foreground">
+            Plano atual: <strong>{planLabel[currentPlan]}</strong>
+          </span>
+        </div>
+        {updatePlan.error ? (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {updatePlan.error.message}
+          </div>
+        ) : null}
+        {updatePlan.isSuccess ? (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+            Plano atualizado com sucesso.
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  )
+}
+
 function AuditSummary({ logs }: { logs: AuditLog[] }) {
   if (logs.length === 0) return <StateBlock title="Nenhuma acao auditada" />
 
@@ -936,6 +946,7 @@ export function SettingsPage() {
   const subscription = useSubscription()
   const auditLogs = useAllAuditLogs()
   const isAdmin = canManageSettings(profile)
+  const currentPlan: SubscriptionPlan = organization.data?.plan ?? "starter"
 
   return (
     <>
@@ -1005,6 +1016,8 @@ export function SettingsPage() {
               )}
             </CardContent>
           </Card>
+
+          {profile ? <PlanSwitcherCard currentPlan={currentPlan} /> : null}
         </div>
 
         <div className="space-y-4">
