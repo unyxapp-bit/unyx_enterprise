@@ -18,10 +18,19 @@ import {
   useAuditLogs,
   useBranches,
   useModules,
+  useOperationalSettings,
   useOrganization,
+  useSaveOperationalSettings,
   useSubscription,
   useUpdateOrganization,
 } from "@/hooks/useUnyxData"
+import {
+  getOperationalMode,
+  getOperationalModeDefaults,
+  operationalModeDescriptions,
+  operationalModeNames,
+  type OperationalMode,
+} from "@/features/ops/modes/operationalModes"
 import {
   getProductModulePlanAccess,
   productModuleGroups,
@@ -29,13 +38,23 @@ import {
 } from "@/lib/coreModules"
 import { formatDateTimeBR } from "@/lib/format"
 import { useAppStore } from "@/store/useAppStore"
-import type { BusinessSegment, Organization, UserRole } from "@/types/domain"
+import type {
+  Branch,
+  BusinessSegment,
+  OperationalSettings,
+  Organization,
+  UserRole,
+} from "@/types/domain"
 
 const fieldClass =
   "h-8 w-full rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
 
+type OperationalSettingsFormValues = {
+  mode: OperationalMode
+} & ReturnType<typeof getOperationalModeDefaults>
+
 const roleLabel: Record<UserRole, string> = {
-  owner: "Proprietário",
+  owner: "Proprietario",
   admin: "Administrador",
   branch_manager: "Gerente de filial",
   supervisor: "Supervisor",
@@ -47,8 +66,34 @@ const segmentLabel: Record<BusinessSegment, string> = {
   retail_store: "Loja de varejo",
   supermarket: "Supermercado",
   restaurant: "Restaurante",
-  pharmacy: "Farmácia",
+  pharmacy: "Farmacia",
   other: "Outro",
+}
+
+function buildOperationalSettingsForm(
+  organization: Organization | null | undefined,
+  settings: OperationalSettings | null | undefined
+): OperationalSettingsFormValues {
+  const mode = getOperationalMode(settings?.mode ?? organization?.segment)
+  const defaults = getOperationalModeDefaults(mode)
+
+  return {
+    mode,
+    late_tolerance_minutes:
+      settings?.late_tolerance_minutes ?? defaults.late_tolerance_minutes,
+    break_tolerance_minutes:
+      settings?.break_tolerance_minutes ?? defaults.break_tolerance_minutes,
+    require_cashier_cash_count:
+      settings?.require_cashier_cash_count ?? defaults.require_cashier_cash_count,
+    require_coverage_before_break:
+      settings?.require_coverage_before_break ??
+      defaults.require_coverage_before_break,
+    block_break_on_peak_hours:
+      settings?.block_break_on_peak_hours ?? defaults.block_break_on_peak_hours,
+    require_responsible_presence:
+      settings?.require_responsible_presence ??
+      defaults.require_responsible_presence,
+  }
 }
 
 function OrganizationForm({ organization }: { organization: Organization }) {
@@ -74,7 +119,7 @@ function OrganizationForm({ organization }: { organization: Organization }) {
     <form className="space-y-4" onSubmit={handleSubmit}>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="space-y-1 text-sm">
-          <span className="font-medium">Razão social</span>
+          <span className="font-medium">Razao social</span>
           <Input
             value={form.name}
             onChange={(e) => setForm((c) => ({ ...c, name: e.target.value }))}
@@ -122,76 +167,182 @@ function OrganizationForm({ organization }: { organization: Organization }) {
       ) : null}
 
       <Button type="submit" disabled={updateOrganization.isPending}>
-        {updateOrganization.isPending ? "Salvando..." : "Salvar alterações"}
+        {updateOrganization.isPending ? "Salvando..." : "Salvar alteracoes"}
       </Button>
     </form>
   )
 }
 
-function OperationalSettings() {
-  const branches = useBranches()
-  const delayTolerance = useAppStore((state) => state.delayToleranceMinutes)
-  const breakTolerance = useAppStore((state) => state.breakToleranceMinutes)
-  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
-  const setDelayTolerance = useAppStore((state) => state.setDelayToleranceMinutes)
-  const setBreakTolerance = useAppStore((state) => state.setBreakToleranceMinutes)
-  const setSelectedBranchId = useAppStore((state) => state.setSelectedBranchId)
-  const [saved, setSaved] = useState(false)
+function OperationalSettingsEditor({
+  branches,
+  initialForm,
+  isLoading,
+  selectedBranchId,
+  setSelectedBranchId,
+}: {
+  branches: Branch[]
+  initialForm: OperationalSettingsFormValues
+  isLoading: boolean
+  selectedBranchId: string | null
+  setSelectedBranchId: (branchId: string | null) => void
+}) {
+  const saveSettings = useSaveOperationalSettings()
+  const [form, setForm] = useState(initialForm)
 
-  function handleSave(event: FormEvent<HTMLFormElement>) {
+  function handleModeChange(mode: OperationalMode) {
+    setForm({
+      mode,
+      ...getOperationalModeDefaults(mode),
+    })
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+    await saveSettings.mutateAsync({
+      branch_id: selectedBranchId,
+      ...form,
+    })
   }
 
   return (
-    <form className="space-y-4" onSubmit={handleSave}>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="space-y-1 text-sm">
-          <span className="font-medium">Tolerância de atraso (min)</span>
-          <Input
-            type="number"
-            min={0}
-            max={60}
-            value={delayTolerance}
-            onChange={(e) => setDelayTolerance(Number(e.target.value))}
-          />
-        </label>
-        <label className="space-y-1 text-sm">
-          <span className="font-medium">Tolerância de intervalo (min)</span>
-          <Input
-            type="number"
-            min={0}
-            max={60}
-            value={breakTolerance}
-            onChange={(e) => setBreakTolerance(Number(e.target.value))}
-          />
-        </label>
-      </div>
-
+    <form className="space-y-4" onSubmit={handleSubmit}>
       <label className="space-y-1 text-sm">
-        <span className="font-medium">Filial padrão</span>
+        <span className="font-medium">Filial de trabalho</span>
         <select
           className={fieldClass}
           value={selectedBranchId ?? ""}
           onChange={(e) => setSelectedBranchId(e.target.value || null)}
         >
-          <option value="">Todas as filiais</option>
-          {(branches.data ?? []).map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.name}
+          <option value="">Padrao da organizacao</option>
+          {branches.map((branch) => (
+            <option key={branch.id} value={branch.id}>
+              {branch.name}
             </option>
           ))}
         </select>
         <p className="text-xs text-muted-foreground">
-          Filtra automaticamente todas as páginas ao acessar o sistema.
+          Sem filial selecionada, esta configuracao vale para toda a empresa.
         </p>
       </label>
 
-      <Button type="submit">
-        {saved ? "Salvo!" : "Salvar configurações"}
+      <label className="space-y-1 text-sm">
+        <span className="font-medium">Modo operacional</span>
+        <select
+          className={fieldClass}
+          value={form.mode}
+          onChange={(event) => handleModeChange(event.target.value as OperationalMode)}
+        >
+          {Object.entries(operationalModeNames).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+        <p className="text-xs text-muted-foreground">
+          {operationalModeDescriptions[form.mode]}
+        </p>
+      </label>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="space-y-1 text-sm">
+          <span className="font-medium">Tolerancia de atraso (min)</span>
+          <Input
+            type="number"
+            min={0}
+            max={120}
+            value={form.late_tolerance_minutes}
+            onChange={(event) =>
+              setForm((current) => ({
+                ...current,
+                late_tolerance_minutes: Number(event.target.value),
+              }))
+            }
+          />
+        </label>
+        <label className="space-y-1 text-sm">
+          <span className="font-medium">Tolerancia de intervalo (min)</span>
+          <Input
+            type="number"
+            min={0}
+            max={120}
+            value={form.break_tolerance_minutes}
+            onChange={(event) =>
+              setForm((current) => ({
+                ...current,
+                break_tolerance_minutes: Number(event.target.value),
+              }))
+            }
+          />
+        </label>
+      </div>
+
+      <div className="grid gap-2 sm:grid-cols-2">
+        {[
+          ["require_cashier_cash_count", "Exigir sangria no caixa"],
+          ["require_coverage_before_break", "Exigir cobertura antes do intervalo"],
+          ["block_break_on_peak_hours", "Proteger intervalo em horario de pico"],
+          ["require_responsible_presence", "Exigir responsavel presente"],
+        ].map(([key, label]) => (
+          <label
+            key={key}
+            className="flex items-center gap-2 rounded-lg border bg-slate-50 p-3 text-sm"
+          >
+            <input
+              type="checkbox"
+              checked={Boolean(form[key as keyof typeof form])}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  [key]: event.target.checked,
+                }))
+              }
+            />
+            {label}
+          </label>
+        ))}
+      </div>
+
+      {isLoading ? (
+        <StateBlock type="loading" title="Carregando modo operacional" />
+      ) : null}
+
+      {saveSettings.error ? (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {saveSettings.error.message}
+        </div>
+      ) : null}
+
+      <Button type="submit" disabled={saveSettings.isPending}>
+        {saveSettings.isPending ? "Salvando..." : "Salvar modo operacional"}
       </Button>
     </form>
+  )
+}
+
+function OperationalSettingsForm({
+  organization,
+}: {
+  organization: Organization | null | undefined
+}) {
+  const branches = useBranches()
+  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
+  const setSelectedBranchId = useAppStore((state) => state.setSelectedBranchId)
+  const settings = useOperationalSettings(selectedBranchId)
+  const initialForm = buildOperationalSettingsForm(organization, settings.data)
+  const editorKey = [
+    selectedBranchId ?? "organization",
+    settings.data?.updated_at ?? organization?.updated_at ?? initialForm.mode,
+  ].join(":")
+
+  return (
+    <OperationalSettingsEditor
+      key={editorKey}
+      branches={branches.data ?? []}
+      initialForm={initialForm}
+      isLoading={settings.isLoading}
+      selectedBranchId={selectedBranchId}
+      setSelectedBranchId={setSelectedBranchId}
+    />
   )
 }
 
@@ -207,8 +358,8 @@ export function SettingsPage() {
   return (
     <>
       <PageHeader
-        title="Configurações"
-        description="Dados da organização, plano, módulos e trilha básica de auditoria."
+        title="Configuracoes"
+        description="Dados da organizacao, plano, modulos, modos operacionais e auditoria."
       />
 
       <div className="grid gap-4 p-6 xl:grid-cols-[1fr_0.85fr]">
@@ -217,16 +368,16 @@ export function SettingsPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Building className="size-5" />
-                Organização
+                Organizacao
               </CardTitle>
             </CardHeader>
             <CardContent>
               {organization.isLoading ? (
-                <StateBlock type="loading" title="Carregando organização" />
+                <StateBlock type="loading" title="Carregando organizacao" />
               ) : organization.isError ? (
                 <StateBlock
                   type="error"
-                  title="Erro ao carregar organização"
+                  title="Erro ao carregar organizacao"
                   description={organization.error.message}
                 />
               ) : organization.data ? (
@@ -235,7 +386,7 @@ export function SettingsPage() {
                   organization={organization.data}
                 />
               ) : (
-                <StateBlock title="Organização não encontrada" />
+                <StateBlock title="Organizacao nao encontrada" />
               )}
             </CardContent>
           </Card>
@@ -244,11 +395,11 @@ export function SettingsPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Settings2 className="size-5" />
-                Configurações operacionais
+                Modos operacionais
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <OperationalSettings />
+              <OperationalSettingsForm organization={organization.data} />
             </CardContent>
           </Card>
 
@@ -256,7 +407,7 @@ export function SettingsPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Shield className="size-5" />
-                Usuário atual
+                Usuario atual
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -309,11 +460,11 @@ export function SettingsPage() {
               )}
 
               {modules.isLoading ? (
-                <StateBlock type="loading" title="Carregando módulos" />
+                <StateBlock type="loading" title="Carregando modulos" />
               ) : modules.isError ? (
                 <StateBlock
                   type="error"
-                  title="Erro ao carregar módulos"
+                  title="Erro ao carregar modulos"
                   description={modules.error.message}
                 />
               ) : (
@@ -381,7 +532,7 @@ export function SettingsPage() {
                   description={auditLogs.error.message}
                 />
               ) : (auditLogs.data ?? []).length === 0 ? (
-                <StateBlock title="Nenhuma ação auditada" />
+                <StateBlock title="Nenhuma acao auditada" />
               ) : (
                 <div className="space-y-3">
                   {(auditLogs.data ?? []).slice(0, 10).map((log) => (

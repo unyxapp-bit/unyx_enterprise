@@ -376,6 +376,40 @@ before update on public.subscriptions
 for each row execute function public.set_updated_at();
 
 -- =========================================================
+-- CONFIGURACOES DE MODOS OPERACIONAIS
+-- =========================================================
+
+create table public.operational_settings (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  branch_id uuid references public.branches(id) on delete cascade,
+  mode public.business_segment not null default 'other',
+  late_tolerance_minutes integer not null default 15 check (late_tolerance_minutes >= 0),
+  break_tolerance_minutes integer not null default 10 check (break_tolerance_minutes >= 0),
+  require_cashier_cash_count boolean not null default false,
+  require_coverage_before_break boolean not null default true,
+  block_break_on_peak_hours boolean not null default false,
+  require_responsible_presence boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index uniq_operational_settings_org_default
+on public.operational_settings(organization_id)
+where branch_id is null;
+
+create unique index uniq_operational_settings_org_branch
+on public.operational_settings(organization_id, branch_id)
+where branch_id is not null;
+
+create index idx_operational_settings_organization
+on public.operational_settings(organization_id);
+
+create trigger trg_operational_settings_updated_at
+before update on public.operational_settings
+for each row execute function public.set_updated_at();
+
+-- =========================================================
 -- UNYX COMMS
 -- =========================================================
 
@@ -685,6 +719,32 @@ begin
     now() + interval '30 days'
   );
 
+  insert into public.operational_settings (
+    organization_id,
+    branch_id,
+    mode,
+    late_tolerance_minutes,
+    break_tolerance_minutes,
+    require_cashier_cash_count,
+    require_coverage_before_break,
+    block_break_on_peak_hours,
+    require_responsible_presence
+  )
+  values (
+    v_org_id,
+    null,
+    coalesce(p_segment, 'other'),
+    case coalesce(p_segment, 'other')
+      when 'retail_store' then 15
+      else 10
+    end,
+    10,
+    coalesce(p_segment, 'other') = 'supermarket',
+    true,
+    coalesce(p_segment, 'other') = 'restaurant',
+    coalesce(p_segment, 'other') = 'pharmacy'
+  );
+
   insert into public.organization_modules (organization_id, module_id, enabled)
   select v_org_id, id, true
   from public.modules
@@ -754,6 +814,7 @@ alter table public.audit_logs enable row level security;
 alter table public.modules enable row level security;
 alter table public.organization_modules enable row level security;
 alter table public.subscriptions enable row level security;
+alter table public.operational_settings enable row level security;
 alter table public.comms_posts enable row level security;
 alter table public.comms_post_reads enable row level security;
 alter table public.comms_post_comments enable row level security;
@@ -1034,6 +1095,18 @@ create policy "Org admins can view own subscription"
 on public.subscriptions
 for select
 using (organization_id = public.current_organization_id() and public.is_org_admin());
+
+-- OPERATIONAL SETTINGS
+create policy "Users can view operational settings from own organization"
+on public.operational_settings
+for select
+using (organization_id = public.current_organization_id());
+
+create policy "Org admins can manage operational settings"
+on public.operational_settings
+for all
+using (organization_id = public.current_organization_id() and public.is_org_admin())
+with check (organization_id = public.current_organization_id() and public.is_org_admin());
 
 -- =========================================================
 -- VIEW DO DASHBOARD OPERACIONAL

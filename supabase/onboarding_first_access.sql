@@ -33,6 +33,69 @@ cross join public.modules
 where modules.active = true
 on conflict (organization_id, module_id) do nothing;
 
+create table if not exists public.operational_settings (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  branch_id uuid references public.branches(id) on delete cascade,
+  mode public.business_segment not null default 'other',
+  late_tolerance_minutes integer not null default 15 check (late_tolerance_minutes >= 0),
+  break_tolerance_minutes integer not null default 10 check (break_tolerance_minutes >= 0),
+  require_cashier_cash_count boolean not null default false,
+  require_coverage_before_break boolean not null default true,
+  block_break_on_peak_hours boolean not null default false,
+  require_responsible_presence boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists uniq_operational_settings_org_default
+on public.operational_settings(organization_id)
+where branch_id is null;
+
+create unique index if not exists uniq_operational_settings_org_branch
+on public.operational_settings(organization_id, branch_id)
+where branch_id is not null;
+
+create index if not exists idx_operational_settings_organization
+on public.operational_settings(organization_id);
+
+drop trigger if exists trg_operational_settings_updated_at on public.operational_settings;
+create trigger trg_operational_settings_updated_at
+before update on public.operational_settings
+for each row execute function public.set_updated_at();
+
+insert into public.operational_settings (
+  organization_id,
+  branch_id,
+  mode,
+  late_tolerance_minutes,
+  break_tolerance_minutes,
+  require_cashier_cash_count,
+  require_coverage_before_break,
+  block_break_on_peak_hours,
+  require_responsible_presence
+)
+select
+  organizations.id,
+  null,
+  organizations.segment,
+  case organizations.segment
+    when 'retail_store' then 15
+    else 10
+  end,
+  10,
+  organizations.segment = 'supermarket',
+  true,
+  organizations.segment = 'restaurant',
+  organizations.segment = 'pharmacy'
+from public.organizations
+where not exists (
+  select 1
+  from public.operational_settings settings
+  where settings.organization_id = organizations.id
+    and settings.branch_id is null
+);
+
 create table if not exists public.comms_posts (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
@@ -121,11 +184,25 @@ create table if not exists public.training_progress (
 create index if not exists idx_training_progress_user
 on public.training_progress(user_id);
 
+alter table public.operational_settings enable row level security;
 alter table public.comms_posts enable row level security;
 alter table public.comms_post_reads enable row level security;
 alter table public.comms_post_comments enable row level security;
 alter table public.training_items enable row level security;
 alter table public.training_progress enable row level security;
+
+drop policy if exists "Users can view operational settings from own organization" on public.operational_settings;
+create policy "Users can view operational settings from own organization"
+on public.operational_settings
+for select
+using (organization_id = public.current_organization_id());
+
+drop policy if exists "Org admins can manage operational settings" on public.operational_settings;
+create policy "Org admins can manage operational settings"
+on public.operational_settings
+for all
+using (organization_id = public.current_organization_id() and public.is_org_admin())
+with check (organization_id = public.current_organization_id() and public.is_org_admin());
 
 drop policy if exists "Users can view comms posts from own organization" on public.comms_posts;
 create policy "Users can view comms posts from own organization"
@@ -398,6 +475,32 @@ begin
     now() + interval '14 days',
     now(),
     now() + interval '30 days'
+  );
+
+  insert into public.operational_settings (
+    organization_id,
+    branch_id,
+    mode,
+    late_tolerance_minutes,
+    break_tolerance_minutes,
+    require_cashier_cash_count,
+    require_coverage_before_break,
+    block_break_on_peak_hours,
+    require_responsible_presence
+  )
+  values (
+    v_org_id,
+    null,
+    coalesce(p_segment, 'other'),
+    case coalesce(p_segment, 'other')
+      when 'retail_store' then 15
+      else 10
+    end,
+    10,
+    coalesce(p_segment, 'other') = 'supermarket',
+    true,
+    coalesce(p_segment, 'other') = 'restaurant',
+    coalesce(p_segment, 'other') = 'pharmacy'
   );
 
   insert into public.organization_modules (organization_id, module_id, enabled)

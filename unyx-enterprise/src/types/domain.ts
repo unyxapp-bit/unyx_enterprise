@@ -67,6 +67,21 @@ export interface Organization {
   updated_at: string
 }
 
+export interface OperationalSettings {
+  id: string
+  organization_id: string
+  branch_id: string | null
+  mode: BusinessSegment
+  late_tolerance_minutes: number
+  break_tolerance_minutes: number
+  require_cashier_cash_count: boolean
+  require_coverage_before_break: boolean
+  block_break_on_peak_hours: boolean
+  require_responsible_presence: boolean
+  created_at: string
+  updated_at: string
+}
+
 export interface Branch {
   id: string
   organization_id: string

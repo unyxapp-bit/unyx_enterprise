@@ -1,13 +1,18 @@
 import {
   AlertTriangle,
+  Building2,
   Clock,
   Coffee,
   DoorOpen,
   Gauge,
   RefreshCw,
   ShieldAlert,
+  ShieldCheck,
+  Store,
   Users,
+  Utensils,
 } from "lucide-react"
+import type { ReactNode } from "react"
 import { useMemo, useState } from "react"
 import {
   Bar,
@@ -24,6 +29,7 @@ import { MetricCard } from "@/components/bento/MetricCard"
 import { StatusBadge } from "@/components/bento/StatusBadge"
 import { PageHeader } from "@/components/shared/PageHeader"
 import { StateBlock } from "@/components/shared/StateBlock"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -32,19 +38,261 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import type { DashboardMetricKey } from "@/features/ops/modes/modeUiConfig"
+import { modeUiConfig } from "@/features/ops/modes/modeUiConfig"
+import {
+  getOperationalMode,
+  operationalModeNames,
+} from "@/features/ops/modes/operationalModes"
+import {
+  getPriorityByMode,
+  isCashierContext,
+  isResponsibleContext,
+  sortDashboardRowsByMode,
+} from "@/features/ops/modes/priorityRules"
 import {
   useDashboardRows,
+  useOperationalSettings,
   useOperationalStatuses,
+  useOrganization,
   useSchedules,
 } from "@/hooks/useUnyxData"
 import { formatTime, minutesLabel, todayISO } from "@/lib/format"
 import { operationalStatuses, statusMeta } from "@/lib/status"
-import type { OperationalStatus } from "@/types/domain"
+import type {
+  DashboardRow,
+  OperationalStatus,
+  OperationalStatusRecord,
+  ScheduleWithRelations,
+} from "@/types/domain"
 
 const fieldClass =
   "h-8 rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
 
-type StatusCount = { current_status: OperationalStatus; delay_minutes: number }
+type StatusCount = {
+  current_status: OperationalStatus
+  delay_minutes: number
+  role?: string | null
+  sectorName?: string | null
+  reason?: string | null
+}
+
+interface MetricData {
+  rows: DashboardRow[]
+  statusSource: StatusCount[]
+  schedules: ScheduleWithRelations[]
+}
+
+function normalize(value?: string | null) {
+  return (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+}
+
+function currentShiftLabel() {
+  const hour = new Date().getHours()
+  if (hour < 11) return "Manha"
+  if (hour < 17) return "Tarde"
+  return "Noite"
+}
+
+function nextRestaurantPeak() {
+  const hour = new Date().getHours()
+  if (hour < 11) return "Almoco"
+  if (hour < 18) return "Jantar"
+  return "Proximo almoco"
+}
+
+function getMetricIcon(key: DashboardMetricKey): ReactNode {
+  const icons: Record<DashboardMetricKey, ReactNode> = {
+    scheduled: <Users className="size-5" />,
+    working: <Gauge className="size-5" />,
+    critical: <AlertTriangle className="size-5" />,
+    breaks: <Coffee className="size-5" />,
+    delay: <Clock className="size-5" />,
+    cashierCoverage: <Store className="size-5" />,
+    activeSectors: <Building2 className="size-5" />,
+    sectorAlerts: <ShieldAlert className="size-5" />,
+    present: <Users className="size-5" />,
+    absences: <AlertTriangle className="size-5" />,
+    currentShift: <Clock className="size-5" />,
+    minimumTeam: <ShieldCheck className="size-5" />,
+    nextPeak: <Utensils className="size-5" />,
+    criticalFunctions: <ShieldAlert className="size-5" />,
+    responsiblePresence: <ShieldCheck className="size-5" />,
+    serviceCoverage: <Users className="size-5" />,
+    occurrences: <AlertTriangle className="size-5" />,
+  }
+
+  return icons[key]
+}
+
+function buildMetric(key: DashboardMetricKey, data: MetricData) {
+  const { rows, schedules, statusSource } = data
+  const critical = statusSource.filter(
+    (row) => row.current_status === "alerta_critico"
+  ).length
+  const working = statusSource.filter((row) =>
+    ["trabalhando", "voltou"].includes(row.current_status)
+  ).length
+  const breaks = statusSource.filter(
+    (row) => row.current_status === "em_intervalo"
+  ).length
+  const delayMinutes = statusSource.reduce(
+    (total, row) => total + row.delay_minutes,
+    0
+  )
+  const sectors = new Set(
+    [
+      ...rows.map((row) => row.sector_name),
+      ...schedules.map((schedule) => schedule.employees?.sectors?.name),
+    ].filter(Boolean) as string[]
+  )
+  const absenceRows = rows.filter((row) =>
+    normalize(row.status_reason).includes("falta")
+  )
+  const cashierCoverage = rows.filter(
+    (row) =>
+      isCashierContext({
+        role: row.employee_role,
+        sectorName: row.sector_name,
+      }) &&
+      ["alerta_critico", "deve_sair", "em_intervalo"].includes(
+        row.current_status
+      )
+  ).length
+  const criticalFunctions = rows.filter(
+    (row) =>
+      row.current_status === "alerta_critico" &&
+      /cozinha|salao|delivery|caixa/.test(
+        normalize(`${row.employee_role ?? ""} ${row.sector_name ?? ""}`)
+      )
+  ).length
+  const responsibleRows = rows.filter((row) =>
+    isResponsibleContext({
+      role: row.employee_role,
+      sectorName: row.sector_name,
+    })
+  )
+  const responsiblePresent = responsibleRows.some((row) =>
+    ["trabalhando", "voltou"].includes(row.current_status)
+  )
+
+  const metrics: Record<
+    DashboardMetricKey,
+    { title: string; value: string | number; detail: string; danger?: boolean }
+  > = {
+    scheduled: {
+      title: "Escalados",
+      value: schedules.length || rows.length,
+      detail: "Colaboradores na escala",
+    },
+    working: {
+      title: "Trabalhando agora",
+      value: working,
+      detail: "Com status ativo",
+    },
+    critical: {
+      title: "Alertas criticos",
+      value: critical,
+      detail: "Demandam acao imediata",
+      danger: critical > 0,
+    },
+    breaks: {
+      title: "Em intervalo",
+      value: breaks,
+      detail: "Pausas em andamento",
+    },
+    delay: {
+      title: "Atraso acumulado",
+      value: minutesLabel(delayMinutes),
+      detail: "Somatorio do dia",
+      danger: delayMinutes > 0,
+    },
+    cashierCoverage: {
+      title: "Caixas em risco",
+      value: cashierCoverage,
+      detail: "Caixa, intervalo ou cobertura",
+      danger: cashierCoverage > 0,
+    },
+    activeSectors: {
+      title: "Setores ativos",
+      value: sectors.size,
+      detail: "Areas na operacao",
+    },
+    sectorAlerts: {
+      title: "Alertas por setor",
+      value: critical,
+      detail: "Setores com risco aberto",
+      danger: critical > 0,
+    },
+    present: {
+      title: "Presentes",
+      value: working,
+      detail: "Equipe em atividade",
+    },
+    absences: {
+      title: "Faltas",
+      value: absenceRows.length,
+      detail: "Ausencias identificadas",
+      danger: absenceRows.length > 0,
+    },
+    currentShift: {
+      title: "Turno atual",
+      value: currentShiftLabel(),
+      detail: "Baseado no horario local",
+    },
+    minimumTeam: {
+      title: "Equipe minima",
+      value: `${working}/3`,
+      detail: working >= 3 ? "Base minima coberta" : "Abaixo do minimo sugerido",
+      danger: working < 3,
+    },
+    nextPeak: {
+      title: "Proximo pico",
+      value: nextRestaurantPeak(),
+      detail: "Referencia operacional",
+    },
+    criticalFunctions: {
+      title: "Funcoes criticas",
+      value: criticalFunctions,
+      detail: "Cozinha, salao, delivery ou caixa",
+      danger: criticalFunctions > 0,
+    },
+    responsiblePresence: {
+      title: "Responsavel presente",
+      value: responsibleRows.length === 0 ? "Nao definido" : responsiblePresent ? "Sim" : "Nao",
+      detail:
+        responsibleRows.length === 0
+          ? "Marque cargo/setor responsavel"
+          : "Farmaceutico ou tecnico",
+      danger: responsibleRows.length > 0 && !responsiblePresent,
+    },
+    serviceCoverage: {
+      title: "Atendimento ativo",
+      value: working,
+      detail: "Pessoas atendendo agora",
+    },
+    occurrences: {
+      title: "Ocorrencias",
+      value: critical,
+      detail: "Eventos criticos rastreaveis",
+      danger: critical > 0,
+    },
+  }
+
+  return metrics[key]
+}
+
+function getPriority(row: DashboardRow, mode: ReturnType<typeof getOperationalMode>) {
+  return getPriorityByMode(mode, row.current_status, {
+    delayMinutes: row.delay_minutes,
+    role: row.employee_role,
+    sectorName: row.sector_name,
+    reason: row.status_reason,
+  })
+}
 
 export function DashboardPage() {
   const [date, setDate] = useState(todayISO())
@@ -52,44 +300,80 @@ export function DashboardPage() {
   const dashboard = useDashboardRows(date)
   const schedules = useSchedules(date)
   const statuses = useOperationalStatuses()
+  const organization = useOrganization()
+  const operationalSettings = useOperationalSettings()
+
+  const mode = getOperationalMode(
+    operationalSettings.data?.mode ?? organization.data?.segment
+  )
+  const modeConfig = modeUiConfig[mode]
   const rows = useMemo(() => dashboard.data ?? [], [dashboard.data])
-  const liveStatuses = statuses.data ?? []
-  const scheduledToday = schedules.data ?? []
+  const liveStatuses = useMemo(
+    () => statuses.data ?? [],
+    [statuses.data]
+  )
+  const scheduledToday = useMemo(
+    () => schedules.data ?? [],
+    [schedules.data]
+  )
 
   const sectorOptions = useMemo(() => {
     const names = new Set(rows.map((r) => r.sector_name).filter(Boolean) as string[])
     return Array.from(names).sort()
   }, [rows])
 
-  const filteredRows = sectorFilter
-    ? rows.filter((r) => r.sector_name === sectorFilter)
-    : rows
+  const filteredRows = useMemo(() => {
+    const list = sectorFilter
+      ? rows.filter((r) => r.sector_name === sectorFilter)
+      : rows
+
+    return sortDashboardRowsByMode(mode, list)
+  }, [mode, rows, sectorFilter])
+
+  const filteredSchedules = useMemo(() => {
+    if (!sectorFilter) return scheduledToday
+    return scheduledToday.filter(
+      (schedule) => schedule.employees?.sectors?.name === sectorFilter
+    )
+  }, [scheduledToday, sectorFilter])
 
   const statusSource: StatusCount[] =
     filteredRows.length > 0
       ? filteredRows.map((r) => ({
           current_status: r.current_status,
           delay_minutes: r.delay_minutes,
+          role: r.employee_role,
+          sectorName: r.sector_name,
+          reason: r.status_reason,
         }))
-      : liveStatuses.map((s) => ({
+      : liveStatuses.map((s: OperationalStatusRecord) => ({
           current_status: s.current_status,
           delay_minutes: s.delay_minutes,
+          role: s.employees?.role,
+          sectorName: s.employees?.sectors?.name,
+          reason: s.status_reason,
         }))
 
-  const criticalCount = statusSource.filter(
-    (row) => row.current_status === "alerta_critico"
-  ).length
-  const breakCount = statusSource.filter(
-    (row) => row.current_status === "em_intervalo"
-  ).length
-  const delayMinutes = statusSource.reduce(
-    (total, row) => total + row.delay_minutes,
-    0
-  )
   const statusChartData = operationalStatuses.map((status) => ({
     label: statusMeta[status].label,
     total: statusSource.filter((row) => row.current_status === status).length,
   }))
+
+  const primaryRows = filteredRows
+    .filter(
+      (row) =>
+        row.current_status === "alerta_critico" ||
+        getPriority(row, mode) >= 70
+    )
+    .slice(0, 5)
+
+  const secondaryRows = filteredRows
+    .filter((row) =>
+      ["deve_sair", "aguardando_sangria", "troca_de_caixa", "em_intervalo"].includes(
+        row.current_status
+      )
+    )
+    .slice(0, 5)
 
   const lastUpdated = dashboard.dataUpdatedAt
     ? new Intl.DateTimeFormat("pt-BR", {
@@ -102,11 +386,11 @@ export function DashboardPage() {
   if (dashboard.isError) {
     return (
       <>
-        <PageHeader title="Dashboard Operacional" />
+        <PageHeader title={modeConfig.title} />
         <div className="p-6">
           <StateBlock
             type="error"
-            title="Não foi possível carregar o dashboard"
+            title="Nao foi possivel carregar o dashboard"
             description={dashboard.error.message}
           />
         </div>
@@ -117,10 +401,11 @@ export function DashboardPage() {
   return (
     <>
       <PageHeader
-        title="Dashboard Operacional"
-        description="Visão viva da operação do dia, organizada por prioridade."
+        title={modeConfig.title}
+        description={modeConfig.mainFocus}
         action={
           <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline">{operationalModeNames[mode]}</Badge>
             <Input
               className="w-40"
               type="date"
@@ -157,39 +442,42 @@ export function DashboardPage() {
       />
 
       <div className="space-y-6 p-6">
-        {lastUpdated ? (
-          <p className="text-xs text-muted-foreground">
-            Atualizado às {lastUpdated}
-            {sectorFilter ? ` · Setor: ${sectorFilter}` : ""}
-          </p>
-        ) : null}
+        <div className="flex flex-col gap-2 rounded-lg border bg-white p-3 text-sm text-slate-700 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <span className="font-medium">Modo ativo:</span>{" "}
+            {operationalModeNames[mode]}
+            {lastUpdated ? (
+              <span className="text-muted-foreground"> · atualizado as {lastUpdated}</span>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {modeConfig.ruleHighlights.map((rule) => (
+              <Badge key={rule} variant="outline">
+                {rule}
+              </Badge>
+            ))}
+          </div>
+        </div>
 
         <BentoGrid>
-          <MetricCard
-            title="Escalados"
-            value={sectorFilter ? filteredRows.length : scheduledToday.length}
-            detail="Colaboradores na escala"
-            icon={<Users className="size-5" />}
-          />
-          <MetricCard
-            title="Em alerta"
-            value={criticalCount}
-            detail="Demandam ação imediata"
-            icon={<AlertTriangle className="size-5" />}
-            className={criticalCount > 0 ? "border-red-200" : undefined}
-          />
-          <MetricCard
-            title="Em intervalo"
-            value={breakCount}
-            detail="Pausas em andamento"
-            icon={<Coffee className="size-5" />}
-          />
-          <MetricCard
-            title="Atraso acumulado"
-            value={minutesLabel(delayMinutes)}
-            detail="Somatório do dia"
-            icon={<Clock className="size-5" />}
-          />
+          {modeConfig.dashboardCards.map((key) => {
+            const metric = buildMetric(key, {
+              rows: filteredRows,
+              schedules: filteredSchedules,
+              statusSource,
+            })
+
+            return (
+              <MetricCard
+                key={key}
+                title={metric.title}
+                value={metric.value}
+                detail={metric.detail}
+                icon={getMetricIcon(key)}
+                className={metric.danger ? "border-red-200" : undefined}
+              />
+            )
+          })}
         </BentoGrid>
 
         <div className="grid gap-4 xl:grid-cols-[1.4fr_0.8fr]">
@@ -229,33 +517,30 @@ export function DashboardPage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <AlertTriangle className="size-5 text-red-500" />
-                  Alertas críticos
+                  {modeConfig.highPriorityTitle}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                {filteredRows.filter((row) => row.current_status === "alerta_critico").length === 0 ? (
+                {primaryRows.length === 0 ? (
                   <StateBlock
-                    title="Nenhum alerta crítico"
-                    description="A operação não possui registros críticos no momento."
+                    title="Nenhuma prioridade alta"
+                    description="A operacao nao possui registros criticos no momento."
                   />
                 ) : (
-                  filteredRows
-                    .filter((row) => row.current_status === "alerta_critico")
-                    .slice(0, 5)
-                    .map((row) => (
-                      <div
-                        key={row.id}
-                        className="rounded-lg border border-red-100 bg-red-50 p-3"
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="font-medium">{row.employee_name}</div>
-                          <StatusBadge status={row.current_status} />
-                        </div>
-                        <div className="mt-1 text-sm text-red-700">
-                          {row.status_reason ?? "Prioridade operacional alta"}
-                        </div>
+                  primaryRows.map((row) => (
+                    <div
+                      key={row.id}
+                      className="rounded-lg border border-red-100 bg-red-50 p-3"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="font-medium">{row.employee_name}</div>
+                        <StatusBadge status={row.current_status} />
                       </div>
-                    ))
+                      <div className="mt-1 text-sm text-red-700">
+                        {row.status_reason ?? "Prioridade operacional alta"}
+                      </div>
+                    </div>
+                  ))
                 )}
               </CardContent>
             </Card>
@@ -264,33 +549,30 @@ export function DashboardPage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <DoorOpen className="size-5 text-amber-500" />
-                  Deve sair
+                  {modeConfig.secondaryTitle}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                {filteredRows.filter((row) => row.current_status === "deve_sair").length === 0 ? (
+                {secondaryRows.length === 0 ? (
                   <StateBlock
-                    title="Nenhum pendente de saída"
-                    description="Todos os colaboradores estão com saída regularizada."
+                    title="Sem pendencias operacionais"
+                    description="Intervalos, saidas e etapas obrigatorias estao regularizadas."
                   />
                 ) : (
-                  filteredRows
-                    .filter((row) => row.current_status === "deve_sair")
-                    .slice(0, 5)
-                    .map((row) => (
-                      <div
-                        key={row.id}
-                        className="rounded-lg border border-amber-100 bg-amber-50 p-3"
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="font-medium">{row.employee_name}</div>
-                          <StatusBadge status={row.current_status} />
-                        </div>
-                        <div className="mt-1 text-sm text-amber-700">
-                          {row.sector_name ?? "Sem setor"} · {row.branch_name}
-                        </div>
+                  secondaryRows.map((row) => (
+                    <div
+                      key={row.id}
+                      className="rounded-lg border border-amber-100 bg-amber-50 p-3"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="font-medium">{row.employee_name}</div>
+                        <StatusBadge status={row.current_status} />
                       </div>
-                    ))
+                      <div className="mt-1 text-sm text-amber-700">
+                        {row.sector_name ?? "Sem setor"} · {row.branch_name}
+                      </div>
+                    </div>
+                  ))
                 )}
               </CardContent>
             </Card>
@@ -311,8 +593,8 @@ export function DashboardPage() {
                   <ShieldAlert className="mt-0.5 size-4 shrink-0 text-orange-600" />
                   <div className="text-sm text-orange-800">
                     <span className="font-medium">Risco de cobertura:</span>{" "}
-                    {coverageRisk} de {total} colaboradores ({pct}%) estão em
-                    situação que pode impactar a operação.
+                    {coverageRisk} de {total} colaboradores ({pct}%) estao em
+                    situacao que pode impactar a operacao.
                   </div>
                 </div>
               )
@@ -322,15 +604,15 @@ export function DashboardPage() {
 
         <Card className="border bg-white shadow-sm">
           <CardHeader>
-            <CardTitle>Operação em tempo real</CardTitle>
+            <CardTitle>{modeConfig.liveTitle}</CardTitle>
           </CardHeader>
           <CardContent>
             {dashboard.isLoading ? (
-              <StateBlock type="loading" title="Carregando operação" />
+              <StateBlock type="loading" title="Carregando operacao" />
             ) : filteredRows.length === 0 ? (
               <StateBlock
                 title="Dashboard aguardando eventos"
-                description="Depois que a operação do dia começar, os colaboradores aparecerão aqui por prioridade."
+                description="Depois que a operacao do dia comecar, os colaboradores aparecerao aqui por prioridade."
               />
             ) : (
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -352,13 +634,18 @@ export function DashboardPage() {
                       <span>Entrada {formatTime(row.start_time)}</span>
                       <span>Int. {formatTime(row.break_start)}</span>
                       <span>Ret. {formatTime(row.break_end)}</span>
-                      <span>Saída {formatTime(row.end_time)}</span>
+                      <span>Saida {formatTime(row.end_time)}</span>
                     </div>
-                    {row.delay_minutes > 0 ? (
-                      <div className="mt-3 text-sm font-medium text-red-700">
-                        {minutesLabel(row.delay_minutes)} de atraso
-                      </div>
-                    ) : null}
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      <Badge variant="outline">
+                        Prioridade {getPriority(row, mode)}
+                      </Badge>
+                      {row.delay_minutes > 0 ? (
+                        <Badge variant="destructive">
+                          {minutesLabel(row.delay_minutes)} atraso
+                        </Badge>
+                      ) : null}
+                    </div>
                   </div>
                 ))}
               </div>

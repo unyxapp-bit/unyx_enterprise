@@ -14,6 +14,7 @@ import {
   createTrainingItem,
   deleteSchedule,
   getOrganization,
+  getOperationalSettings,
   getSubscription,
   listAllAuditLogs,
   listAttendanceEvents,
@@ -33,6 +34,7 @@ import {
   listUserProfiles,
   markCommsPostRead,
   recordOperationalEvent,
+  saveOperationalSettings,
   setTrainingProgress,
   toggleBranchActive,
   toggleSectorActive,
@@ -47,6 +49,7 @@ import type {
   AttendanceEventType,
   Branch,
   BusinessSegment,
+  OperationalSettings,
   ScheduleStatus,
   TrainingType,
   UserProfile,
@@ -68,6 +71,18 @@ export function useOrganization() {
   return useQuery({
     queryKey: ["organization", profile?.organization_id],
     queryFn: () => getOrganization(profile!.organization_id),
+    enabled: Boolean(profile),
+  })
+}
+
+export function useOperationalSettings(branchId?: string | null) {
+  const { profile } = useAuth()
+  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
+  const effectiveBranchId = branchId ?? selectedBranchId
+
+  return useQuery({
+    queryKey: ["operational-settings", profile?.organization_id, effectiveBranchId],
+    queryFn: () => getOperationalSettings(profile!, effectiveBranchId),
     enabled: Boolean(profile),
   })
 }
@@ -502,6 +517,36 @@ export function useUpdateOrganization() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["organization"] })
       toast.success("Dados da empresa atualizados.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useSaveOperationalSettings() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: {
+      branch_id: string | null
+      mode: BusinessSegment
+      late_tolerance_minutes: number
+      break_tolerance_minutes: number
+      require_cashier_cash_count: boolean
+      require_coverage_before_break: boolean
+      block_break_on_peak_hours: boolean
+      require_responsible_presence: boolean
+    }) => saveOperationalSettings(profile, input),
+    onSuccess: async (settings: OperationalSettings) => {
+      await queryClient.invalidateQueries({ queryKey: ["operational-settings"] })
+      await queryClient.invalidateQueries({ queryKey: ["organization"] })
+      toast.success(
+        settings.branch_id
+          ? "Modo operacional da filial salvo."
+          : "Modo operacional da organizacao salvo."
+      )
     },
     onError: (error) => {
       toast.error(error.message)

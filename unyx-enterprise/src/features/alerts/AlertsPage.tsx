@@ -1,10 +1,11 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import type { FormEvent } from "react"
 import { AlertTriangle } from "lucide-react"
 
 import { StatusBadge } from "@/components/bento/StatusBadge"
 import { PageHeader } from "@/components/shared/PageHeader"
 import { StateBlock } from "@/components/shared/StateBlock"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -13,8 +14,19 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { modeUiConfig } from "@/features/ops/modes/modeUiConfig"
 import {
+  getOperationalMode,
+  operationalModeNames,
+} from "@/features/ops/modes/operationalModes"
+import {
+  getPriorityByMode,
+  sortStatusesByMode,
+} from "@/features/ops/modes/priorityRules"
+import {
+  useOperationalSettings,
   useOperationalStatuses,
+  useOrganization,
   useRecordOperationalEvent,
 } from "@/hooks/useUnyxData"
 import { formatDateTimeBR } from "@/lib/format"
@@ -24,23 +36,36 @@ import type { AttendanceEventType, OperationalStatusRecord } from "@/types/domai
 export function AlertsPage() {
   const statuses = useOperationalStatuses()
   const recordEvent = useRecordOperationalEvent()
+  const organization = useOrganization()
+  const operationalSettings = useOperationalSettings()
   const [selected, setSelected] = useState<OperationalStatusRecord | null>(null)
   const [eventType, setEventType] = useState<AttendanceEventType>("entrada_confirmada")
   const [notes, setNotes] = useState("")
   const [error, setError] = useState<string | null>(null)
 
-  const priorityStatuses = (statuses.data ?? []).filter(
-    (s) =>
-      s.current_status === "alerta_critico" ||
-      s.current_status === "deve_sair" ||
-      s.current_status === "aguardando_sangria"
+  const mode = getOperationalMode(
+    operationalSettings.data?.mode ?? organization.data?.segment
+  )
+  const modeConfig = modeUiConfig[mode]
+
+  const orderedStatuses = useMemo(
+    () => sortStatusesByMode(mode, statuses.data ?? []),
+    [mode, statuses.data]
   )
 
-  const otherStatuses = (statuses.data ?? []).filter(
-    (s) =>
-      s.current_status !== "alerta_critico" &&
-      s.current_status !== "deve_sair" &&
-      s.current_status !== "aguardando_sangria"
+  const priorityStatuses = orderedStatuses.filter((status) => {
+    const priority = getPriorityByMode(mode, status.current_status, {
+      delayMinutes: status.delay_minutes,
+      role: status.employees?.role,
+      sectorName: status.employees?.sectors?.name,
+      reason: status.status_reason,
+    })
+
+    return status.current_status === "alerta_critico" || priority >= 65
+  })
+
+  const otherStatuses = orderedStatuses.filter(
+    (status) => !priorityStatuses.some((priority) => priority.id === status.id)
   )
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -48,7 +73,7 @@ export function AlertsPage() {
     setError(null)
 
     if (!selected?.schedule_id) {
-      setError("Escala não encontrada para este colaborador.")
+      setError("Escala nao encontrada para este colaborador.")
       return
     }
 
@@ -68,10 +93,19 @@ export function AlertsPage() {
     <>
       <PageHeader
         title="Alertas Operacionais"
-        description="Situações que demandam atenção imediata ou ação da supervisão."
+        description={modeConfig.mainFocus}
+        action={<Badge variant="outline">{operationalModeNames[mode]}</Badge>}
       />
 
       <div className="space-y-6 p-6">
+        <div className="flex flex-wrap gap-1.5">
+          {modeConfig.ruleHighlights.map((rule) => (
+            <Badge key={rule} variant="outline">
+              {rule}
+            </Badge>
+          ))}
+        </div>
+
         {statuses.isLoading ? (
           <StateBlock type="loading" title="Carregando alertas" />
         ) : statuses.isError ? (
@@ -80,17 +114,17 @@ export function AlertsPage() {
             title="Erro ao carregar alertas"
             description={statuses.error.message}
           />
-        ) : (statuses.data ?? []).length === 0 ? (
+        ) : orderedStatuses.length === 0 ? (
           <StateBlock
             title="Nenhum status operacional"
-            description="Registre eventos na Operação do Dia para gerar alertas."
+            description="Registre eventos na Operacao do Dia para gerar alertas."
           />
         ) : (
           <>
             {priorityStatuses.length > 0 ? (
               <div>
                 <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                  Prioridade alta
+                  {modeConfig.highPriorityTitle}
                 </h2>
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                   {priorityStatuses.map((status) => (
@@ -100,8 +134,8 @@ export function AlertsPage() {
                         status.current_status === "alerta_critico"
                           ? "border-red-200 bg-red-50"
                           : status.current_status === "deve_sair"
-                          ? "border-amber-200 bg-amber-50"
-                          : "border-orange-200 bg-orange-50"
+                            ? "border-amber-200 bg-amber-50"
+                            : "border-orange-200 bg-orange-50"
                       }`}
                     >
                       <div className="flex items-start justify-between gap-3">
@@ -121,7 +155,16 @@ export function AlertsPage() {
                         </div>
                         <StatusBadge status={status.current_status} />
                       </div>
-                      <div className="mt-3">
+                      <div className="mt-3 flex items-center gap-2">
+                        <Badge variant="outline">
+                          Prioridade{" "}
+                          {getPriorityByMode(mode, status.current_status, {
+                            delayMinutes: status.delay_minutes,
+                            role: status.employees?.role,
+                            sectorName: status.employees?.sectors?.name,
+                            reason: status.status_reason,
+                          })}
+                        </Badge>
                         <Button
                           variant="outline"
                           size="sm"
@@ -131,7 +174,7 @@ export function AlertsPage() {
                             setNotes("")
                           }}
                         >
-                          Registrar ação
+                          Registrar acao
                         </Button>
                       </div>
                     </div>
@@ -175,7 +218,7 @@ export function AlertsPage() {
             {priorityStatuses.length === 0 && otherStatuses.length > 0 ? (
               <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
                 <AlertTriangle className="size-4 shrink-0" />
-                Nenhum alerta de alta prioridade no momento. Operação dentro do normal.
+                Nenhum alerta de alta prioridade no momento. Operacao dentro do normal.
               </div>
             ) : null}
           </>
@@ -194,7 +237,7 @@ export function AlertsPage() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Registrar ação operacional</DialogTitle>
+            <DialogTitle>Registrar acao operacional</DialogTitle>
           </DialogHeader>
           <form className="space-y-4" onSubmit={handleSubmit}>
             <div className="rounded-lg border bg-slate-50 p-3 text-sm">
@@ -215,17 +258,17 @@ export function AlertsPage() {
                 onChange={(e) => setEventType(e.target.value as AttendanceEventType)}
               >
                 {operationalActions
-                  .filter((a) => a.eventType !== "ocorrencia_registrada")
-                  .map((a) => (
-                    <option key={a.eventType} value={a.eventType}>
-                      {eventLabel[a.eventType]}
+                  .filter((action) => action.eventType !== "ocorrencia_registrada")
+                  .map((action) => (
+                    <option key={action.eventType} value={action.eventType}>
+                      {eventLabel[action.eventType]}
                     </option>
                   ))}
               </select>
             </label>
 
             <label className="space-y-1 text-sm">
-              <span className="font-medium">Observações (opcional)</span>
+              <span className="font-medium">Observacoes (opcional)</span>
               <textarea
                 className="min-h-20 w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
                 value={notes}

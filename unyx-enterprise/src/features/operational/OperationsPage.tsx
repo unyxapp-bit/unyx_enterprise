@@ -5,6 +5,7 @@ import { Activity, History } from "lucide-react"
 import { StatusBadge } from "@/components/bento/StatusBadge"
 import { PageHeader } from "@/components/shared/PageHeader"
 import { StateBlock } from "@/components/shared/StateBlock"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -20,9 +21,17 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { modeUiConfig } from "@/features/ops/modes/modeUiConfig"
+import {
+  getOperationalMode,
+  operationalModeNames,
+} from "@/features/ops/modes/operationalModes"
+import { getSchedulePriorityByMode } from "@/features/ops/modes/priorityRules"
 import {
   useAttendanceEvents,
+  useOperationalSettings,
   useOperationalStatuses,
+  useOrganization,
   useRecordOperationalEvent,
   useSchedules,
   useSectors,
@@ -50,12 +59,12 @@ export function OperationsPage() {
   const events = useAttendanceEvents()
   const recordEvent = useRecordOperationalEvent()
   const sectors = useSectors()
-
-  const filteredSchedules = useMemo(() => {
-    const all = schedules.data ?? []
-    if (!sectorFilter) return all
-    return all.filter((s) => s.employees?.sectors?.name === sectorFilter || (sectorFilter === "__none__" && !s.employees?.sectors))
-  }, [schedules.data, sectorFilter])
+  const organization = useOrganization()
+  const operationalSettings = useOperationalSettings()
+  const mode = getOperationalMode(
+    operationalSettings.data?.mode ?? organization.data?.segment
+  )
+  const modeConfig = modeUiConfig[mode]
 
   const statusByScheduleId = useMemo(() => {
     const map = new Map<string, OperationalStatusRecord>()
@@ -66,6 +75,28 @@ export function OperationsPage() {
 
     return map
   }, [statuses.data])
+
+  const orderedSchedules = useMemo(() => {
+    const all = schedules.data ?? []
+    const filtered = sectorFilter
+      ? all.filter(
+          (schedule) =>
+            schedule.employees?.sectors?.name === sectorFilter ||
+            (sectorFilter === "__none__" && !schedule.employees?.sectors)
+        )
+      : all
+
+    return filtered.slice().sort((a, b) => {
+      const statusA = statusByScheduleId.get(a.id)
+      const statusB = statusByScheduleId.get(b.id)
+
+      return (
+        getSchedulePriorityByMode(mode, b, statusB) -
+          getSchedulePriorityByMode(mode, a, statusA) ||
+        (a.employees?.name ?? "").localeCompare(b.employees?.name ?? "")
+      )
+    })
+  }, [mode, schedules.data, sectorFilter, statusByScheduleId])
 
   async function handleAction(
     schedule: ScheduleWithRelations,
@@ -87,7 +118,7 @@ export function OperationsPage() {
     if (!occurrenceSchedule) return
 
     if (!occurrenceNote.trim()) {
-      setOccurrenceError("Descreva a ocorrência.")
+      setOccurrenceError("Descreva a ocorrencia.")
       return
     }
 
@@ -106,10 +137,11 @@ export function OperationsPage() {
   return (
     <>
       <PageHeader
-        title="Operação do Dia"
-        description="Registro real de eventos e status dos colaboradores."
+        title={modeConfig.liveTitle}
+        description={modeConfig.mainFocus}
         action={
           <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline">{operationalModeNames[mode]}</Badge>
             <Input
               className="w-40"
               type="date"
@@ -123,9 +155,9 @@ export function OperationsPage() {
                 onChange={(e) => setSectorFilter(e.target.value)}
               >
                 <option value="">Todos os setores</option>
-                {(sectors.data ?? []).map((s) => (
-                  <option key={s.id} value={s.name}>
-                    {s.name}
+                {(sectors.data ?? []).map((sector) => (
+                  <option key={sector.id} value={sector.name}>
+                    {sector.name}
                   </option>
                 ))}
               </select>
@@ -143,23 +175,32 @@ export function OperationsPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
+            <div className="mb-4 flex flex-wrap gap-1.5">
+              {modeConfig.ruleHighlights.map((rule) => (
+                <Badge key={rule} variant="outline">
+                  {rule}
+                </Badge>
+              ))}
+            </div>
+
             {schedules.isLoading || statuses.isLoading ? (
-              <StateBlock type="loading" title="Carregando operação" />
+              <StateBlock type="loading" title="Carregando operacao" />
             ) : schedules.isError ? (
               <StateBlock
                 type="error"
-                title="Erro ao carregar operação"
+                title="Erro ao carregar operacao"
                 description={schedules.error.message}
               />
-            ) : filteredSchedules.length === 0 ? (
+            ) : orderedSchedules.length === 0 ? (
               <StateBlock
                 title="Sem escala para operar"
                 description="Cadastre a escala do dia antes de registrar eventos."
               />
             ) : (
               <div className="grid gap-3">
-                {filteredSchedules.map((schedule) => {
+                {orderedSchedules.map((schedule) => {
                   const status = statusByScheduleId.get(schedule.id)
+                  const priority = getSchedulePriorityByMode(mode, schedule, status)
 
                   return (
                     <div
@@ -179,7 +220,21 @@ export function OperationsPage() {
                             <span>Entrada {formatTime(schedule.start_time)}</span>
                             <span>Intervalo {formatTime(schedule.break_start)}</span>
                             <span>Retorno {formatTime(schedule.break_end)}</span>
-                            <span>Saída {formatTime(schedule.end_time)}</span>
+                            <span>Saida {formatTime(schedule.end_time)}</span>
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            <Badge variant="outline">Prioridade {priority}</Badge>
+                            {operationalSettings.data?.require_cashier_cash_count ? (
+                              <Badge variant="outline">Sangria obrigatoria</Badge>
+                            ) : null}
+                            {operationalSettings.data?.block_break_on_peak_hours ? (
+                              <Badge variant="outline">Pico protege intervalo</Badge>
+                            ) : null}
+                            {operationalSettings.data?.require_responsible_presence ? (
+                              <Badge variant="outline">
+                                Responsavel obrigatorio
+                              </Badge>
+                            ) : null}
                           </div>
                         </div>
                         {status ? (
@@ -199,21 +254,23 @@ export function OperationsPage() {
                               action.eventType !== "saida_confirmada"
                           )
                           .map((action) => (
-                          <Button
-                            key={action.eventType}
-                            variant={
-                              action.eventType === "atraso_detectado" ||
-                              action.eventType === "falta_detectada"
-                                ? "destructive"
-                                : "outline"
-                            }
-                            size="sm"
-                            disabled={recordEvent.isPending}
-                            onClick={() => void handleAction(schedule, action.eventType)}
-                          >
-                            {action.label}
-                          </Button>
-                        ))}
+                            <Button
+                              key={action.eventType}
+                              variant={
+                                action.eventType === "atraso_detectado" ||
+                                action.eventType === "falta_detectada"
+                                  ? "destructive"
+                                  : "outline"
+                              }
+                              size="sm"
+                              disabled={recordEvent.isPending}
+                              onClick={() =>
+                                void handleAction(schedule, action.eventType)
+                              }
+                            >
+                              {action.label}
+                            </Button>
+                          ))}
                         <Button
                           variant="outline"
                           size="sm"
@@ -221,7 +278,7 @@ export function OperationsPage() {
                           disabled={recordEvent.isPending}
                           onClick={() => void handleAction(schedule, "saida_confirmada")}
                         >
-                          Confirmar saída
+                          Confirmar saida
                         </Button>
                         <Button
                           variant="destructive"
@@ -229,7 +286,7 @@ export function OperationsPage() {
                           disabled={recordEvent.isPending}
                           onClick={() => setOccurrenceSchedule(schedule)}
                         >
-                          Ocorrência
+                          Ocorrencia
                         </Button>
                       </div>
                     </div>
@@ -294,7 +351,7 @@ export function OperationsPage() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Registrar ocorrência</DialogTitle>
+            <DialogTitle>Registrar ocorrencia</DialogTitle>
           </DialogHeader>
           <form className="space-y-4" onSubmit={handleOccurrenceSubmit}>
             <div className="rounded-lg border bg-slate-50 p-3 text-sm">
@@ -308,7 +365,7 @@ export function OperationsPage() {
             </div>
 
             <label className="space-y-1 text-sm">
-              <span className="font-medium">Descrição da ocorrência</span>
+              <span className="font-medium">Descricao da ocorrencia</span>
               <textarea
                 className="min-h-28 w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
                 value={occurrenceNote}

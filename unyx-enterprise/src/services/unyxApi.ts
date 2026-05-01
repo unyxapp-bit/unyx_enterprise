@@ -12,6 +12,7 @@ import type {
   Employee,
   EmployeeWithRelations,
   Module,
+  OperationalSettings,
   OperationalStatusRecord,
   Organization,
   Schedule,
@@ -27,6 +28,15 @@ import type {
 
 function raise(error: { message: string } | null) {
   if (error) throw new Error(error.message)
+}
+
+function isMissingOperationalSettings(error: { code?: string; message: string } | null) {
+  if (!error) return false
+  return (
+    error.code === "42P01" ||
+    error.code === "PGRST205" ||
+    error.message.includes("operational_settings")
+  )
 }
 
 export async function getCurrentProfile() {
@@ -119,6 +129,103 @@ export async function updateOrganization(
 
   raise(error)
   return data as Organization
+}
+
+export interface OperationalSettingsInput {
+  branch_id: string | null
+  mode: BusinessSegment
+  late_tolerance_minutes: number
+  break_tolerance_minutes: number
+  require_cashier_cash_count: boolean
+  require_coverage_before_break: boolean
+  block_break_on_peak_hours: boolean
+  require_responsible_presence: boolean
+}
+
+export async function getOperationalSettings(
+  profile: UserProfile,
+  branchId?: string | null
+) {
+  let query = supabase
+    .from("operational_settings")
+    .select("*")
+    .eq("organization_id", profile.organization_id)
+
+  if (branchId) {
+    query = query.or(`branch_id.is.null,branch_id.eq.${branchId}`)
+  } else {
+    query = query.is("branch_id", null)
+  }
+
+  const { data, error } = await query
+
+  if (isMissingOperationalSettings(error)) return null
+  raise(error)
+
+  const settings = (data ?? []) as OperationalSettings[]
+  return (
+    settings.find((item) => item.branch_id === branchId) ??
+    settings.find((item) => item.branch_id === null) ??
+    null
+  )
+}
+
+export async function saveOperationalSettings(
+  profile: UserProfile,
+  input: OperationalSettingsInput
+) {
+  const branchId = input.branch_id ?? null
+  let existingQuery = supabase
+    .from("operational_settings")
+    .select("id")
+    .eq("organization_id", profile.organization_id)
+    .limit(1)
+
+  if (branchId) {
+    existingQuery = existingQuery.eq("branch_id", branchId)
+  } else {
+    existingQuery = existingQuery.is("branch_id", null)
+  }
+
+  const { data: existing, error: existingError } = await existingQuery.maybeSingle()
+
+  if (isMissingOperationalSettings(existingError)) {
+    throw new Error(
+      "Modos operacionais ainda nao instalados no Supabase. Rode supabase/onboarding_first_access.sql no SQL Editor e tente novamente."
+    )
+  }
+
+  raise(existingError)
+
+  const payload = {
+    ...input,
+    branch_id: branchId,
+    organization_id: profile.organization_id,
+  }
+
+  const request = existing?.id
+    ? supabase
+        .from("operational_settings")
+        .update(payload)
+        .eq("id", existing.id)
+        .select("*")
+        .single()
+    : supabase
+        .from("operational_settings")
+        .insert(payload)
+        .select("*")
+        .single()
+
+  const { data, error } = await request
+
+  if (isMissingOperationalSettings(error)) {
+    throw new Error(
+      "Modos operacionais ainda nao instalados no Supabase. Rode supabase/onboarding_first_access.sql no SQL Editor e tente novamente."
+    )
+  }
+
+  raise(error)
+  return data as OperationalSettings
 }
 
 export async function listBranches() {
