@@ -15,8 +15,19 @@ import { BranchSelector } from "@/components/shared/BranchSelector"
 import { StateBlock } from "@/components/shared/StateBlock"
 import { Button } from "@/components/ui/button"
 import { OnboardingPage } from "@/features/onboarding/OnboardingPage"
+import { useOrganization } from "@/hooks/useUnyxData"
 import { cn } from "@/lib/utils"
+import type { UserRole } from "@/types/domain"
 import { useAppStore } from "@/store/useAppStore"
+
+const roleLabel: Record<UserRole, string> = {
+  owner: "Proprietário",
+  admin: "Administrador",
+  branch_manager: "Gerente de filial",
+  supervisor: "Supervisor",
+  operator: "Operador",
+  employee: "Colaborador",
+}
 
 const navItems = [
   { to: "/app", label: "Dashboard", icon: LayoutDashboard },
@@ -29,6 +40,7 @@ const navItems = [
 
 export function AppLayout() {
   const { profile, profileLoading, signOut } = useAuth()
+  const { data: organization } = useOrganization()
   const sidebarOpen = useAppStore((state) => state.sidebarOpen)
   const setSidebarOpen = useAppStore((state) => state.setSidebarOpen)
 
@@ -44,6 +56,9 @@ export function AppLayout() {
     return <OnboardingPage />
   }
 
+  const orgDisplayName =
+    organization?.trade_name ?? organization?.name ?? "Unyx Ops"
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-950">
       <aside
@@ -53,9 +68,14 @@ export function AppLayout() {
         )}
       >
         <div className="flex h-16 items-center border-b px-5">
-          <div>
+          <div className="min-w-0">
             <div className="text-lg font-semibold tracking-tight">Unyx Ops</div>
-            <div className="text-xs text-muted-foreground">Operational Intelligence</div>
+            <div
+              className="truncate text-xs text-muted-foreground"
+              title={orgDisplayName}
+            >
+              {orgDisplayName}
+            </div>
           </div>
         </div>
         <nav className="space-y-1 px-3 py-4">
@@ -107,9 +127,16 @@ export function AppLayout() {
           <div className="flex items-center gap-3">
             <div className="hidden text-right sm:block">
               <div className="text-sm font-medium">{profile.name}</div>
-              <div className="text-xs text-muted-foreground">{profile.role}</div>
+              <div className="text-xs text-muted-foreground">
+                {roleLabel[profile.role]}
+              </div>
             </div>
-            <Button variant="outline" size="icon" onClick={() => void signOut()} aria-label="Sair">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => void signOut()}
+              aria-label="Sair"
+            >
               <LogOut className="size-4" />
             </Button>
           </div>

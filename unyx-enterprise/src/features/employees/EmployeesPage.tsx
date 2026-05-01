@@ -46,6 +46,15 @@ const initialForm: EmployeeFormState = {
   notes: "",
 }
 
+function formatPhone(value: string) {
+  const digits = value.replace(/\D/g, "").slice(0, 11)
+  if (digits.length <= 2) return digits
+  if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`
+  if (digits.length <= 10)
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`
+}
+
 function EmployeeEditDialog({
   employee,
   branches,
@@ -183,10 +192,11 @@ function EmployeeEditDialog({
             <span className="font-medium">Telefone</span>
             <Input
               value={form.phone}
+              placeholder="(11) 99999-9999"
               onChange={(event) =>
                 setForm((current) => ({
                   ...current,
-                  phone: event.target.value,
+                  phone: formatPhone(event.target.value),
                 }))
               }
             />
@@ -217,6 +227,51 @@ function EmployeeEditDialog({
             </Button>
           </DialogFooter>
         </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function DeactivateDialog({ employee }: { employee: EmployeeWithRelations }) {
+  const [open, setOpen] = useState(false)
+  const updateEmployee = useUpdateEmployee()
+
+  async function handleConfirm() {
+    await updateEmployee.mutateAsync({
+      employeeId: employee.id,
+      values: { active: false },
+    })
+    setOpen(false)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm">
+          <UserRoundX className="size-4" />
+          Desativar
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Desativar colaborador</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground">
+          Deseja desativar <span className="font-medium text-slate-950">{employee.name}</span>?
+          O colaborador não aparecerá mais em novas escalas.
+        </p>
+        <DialogFooter className="gap-2">
+          <Button variant="outline" onClick={() => setOpen(false)}>
+            Cancelar
+          </Button>
+          <Button
+            variant="destructive"
+            disabled={updateEmployee.isPending}
+            onClick={() => void handleConfirm()}
+          >
+            {updateEmployee.isPending ? "Desativando..." : "Confirmar"}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )
@@ -361,10 +416,11 @@ export function EmployeesPage() {
                   <span className="font-medium">Telefone</span>
                   <Input
                     value={form.phone}
+                    placeholder="(11) 99999-9999"
                     onChange={(event) =>
                       setForm((current) => ({
                         ...current,
-                        phone: event.target.value,
+                        phone: formatPhone(event.target.value),
                       }))
                     }
                   />
@@ -453,24 +509,24 @@ export function EmployeesPage() {
                           employee={employee}
                           branches={branches}
                         />
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={updateEmployee.isPending}
-                        onClick={() =>
-                          updateEmployee.mutate({
-                            employeeId: employee.id,
-                            values: { active: !employee.active },
-                          })
-                        }
-                      >
                         {employee.active ? (
-                          <UserRoundX className="size-4" />
+                          <DeactivateDialog employee={employee} />
                         ) : (
-                          <UserRoundCheck className="size-4" />
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={updateEmployee.isPending}
+                            onClick={() =>
+                              updateEmployee.mutate({
+                                employeeId: employee.id,
+                                values: { active: true },
+                              })
+                            }
+                          >
+                            <UserRoundCheck className="size-4" />
+                            Ativar
+                          </Button>
                         )}
-                        {employee.active ? "Desativar" : "Ativar"}
-                      </Button>
                       </div>
                     </td>
                   </tr>

@@ -48,7 +48,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     supabase.auth.getSession().then(async ({ data, error }) => {
       if (!mounted) return
-      if (error) throw error
+
+      if (error) {
+        console.error("[AuthProvider] getSession error:", error.message)
+        setLoading(false)
+        return
+      }
 
       setSession(data.session)
       await loadProfileForSession(data.session)

@@ -49,7 +49,8 @@ export function OnboardingPage() {
     state: "",
     address: "",
   })
-  const [error, setError] = useState<string | null>(profileError)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const error = submitError ?? profileError
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   function update<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
@@ -58,10 +59,10 @@ export function OnboardingPage() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    setError(null)
+    setSubmitError(null)
 
     if (!form.profileName.trim() || !form.organizationName.trim()) {
-      setError("Preencha seu nome e o nome da empresa.")
+      setSubmitError("Preencha seu nome e o nome da empresa.")
       return
     }
 
@@ -82,7 +83,7 @@ export function OnboardingPage() {
 
       await refreshProfile()
     } catch (onboardingError) {
-      setError(
+      setSubmitError(
         onboardingError instanceof Error
           ? onboardingError.message
           : "Não foi possível concluir o cadastro."

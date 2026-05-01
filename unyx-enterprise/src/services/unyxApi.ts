@@ -12,6 +12,7 @@ import type {
   Module,
   OperationalStatusRecord,
   Organization,
+  Schedule,
   ScheduleStatus,
   ScheduleWithRelations,
   Sector,
@@ -273,6 +274,35 @@ export async function createSchedule(
 
   raise(error)
   return data as ScheduleWithRelations
+}
+
+export async function updateSchedule(
+  scheduleId: string,
+  input: Partial<
+    Pick<
+      Schedule,
+      "start_time" | "break_start" | "break_end" | "end_time" | "status" | "notes"
+    >
+  >
+) {
+  const { data, error } = await supabase
+    .from("schedules")
+    .update(input)
+    .eq("id", scheduleId)
+    .select("*, branches(name), employees(*, sectors(name))")
+    .single()
+
+  raise(error)
+  return data as ScheduleWithRelations
+}
+
+export async function deleteSchedule(scheduleId: string) {
+  const { error } = await supabase
+    .from("schedules")
+    .delete()
+    .eq("id", scheduleId)
+
+  raise(error)
 }
 
 export async function listDashboardRows(

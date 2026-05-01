@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { toast } from "sonner"
 
 import { useAuth } from "@/app/providers/auth-context"
 import { useAppStore } from "@/store/useAppStore"
@@ -7,6 +8,7 @@ import {
   createEmployee,
   createSchedule,
   createSector,
+  deleteSchedule,
   getOrganization,
   getSubscription,
   listAttendanceEvents,
@@ -21,6 +23,7 @@ import {
   recordOperationalEvent,
   updateEmployee,
   updateOrganization,
+  updateSchedule,
 } from "@/services/unyxApi"
 import type {
   AttendanceEventType,
@@ -174,6 +177,10 @@ export function useCreateBranch() {
     }) => createBranch(profile, input),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["branches"] })
+      toast.success("Filial criada com sucesso.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
     },
   })
 }
@@ -190,6 +197,10 @@ export function useCreateSector() {
     }) => createSector(profile, input),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["sectors"] })
+      toast.success("Setor criado com sucesso.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
     },
   })
 }
@@ -209,6 +220,10 @@ export function useCreateEmployee() {
     }) => createEmployee(profile, input),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["employees"] })
+      toast.success("Colaborador cadastrado com sucesso.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
     },
   })
 }
@@ -229,8 +244,18 @@ export function useUpdateEmployee() {
         notes?: string | null
       }
     }) => updateEmployee(input.employeeId, input.values),
-    onSuccess: async () => {
+    onSuccess: async (_, variables) => {
       await queryClient.invalidateQueries({ queryKey: ["employees"] })
+      if (variables.values.active === false) {
+        toast.success("Colaborador desativado.")
+      } else if (variables.values.active === true) {
+        toast.success("Colaborador ativado.")
+      } else {
+        toast.success("Colaborador atualizado com sucesso.")
+      }
+    },
+    onError: (error) => {
+      toast.error(error.message)
     },
   })
 }
@@ -254,6 +279,52 @@ export function useCreateSchedule() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["schedules"] })
       await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      toast.success("Escala cadastrada com sucesso.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useUpdateSchedule() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (input: {
+      scheduleId: string
+      values: {
+        start_time?: string | null
+        break_start?: string | null
+        break_end?: string | null
+        end_time?: string | null
+        status?: ScheduleStatus
+        notes?: string | null
+      }
+    }) => updateSchedule(input.scheduleId, input.values),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["schedules"] })
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      toast.success("Escala atualizada com sucesso.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useDeleteSchedule() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (scheduleId: string) => deleteSchedule(scheduleId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["schedules"] })
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      toast.success("Escala removida.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
     },
   })
 }
@@ -276,6 +347,10 @@ export function useRecordOperationalEvent() {
       await queryClient.invalidateQueries({ queryKey: ["attendance-events"] })
       await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
       await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      toast.success("Evento registrado.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
     },
   })
 }
@@ -293,6 +368,10 @@ export function useUpdateOrganization() {
     }) => updateOrganization(profile.organization_id, input),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["organization"] })
+      toast.success("Dados da empresa atualizados.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
     },
   })
 }

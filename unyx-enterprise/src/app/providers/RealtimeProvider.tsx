@@ -5,15 +5,15 @@ import type { ReactNode } from "react"
 import { useAuth } from "@/app/providers/auth-context"
 import { supabase } from "@/lib/supabase"
 
-const realtimeTables = [
-  "branches",
-  "sectors",
-  "employees",
-  "schedules",
-  "attendance_events",
-  "operational_status",
-  "audit_logs",
-]
+const tableQueryKeyMap: Record<string, string> = {
+  branches: "branches",
+  sectors: "sectors",
+  employees: "employees",
+  schedules: "schedules",
+  attendance_events: "attendance-events",
+  operational_status: "operational-status",
+  audit_logs: "audit-logs",
+}
 
 export function RealtimeProvider({ children }: { children: ReactNode }) {
   const { profile } = useAuth()
@@ -24,7 +24,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
 
     let channel = supabase.channel(`unyx-ops-${profile.organization_id}`)
 
-    for (const table of realtimeTables) {
+    for (const [table, queryKey] of Object.entries(tableQueryKeyMap)) {
       channel = channel.on(
         "postgres_changes",
         {
@@ -34,7 +34,10 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
           filter: `organization_id=eq.${profile.organization_id}`,
         },
         () => {
-          void queryClient.invalidateQueries()
+          void queryClient.invalidateQueries({ queryKey: [queryKey] })
+          if (queryKey === "operational-status" || queryKey === "schedules") {
+            void queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+          }
         }
       )
     }

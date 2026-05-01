@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react"
 import type { FormEvent } from "react"
-import { CalendarPlus } from "lucide-react"
+import { CalendarPlus, Pencil, Trash2 } from "lucide-react"
 
 import { PageHeader } from "@/components/shared/PageHeader"
 import { StateBlock } from "@/components/shared/StateBlock"
@@ -17,13 +17,15 @@ import { Input } from "@/components/ui/input"
 import {
   useBranches,
   useCreateSchedule,
+  useDeleteSchedule,
   useEmployees,
   useSchedules,
+  useUpdateSchedule,
 } from "@/hooks/useUnyxData"
 import { formatDateBR, formatTime, todayISO } from "@/lib/format"
 import { scheduleStatusLabel } from "@/lib/status"
 import { useAppStore } from "@/store/useAppStore"
-import type { ScheduleStatus } from "@/types/domain"
+import type { ScheduleStatus, ScheduleWithRelations } from "@/types/domain"
 
 const fieldClass =
   "h-8 w-full rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
@@ -38,6 +40,173 @@ interface ScheduleFormState {
   end_time: string
   status: ScheduleStatus
   notes: string
+}
+
+function ScheduleEditDialog({ schedule }: { schedule: ScheduleWithRelations }) {
+  const [open, setOpen] = useState(false)
+  const [form, setForm] = useState({
+    start_time: schedule.start_time ?? "",
+    break_start: schedule.break_start ?? "",
+    break_end: schedule.break_end ?? "",
+    end_time: schedule.end_time ?? "",
+    status: schedule.status,
+    notes: schedule.notes ?? "",
+  })
+  const updateSchedule = useUpdateSchedule()
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    await updateSchedule.mutateAsync({
+      scheduleId: schedule.id,
+      values: {
+        start_time: form.start_time || null,
+        break_start: form.break_start || null,
+        break_end: form.break_end || null,
+        end_time: form.end_time || null,
+        status: form.status,
+        notes: form.notes.trim() || null,
+      },
+    })
+    setOpen(false)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm">
+          <Pencil className="size-4" />
+          Editar
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            Editar escala — {schedule.employees?.name ?? "Colaborador"}
+          </DialogTitle>
+        </DialogHeader>
+        <form className="space-y-4" onSubmit={handleSubmit}>
+          <div className="grid gap-3 sm:grid-cols-4">
+            {(["start_time", "break_start", "break_end", "end_time"] as const).map(
+              (field) => (
+                <label className="space-y-1 text-sm" key={field}>
+                  <span className="font-medium">
+                    {
+                      {
+                        start_time: "Entrada",
+                        break_start: "Intervalo",
+                        break_end: "Retorno",
+                        end_time: "Saída",
+                      }[field]
+                    }
+                  </span>
+                  <Input
+                    type="time"
+                    value={form[field]}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        [field]: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+              )
+            )}
+          </div>
+
+          <label className="space-y-1 text-sm">
+            <span className="font-medium">Status</span>
+            <select
+              className={fieldClass}
+              value={form.status}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  status: event.target.value as ScheduleStatus,
+                }))
+              }
+            >
+              {Object.entries(scheduleStatusLabel).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="space-y-1 text-sm">
+            <span className="font-medium">Observações</span>
+            <Input
+              value={form.notes}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  notes: event.target.value,
+                }))
+              }
+            />
+          </label>
+
+          {updateSchedule.error ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {updateSchedule.error.message}
+            </div>
+          ) : null}
+
+          <DialogFooter>
+            <Button type="submit" disabled={updateSchedule.isPending}>
+              {updateSchedule.isPending ? "Salvando..." : "Salvar alterações"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function ScheduleDeleteDialog({ schedule }: { schedule: ScheduleWithRelations }) {
+  const [open, setOpen] = useState(false)
+  const deleteSchedule = useDeleteSchedule()
+
+  async function handleConfirm() {
+    await deleteSchedule.mutateAsync(schedule.id)
+    setOpen(false)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm">
+          <Trash2 className="size-4" />
+          Remover
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Remover escala</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground">
+          Deseja remover a escala de{" "}
+          <span className="font-medium text-slate-950">
+            {schedule.employees?.name ?? "Colaborador"}
+          </span>{" "}
+          do dia {formatDateBR(schedule.work_date)}? Esta ação não pode ser desfeita.
+        </p>
+        <DialogFooter className="gap-2">
+          <Button variant="outline" onClick={() => setOpen(false)}>
+            Cancelar
+          </Button>
+          <Button
+            variant="destructive"
+            disabled={deleteSchedule.isPending}
+            onClick={() => void handleConfirm()}
+          >
+            {deleteSchedule.isPending ? "Removendo..." : "Confirmar"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
 }
 
 export function SchedulesPage() {
@@ -287,6 +456,7 @@ export function SchedulesPage() {
                   <th className="px-4 py-3">Retorno</th>
                   <th className="px-4 py-3">Saída</th>
                   <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3 text-right">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -304,6 +474,12 @@ export function SchedulesPage() {
                     <td className="px-4 py-3">{formatTime(schedule.end_time)}</td>
                     <td className="px-4 py-3">
                       {scheduleStatusLabel[schedule.status]}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-2">
+                        <ScheduleEditDialog schedule={schedule} />
+                        <ScheduleDeleteDialog schedule={schedule} />
+                      </div>
                     </td>
                   </tr>
                 ))}

@@ -3,8 +3,10 @@ import {
   Clock,
   Coffee,
   Gauge,
+  RefreshCw,
   Users,
 } from "lucide-react"
+import { useState } from "react"
 import {
   Bar,
   BarChart,
@@ -20,12 +22,14 @@ import { MetricCard } from "@/components/bento/MetricCard"
 import { StatusBadge } from "@/components/bento/StatusBadge"
 import { PageHeader } from "@/components/shared/PageHeader"
 import { StateBlock } from "@/components/shared/StateBlock"
+import { Button } from "@/components/ui/button"
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import {
   useDashboardRows,
   useOperationalStatuses,
@@ -33,20 +37,29 @@ import {
 } from "@/hooks/useUnyxData"
 import { formatTime, minutesLabel, todayISO } from "@/lib/format"
 import { operationalStatuses, statusMeta } from "@/lib/status"
+import type { OperationalStatus } from "@/types/domain"
+
+type StatusCount = { current_status: OperationalStatus; delay_minutes: number }
 
 export function DashboardPage() {
-  const today = todayISO()
-  const dashboard = useDashboardRows(today)
-  const schedules = useSchedules(today)
+  const [date, setDate] = useState(todayISO())
+  const dashboard = useDashboardRows(date)
+  const schedules = useSchedules(date)
   const statuses = useOperationalStatuses()
   const rows = dashboard.data ?? []
   const liveStatuses = statuses.data ?? []
   const scheduledToday = schedules.data ?? []
-  const statusSource =
-    rows.length > 0 ? rows : liveStatuses.map((status) => ({
-      current_status: status.current_status,
-      delay_minutes: status.delay_minutes,
-    }))
+
+  const statusSource: StatusCount[] =
+    rows.length > 0
+      ? rows.map((r) => ({
+          current_status: r.current_status,
+          delay_minutes: r.delay_minutes,
+        }))
+      : liveStatuses.map((s) => ({
+          current_status: s.current_status,
+          delay_minutes: s.delay_minutes,
+        }))
 
   const criticalCount = statusSource.filter(
     (row) => row.current_status === "alerta_critico"
@@ -62,6 +75,14 @@ export function DashboardPage() {
     label: statusMeta[status].label,
     total: statusSource.filter((row) => row.current_status === status).length,
   }))
+
+  const lastUpdated = dashboard.dataUpdatedAt
+    ? new Intl.DateTimeFormat("pt-BR", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }).format(new Date(dashboard.dataUpdatedAt))
+    : null
 
   if (dashboard.isError) {
     return (
@@ -83,12 +104,39 @@ export function DashboardPage() {
       <PageHeader
         title="Dashboard Operacional"
         description="Visão viva da operação do dia, organizada por prioridade."
+        action={
+          <div className="flex items-center gap-2">
+            <Input
+              className="w-40"
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+            />
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => void dashboard.refetch()}
+              disabled={dashboard.isFetching}
+              aria-label="Atualizar"
+            >
+              <RefreshCw
+                className={`size-4 ${dashboard.isFetching ? "animate-spin" : ""}`}
+              />
+            </Button>
+          </div>
+        }
       />
 
       <div className="space-y-6 p-6">
+        {lastUpdated ? (
+          <p className="text-xs text-muted-foreground">
+            Atualizado às {lastUpdated}
+          </p>
+        ) : null}
+
         <BentoGrid>
           <MetricCard
-            title="Escalados hoje"
+            title="Escalados"
             value={scheduledToday.length}
             detail="Colaboradores na escala"
             icon={<Users className="size-5" />}
@@ -151,8 +199,7 @@ export function DashboardPage() {
               <CardTitle>Alertas críticos</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {rows.filter((row) => row.current_status === "alerta_critico").length ===
-              0 ? (
+              {rows.filter((row) => row.current_status === "alerta_critico").length === 0 ? (
                 <StateBlock
                   title="Nenhum alerta crítico"
                   description="A operação não possui registros críticos no momento."
