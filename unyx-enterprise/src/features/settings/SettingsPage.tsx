@@ -39,6 +39,7 @@ import {
   useUpdateCurrentUserPassword,
   useUpdateCurrentUserProfile,
   useUpdateOrganization,
+  useUpdateOrganizationPlan,
 } from "@/hooks/useUnyxData"
 import {
   getOperationalMode,
@@ -708,6 +709,7 @@ function PlanModulesPanel({
   branches,
   canViewBilling,
   employees,
+  isOwner,
   modules,
   organization,
   subscription,
@@ -715,10 +717,12 @@ function PlanModulesPanel({
   branches: Branch[]
   canViewBilling: boolean
   employees: EmployeeWithRelations[]
+  isOwner: boolean
   modules: OrganizationModule[]
   organization: Organization | null | undefined
   subscription: Subscription | null | undefined
 }) {
+  const updatePlan = useUpdateOrganizationPlan()
   const currentPlan = subscription?.plan ?? organization?.plan ?? "starter"
   const moduleByKey = useMemo(() => {
     const map = new Map<string, OrganizationModule>()
@@ -759,6 +763,40 @@ function PlanModulesPanel({
           limit={subscription?.max_employees ?? null}
         />
       </div>
+
+      {isOwner ? (
+        <div className="rounded-lg border border-violet-200 bg-violet-50 p-3 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <div className="text-sm font-medium text-violet-900">Plano de acesso</div>
+              <div className="text-xs text-violet-700">
+                Altere o plano para liberar todos os modulos durante os testes.
+              </div>
+            </div>
+            <Badge variant="outline" className="shrink-0">
+              {planLabel[currentPlan]}
+            </Badge>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {(["starter", "growth", "enterprise"] as const).map((plan) => (
+              <Button
+                key={plan}
+                size="sm"
+                variant={currentPlan === plan ? "default" : "outline"}
+                disabled={updatePlan.isPending || currentPlan === plan}
+                onClick={() => updatePlan.mutate(plan)}
+              >
+                {planLabel[plan]}
+              </Button>
+            ))}
+          </div>
+          {updatePlan.error ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+              {updatePlan.error.message}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="space-y-4">
         {productModuleGroups.map((group) => (
@@ -808,6 +846,53 @@ function PlanModulesPanel({
   )
 }
 
+const auditActionLabels: Record<string, string> = {
+  bootstrap_first_access: "Primeiro acesso (bootstrap)",
+  create_employee: "Cadastro de colaborador",
+  update_employee: "Edicao de colaborador",
+  deactivate_employee: "Desativacao de colaborador",
+  activate_employee: "Reativacao de colaborador",
+  create_schedule: "Criacao de escala",
+  update_schedule: "Edicao de escala",
+  delete_schedule: "Exclusao de escala",
+  import_schedules: "Importacao de escalas",
+  copy_schedules: "Copia de escalas",
+  schedules_imported: "Importacao de escalas",
+  schedules_copied: "Copia de escalas",
+  employees_imported: "Importacao de colaboradores",
+  record_event: "Registro de evento operacional",
+  entrada_confirmada: "Entrada confirmada",
+  saida_confirmada: "Saida confirmada",
+  operational_settings_updated: "Configuracoes operacionais atualizadas",
+  organization_updated: "Dados da organizacao atualizados",
+  organization_plan_updated: "Plano da organizacao atualizado",
+  employee_updated: "Colaborador atualizado",
+  create_branch: "Criacao de filial",
+  update_branch: "Edicao de filial",
+  create_sector: "Criacao de setor",
+  create_post: "Publicacao de comunicado",
+  invite_user: "Convite de usuario",
+  update_user_role: "Alteracao de papel de usuario",
+}
+
+const auditEntityLabels: Record<string, string> = {
+  employee: "Colaborador",
+  employees: "Colaboradores",
+  schedule: "Escala",
+  schedules: "Escalas",
+  branch: "Filial",
+  sector: "Setor",
+  attendance_events: "Evento de presenca",
+  operational_settings: "Configuracoes operacionais",
+  organizations: "Organizacao",
+  comms_post: "Comunicado",
+  user: "Usuario",
+}
+
+function auditLabel(map: Record<string, string>, key: string) {
+  return map[key] ?? key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
 function AuditSummary({ logs }: { logs: AuditLog[] }) {
   if (logs.length === 0) return <StateBlock title="Nenhuma acao auditada" />
 
@@ -817,9 +902,9 @@ function AuditSummary({ logs }: { logs: AuditLog[] }) {
         <div key={log.id} className="rounded-lg border bg-slate-50 p-3">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
-              <div className="text-sm font-medium">{log.action}</div>
+              <div className="text-sm font-medium">{auditLabel(auditActionLabels, log.action)}</div>
               <div className="mt-1 text-sm text-muted-foreground">
-                {log.entity_type} - {formatDateTimeBR(log.created_at)}
+                {auditLabel(auditEntityLabels, log.entity_type)} — {formatDateTimeBR(log.created_at)}
               </div>
             </div>
             <Badge variant="outline">
@@ -950,6 +1035,7 @@ export function SettingsPage() {
                   branches={branches.data ?? []}
                   canViewBilling={isAdmin}
                   employees={employees.data ?? []}
+                  isOwner={profile?.role === "owner"}
                   modules={organizationModules.data ?? []}
                   organization={organization.data}
                   subscription={subscription.data}

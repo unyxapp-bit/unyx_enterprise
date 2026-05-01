@@ -46,6 +46,7 @@ import {
   updateCurrentUserPassword,
   updateCurrentUserProfile,
   updateOrganization,
+  updateOrganizationPlan,
   updateSchedule,
   updateSector,
   updateUserRole,
@@ -61,6 +62,7 @@ import type {
   BusinessSegment,
   OperationalSettings,
   ScheduleStatus,
+  SubscriptionPlan,
   TrainingType,
   UserProfile,
 } from "@/types/domain"
@@ -554,6 +556,24 @@ export function useUpdateOrganization() {
       await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
       await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
       toast.success("Dados da empresa atualizados.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useUpdateOrganizationPlan() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (plan: SubscriptionPlan) => updateOrganizationPlan(profile, plan),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["organization"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success("Plano da organizacao atualizado.")
     },
     onError: (error) => {
       toast.error(error.message)

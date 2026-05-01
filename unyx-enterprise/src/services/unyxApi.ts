@@ -21,6 +21,7 @@ import type {
   ScheduleWithRelations,
   Sector,
   Subscription,
+  SubscriptionPlan,
   TrainingItem,
   TrainingProgress,
   TrainingType,
@@ -417,6 +418,38 @@ export async function updateOrganization(
 
   await createAuditLog(profile, {
     action: "organization_updated",
+    entity_type: "organizations",
+    entity_id: data.id,
+    old_value: previous,
+    new_value: data,
+  })
+
+  return data as Organization
+}
+
+export async function updateOrganizationPlan(
+  profile: UserProfile,
+  plan: SubscriptionPlan
+) {
+  const { data: previous, error: previousError } = await supabase
+    .from("organizations")
+    .select("*")
+    .eq("id", profile.organization_id)
+    .maybeSingle()
+
+  raise(previousError)
+
+  const { data, error } = await supabase
+    .from("organizations")
+    .update({ plan })
+    .eq("id", profile.organization_id)
+    .select("*")
+    .single()
+
+  raise(error)
+
+  await createAuditLog(profile, {
+    action: "organization_plan_updated",
     entity_type: "organizations",
     entity_id: data.id,
     old_value: previous,
