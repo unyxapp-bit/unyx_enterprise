@@ -21,11 +21,11 @@ import { Button } from "@/components/ui/button"
 import { OnboardingPage } from "@/features/onboarding/OnboardingPage"
 import { useOrganization } from "@/hooks/useUnyxData"
 import { cn } from "@/lib/utils"
-import type { UserRole } from "@/types/domain"
 import { useAppStore } from "@/store/useAppStore"
+import type { UserRole } from "@/types/domain"
 
 const roleLabel: Record<UserRole, string> = {
-  owner: "Proprietário",
+  owner: "Proprietario",
   admin: "Administrador",
   branch_manager: "Gerente de filial",
   supervisor: "Supervisor",
@@ -33,17 +33,35 @@ const roleLabel: Record<UserRole, string> = {
   employee: "Colaborador",
 }
 
-const navItems = [
-  { to: "/app", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/app/alerts", label: "Alertas", icon: BellRing },
-  { to: "/app/employees", label: "Colaboradores", icon: Users },
-  { to: "/app/schedules", label: "Escalas", icon: CalendarDays },
-  { to: "/app/operations", label: "Operação", icon: Activity },
-  { to: "/app/branches", label: "Filiais", icon: Building2 },
-  { to: "/app/reports", label: "Relatórios", icon: BarChart2 },
-  { to: "/app/audit", label: "Auditoria", icon: ClipboardList },
-  { to: "/app/users", label: "Usuários", icon: UserCog },
-  { to: "/app/settings", label: "Configurações", icon: Settings },
+const navGroups = [
+  {
+    label: "Unyx Ops",
+    summary: "Mostra o agora",
+    items: [
+      { to: "/app", label: "Dashboard", icon: LayoutDashboard },
+      { to: "/app/operations", label: "Operacao", icon: Activity },
+      { to: "/app/alerts", label: "Alertas", icon: BellRing },
+      { to: "/app/schedules", label: "Escalas", icon: CalendarDays },
+    ],
+  },
+  {
+    label: "Unyx Control",
+    summary: "Organiza a empresa",
+    items: [
+      { to: "/app/branches", label: "Filiais", icon: Building2 },
+      { to: "/app/employees", label: "Colaboradores", icon: Users },
+      { to: "/app/users", label: "Usuarios", icon: UserCog },
+      { to: "/app/settings", label: "Configuracoes", icon: Settings },
+    ],
+  },
+  {
+    label: "Unyx Insight",
+    summary: "Explica o que aconteceu",
+    items: [
+      { to: "/app/reports", label: "Relatorios", icon: BarChart2 },
+      { to: "/app/audit", label: "Auditoria", icon: ClipboardList },
+    ],
+  },
 ]
 
 export function AppLayout() {
@@ -65,7 +83,7 @@ export function AppLayout() {
   }
 
   const orgDisplayName =
-    organization?.trade_name ?? organization?.name ?? "Unyx Ops"
+    organization?.trade_name ?? organization?.name ?? "Unyx Enterprise"
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-950">
@@ -77,7 +95,9 @@ export function AppLayout() {
       >
         <div className="flex h-16 items-center border-b px-5">
           <div className="min-w-0">
-            <div className="text-lg font-semibold tracking-tight">Unyx Ops</div>
+            <div className="text-lg font-semibold tracking-tight">
+              Unyx Enterprise
+            </div>
             <div
               className="truncate text-xs text-muted-foreground"
               title={orgDisplayName}
@@ -86,25 +106,37 @@ export function AppLayout() {
             </div>
           </div>
         </div>
-        <nav className="space-y-1 px-3 py-4">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === "/app"}
-              onClick={() => setSidebarOpen(false)}
-              className={({ isActive }) =>
-                cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                  isActive
-                    ? "bg-slate-950 text-white"
-                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
-                )
-              }
-            >
-              <item.icon className="size-4" />
-              {item.label}
-            </NavLink>
+        <nav className="space-y-5 px-3 py-4">
+          {navGroups.map((group) => (
+            <div key={group.label} className="space-y-1">
+              <div className="px-3 pb-1">
+                <div className="text-[0.68rem] font-semibold uppercase tracking-wide text-slate-400">
+                  {group.label}
+                </div>
+                <div className="text-[0.7rem] text-muted-foreground">
+                  {group.summary}
+                </div>
+              </div>
+              {group.items.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.to === "/app"}
+                  onClick={() => setSidebarOpen(false)}
+                  className={({ isActive }) =>
+                    cn(
+                      "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                      isActive
+                        ? "bg-slate-950 text-white"
+                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+                    )
+                  }
+                >
+                  <item.icon className="size-4" />
+                  {item.label}
+                </NavLink>
+              ))}
+            </div>
           ))}
         </nav>
       </aside>

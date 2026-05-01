@@ -465,6 +465,7 @@ export async function listModules() {
   const { data, error } = await supabase
     .from("modules")
     .select("*")
+    .eq("active", true)
     .order("name")
 
   raise(error)

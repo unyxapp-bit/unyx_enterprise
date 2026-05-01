@@ -3,7 +3,6 @@ import {
   ArrowRight,
   BarChart3,
   CheckCircle2,
-  Clock3,
   ShieldCheck,
 } from "lucide-react"
 import type { ReactNode } from "react"
@@ -134,18 +133,18 @@ export function LandingPage() {
         <div className="mx-auto grid max-w-7xl gap-4 md:grid-cols-3">
           <ValueCard
             icon={<AlertTriangle className="size-5" />}
-            title="Menos incêndio diário"
-            text="Alertas por prioridade mostram onde a liderança precisa agir primeiro."
+            title="Unyx Ops"
+            text="Mostra o agora: dashboard vivo, operação do dia, status e alertas."
           />
           <ValueCard
-            icon={<Clock3 className="size-5" />}
-            title="Escala versus realidade"
-            text="Acompanhamento de entrada, pausa, retorno e saída sem depender de planilhas soltas."
+            icon={<ShieldCheck className="size-5" />}
+            title="Unyx Control"
+            text="Organiza a empresa: filiais, setores, colaboradores, usuários e regras."
           />
           <ValueCard
             icon={<BarChart3 className="size-5" />}
-            title="Histórico auditável"
-            text="Cada evento vira trilha simples para auditoria operacional e proteção gerencial."
+            title="Unyx Insight"
+            text="Explica o que aconteceu: relatórios, atrasos, faltas e auditoria."
           />
         </div>
       </section>

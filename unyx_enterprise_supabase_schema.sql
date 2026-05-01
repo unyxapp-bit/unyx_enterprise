@@ -326,14 +326,16 @@ create table public.modules (
   created_at timestamptz not null default now()
 );
 
-insert into public.modules (key, name, description)
+insert into public.modules (key, name, description, active)
 values
-  ('unyx_ops', 'Unyx Ops', 'Escala operacional, dashboard vivo e auditoria.'),
-  ('unyx_comms', 'Unyx Comms', 'Comunicação interna, feed e avisos.'),
-  ('unyx_academy', 'Unyx Academy', 'Treinamentos, vídeos, áudios e onboarding.'),
-  ('unyx_game', 'Unyx Game', 'Gamificação, metas e recompensas.'),
-  ('unyx_ai', 'Unyx AI', 'Inteligência operacional e previsão de gargalos.')
-on conflict (key) do nothing;
+  ('unyx_ops', 'Unyx Ops', 'Operacao em tempo real: dashboard, status, acoes e alertas.', true),
+  ('unyx_control', 'Unyx Control', 'Estrutura, cadastros, filiais, setores, usuarios e regras operacionais.', true),
+  ('unyx_insight', 'Unyx Insight', 'Relatorios, auditoria visual e visao gerencial.', true)
+on conflict (key) do update
+set
+  name = excluded.name,
+  description = excluded.description,
+  active = excluded.active;
 
 create table public.organization_modules (
   id uuid primary key default gen_random_uuid(),

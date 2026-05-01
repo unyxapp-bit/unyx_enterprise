@@ -11,14 +11,27 @@
 
 drop function if exists public.bootstrap_current_user_profile();
 
-insert into public.modules (key, name, description)
+insert into public.modules (key, name, description, active)
 values
-  ('unyx_ops', 'Unyx Ops', 'Escala operacional, dashboard vivo e auditoria.'),
-  ('unyx_comms', 'Unyx Comms', 'Comunicacao interna, feed e avisos.'),
-  ('unyx_academy', 'Unyx Academy', 'Treinamentos, videos, audios e onboarding.'),
-  ('unyx_game', 'Unyx Game', 'Gamificacao, metas e recompensas.'),
-  ('unyx_ai', 'Unyx AI', 'Inteligencia operacional e previsao de gargalos.')
-on conflict (key) do nothing;
+  ('unyx_ops', 'Unyx Ops', 'Operacao em tempo real: dashboard, status, acoes e alertas.', true),
+  ('unyx_control', 'Unyx Control', 'Estrutura, cadastros, filiais, setores, usuarios e regras operacionais.', true),
+  ('unyx_insight', 'Unyx Insight', 'Relatorios, auditoria visual e visao gerencial.', true)
+on conflict (key) do update
+set
+  name = excluded.name,
+  description = excluded.description,
+  active = excluded.active;
+
+update public.modules
+set active = false
+where key in ('unyx_comms', 'unyx_academy', 'unyx_game', 'unyx_ai');
+
+insert into public.organization_modules (organization_id, module_id, enabled)
+select organizations.id, modules.id, true
+from public.organizations
+cross join public.modules
+where modules.key in ('unyx_ops', 'unyx_control', 'unyx_insight')
+on conflict (organization_id, module_id) do nothing;
 
 create or replace function public.complete_current_user_onboarding(
   p_profile_name text,
