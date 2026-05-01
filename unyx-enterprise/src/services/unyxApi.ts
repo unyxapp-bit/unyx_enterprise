@@ -360,7 +360,7 @@ export async function listAttendanceEvents(branchId?: string | null) {
 export async function listCommsPosts(branchId?: string | null) {
   let query = supabase
     .from("comms_posts")
-    .select("*, user_profiles(name), branches(name), sectors(name)")
+    .select("*, user_profiles!author_id(name), branches(name), sectors(name)")
     .order("pinned", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(80)
@@ -389,7 +389,7 @@ export async function createCommsPost(
       organization_id: profile.organization_id,
       author_id: profile.id,
     })
-    .select("*, user_profiles(name), branches(name), sectors(name)")
+    .select("*, user_profiles!author_id(name), branches(name), sectors(name)")
     .single()
 
   raise(error)
@@ -419,7 +419,7 @@ export async function listCommsPostComments(postIds: string[]) {
 
   const { data, error } = await supabase
     .from("comms_post_comments")
-    .select("*, user_profiles(name)")
+    .select("*, user_profiles!user_id(name)")
     .in("post_id", postIds)
     .order("created_at", { ascending: true })
 
@@ -439,7 +439,7 @@ export async function createCommsPostComment(
       user_id: profile.id,
       content,
     })
-    .select("*, user_profiles(name)")
+    .select("*, user_profiles!user_id(name)")
     .single()
 
   raise(error)
