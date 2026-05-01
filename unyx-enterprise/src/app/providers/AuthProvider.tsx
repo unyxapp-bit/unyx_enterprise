@@ -9,7 +9,7 @@ import type { Session } from "@supabase/supabase-js"
 
 import { AuthContext } from "@/app/providers/auth-context"
 import { supabase } from "@/lib/supabase"
-import { getCurrentProfile } from "@/services/unyxApi"
+import { ensureCurrentProfile } from "@/services/unyxApi"
 import type { UserProfile } from "@/types/domain"
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -17,17 +17,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
   const [profileLoading, setProfileLoading] = useState(false)
+  const [profileError, setProfileError] = useState<string | null>(null)
 
   const loadProfileForSession = useCallback(async (nextSession: Session | null) => {
     if (!nextSession) {
       setProfile(null)
+      setProfileError(null)
       return
     }
 
     setProfileLoading(true)
+    setProfileError(null)
 
     try {
-      setProfile(await getCurrentProfile())
+      setProfile(await ensureCurrentProfile())
+    } catch (error) {
+      setProfile(null)
+      setProfileError(
+        error instanceof Error
+          ? error.message
+          : "Nao foi possivel carregar o perfil."
+      )
     } finally {
       setProfileLoading(false)
     }
@@ -89,11 +99,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       profile,
       loading,
       profileLoading,
+      profileError,
       signIn,
       signOut,
       refreshProfile,
     }),
-    [loading, profile, profileLoading, refreshProfile, session, signIn, signOut]
+    [
+      loading,
+      profile,
+      profileError,
+      profileLoading,
+      refreshProfile,
+      session,
+      signIn,
+      signOut,
+    ]
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

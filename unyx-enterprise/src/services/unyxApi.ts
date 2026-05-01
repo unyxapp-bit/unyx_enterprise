@@ -42,6 +42,29 @@ export async function getCurrentProfile() {
   return data as UserProfile | null
 }
 
+export async function ensureCurrentProfile() {
+  const profile = await getCurrentProfile()
+  if (profile) return profile
+
+  const { error } = await supabase.rpc("bootstrap_current_user_profile")
+
+  if (error) {
+    const missingFunction =
+      error.code === "PGRST202" ||
+      error.message.includes("bootstrap_current_user_profile")
+
+    if (missingFunction) {
+      throw new Error(
+        "Bootstrap de perfil ainda nao instalado. Rode supabase/bootstrap_first_access.sql no SQL Editor do Supabase e recarregue o perfil."
+      )
+    }
+
+    throw new Error(error.message)
+  }
+
+  return getCurrentProfile()
+}
+
 export async function getOrganization(organizationId: string) {
   const { data, error } = await supabase
     .from("organizations")
