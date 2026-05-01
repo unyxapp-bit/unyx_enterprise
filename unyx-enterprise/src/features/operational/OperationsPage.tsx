@@ -40,8 +40,8 @@ import {
   useSchedules,
   useSectors,
 } from "@/hooks/useUnyxData"
-import { formatDateTimeBR, formatTime, todayISO } from "@/lib/format"
-import { eventLabel, operationalActions } from "@/lib/status"
+import { formatDateTimeBR, formatTime, minutesLabel, todayISO } from "@/lib/format"
+import { eventLabel, operationalActions, statusMeta } from "@/lib/status"
 import type {
   AttendanceEventType,
   OperationalSettings,
@@ -163,6 +163,13 @@ const REQUIRES_CONFIRM = new Set<AttendanceEventType>([
 const ACTION_LABEL_OVERRIDE: Partial<Record<AttendanceEventType, string>> = {
   intervalo_iniciado: "Iniciar intervalo",
   troca_caixa_confirmada: "Troca de caixa",
+}
+
+function formatHHMM(isoString: string) {
+  return new Date(isoString).toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  })
 }
 
 export function OperationsPage() {
@@ -336,13 +343,16 @@ export function OperationsPage() {
               <div className="grid gap-3">
                 {orderedSchedules.map((schedule) => {
                   const status = statusByScheduleId.get(schedule.id)
+                  const currentStatus = status?.current_status
                   const priority = getSchedulePriorityByMode(mode, schedule, status)
+                  const isDone =
+                    currentStatus === "finalizado" || currentStatus === "folga"
                   const isCashier = isCashierContext({
                     role: schedule.employees?.role,
                     sectorName: schedule.employees?.sectors?.name,
                   })
                   const availableActions = getAvailableActions(
-                    status?.current_status,
+                    currentStatus,
                     isCashier,
                     operationalSettings.data?.require_cashier_cash_count ?? false
                   )
@@ -353,27 +363,36 @@ export function OperationsPage() {
                   )
                   const isPending = pendingConfirm?.scheduleId === schedule.id
 
-                  // Split actions into flow, exit and occurrence for visual grouping
                   const flowActions = availableActions.filter(
                     (et) => et !== "ocorrencia_registrada" && et !== "saida_confirmada"
                   )
                   const hasExit = availableActions.includes("saida_confirmada")
                   const hasOccurrence = availableActions.includes("ocorrencia_registrada")
 
+                  const cardMeta = currentStatus ? statusMeta[currentStatus] : null
+                  const infoLine = [
+                    schedule.employees?.role,
+                    schedule.employees?.sectors?.name ?? "Sem setor",
+                    schedule.branches?.name ?? "Filial",
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")
+
                   return (
                     <div
                       key={schedule.id}
-                      className="rounded-lg border bg-white p-4 shadow-sm"
+                      className={`rounded-lg border p-4 shadow-sm transition-opacity ${
+                        cardMeta ? cardMeta.cardClassName : "border-slate-200 bg-white"
+                      } ${isDone ? "opacity-60" : ""}`}
                     >
-                      {/* Header: name, sector, schedule times, badges */}
+                      {/* Header: name, info line, schedule times, badges */}
                       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                        <div>
+                        <div className="min-w-0 flex-1">
                           <div className="text-base font-medium">
                             {schedule.employees?.name ?? "Colaborador"}
                           </div>
                           <div className="text-sm text-muted-foreground">
-                            {schedule.employees?.sectors?.name ?? "Sem setor"} ·{" "}
-                            {schedule.branches?.name ?? "Filial"}
+                            {infoLine}
                           </div>
                           <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">
                             <span>Entrada {formatTime(schedule.start_time)}</span>
@@ -383,6 +402,11 @@ export function OperationsPage() {
                           </div>
                           <div className="mt-2 flex flex-wrap gap-1.5">
                             <Badge variant="outline">Prioridade {priority}</Badge>
+                            {status && status.delay_minutes > 0 ? (
+                              <Badge variant="destructive">
+                                {minutesLabel(status.delay_minutes)} atraso
+                              </Badge>
+                            ) : null}
                             {contextBadges.map((badge) => (
                               <Badge
                                 key={badge.label}
@@ -397,20 +421,23 @@ export function OperationsPage() {
                               </Badge>
                             ))}
                           </div>
+                          {status?.status_reason ? (
+                            <div className="mt-1.5 text-xs text-muted-foreground">
+                              {status.status_reason}
+                              {status.updated_at ? (
+                                <span className="ml-1.5 text-slate-400">
+                                  · {formatHHMM(status.updated_at)}
+                                </span>
+                              ) : null}
+                            </div>
+                          ) : null}
                         </div>
-                        {status ? (
-                          <StatusBadge status={status.current_status} />
-                        ) : (
-                          <span className="inline-flex h-5 w-fit items-center rounded-full border border-slate-200 bg-slate-50 px-2 text-xs font-medium text-slate-600">
-                            Aguardando evento
-                          </span>
-                        )}
+                        <StatusBadge status={currentStatus ?? "aguardando_evento"} />
                       </div>
 
                       {/* Action area */}
                       <div className="mt-4">
                         {isPending ? (
-                          // Two-step confirmation for destructive actions
                           <div className="flex flex-wrap items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2">
                             <span className="text-sm text-red-800">
                               Confirmar{" "}
@@ -438,7 +465,6 @@ export function OperationsPage() {
                           </div>
                         ) : (
                           <div className="flex flex-wrap items-center gap-2">
-                            {/* Flow actions (state-specific) */}
                             {flowActions.map((eventType) => {
                               const action = operationalActions.find(
                                 (a) => a.eventType === eventType
@@ -463,9 +489,8 @@ export function OperationsPage() {
                               )
                             })}
 
-                            {/* Separator before exit/occurrence when there are flow actions */}
                             {flowActions.length > 0 && (hasExit || hasOccurrence) ? (
-                              <span className="text-slate-200">|</span>
+                              <span className="text-slate-300">|</span>
                             ) : null}
 
                             {hasExit ? (
