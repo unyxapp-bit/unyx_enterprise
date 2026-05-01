@@ -709,7 +709,6 @@ function PlanModulesPanel({
   branches,
   canViewBilling,
   employees,
-  isOwner,
   modules,
   organization,
   subscription,
@@ -717,13 +716,14 @@ function PlanModulesPanel({
   branches: Branch[]
   canViewBilling: boolean
   employees: EmployeeWithRelations[]
-  isOwner: boolean
   modules: OrganizationModule[]
   organization: Organization | null | undefined
   subscription: Subscription | null | undefined
 }) {
+  const { profile: currentProfile } = useAuth()
   const updatePlan = useUpdateOrganizationPlan()
   const currentPlan = subscription?.plan ?? organization?.plan ?? "starter"
+  const isOwner = currentProfile?.role === "owner" || currentProfile?.role === "admin"
   const moduleByKey = useMemo(() => {
     const map = new Map<string, OrganizationModule>()
     modules.forEach((module) => {
@@ -1035,7 +1035,6 @@ export function SettingsPage() {
                   branches={branches.data ?? []}
                   canViewBilling={isAdmin}
                   employees={employees.data ?? []}
-                  isOwner={profile?.role === "owner"}
                   modules={organizationModules.data ?? []}
                   organization={organization.data}
                   subscription={subscription.data}
