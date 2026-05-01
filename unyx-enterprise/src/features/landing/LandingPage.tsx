@@ -44,7 +44,7 @@ export function LandingPage() {
             </Button>
             <Button asChild className="bg-white text-slate-950 hover:bg-slate-100">
               <Link to="/app">
-                Abrir demo
+                Abrir app
                 <ArrowRight className="size-4" />
               </Link>
             </Button>
@@ -68,7 +68,7 @@ export function LandingPage() {
             <div className="mt-8 flex flex-wrap gap-3">
               <Button asChild className="bg-white text-slate-950 hover:bg-slate-100">
                 <Link to="/login">
-                  Testar agora
+                  Criar conta
                   <ArrowRight className="size-4" />
                 </Link>
               </Button>
@@ -144,7 +144,7 @@ export function LandingPage() {
           />
           <ValueCard
             icon={<BarChart3 className="size-5" />}
-            title="Histórico demonstrável"
+            title="Histórico auditável"
             text="Cada evento vira trilha simples para auditoria operacional e proteção gerencial."
           />
         </div>
@@ -154,11 +154,11 @@ export function LandingPage() {
         <div className="mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.8fr_1.2fr]">
           <div>
             <h2 className="text-3xl font-semibold tracking-tight">
-              Roteiro pronto para apresentar a um gerente.
+              Fluxo pronto para operar com a equipe.
             </h2>
             <p className="mt-4 text-slate-600">
-              A demo mostra atraso, ação operacional, atualização do status e
-              histórico em poucos minutos.
+              A plataforma registra atraso, ação operacional, atualização do
+              status e histórico em poucos minutos.
             </p>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">

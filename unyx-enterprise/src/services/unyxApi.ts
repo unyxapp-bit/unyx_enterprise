@@ -42,27 +42,46 @@ export async function getCurrentProfile() {
   return data as UserProfile | null
 }
 
-export async function ensureCurrentProfile() {
-  const profile = await getCurrentProfile()
-  if (profile) return profile
+export interface OnboardingProfileInput {
+  profileName: string
+  organizationName: string
+  tradeName: string | null
+  document: string | null
+  segment: BusinessSegment
+  branchName: string
+  city: string | null
+  state: string | null
+  address: string | null
+}
 
-  const { error } = await supabase.rpc("bootstrap_current_user_profile")
+export async function completeCurrentUserOnboarding(input: OnboardingProfileInput) {
+  const { data, error } = await supabase.rpc("complete_current_user_onboarding", {
+    p_profile_name: input.profileName,
+    p_organization_name: input.organizationName,
+    p_trade_name: input.tradeName,
+    p_document: input.document,
+    p_segment: input.segment,
+    p_branch_name: input.branchName,
+    p_city: input.city,
+    p_state: input.state,
+    p_address: input.address,
+  })
 
   if (error) {
     const missingFunction =
       error.code === "PGRST202" ||
-      error.message.includes("bootstrap_current_user_profile")
+      error.message.includes("complete_current_user_onboarding")
 
     if (missingFunction) {
       throw new Error(
-        "Bootstrap de perfil ainda nao instalado. Rode supabase/bootstrap_first_access.sql no SQL Editor do Supabase e recarregue o perfil."
+        "Onboarding ainda nao instalado no Supabase. Rode supabase/onboarding_first_access.sql no SQL Editor e tente novamente."
       )
     }
 
     throw new Error(error.message)
   }
 
-  return getCurrentProfile()
+  return data as string
 }
 
 export async function getOrganization(organizationId: string) {

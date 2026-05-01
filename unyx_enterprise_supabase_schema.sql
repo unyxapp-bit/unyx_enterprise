@@ -454,7 +454,17 @@ as $$
     );
 $$;
 
-create or replace function public.bootstrap_current_user_profile()
+create or replace function public.complete_current_user_onboarding(
+  p_profile_name text,
+  p_organization_name text,
+  p_trade_name text default null,
+  p_document text default null,
+  p_segment public.business_segment default 'other',
+  p_branch_name text default 'Loja principal',
+  p_city text default null,
+  p_state text default null,
+  p_address text default null
+)
 returns uuid
 language plpgsql
 security definer
@@ -469,9 +479,22 @@ declare
   v_email text;
   v_name text;
   v_org_name text;
+  v_branch_name text;
 begin
   if v_auth_user_id is null then
     raise exception 'Usuario autenticado nao encontrado.';
+  end if;
+
+  v_name := nullif(trim(p_profile_name), '');
+  v_org_name := nullif(trim(p_organization_name), '');
+  v_branch_name := coalesce(nullif(trim(p_branch_name), ''), 'Loja principal');
+
+  if v_name is null then
+    raise exception 'Nome do usuario e obrigatorio.';
+  end if;
+
+  if v_org_name is null then
+    raise exception 'Nome da empresa e obrigatorio.';
   end if;
 
   select *
@@ -490,10 +513,6 @@ begin
   limit 1;
 
   if v_profile_id is not null then
-    update public.user_profiles
-    set active = true
-    where id = v_profile_id;
-
     return v_profile_id;
   end if;
 
@@ -503,29 +522,19 @@ begin
     v_auth_user_id::text || '@unyx.local'
   );
 
-  v_name := coalesce(
-    nullif(v_auth_user.raw_user_meta_data->>'name', ''),
-    nullif(v_auth_user.raw_user_meta_data->>'full_name', ''),
-    nullif(split_part(v_email, '@', 1), ''),
-    'Administrador Unyx'
-  );
-
-  v_org_name := coalesce(
-    nullif(v_auth_user.raw_user_meta_data->>'organization_name', ''),
-    'Operacao ' || v_name
-  );
-
   insert into public.organizations (
     name,
     trade_name,
+    document,
     segment,
     status,
     plan
   )
   values (
     v_org_name,
-    v_org_name,
-    'other',
+    nullif(trim(p_trade_name), ''),
+    nullif(trim(p_document), ''),
+    coalesce(p_segment, 'other'),
     'trial',
     'starter'
   )
@@ -540,18 +549,12 @@ begin
   )
   values (
     v_org_id,
-    'Loja principal',
-    null,
-    null,
-    null
+    v_branch_name,
+    nullif(trim(p_city), ''),
+    nullif(upper(trim(p_state)), ''),
+    nullif(trim(p_address), '')
   )
   returning id into v_branch_id;
-
-  insert into public.sectors (organization_id, branch_id, name, description)
-  values
-    (v_org_id, v_branch_id, 'Atendimento', 'Equipe de atendimento e frente de loja.'),
-    (v_org_id, v_branch_id, 'Estoque', 'Reposicao, recebimento e organizacao.'),
-    (v_org_id, v_branch_id, 'Operacao', 'Rotina operacional e supervisao.');
 
   insert into public.user_profiles (
     auth_user_id,
@@ -613,18 +616,39 @@ begin
     v_org_id,
     v_branch_id,
     v_profile_id,
-    'bootstrap_first_access',
+    'complete_onboarding',
     'organization',
     v_org_id,
-    jsonb_build_object('source', 'bootstrap_current_user_profile')
+    jsonb_build_object('source', 'complete_current_user_onboarding')
   );
 
   return v_profile_id;
 end;
 $$;
 
-revoke all on function public.bootstrap_current_user_profile() from public;
-grant execute on function public.bootstrap_current_user_profile() to authenticated;
+revoke all on function public.complete_current_user_onboarding(
+  text,
+  text,
+  text,
+  text,
+  public.business_segment,
+  text,
+  text,
+  text,
+  text
+) from public;
+
+grant execute on function public.complete_current_user_onboarding(
+  text,
+  text,
+  text,
+  text,
+  public.business_segment,
+  text,
+  text,
+  text,
+  text
+) to authenticated;
 
 -- =========================================================
 -- ROW LEVEL SECURITY

@@ -1,6 +1,6 @@
 import { useState } from "react"
 import type { FormEvent } from "react"
-import { Activity, ShieldCheck } from "lucide-react"
+import { Activity, ArrowRight, ShieldCheck } from "lucide-react"
 import { Navigate } from "react-router-dom"
 
 import { useAuth } from "@/app/providers/auth-context"
@@ -8,11 +8,16 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 
+type AuthMode = "sign-in" | "sign-up"
+
 export function LoginPage() {
-  const { session, signIn } = useAuth()
+  const { session, signIn, signUp } = useAuth()
+  const [mode, setMode] = useState<AuthMode>("sign-in")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   if (session) return <Navigate to="/app" replace />
@@ -20,19 +25,45 @@ export function LoginPage() {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
+    setMessage(null)
+
+    if (mode === "sign-up" && password !== confirmPassword) {
+      setError("As senhas não conferem.")
+      return
+    }
+
     setIsSubmitting(true)
 
     try {
+      if (mode === "sign-up") {
+        const result = await signUp(email, password)
+
+        if (result.needsEmailConfirmation) {
+          setMessage(
+            "Cadastro criado. Confirme seu email e depois entre para completar os dados da empresa."
+          )
+        }
+
+        return
+      }
+
       await signIn(email, password)
-    } catch (signInError) {
+    } catch (authError) {
       setError(
-        signInError instanceof Error
-          ? signInError.message
-          : "Não foi possível entrar."
+        authError instanceof Error
+          ? authError.message
+          : "Não foi possível continuar."
       )
     } finally {
       setIsSubmitting(false)
     }
+  }
+
+  function changeMode(nextMode: AuthMode) {
+    setMode(nextMode)
+    setError(null)
+    setMessage(null)
+    setConfirmPassword("")
   }
 
   return (
@@ -57,8 +88,8 @@ export function LoginPage() {
             Centro de comando para a operação do dia.
           </h1>
           <p className="mt-5 max-w-xl text-base leading-7 text-slate-300">
-            Escalas, status, intervalos, faltas e eventos em uma visão de
-            trabalho única para supervisão em tempo real.
+            Crie a conta, complete os dados da empresa e entre no painel
+            operacional com o workspace já configurado.
           </p>
         </div>
 
@@ -70,9 +101,28 @@ export function LoginPage() {
       <section className="flex items-center justify-center p-6">
         <Card className="w-full max-w-md border bg-white shadow-sm">
           <CardHeader>
-            <CardTitle className="text-xl">Entrar no Unyx Ops</CardTitle>
+            <CardTitle className="text-xl">
+              {mode === "sign-in" ? "Entrar no Unyx Ops" : "Criar conta"}
+            </CardTitle>
           </CardHeader>
           <CardContent>
+            <div className="mb-4 grid grid-cols-2 rounded-lg border bg-slate-50 p-1">
+              <Button
+                type="button"
+                variant={mode === "sign-in" ? "default" : "ghost"}
+                onClick={() => changeMode("sign-in")}
+              >
+                Entrar
+              </Button>
+              <Button
+                type="button"
+                variant={mode === "sign-up" ? "default" : "ghost"}
+                onClick={() => changeMode("sign-up")}
+              >
+                Cadastrar
+              </Button>
+            </div>
+
             <form className="space-y-4" onSubmit={handleSubmit}>
               <div className="space-y-2">
                 <label className="text-sm font-medium" htmlFor="email">
@@ -94,11 +144,31 @@ export function LoginPage() {
                 <Input
                   id="password"
                   type="password"
+                  minLength={6}
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   required
                 />
               </div>
+
+              {mode === "sign-up" ? (
+                <div className="space-y-2">
+                  <label
+                    className="text-sm font-medium"
+                    htmlFor="confirm-password"
+                  >
+                    Confirmar senha
+                  </label>
+                  <Input
+                    id="confirm-password"
+                    type="password"
+                    minLength={6}
+                    value={confirmPassword}
+                    onChange={(event) => setConfirmPassword(event.target.value)}
+                    required
+                  />
+                </div>
+              ) : null}
 
               {error ? (
                 <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -106,8 +176,19 @@ export function LoginPage() {
                 </div>
               ) : null}
 
+              {message ? (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                  {message}
+                </div>
+              ) : null}
+
               <Button className="w-full" type="submit" disabled={isSubmitting}>
-                {isSubmitting ? "Entrando..." : "Entrar"}
+                {isSubmitting
+                  ? "Aguarde..."
+                  : mode === "sign-in"
+                    ? "Entrar"
+                    : "Criar conta"}
+                <ArrowRight className="size-4" />
               </Button>
             </form>
           </CardContent>

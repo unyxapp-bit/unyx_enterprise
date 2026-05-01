@@ -14,6 +14,7 @@ import { useAuth } from "@/app/providers/auth-context"
 import { BranchSelector } from "@/components/shared/BranchSelector"
 import { StateBlock } from "@/components/shared/StateBlock"
 import { Button } from "@/components/ui/button"
+import { OnboardingPage } from "@/features/onboarding/OnboardingPage"
 import { cn } from "@/lib/utils"
 import { useAppStore } from "@/store/useAppStore"
 
@@ -27,8 +28,7 @@ const navItems = [
 ]
 
 export function AppLayout() {
-  const { profile, profileError, profileLoading, refreshProfile, signOut } =
-    useAuth()
+  const { profile, profileLoading, signOut } = useAuth()
   const sidebarOpen = useAppStore((state) => state.sidebarOpen)
   const setSidebarOpen = useAppStore((state) => state.setSidebarOpen)
 
@@ -41,26 +41,7 @@ export function AppLayout() {
   }
 
   if (!profile) {
-    return (
-      <main className="min-h-screen bg-slate-50 p-6">
-        <div className="mx-auto max-w-2xl">
-          <StateBlock
-            type="error"
-            title="Perfil ainda não preparado"
-            description={
-              profileError ??
-              "A sessão existe no Supabase Auth, mas o registro de perfil ainda não foi criado. Rode supabase/bootstrap_first_access.sql no Supabase e tente novamente."
-            }
-          />
-          <div className="mt-4 flex gap-2">
-            <Button onClick={() => void refreshProfile()}>Recarregar perfil</Button>
-            <Button variant="outline" onClick={() => void signOut()}>
-              Sair
-            </Button>
-          </div>
-        </div>
-      </main>
-    )
+    return <OnboardingPage />
   }
 
   return (

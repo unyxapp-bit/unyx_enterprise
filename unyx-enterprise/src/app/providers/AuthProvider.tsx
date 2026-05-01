@@ -9,7 +9,7 @@ import type { Session } from "@supabase/supabase-js"
 
 import { AuthContext } from "@/app/providers/auth-context"
 import { supabase } from "@/lib/supabase"
-import { ensureCurrentProfile } from "@/services/unyxApi"
+import { getCurrentProfile } from "@/services/unyxApi"
 import type { UserProfile } from "@/types/domain"
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -30,7 +30,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfileError(null)
 
     try {
-      setProfile(await ensureCurrentProfile())
+      setProfile(await getCurrentProfile())
     } catch (error) {
       setProfile(null)
       setProfileError(
@@ -82,11 +82,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [loadProfileForSession]
   )
 
+  const signUp = useCallback(
+    async (email: string, password: string) => {
+      const baseUrl =
+        import.meta.env.BASE_URL === "/"
+          ? window.location.origin
+          : `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, "")}`
+
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: `${baseUrl}/app`,
+        },
+      })
+
+      if (error) throw error
+
+      setSession(data.session)
+
+      if (data.session) {
+        await loadProfileForSession(data.session)
+      }
+
+      return { needsEmailConfirmation: !data.session }
+    },
+    [loadProfileForSession]
+  )
+
   const signOut = useCallback(async () => {
     const { error } = await supabase.auth.signOut()
     if (error) throw error
     setSession(null)
     setProfile(null)
+    setProfileError(null)
   }, [])
 
   const refreshProfile = useCallback(async () => {
@@ -101,6 +130,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       profileLoading,
       profileError,
       signIn,
+      signUp,
       signOut,
       refreshProfile,
     }),
@@ -112,6 +142,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       refreshProfile,
       session,
       signIn,
+      signUp,
       signOut,
     ]
   )
