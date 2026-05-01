@@ -23,9 +23,9 @@ import {
   useUpdateOrganization,
 } from "@/hooks/useUnyxData"
 import {
-  coreModules,
-  getCoreModulePlanAccess,
-  type CoreModuleKey,
+  getProductModulePlanAccess,
+  productModuleGroups,
+  type ProductModuleKey,
 } from "@/lib/coreModules"
 import { formatDateTimeBR } from "@/lib/format"
 import { useAppStore } from "@/store/useAppStore"
@@ -285,7 +285,7 @@ export function SettingsPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <CreditCard className="size-5" />
-                Plano e módulos core
+                Plano e modulos
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -317,39 +317,48 @@ export function SettingsPage() {
                   description={modules.error.message}
                 />
               ) : (
-                <div className="grid gap-3">
-                  {coreModules.map((module) => {
-                    const isActive = activeModuleKeys.has(module.key)
-                    const planAccess = getCoreModulePlanAccess(
-                      module.key as CoreModuleKey,
-                      currentPlan
-                    )
-
-                    return (
-                      <div
-                        key={module.key}
-                        className="rounded-lg border bg-slate-50 p-3"
-                      >
-                        <div className="flex flex-wrap items-start justify-between gap-2">
-                          <div>
-                            <div className="font-medium">{module.name}</div>
-                            <div className="text-xs text-muted-foreground">
-                              {module.tagline}
-                            </div>
-                          </div>
-                          <div className="flex flex-wrap gap-1.5">
-                            <Badge variant={isActive ? "default" : "outline"}>
-                              {isActive ? "Ativo" : "Pendente"}
-                            </Badge>
-                            <Badge variant="outline">{planAccess}</Badge>
-                          </div>
-                        </div>
-                        <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                          {module.description}
-                        </p>
+                <div className="space-y-4">
+                  {productModuleGroups.map((group) => (
+                    <div key={group.label} className="space-y-2">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                        {group.label}
                       </div>
-                    )
-                  })}
+                      <div className="grid gap-3">
+                        {group.modules.map((module) => {
+                          const isActive = activeModuleKeys.has(module.key)
+                          const planAccess = getProductModulePlanAccess(
+                            module.key as ProductModuleKey,
+                            currentPlan
+                          )
+
+                          return (
+                            <div
+                              key={module.key}
+                              className="rounded-lg border bg-slate-50 p-3"
+                            >
+                              <div className="flex flex-wrap items-start justify-between gap-2">
+                                <div>
+                                  <div className="font-medium">{module.name}</div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {module.tagline}
+                                  </div>
+                                </div>
+                                <div className="flex flex-wrap gap-1.5">
+                                  <Badge variant={isActive ? "default" : "outline"}>
+                                    {isActive ? "Ativo" : "Pendente"}
+                                  </Badge>
+                                  <Badge variant="outline">{planAccess}</Badge>
+                                </div>
+                              </div>
+                              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                                {module.description}
+                              </p>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </CardContent>

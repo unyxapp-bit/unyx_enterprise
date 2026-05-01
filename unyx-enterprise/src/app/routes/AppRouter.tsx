@@ -4,10 +4,14 @@ import { AppLayout } from "@/app/layout/AppLayout"
 import { useAuth } from "@/app/providers/auth-context"
 import { StateBlock } from "@/components/shared/StateBlock"
 import { AlertsPage } from "@/features/alerts/AlertsPage"
+import { AcademyPage } from "@/features/academy/AcademyPage"
+import { AiPage } from "@/features/ai/AiPage"
 import { AuditPage } from "@/features/audit/AuditPage"
 import { BranchesPage } from "@/features/branches/BranchesPage"
+import { CommsPage } from "@/features/comms/CommsPage"
 import { DashboardPage } from "@/features/dashboard/DashboardPage"
 import { EmployeesPage } from "@/features/employees/EmployeesPage"
+import { GamePage } from "@/features/game/GamePage"
 import { LoginPage } from "@/features/auth/LoginPage"
 import { LandingPage } from "@/features/landing/LandingPage"
 import { OperationsPage } from "@/features/operational/OperationsPage"
@@ -55,6 +59,10 @@ export function AppRouter() {
             <Route path="branches" element={<BranchesPage />} />
             <Route path="users" element={<UsersPage />} />
             <Route path="settings" element={<SettingsPage />} />
+            <Route path="comms" element={<CommsPage />} />
+            <Route path="game" element={<GamePage />} />
+            <Route path="academy" element={<AcademyPage />} />
+            <Route path="ai" element={<AiPage />} />
           </Route>
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

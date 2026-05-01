@@ -6,9 +6,12 @@ import { useAppStore } from "@/store/useAppStore"
 import {
   copySchedulesFromDate,
   createBranch,
+  createCommsPost,
+  createCommsPostComment,
   createEmployee,
   createSchedule,
   createSector,
+  createTrainingItem,
   deleteSchedule,
   getOrganization,
   getSubscription,
@@ -18,13 +21,19 @@ import {
   listBranches,
   listDashboardRows,
   listEmployees,
+  listCommsPosts,
+  listCommsPostComments,
   listModules,
   listOperationalStatuses,
   listReportEvents,
   listSchedules,
   listSectors,
+  listTrainingItems,
+  listTrainingProgress,
   listUserProfiles,
+  markCommsPostRead,
   recordOperationalEvent,
+  setTrainingProgress,
   toggleBranchActive,
   toggleSectorActive,
   updateBranch,
@@ -39,6 +48,7 @@ import type {
   Branch,
   BusinessSegment,
   ScheduleStatus,
+  TrainingType,
   UserProfile,
 } from "@/types/domain"
 
@@ -144,6 +154,46 @@ export function useAttendanceEvents() {
   })
 }
 
+export function useCommsPosts() {
+  const { profile } = useAuth()
+  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
+
+  return useQuery({
+    queryKey: ["comms-posts", profile?.organization_id, selectedBranchId],
+    queryFn: () => listCommsPosts(selectedBranchId),
+    enabled: Boolean(profile),
+  })
+}
+
+export function useCommsPostComments(postIds: string[]) {
+  const { profile } = useAuth()
+
+  return useQuery({
+    queryKey: ["comms-post-comments", profile?.organization_id, postIds.join(",")],
+    queryFn: () => listCommsPostComments(postIds),
+    enabled: Boolean(profile) && postIds.length > 0,
+  })
+}
+
+export function useTrainingItems() {
+  const { profile } = useAuth()
+
+  return useQuery({
+    queryKey: ["training-items", profile?.organization_id],
+    queryFn: listTrainingItems,
+    enabled: Boolean(profile),
+  })
+}
+
+export function useTrainingProgress() {
+  const profile = useRequiredProfile()
+
+  return useQuery({
+    queryKey: ["training-progress", profile.organization_id, profile.id],
+    queryFn: () => listTrainingProgress(profile),
+  })
+}
+
 export function useAuditLogs() {
   const { profile } = useAuth()
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
@@ -172,6 +222,99 @@ export function useSubscription() {
     queryKey: ["subscription", profile?.organization_id],
     queryFn: () => getSubscription(profile!.organization_id),
     enabled: Boolean(profile),
+  })
+}
+
+export function useCreateCommsPost() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: {
+      branch_id: string | null
+      sector_id: string | null
+      title: string
+      content: string
+      pinned: boolean
+    }) => createCommsPost(profile, input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["comms-posts"] })
+      toast.success("Comunicado publicado.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useMarkCommsPostRead() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (postId: string) => markCommsPostRead(profile, postId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["comms-posts"] })
+      toast.success("Leitura confirmada.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useCreateCommsPostComment() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: { postId: string; content: string }) =>
+      createCommsPostComment(profile, input.postId, input.content),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["comms-post-comments"] })
+      toast.success("Comentario publicado.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useCreateTrainingItem() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: {
+      title: string
+      type: TrainingType
+      content_url: string | null
+      duration_minutes: number | null
+    }) => createTrainingItem(profile, input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["training-items"] })
+      toast.success("Treinamento cadastrado.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useSetTrainingProgress() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: { trainingId: string; completed: boolean }) =>
+      setTrainingProgress(profile, input.trainingId, input.completed),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["training-progress"] })
+      toast.success("Progresso atualizado.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
   })
 }
 

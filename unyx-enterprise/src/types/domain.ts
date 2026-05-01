@@ -200,6 +200,59 @@ export interface AttendanceEvent {
   branches?: Pick<Branch, "name"> | null
 }
 
+export interface CommsPost {
+  id: string
+  organization_id: string
+  branch_id: string | null
+  sector_id: string | null
+  author_id: string | null
+  title: string
+  content: string
+  pinned: boolean
+  created_at: string
+  updated_at: string
+  user_profiles?: Pick<UserProfile, "name"> | null
+  branches?: Pick<Branch, "name"> | null
+  sectors?: Pick<Sector, "name"> | null
+}
+
+export interface CommsPostRead {
+  post_id: string
+  user_id: string
+  read_at: string
+}
+
+export interface CommsPostComment {
+  id: string
+  post_id: string
+  user_id: string | null
+  content: string
+  created_at: string
+  updated_at: string
+  user_profiles?: Pick<UserProfile, "name"> | null
+}
+
+export type TrainingType = "article" | "video" | "checklist" | "link"
+
+export interface TrainingItem {
+  id: string
+  organization_id: string
+  title: string
+  type: TrainingType
+  content_url: string | null
+  duration_minutes: number | null
+  active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface TrainingProgress {
+  training_id: string
+  user_id: string
+  completed: boolean
+  completed_at: string | null
+}
+
 export interface AuditLog {
   id: string
   organization_id: string

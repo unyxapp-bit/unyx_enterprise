@@ -330,7 +330,11 @@ insert into public.modules (key, name, description, active)
 values
   ('unyx_ops', 'Unyx Ops', 'Operacao em tempo real: dashboard, status, acoes e alertas.', true),
   ('unyx_control', 'Unyx Control', 'Estrutura, cadastros, filiais, setores, usuarios e regras operacionais.', true),
-  ('unyx_insight', 'Unyx Insight', 'Relatorios, auditoria visual e visao gerencial.', true)
+  ('unyx_insight', 'Unyx Insight', 'Relatorios, auditoria visual e visao gerencial.', true),
+  ('unyx_comms', 'Unyx Comms', 'Comunicacao interna, avisos, feed corporativo e leitura confirmada.', true),
+  ('unyx_game', 'Unyx Game', 'Gamificacao operacional, ranking, pontos, metas e engajamento.', true),
+  ('unyx_academy', 'Unyx Academy', 'Treinamentos, onboarding, trilhas e progresso de capacitacao.', true),
+  ('unyx_ai', 'Unyx AI', 'Insights automaticos, previsao de risco e sugestoes operacionais.', true)
 on conflict (key) do update
 set
   name = excluded.name,
@@ -370,6 +374,88 @@ create table public.subscriptions (
 create trigger trg_subscriptions_updated_at
 before update on public.subscriptions
 for each row execute function public.set_updated_at();
+
+-- =========================================================
+-- UNYX COMMS
+-- =========================================================
+
+create table public.comms_posts (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  branch_id uuid references public.branches(id) on delete set null,
+  sector_id uuid references public.sectors(id) on delete set null,
+  author_id uuid references public.user_profiles(id) on delete set null,
+  title text not null,
+  content text not null,
+  pinned boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index idx_comms_posts_organization_time on public.comms_posts(organization_id, pinned desc, created_at desc);
+create index idx_comms_posts_branch on public.comms_posts(branch_id);
+create index idx_comms_posts_sector on public.comms_posts(sector_id);
+
+create trigger trg_comms_posts_updated_at
+before update on public.comms_posts
+for each row execute function public.set_updated_at();
+
+create table public.comms_post_reads (
+  post_id uuid not null references public.comms_posts(id) on delete cascade,
+  user_id uuid not null references public.user_profiles(id) on delete cascade,
+  read_at timestamptz not null default now(),
+  primary key (post_id, user_id)
+);
+
+create index idx_comms_post_reads_user on public.comms_post_reads(user_id);
+
+create table public.comms_post_comments (
+  id uuid primary key default gen_random_uuid(),
+  post_id uuid not null references public.comms_posts(id) on delete cascade,
+  user_id uuid references public.user_profiles(id) on delete set null,
+  content text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index idx_comms_post_comments_post_time on public.comms_post_comments(post_id, created_at);
+create index idx_comms_post_comments_user on public.comms_post_comments(user_id);
+
+create trigger trg_comms_post_comments_updated_at
+before update on public.comms_post_comments
+for each row execute function public.set_updated_at();
+
+-- =========================================================
+-- UNYX ACADEMY
+-- =========================================================
+
+create table public.training_items (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  title text not null,
+  type text not null default 'link' check (type in ('article', 'video', 'checklist', 'link')),
+  content_url text,
+  duration_minutes integer check (duration_minutes is null or duration_minutes > 0),
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index idx_training_items_organization on public.training_items(organization_id, active);
+
+create trigger trg_training_items_updated_at
+before update on public.training_items
+for each row execute function public.set_updated_at();
+
+create table public.training_progress (
+  training_id uuid not null references public.training_items(id) on delete cascade,
+  user_id uuid not null references public.user_profiles(id) on delete cascade,
+  completed boolean not null default false,
+  completed_at timestamptz,
+  primary key (training_id, user_id)
+);
+
+create index idx_training_progress_user on public.training_progress(user_id);
 
 -- =========================================================
 -- FUNÇÕES DE SEGURANÇA MULTI-TENANT
@@ -668,6 +754,11 @@ alter table public.audit_logs enable row level security;
 alter table public.modules enable row level security;
 alter table public.organization_modules enable row level security;
 alter table public.subscriptions enable row level security;
+alter table public.comms_posts enable row level security;
+alter table public.comms_post_reads enable row level security;
+alter table public.comms_post_comments enable row level security;
+alter table public.training_items enable row level security;
+alter table public.training_progress enable row level security;
 
 -- ORGANIZATIONS
 create policy "Users can view own organization"
@@ -819,6 +910,124 @@ on public.organization_modules
 for all
 using (organization_id = public.current_organization_id() and public.is_org_admin())
 with check (organization_id = public.current_organization_id() and public.is_org_admin());
+
+-- UNYX COMMS
+create policy "Users can view comms posts from own organization"
+on public.comms_posts
+for select
+using (organization_id = public.current_organization_id());
+
+create policy "Users can create comms posts for own organization"
+on public.comms_posts
+for insert
+with check (
+  organization_id = public.current_organization_id()
+  and author_id = public.current_user_profile_id()
+  and (branch_id is null or public.can_manage_branch(branch_id))
+);
+
+create policy "Authors and org admins can update comms posts"
+on public.comms_posts
+for update
+using (
+  organization_id = public.current_organization_id()
+  and (author_id = public.current_user_profile_id() or public.is_org_admin())
+)
+with check (
+  organization_id = public.current_organization_id()
+  and (author_id = public.current_user_profile_id() or public.is_org_admin())
+);
+
+create policy "Users can view own comms reads"
+on public.comms_post_reads
+for select
+using (user_id = public.current_user_profile_id());
+
+create policy "Users can confirm own comms reads"
+on public.comms_post_reads
+for insert
+with check (
+  user_id = public.current_user_profile_id()
+  and exists (
+    select 1
+    from public.comms_posts posts
+    where posts.id = post_id
+      and posts.organization_id = public.current_organization_id()
+  )
+);
+
+create policy "Users can update own comms reads"
+on public.comms_post_reads
+for update
+using (user_id = public.current_user_profile_id())
+with check (user_id = public.current_user_profile_id());
+
+create policy "Users can view comments on own organization posts"
+on public.comms_post_comments
+for select
+using (
+  exists (
+    select 1
+    from public.comms_posts posts
+    where posts.id = post_id
+      and posts.organization_id = public.current_organization_id()
+  )
+);
+
+create policy "Users can comment on own organization posts"
+on public.comms_post_comments
+for insert
+with check (
+  user_id = public.current_user_profile_id()
+  and exists (
+    select 1
+    from public.comms_posts posts
+    where posts.id = post_id
+      and posts.organization_id = public.current_organization_id()
+  )
+);
+
+create policy "Users can update own comms comments"
+on public.comms_post_comments
+for update
+using (user_id = public.current_user_profile_id())
+with check (user_id = public.current_user_profile_id());
+
+-- UNYX ACADEMY
+create policy "Users can view training items from own organization"
+on public.training_items
+for select
+using (organization_id = public.current_organization_id() and active = true);
+
+create policy "Org admins can manage training items"
+on public.training_items
+for all
+using (organization_id = public.current_organization_id() and public.is_org_admin())
+with check (organization_id = public.current_organization_id() and public.is_org_admin());
+
+create policy "Users can view own training progress"
+on public.training_progress
+for select
+using (user_id = public.current_user_profile_id());
+
+create policy "Users can set own training progress"
+on public.training_progress
+for insert
+with check (
+  user_id = public.current_user_profile_id()
+  and exists (
+    select 1
+    from public.training_items items
+    where items.id = training_id
+      and items.organization_id = public.current_organization_id()
+  )
+);
+
+create policy "Users can update own training progress"
+on public.training_progress
+for update
+using (user_id = public.current_user_profile_id())
+with check (user_id = public.current_user_profile_id());
 
 -- SUBSCRIPTIONS
 create policy "Org admins can view own subscription"

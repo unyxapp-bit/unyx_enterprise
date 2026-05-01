@@ -5,10 +5,14 @@ import {
   Building2,
   CalendarDays,
   ClipboardList,
+  GraduationCap,
   LayoutDashboard,
   LogOut,
   Menu,
+  MessageSquareText,
   Settings,
+  Sparkles,
+  Trophy,
   UserCog,
   Users,
 } from "lucide-react"
@@ -60,6 +64,16 @@ const navGroups = [
     items: [
       { to: "/app/reports", label: "Relatorios", icon: BarChart2 },
       { to: "/app/audit", label: "Auditoria", icon: ClipboardList },
+    ],
+  },
+  {
+    label: "Expansao",
+    summary: "Aumenta engajamento",
+    items: [
+      { to: "/app/comms", label: "Comms", icon: MessageSquareText },
+      { to: "/app/game", label: "Game", icon: Trophy },
+      { to: "/app/academy", label: "Academy", icon: GraduationCap },
+      { to: "/app/ai", label: "AI", icon: Sparkles },
     ],
   },
 ]

@@ -6,6 +6,8 @@ import type {
   AuditLog,
   Branch,
   BusinessSegment,
+  CommsPost,
+  CommsPostComment,
   DashboardRow,
   Employee,
   EmployeeWithRelations,
@@ -17,6 +19,9 @@ import type {
   ScheduleWithRelations,
   Sector,
   Subscription,
+  TrainingItem,
+  TrainingProgress,
+  TrainingType,
   UserProfile,
 } from "@/types/domain"
 
@@ -350,6 +355,161 @@ export async function listAttendanceEvents(branchId?: string | null) {
   const { data, error } = await query
   raise(error)
   return (data ?? []) as AttendanceEvent[]
+}
+
+export async function listCommsPosts(branchId?: string | null) {
+  let query = supabase
+    .from("comms_posts")
+    .select("*, user_profiles(name), branches(name), sectors(name)")
+    .order("pinned", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(80)
+
+  if (branchId) query = query.or(`branch_id.is.null,branch_id.eq.${branchId}`)
+
+  const { data, error } = await query
+  raise(error)
+  return (data ?? []) as CommsPost[]
+}
+
+export async function createCommsPost(
+  profile: UserProfile,
+  input: {
+    branch_id: string | null
+    sector_id: string | null
+    title: string
+    content: string
+    pinned: boolean
+  }
+) {
+  const { data, error } = await supabase
+    .from("comms_posts")
+    .insert({
+      ...input,
+      organization_id: profile.organization_id,
+      author_id: profile.id,
+    })
+    .select("*, user_profiles(name), branches(name), sectors(name)")
+    .single()
+
+  raise(error)
+  return data as CommsPost
+}
+
+export async function markCommsPostRead(profile: UserProfile, postId: string) {
+  const { data, error } = await supabase
+    .from("comms_post_reads")
+    .upsert(
+      {
+        post_id: postId,
+        user_id: profile.id,
+        read_at: new Date().toISOString(),
+      },
+      { onConflict: "post_id,user_id" }
+    )
+    .select("*")
+    .single()
+
+  raise(error)
+  return data as { post_id: string; user_id: string; read_at: string }
+}
+
+export async function listCommsPostComments(postIds: string[]) {
+  if (postIds.length === 0) return []
+
+  const { data, error } = await supabase
+    .from("comms_post_comments")
+    .select("*, user_profiles(name)")
+    .in("post_id", postIds)
+    .order("created_at", { ascending: true })
+
+  raise(error)
+  return (data ?? []) as CommsPostComment[]
+}
+
+export async function createCommsPostComment(
+  profile: UserProfile,
+  postId: string,
+  content: string
+) {
+  const { data, error } = await supabase
+    .from("comms_post_comments")
+    .insert({
+      post_id: postId,
+      user_id: profile.id,
+      content,
+    })
+    .select("*, user_profiles(name)")
+    .single()
+
+  raise(error)
+  return data as CommsPostComment
+}
+
+export async function listTrainingItems() {
+  const { data, error } = await supabase
+    .from("training_items")
+    .select("*")
+    .eq("active", true)
+    .order("created_at", { ascending: false })
+
+  raise(error)
+  return (data ?? []) as TrainingItem[]
+}
+
+export async function createTrainingItem(
+  profile: UserProfile,
+  input: {
+    title: string
+    type: TrainingType
+    content_url: string | null
+    duration_minutes: number | null
+  }
+) {
+  const { data, error } = await supabase
+    .from("training_items")
+    .insert({
+      ...input,
+      organization_id: profile.organization_id,
+    })
+    .select("*")
+    .single()
+
+  raise(error)
+  return data as TrainingItem
+}
+
+export async function listTrainingProgress(profile: UserProfile) {
+  const { data, error } = await supabase
+    .from("training_progress")
+    .select("*")
+    .eq("user_id", profile.id)
+
+  raise(error)
+  return (data ?? []) as TrainingProgress[]
+}
+
+export async function setTrainingProgress(
+  profile: UserProfile,
+  trainingId: string,
+  completed: boolean
+) {
+  const { data, error } = await supabase
+    .from("training_progress")
+    .upsert(
+      {
+        training_id: trainingId,
+        user_id: profile.id,
+        completed,
+        completed_at: completed ? new Date().toISOString() : null,
+      },
+      { onConflict: "training_id,user_id" }
+    )
+    .select("*")
+    .single()
+
+  raise(error)
+  return data as TrainingProgress
 }
 
 export async function recordOperationalEvent(

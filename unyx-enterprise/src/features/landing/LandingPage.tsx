@@ -2,8 +2,12 @@ import {
   AlertTriangle,
   ArrowRight,
   BarChart3,
+  BrainCircuit,
   CheckCircle2,
+  GraduationCap,
+  MessageSquareText,
   ShieldCheck,
+  Trophy,
 } from "lucide-react"
 import type { ReactNode } from "react"
 import { Link } from "react-router-dom"
@@ -35,7 +39,7 @@ export function LandingPage() {
         />
         <div className="mx-auto flex max-w-7xl items-center justify-between">
           <Link to="/" className="text-lg font-semibold tracking-tight">
-            Unyx Ops
+            Unyx Enterprise
           </Link>
           <div className="flex items-center gap-2">
             <Button variant="outline" asChild className="border-white/20 bg-white/5 text-white hover:bg-white/10">
@@ -145,6 +149,28 @@ export function LandingPage() {
             icon={<BarChart3 className="size-5" />}
             title="Unyx Insight"
             text="Explica o que aconteceu: relatórios, atrasos, faltas e auditoria."
+          />
+        </div>
+        <div className="mx-auto mt-4 grid max-w-7xl gap-4 md:grid-cols-4">
+          <ValueCard
+            icon={<MessageSquareText className="size-5" />}
+            title="Unyx Comms"
+            text="Centraliza comunicados, avisos por setor e leitura confirmada."
+          />
+          <ValueCard
+            icon={<Trophy className="size-5" />}
+            title="Unyx Game"
+            text="Transforma comportamento operacional em pontos, ranking e metas."
+          />
+          <ValueCard
+            icon={<GraduationCap className="size-5" />}
+            title="Unyx Academy"
+            text="Organiza treinamentos, onboarding e progresso da equipe."
+          />
+          <ValueCard
+            icon={<BrainCircuit className="size-5" />}
+            title="Unyx AI"
+            text="Gera insights e sugere acoes para antecipar riscos."
           />
         </div>
       </section>
