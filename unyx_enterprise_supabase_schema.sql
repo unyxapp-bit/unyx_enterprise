@@ -798,6 +798,99 @@ grant execute on function public.complete_current_user_onboarding(
   text
 ) to authenticated;
 
+create or replace function public.update_current_user_profile(
+  p_name text,
+  p_email text,
+  p_branch_id uuid default null
+)
+returns public.user_profiles
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_auth_user_id uuid := auth.uid();
+  v_profile public.user_profiles%rowtype;
+  v_previous jsonb;
+  v_branch_org_id uuid;
+  v_name text;
+  v_email text;
+begin
+  if v_auth_user_id is null then
+    raise exception 'Usuario autenticado nao encontrado.';
+  end if;
+
+  v_name := nullif(trim(p_name), '');
+  v_email := lower(nullif(trim(p_email), ''));
+
+  if v_name is null then
+    raise exception 'Nome do usuario e obrigatorio.';
+  end if;
+
+  if v_email is null then
+    raise exception 'Email do usuario e obrigatorio.';
+  end if;
+
+  select *
+  into v_profile
+  from public.user_profiles
+  where auth_user_id = v_auth_user_id
+  limit 1;
+
+  if not found then
+    raise exception 'Perfil do usuario nao encontrado.';
+  end if;
+
+  if p_branch_id is not null then
+    select organization_id
+    into v_branch_org_id
+    from public.branches
+    where id = p_branch_id
+      and active = true;
+
+    if v_branch_org_id is null or v_branch_org_id <> v_profile.organization_id then
+      raise exception 'Filial invalida para este usuario.';
+    end if;
+  end if;
+
+  v_previous := to_jsonb(v_profile);
+
+  update public.user_profiles
+  set
+    name = v_name,
+    email = v_email,
+    branch_id = p_branch_id
+  where id = v_profile.id
+  returning * into v_profile;
+
+  insert into public.audit_logs (
+    organization_id,
+    branch_id,
+    user_id,
+    action,
+    entity_type,
+    entity_id,
+    old_value,
+    new_value
+  )
+  values (
+    v_profile.organization_id,
+    v_profile.branch_id,
+    v_profile.id,
+    'current_user_profile_updated',
+    'user_profiles',
+    v_profile.id,
+    v_previous,
+    to_jsonb(v_profile)
+  );
+
+  return v_profile;
+end;
+$$;
+
+revoke all on function public.update_current_user_profile(text, text, uuid) from public;
+grant execute on function public.update_current_user_profile(text, text, uuid) to authenticated;
+
 -- =========================================================
 -- ROW LEVEL SECURITY
 -- =========================================================

@@ -12,6 +12,7 @@ import type {
   Employee,
   EmployeeWithRelations,
   Module,
+  OrganizationModule,
   OperationalSettings,
   OperationalStatusRecord,
   Organization,
@@ -37,6 +38,39 @@ function isMissingOperationalSettings(error: { code?: string; message: string } 
     error.code === "PGRST205" ||
     error.message.includes("operational_settings")
   )
+}
+
+function isMissingProfileRpc(error: { code?: string; message: string } | null) {
+  if (!error) return false
+  return (
+    error.code === "PGRST202" ||
+    error.message.includes("update_current_user_profile")
+  )
+}
+
+async function createAuditLog(
+  profile: UserProfile,
+  input: {
+    branch_id?: string | null
+    action: string
+    entity_type: string
+    entity_id?: string | null
+    old_value?: unknown
+    new_value?: unknown
+  }
+) {
+  const { error } = await supabase.from("audit_logs").insert({
+    organization_id: profile.organization_id,
+    branch_id: input.branch_id ?? null,
+    user_id: profile.id,
+    action: input.action,
+    entity_type: input.entity_type,
+    entity_id: input.entity_id ?? null,
+    old_value: input.old_value ?? null,
+    new_value: input.new_value ?? null,
+  })
+
+  raise(error)
 }
 
 export async function getCurrentProfile() {
@@ -112,7 +146,7 @@ export async function getOrganization(organizationId: string) {
 }
 
 export async function updateOrganization(
-  organizationId: string,
+  profile: UserProfile,
   input: {
     name: string
     trade_name: string | null
@@ -120,15 +154,83 @@ export async function updateOrganization(
     segment: BusinessSegment
   }
 ) {
+  const { data: previous, error: previousError } = await supabase
+    .from("organizations")
+    .select("*")
+    .eq("id", profile.organization_id)
+    .maybeSingle()
+
+  raise(previousError)
+
   const { data, error } = await supabase
     .from("organizations")
     .update(input)
-    .eq("id", organizationId)
+    .eq("id", profile.organization_id)
     .select("*")
     .single()
 
   raise(error)
+
+  await createAuditLog(profile, {
+    action: "organization_updated",
+    entity_type: "organizations",
+    entity_id: data.id,
+    old_value: previous,
+    new_value: data,
+  })
+
   return data as Organization
+}
+
+export async function updateCurrentUserProfile(
+  profile: UserProfile,
+  input: {
+    name: string
+    email: string
+    branch_id: string | null
+  }
+) {
+  const nextEmail = input.email.trim().toLowerCase()
+
+  if (nextEmail !== profile.email.toLowerCase()) {
+    const { error: authError } = await supabase.auth.updateUser({
+      email: nextEmail,
+    })
+
+    raise(authError)
+  }
+
+  const { data, error } = await supabase.rpc("update_current_user_profile", {
+    p_name: input.name.trim(),
+    p_email: nextEmail,
+    p_branch_id: input.branch_id,
+  })
+
+  if (isMissingProfileRpc(error)) {
+    throw new Error(
+      "Edicao de perfil ainda nao instalada no Supabase. Rode supabase/onboarding_first_access.sql no SQL Editor e tente novamente."
+    )
+  }
+
+  raise(error)
+  return data as UserProfile
+}
+
+export async function updateCurrentUserPassword(
+  profile: UserProfile,
+  password: string
+) {
+  const { error } = await supabase.auth.updateUser({ password })
+
+  raise(error)
+
+  await createAuditLog(profile, {
+    action: "password_updated",
+    entity_type: "user_profiles",
+    entity_id: profile.id,
+    old_value: null,
+    new_value: { updated: true },
+  })
 }
 
 export interface OperationalSettingsInput {
@@ -177,7 +279,7 @@ export async function saveOperationalSettings(
   const branchId = input.branch_id ?? null
   let existingQuery = supabase
     .from("operational_settings")
-    .select("id")
+    .select("*")
     .eq("organization_id", profile.organization_id)
     .limit(1)
 
@@ -225,6 +327,18 @@ export async function saveOperationalSettings(
   }
 
   raise(error)
+
+  await createAuditLog(profile, {
+    branch_id: branchId,
+    action: existing?.id
+      ? "operational_settings_updated"
+      : "operational_settings_created",
+    entity_type: "operational_settings",
+    entity_id: data.id,
+    old_value: existing ?? null,
+    new_value: data,
+  })
+
   return data as OperationalSettings
 }
 
@@ -737,6 +851,17 @@ export async function listModules() {
 
   raise(error)
   return (data ?? []) as Module[]
+}
+
+export async function listOrganizationModules(profile: UserProfile) {
+  const { data, error } = await supabase
+    .from("organization_modules")
+    .select("*, modules(*)")
+    .eq("organization_id", profile.organization_id)
+    .order("created_at")
+
+  raise(error)
+  return (data ?? []) as OrganizationModule[]
 }
 
 export async function getSubscription(organizationId: string) {

@@ -117,6 +117,7 @@ export interface UserProfile {
   active: boolean
   created_at: string
   updated_at: string
+  branches?: Pick<Branch, "name"> | null
 }
 
 export interface Employee {
@@ -289,6 +290,15 @@ export interface Module {
   description: string | null
   active: boolean
   created_at: string
+}
+
+export interface OrganizationModule {
+  id: string
+  organization_id: string
+  module_id: string
+  enabled: boolean
+  created_at: string
+  modules?: Module | null
 }
 
 export interface Subscription {

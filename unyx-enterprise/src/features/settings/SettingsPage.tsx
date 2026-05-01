@@ -1,6 +1,19 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import type { FormEvent } from "react"
-import { Building, ClipboardList, CreditCard, Settings2, Shield } from "lucide-react"
+import {
+  AlertTriangle,
+  Building,
+  CheckCircle2,
+  ClipboardList,
+  CreditCard,
+  Gauge,
+  KeyRound,
+  Lock,
+  RotateCcw,
+  Settings2,
+  Shield,
+  User,
+} from "lucide-react"
 
 import { useAuth } from "@/app/providers/auth-context"
 import { PageHeader } from "@/components/shared/PageHeader"
@@ -15,13 +28,16 @@ import {
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import {
-  useAuditLogs,
+  useAllAuditLogs,
+  useAllEmployees,
   useBranches,
-  useModules,
   useOperationalSettings,
   useOrganization,
+  useOrganizationModules,
   useSaveOperationalSettings,
   useSubscription,
+  useUpdateCurrentUserPassword,
+  useUpdateCurrentUserProfile,
   useUpdateOrganization,
 } from "@/hooks/useUnyxData"
 import {
@@ -37,21 +53,28 @@ import {
   type ProductModuleKey,
 } from "@/lib/coreModules"
 import { formatDateTimeBR } from "@/lib/format"
-import { useAppStore } from "@/store/useAppStore"
 import type {
+  AuditLog,
   Branch,
   BusinessSegment,
+  EmployeeWithRelations,
   OperationalSettings,
   Organization,
+  OrganizationModule,
+  Subscription,
+  SubscriptionPlan,
+  UserProfile,
   UserRole,
 } from "@/types/domain"
 
 const fieldClass =
-  "h-8 w-full rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+  "h-8 w-full rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
 
 type OperationalSettingsFormValues = {
   mode: OperationalMode
 } & ReturnType<typeof getOperationalModeDefaults>
+
+const adminRoles: UserRole[] = ["owner", "admin"]
 
 const roleLabel: Record<UserRole, string> = {
   owner: "Proprietario",
@@ -68,6 +91,21 @@ const segmentLabel: Record<BusinessSegment, string> = {
   restaurant: "Restaurante",
   pharmacy: "Farmacia",
   other: "Outro",
+}
+
+const planLabel: Record<SubscriptionPlan, string> = {
+  starter: "Starter",
+  growth: "Growth",
+  enterprise: "Enterprise",
+}
+
+function canManageSettings(profile: UserProfile | null) {
+  return Boolean(profile && adminRoles.includes(profile.role))
+}
+
+function usagePercent(current: number, limit: number) {
+  if (!limit || limit <= 0) return 0
+  return Math.min(100, Math.round((current / limit) * 100))
 }
 
 function buildOperationalSettingsForm(
@@ -96,8 +134,24 @@ function buildOperationalSettingsForm(
   }
 }
 
-function OrganizationForm({ organization }: { organization: Organization }) {
+function PermissionNotice({ text }: { text: string }) {
+  return (
+    <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+      <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+      <span>{text}</span>
+    </div>
+  )
+}
+
+function OrganizationForm({
+  disabled,
+  organization,
+}: {
+  disabled: boolean
+  organization: Organization
+}) {
   const updateOrganization = useUpdateOrganization()
+  const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState({
     name: organization.name,
     trade_name: organization.trade_name ?? "",
@@ -107,6 +161,14 @@ function OrganizationForm({ organization }: { organization: Organization }) {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    setError(null)
+
+    if (disabled) return
+    if (!form.name.trim()) {
+      setError("Informe a razao social da organizacao.")
+      return
+    }
+
     await updateOrganization.mutateAsync({
       name: form.name.trim(),
       trade_name: form.trade_name.trim() || null,
@@ -117,19 +179,27 @@ function OrganizationForm({ organization }: { organization: Organization }) {
 
   return (
     <form className="space-y-4" onSubmit={handleSubmit}>
+      {disabled ? (
+        <PermissionNotice text="Somente proprietarios e administradores podem editar dados da organizacao." />
+      ) : null}
+
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="space-y-1 text-sm">
           <span className="font-medium">Razao social</span>
           <Input
+            disabled={disabled}
             value={form.name}
-            onChange={(e) => setForm((c) => ({ ...c, name: e.target.value }))}
+            onChange={(e) => setForm((current) => ({ ...current, name: e.target.value }))}
           />
         </label>
         <label className="space-y-1 text-sm">
           <span className="font-medium">Nome fantasia</span>
           <Input
+            disabled={disabled}
             value={form.trade_name}
-            onChange={(e) => setForm((c) => ({ ...c, trade_name: e.target.value }))}
+            onChange={(e) =>
+              setForm((current) => ({ ...current, trade_name: e.target.value }))
+            }
           />
         </label>
       </div>
@@ -138,17 +208,24 @@ function OrganizationForm({ organization }: { organization: Organization }) {
         <label className="space-y-1 text-sm">
           <span className="font-medium">Documento</span>
           <Input
+            disabled={disabled}
             value={form.document}
-            onChange={(e) => setForm((c) => ({ ...c, document: e.target.value }))}
+            onChange={(e) =>
+              setForm((current) => ({ ...current, document: e.target.value }))
+            }
           />
         </label>
         <label className="space-y-1 text-sm">
           <span className="font-medium">Segmento</span>
           <select
             className={fieldClass}
+            disabled={disabled}
             value={form.segment}
             onChange={(e) =>
-              setForm((c) => ({ ...c, segment: e.target.value as BusinessSegment }))
+              setForm((current) => ({
+                ...current,
+                segment: e.target.value as BusinessSegment,
+              }))
             }
           >
             {Object.entries(segmentLabel).map(([value, label]) => (
@@ -160,14 +237,14 @@ function OrganizationForm({ organization }: { organization: Organization }) {
         </label>
       </div>
 
-      {updateOrganization.error ? (
+      {error || updateOrganization.error ? (
         <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {updateOrganization.error.message}
+          {error ?? updateOrganization.error?.message}
         </div>
       ) : null}
 
-      <Button type="submit" disabled={updateOrganization.isPending}>
-        {updateOrganization.isPending ? "Salvando..." : "Salvar alteracoes"}
+      <Button type="submit" disabled={disabled || updateOrganization.isPending}>
+        {updateOrganization.isPending ? "Salvando..." : "Salvar organizacao"}
       </Button>
     </form>
   )
@@ -175,19 +252,25 @@ function OrganizationForm({ organization }: { organization: Organization }) {
 
 function OperationalSettingsEditor({
   branches,
+  disabled,
   initialForm,
   isLoading,
   selectedBranchId,
+  selectedSettings,
   setSelectedBranchId,
 }: {
   branches: Branch[]
+  disabled: boolean
   initialForm: OperationalSettingsFormValues
   isLoading: boolean
   selectedBranchId: string | null
+  selectedSettings: OperationalSettings | null | undefined
   setSelectedBranchId: (branchId: string | null) => void
 }) {
   const saveSettings = useSaveOperationalSettings()
   const [form, setForm] = useState(initialForm)
+  const inheritedFromOrganization =
+    Boolean(selectedBranchId) && selectedSettings?.branch_id !== selectedBranchId
 
   function handleModeChange(mode: OperationalMode) {
     setForm({
@@ -196,8 +279,17 @@ function OperationalSettingsEditor({
     })
   }
 
+  function handleResetDefaults() {
+    setForm({
+      mode: form.mode,
+      ...getOperationalModeDefaults(form.mode),
+    })
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (disabled) return
+
     await saveSettings.mutateAsync({
       branch_id: selectedBranchId,
       ...form,
@@ -206,12 +298,25 @@ function OperationalSettingsEditor({
 
   return (
     <form className="space-y-4" onSubmit={handleSubmit}>
+      {disabled ? (
+        <PermissionNotice text="Somente proprietarios e administradores podem alterar modos e regras operacionais." />
+      ) : null}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="outline">
+          {selectedBranchId ? "Configuracao de filial" : "Padrao da organizacao"}
+        </Badge>
+        {inheritedFromOrganization ? (
+          <Badge variant="secondary">Herdando padrao da organizacao</Badge>
+        ) : null}
+      </div>
+
       <label className="space-y-1 text-sm">
-        <span className="font-medium">Filial de trabalho</span>
+        <span className="font-medium">Escopo da configuracao</span>
         <select
           className={fieldClass}
           value={selectedBranchId ?? ""}
-          onChange={(e) => setSelectedBranchId(e.target.value || null)}
+          onChange={(event) => setSelectedBranchId(event.target.value || null)}
         >
           <option value="">Padrao da organizacao</option>
           {branches.map((branch) => (
@@ -221,7 +326,7 @@ function OperationalSettingsEditor({
           ))}
         </select>
         <p className="text-xs text-muted-foreground">
-          Sem filial selecionada, esta configuracao vale para toda a empresa.
+          Escolher uma filial aqui nao altera a filial selecionada no restante do app.
         </p>
       </label>
 
@@ -229,6 +334,7 @@ function OperationalSettingsEditor({
         <span className="font-medium">Modo operacional</span>
         <select
           className={fieldClass}
+          disabled={disabled}
           value={form.mode}
           onChange={(event) => handleModeChange(event.target.value as OperationalMode)}
         >
@@ -247,6 +353,7 @@ function OperationalSettingsEditor({
         <label className="space-y-1 text-sm">
           <span className="font-medium">Tolerancia de atraso (min)</span>
           <Input
+            disabled={disabled}
             type="number"
             min={0}
             max={120}
@@ -262,6 +369,7 @@ function OperationalSettingsEditor({
         <label className="space-y-1 text-sm">
           <span className="font-medium">Tolerancia de intervalo (min)</span>
           <Input
+            disabled={disabled}
             type="number"
             min={0}
             max={120}
@@ -288,6 +396,7 @@ function OperationalSettingsEditor({
             className="flex items-center gap-2 rounded-lg border bg-slate-50 p-3 text-sm"
           >
             <input
+              disabled={disabled}
               type="checkbox"
               checked={Boolean(form[key as keyof typeof form])}
               onChange={(event) =>
@@ -312,54 +421,442 @@ function OperationalSettingsEditor({
         </div>
       ) : null}
 
-      <Button type="submit" disabled={saveSettings.isPending}>
-        {saveSettings.isPending ? "Salvando..." : "Salvar modo operacional"}
-      </Button>
+      <div className="flex flex-wrap gap-2">
+        <Button type="submit" disabled={disabled || saveSettings.isPending}>
+          {saveSettings.isPending ? "Salvando..." : "Salvar regras"}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={disabled}
+          onClick={handleResetDefaults}
+        >
+          <RotateCcw className="size-4" />
+          Restaurar padrao
+        </Button>
+      </div>
     </form>
   )
 }
 
 function OperationalSettingsForm({
+  branches,
+  disabled,
   organization,
 }: {
+  branches: Branch[]
+  disabled: boolean
   organization: Organization | null | undefined
 }) {
-  const branches = useBranches()
-  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
-  const setSelectedBranchId = useAppStore((state) => state.setSelectedBranchId)
-  const settings = useOperationalSettings(selectedBranchId)
+  const [settingsBranchId, setSettingsBranchId] = useState<string | null>(null)
+  const settings = useOperationalSettings(settingsBranchId)
   const initialForm = buildOperationalSettingsForm(organization, settings.data)
   const editorKey = [
-    selectedBranchId ?? "organization",
+    settingsBranchId ?? "organization",
     settings.data?.updated_at ?? organization?.updated_at ?? initialForm.mode,
   ].join(":")
 
   return (
     <OperationalSettingsEditor
       key={editorKey}
-      branches={branches.data ?? []}
+      branches={branches}
+      disabled={disabled}
       initialForm={initialForm}
       isLoading={settings.isLoading}
-      selectedBranchId={selectedBranchId}
-      setSelectedBranchId={setSelectedBranchId}
+      selectedBranchId={settingsBranchId}
+      selectedSettings={settings.data}
+      setSelectedBranchId={setSettingsBranchId}
     />
+  )
+}
+
+function CurrentUserForm({
+  branches,
+  profile,
+}: {
+  branches: Branch[]
+  profile: UserProfile
+}) {
+  const updateProfile = useUpdateCurrentUserProfile()
+  const updatePassword = useUpdateCurrentUserPassword()
+  const [profileError, setProfileError] = useState<string | null>(null)
+  const [passwordError, setPasswordError] = useState<string | null>(null)
+  const [profileForm, setProfileForm] = useState({
+    name: profile.name,
+    email: profile.email,
+    branch_id: profile.branch_id ?? "",
+  })
+  const [passwordForm, setPasswordForm] = useState({
+    password: "",
+    confirmation: "",
+  })
+
+  async function handleProfileSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setProfileError(null)
+
+    if (!profileForm.name.trim()) {
+      setProfileError("Informe seu nome.")
+      return
+    }
+
+    if (!profileForm.email.trim() || !profileForm.email.includes("@")) {
+      setProfileError("Informe um email valido.")
+      return
+    }
+
+    await updateProfile.mutateAsync({
+      name: profileForm.name.trim(),
+      email: profileForm.email.trim(),
+      branch_id: profileForm.branch_id || null,
+    })
+  }
+
+  async function handlePasswordSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setPasswordError(null)
+
+    if (passwordForm.password.length < 6) {
+      setPasswordError("A senha precisa ter pelo menos 6 caracteres.")
+      return
+    }
+
+    if (passwordForm.password !== passwordForm.confirmation) {
+      setPasswordError("As senhas nao conferem.")
+      return
+    }
+
+    await updatePassword.mutateAsync(passwordForm.password)
+    setPasswordForm({ password: "", confirmation: "" })
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="rounded-lg border bg-slate-50 p-3">
+          <div className="text-xs text-muted-foreground">Papel</div>
+          <div className="mt-1 font-medium">{roleLabel[profile.role]}</div>
+        </div>
+        <div className="rounded-lg border bg-slate-50 p-3">
+          <div className="text-xs text-muted-foreground">Status</div>
+          <div className="mt-1 font-medium">{profile.active ? "Ativo" : "Inativo"}</div>
+        </div>
+        <div className="rounded-lg border bg-slate-50 p-3">
+          <div className="text-xs text-muted-foreground">Filial padrao</div>
+          <div className="mt-1 font-medium">
+            {branches.find((branch) => branch.id === profile.branch_id)?.name ??
+              "Sem filial"}
+          </div>
+        </div>
+      </div>
+
+      <form className="space-y-4" onSubmit={handleProfileSubmit}>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="space-y-1 text-sm">
+            <span className="font-medium">Nome</span>
+            <Input
+              value={profileForm.name}
+              onChange={(event) =>
+                setProfileForm((current) => ({
+                  ...current,
+                  name: event.target.value,
+                }))
+              }
+            />
+          </label>
+          <label className="space-y-1 text-sm">
+            <span className="font-medium">Email</span>
+            <Input
+              type="email"
+              value={profileForm.email}
+              onChange={(event) =>
+                setProfileForm((current) => ({
+                  ...current,
+                  email: event.target.value,
+                }))
+              }
+            />
+            <p className="text-xs text-muted-foreground">
+              A troca de email pode exigir confirmacao pelo Supabase Auth.
+            </p>
+          </label>
+        </div>
+
+        <label className="space-y-1 text-sm">
+          <span className="font-medium">Filial padrao</span>
+          <select
+            className={fieldClass}
+            value={profileForm.branch_id}
+            onChange={(event) =>
+              setProfileForm((current) => ({
+                ...current,
+                branch_id: event.target.value,
+              }))
+            }
+          >
+            <option value="">Sem filial padrao</option>
+            {branches.map((branch) => (
+              <option key={branch.id} value={branch.id}>
+                {branch.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {profileError || updateProfile.error ? (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {profileError ?? updateProfile.error?.message}
+          </div>
+        ) : null}
+
+        <Button type="submit" disabled={updateProfile.isPending}>
+          <User className="size-4" />
+          {updateProfile.isPending ? "Salvando..." : "Salvar meu perfil"}
+        </Button>
+      </form>
+
+      <form className="space-y-4 rounded-lg border bg-slate-50 p-4" onSubmit={handlePasswordSubmit}>
+        <div>
+          <div className="flex items-center gap-2 font-medium">
+            <Lock className="size-4" />
+            Seguranca de acesso
+          </div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Atualize sua senha de login. A sessao atual continua ativa.
+          </p>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="space-y-1 text-sm">
+            <span className="font-medium">Nova senha</span>
+            <Input
+              type="password"
+              value={passwordForm.password}
+              onChange={(event) =>
+                setPasswordForm((current) => ({
+                  ...current,
+                  password: event.target.value,
+                }))
+              }
+            />
+          </label>
+          <label className="space-y-1 text-sm">
+            <span className="font-medium">Confirmar senha</span>
+            <Input
+              type="password"
+              value={passwordForm.confirmation}
+              onChange={(event) =>
+                setPasswordForm((current) => ({
+                  ...current,
+                  confirmation: event.target.value,
+                }))
+              }
+            />
+          </label>
+        </div>
+
+        {passwordError || updatePassword.error ? (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {passwordError ?? updatePassword.error?.message}
+          </div>
+        ) : null}
+
+        <Button type="submit" variant="outline" disabled={updatePassword.isPending}>
+          <KeyRound className="size-4" />
+          {updatePassword.isPending ? "Atualizando..." : "Atualizar senha"}
+        </Button>
+      </form>
+    </div>
+  )
+}
+
+function UsageItem({
+  current,
+  label,
+  limit,
+}: {
+  current: number
+  label: string
+  limit: number | null
+}) {
+  const percent = limit ? usagePercent(current, limit) : 0
+
+  return (
+    <div className="rounded-lg border bg-slate-50 p-3">
+      <div className="flex items-center justify-between gap-2 text-sm">
+        <span className="font-medium">{label}</span>
+        <span className="text-muted-foreground">
+          {current}
+          {limit ? ` / ${limit}` : ""}
+        </span>
+      </div>
+      {limit ? (
+        <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200">
+          <div
+            className={`h-full rounded-full ${
+              percent >= 90 ? "bg-red-500" : percent >= 75 ? "bg-amber-500" : "bg-emerald-500"
+            }`}
+            style={{ width: `${percent}%` }}
+          />
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function PlanModulesPanel({
+  branches,
+  canViewBilling,
+  employees,
+  modules,
+  organization,
+  subscription,
+}: {
+  branches: Branch[]
+  canViewBilling: boolean
+  employees: EmployeeWithRelations[]
+  modules: OrganizationModule[]
+  organization: Organization | null | undefined
+  subscription: Subscription | null | undefined
+}) {
+  const currentPlan = subscription?.plan ?? organization?.plan ?? "starter"
+  const moduleByKey = useMemo(() => {
+    const map = new Map<string, OrganizationModule>()
+    modules.forEach((module) => {
+      if (module.modules?.key) map.set(module.modules.key, module)
+    })
+    return map
+  }, [modules])
+
+  return (
+    <div className="space-y-4">
+      {!canViewBilling ? (
+        <PermissionNotice text="Detalhes de plano e assinatura ficam visiveis para proprietarios e administradores." />
+      ) : null}
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="rounded-lg border bg-slate-50 p-3">
+          <div className="text-xs text-muted-foreground">Plano</div>
+          <div className="mt-1 font-medium">{planLabel[currentPlan]}</div>
+        </div>
+        <div className="rounded-lg border bg-slate-50 p-3">
+          <div className="text-xs text-muted-foreground">Status</div>
+          <div className="mt-1 font-medium">
+            {subscription?.status ?? organization?.status ?? "-"}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <UsageItem
+          label="Filiais ativas"
+          current={branches.filter((branch) => branch.active).length}
+          limit={subscription?.max_branches ?? null}
+        />
+        <UsageItem
+          label="Colaboradores ativos"
+          current={employees.filter((employee) => employee.active).length}
+          limit={subscription?.max_employees ?? null}
+        />
+      </div>
+
+      <div className="space-y-4">
+        {productModuleGroups.map((group) => (
+          <div key={group.label} className="space-y-2">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+              {group.label}
+            </div>
+            <div className="grid gap-3">
+              {group.modules.map((module) => {
+                const organizationModule = moduleByKey.get(module.key)
+                const enabled = Boolean(organizationModule?.enabled)
+                const planAccess = getProductModulePlanAccess(
+                  module.key as ProductModuleKey,
+                  currentPlan
+                )
+                const blocked = planAccess === "Indisponivel"
+
+                return (
+                  <div key={module.key} className="rounded-lg border bg-slate-50 p-3">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <div className="font-medium">{module.name}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {module.tagline}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        <Badge
+                          variant={enabled && !blocked ? "default" : "outline"}
+                        >
+                          {blocked ? "Bloqueado" : enabled ? "Ativo" : "Pendente"}
+                        </Badge>
+                        <Badge variant="outline">{planAccess}</Badge>
+                      </div>
+                    </div>
+                    <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                      {module.description}
+                    </p>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function AuditSummary({ logs }: { logs: AuditLog[] }) {
+  if (logs.length === 0) return <StateBlock title="Nenhuma acao auditada" />
+
+  return (
+    <div className="space-y-3">
+      {logs.slice(0, 10).map((log) => (
+        <div key={log.id} className="rounded-lg border bg-slate-50 p-3">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <div className="text-sm font-medium">{log.action}</div>
+              <div className="mt-1 text-sm text-muted-foreground">
+                {log.entity_type} - {formatDateTimeBR(log.created_at)}
+              </div>
+            </div>
+            <Badge variant="outline">
+              {log.user_profiles?.name ?? (log.user_id ? "Usuario" : "Sistema")}
+            </Badge>
+          </div>
+          <details className="mt-2 text-xs text-muted-foreground">
+            <summary className="cursor-pointer">Detalhes</summary>
+            <pre className="mt-2 max-h-48 overflow-auto rounded-lg bg-white p-2 text-[0.7rem]">
+              {JSON.stringify(
+                { antes: log.old_value, depois: log.new_value },
+                null,
+                2
+              )}
+            </pre>
+          </details>
+        </div>
+      ))}
+    </div>
   )
 }
 
 export function SettingsPage() {
   const { profile } = useAuth()
   const organization = useOrganization()
-  const modules = useModules()
+  const branches = useBranches()
+  const employees = useAllEmployees()
+  const organizationModules = useOrganizationModules()
   const subscription = useSubscription()
-  const auditLogs = useAuditLogs()
-  const currentPlan = subscription.data?.plan ?? organization.data?.plan ?? "starter"
-  const activeModuleKeys = new Set((modules.data ?? []).map((module) => module.key))
+  const auditLogs = useAllAuditLogs()
+  const isAdmin = canManageSettings(profile)
 
   return (
     <>
       <PageHeader
         title="Configuracoes"
-        description="Dados da organizacao, plano, modulos, modos operacionais e auditoria."
+        description="Dados da organizacao, perfil, plano, modulos, regras operacionais e auditoria."
       />
 
       <div className="grid gap-4 p-6 xl:grid-cols-[1fr_0.85fr]">
@@ -383,6 +880,7 @@ export function SettingsPage() {
               ) : organization.data ? (
                 <OrganizationForm
                   key={`${organization.data.id}-${organization.data.updated_at}`}
+                  disabled={!isAdmin}
                   organization={organization.data}
                 />
               ) : (
@@ -395,11 +893,15 @@ export function SettingsPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Settings2 className="size-5" />
-                Modos operacionais
+                Regras operacionais
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <OperationalSettingsForm organization={organization.data} />
+              <OperationalSettingsForm
+                branches={branches.data ?? []}
+                disabled={!isAdmin}
+                organization={organization.data}
+              />
             </CardContent>
           </Card>
 
@@ -411,22 +913,11 @@ export function SettingsPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-lg border bg-slate-50 p-3">
-                  <div className="text-xs text-muted-foreground">Nome</div>
-                  <div className="mt-1 font-medium">{profile?.name}</div>
-                </div>
-                <div className="rounded-lg border bg-slate-50 p-3">
-                  <div className="text-xs text-muted-foreground">Email</div>
-                  <div className="mt-1 font-medium">{profile?.email}</div>
-                </div>
-                <div className="rounded-lg border bg-slate-50 p-3">
-                  <div className="text-xs text-muted-foreground">Papel</div>
-                  <div className="mt-1 font-medium">
-                    {profile ? roleLabel[profile.role] : "-"}
-                  </div>
-                </div>
-              </div>
+              {profile ? (
+                <CurrentUserForm branches={branches.data ?? []} profile={profile} />
+              ) : (
+                <StateBlock title="Perfil nao encontrado" />
+              )}
             </CardContent>
           </Card>
         </div>
@@ -439,79 +930,72 @@ export function SettingsPage() {
                 Plano e modulos
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              {subscription.isLoading ? (
-                <StateBlock type="loading" title="Carregando plano" />
-              ) : (
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-lg border bg-slate-50 p-3">
-                    <div className="text-xs text-muted-foreground">Plano</div>
-                    <div className="mt-1 font-medium">
-                      {subscription.data?.plan ?? organization.data?.plan ?? "-"}
-                    </div>
-                  </div>
-                  <div className="rounded-lg border bg-slate-50 p-3">
-                    <div className="text-xs text-muted-foreground">Status</div>
-                    <div className="mt-1 font-medium">
-                      {subscription.data?.status ?? organization.data?.status ?? "-"}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {modules.isLoading ? (
-                <StateBlock type="loading" title="Carregando modulos" />
-              ) : modules.isError ? (
+            <CardContent>
+              {branches.isLoading || employees.isLoading || organizationModules.isLoading ? (
+                <StateBlock type="loading" title="Carregando plano e modulos" />
+              ) : organizationModules.isError ? (
                 <StateBlock
                   type="error"
-                  title="Erro ao carregar modulos"
-                  description={modules.error.message}
+                  title="Erro ao carregar modulos da organizacao"
+                  description={organizationModules.error.message}
+                />
+              ) : subscription.isError ? (
+                <StateBlock
+                  type="error"
+                  title="Erro ao carregar assinatura"
+                  description={subscription.error.message}
                 />
               ) : (
-                <div className="space-y-4">
-                  {productModuleGroups.map((group) => (
-                    <div key={group.label} className="space-y-2">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                        {group.label}
-                      </div>
-                      <div className="grid gap-3">
-                        {group.modules.map((module) => {
-                          const isActive = activeModuleKeys.has(module.key)
-                          const planAccess = getProductModulePlanAccess(
-                            module.key as ProductModuleKey,
-                            currentPlan
-                          )
-
-                          return (
-                            <div
-                              key={module.key}
-                              className="rounded-lg border bg-slate-50 p-3"
-                            >
-                              <div className="flex flex-wrap items-start justify-between gap-2">
-                                <div>
-                                  <div className="font-medium">{module.name}</div>
-                                  <div className="text-xs text-muted-foreground">
-                                    {module.tagline}
-                                  </div>
-                                </div>
-                                <div className="flex flex-wrap gap-1.5">
-                                  <Badge variant={isActive ? "default" : "outline"}>
-                                    {isActive ? "Ativo" : "Pendente"}
-                                  </Badge>
-                                  <Badge variant="outline">{planAccess}</Badge>
-                                </div>
-                              </div>
-                              <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                                {module.description}
-                              </p>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <PlanModulesPanel
+                  branches={branches.data ?? []}
+                  canViewBilling={isAdmin}
+                  employees={employees.data ?? []}
+                  modules={organizationModules.data ?? []}
+                  organization={organization.data}
+                  subscription={subscription.data}
+                />
               )}
+            </CardContent>
+          </Card>
+
+          <Card className="border bg-white shadow-sm">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Gauge className="size-5" />
+                Saude da configuracao
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {[
+                {
+                  label: "Organizacao cadastrada",
+                  done: Boolean(organization.data),
+                },
+                {
+                  label: "Filial ativa",
+                  done: Boolean((branches.data ?? []).some((branch) => branch.active)),
+                },
+                {
+                  label: "Colaboradores ativos",
+                  done: Boolean((employees.data ?? []).some((employee) => employee.active)),
+                },
+                {
+                  label: "Modulos vinculados",
+                  done: Boolean((organizationModules.data ?? []).length),
+                },
+              ].map((item) => (
+                <div
+                  key={item.label}
+                  className="flex items-center justify-between gap-3 rounded-lg border bg-slate-50 p-3 text-sm"
+                >
+                  <span>{item.label}</span>
+                  {item.done ? (
+                    <CheckCircle2 className="size-4 text-emerald-600" />
+                  ) : (
+                    <AlertTriangle className="size-4 text-amber-600" />
+                  )}
+                </div>
+              ))}
             </CardContent>
           </Card>
 
@@ -531,19 +1015,8 @@ export function SettingsPage() {
                   title="Erro ao carregar auditoria"
                   description={auditLogs.error.message}
                 />
-              ) : (auditLogs.data ?? []).length === 0 ? (
-                <StateBlock title="Nenhuma acao auditada" />
               ) : (
-                <div className="space-y-3">
-                  {(auditLogs.data ?? []).slice(0, 10).map((log) => (
-                    <div key={log.id} className="rounded-lg border bg-slate-50 p-3">
-                      <div className="text-sm font-medium">{log.action}</div>
-                      <div className="mt-1 text-sm text-muted-foreground">
-                        {log.entity_type} · {formatDateTimeBR(log.created_at)}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <AuditSummary logs={auditLogs.data ?? []} />
               )}
             </CardContent>
           </Card>

@@ -16,6 +16,7 @@ import {
   getOrganization,
   getOperationalSettings,
   getSubscription,
+  listOrganizationModules,
   listAllAuditLogs,
   listAttendanceEvents,
   listAuditLogs,
@@ -40,6 +41,8 @@ import {
   toggleSectorActive,
   updateBranch,
   updateEmployee,
+  updateCurrentUserPassword,
+  updateCurrentUserProfile,
   updateOrganization,
   updateSchedule,
   updateSector,
@@ -78,7 +81,8 @@ export function useOrganization() {
 export function useOperationalSettings(branchId?: string | null) {
   const { profile } = useAuth()
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
-  const effectiveBranchId = branchId ?? selectedBranchId
+  const effectiveBranchId =
+    arguments.length > 0 ? branchId ?? null : selectedBranchId
 
   return useQuery({
     queryKey: ["operational-settings", profile?.organization_id, effectiveBranchId],
@@ -236,6 +240,16 @@ export function useSubscription() {
   return useQuery({
     queryKey: ["subscription", profile?.organization_id],
     queryFn: () => getSubscription(profile!.organization_id),
+    enabled: Boolean(profile && ["owner", "admin"].includes(profile.role)),
+  })
+}
+
+export function useOrganizationModules() {
+  const { profile } = useAuth()
+
+  return useQuery({
+    queryKey: ["organization-modules", profile?.organization_id],
+    queryFn: () => listOrganizationModules(profile!),
     enabled: Boolean(profile),
   })
 }
@@ -513,10 +527,53 @@ export function useUpdateOrganization() {
       trade_name: string | null
       document: string | null
       segment: BusinessSegment
-    }) => updateOrganization(profile.organization_id, input),
+    }) => updateOrganization(profile, input),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["organization"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
       toast.success("Dados da empresa atualizados.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useUpdateCurrentUserProfile() {
+  const queryClient = useQueryClient()
+  const { refreshProfile } = useAuth()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: {
+      name: string
+      email: string
+      branch_id: string | null
+    }) => updateCurrentUserProfile(profile, input),
+    onSuccess: async () => {
+      await refreshProfile()
+      await queryClient.invalidateQueries({ queryKey: ["user-profiles"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success("Seu perfil foi atualizado.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useUpdateCurrentUserPassword() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (password: string) => updateCurrentUserPassword(profile, password),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success("Senha atualizada com sucesso.")
     },
     onError: (error) => {
       toast.error(error.message)
@@ -542,6 +599,8 @@ export function useSaveOperationalSettings() {
     onSuccess: async (settings: OperationalSettings) => {
       await queryClient.invalidateQueries({ queryKey: ["operational-settings"] })
       await queryClient.invalidateQueries({ queryKey: ["organization"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
       toast.success(
         settings.branch_id
           ? "Modo operacional da filial salvo."
