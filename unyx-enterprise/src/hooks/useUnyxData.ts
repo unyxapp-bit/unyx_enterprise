@@ -16,6 +16,8 @@ import {
   getOrganization,
   getOperationalSettings,
   getSubscription,
+  importEmployees,
+  importSchedules,
   listOrganizationModules,
   listAllAuditLogs,
   listAttendanceEvents,
@@ -47,6 +49,11 @@ import {
   updateSchedule,
   updateSector,
   updateUserRole,
+} from "@/services/unyxApi"
+import type {
+  BulkImportResult,
+  EmployeeImportInput,
+  ScheduleImportInput,
 } from "@/services/unyxApi"
 import type {
   AttendanceEventType,
@@ -104,7 +111,8 @@ export function useBranches() {
 export function useSectors(branchId?: string | null) {
   const { profile } = useAuth()
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
-  const effectiveBranchId = branchId ?? selectedBranchId
+  const effectiveBranchId =
+    arguments.length > 0 ? branchId ?? null : selectedBranchId
 
   return useQuery({
     queryKey: ["sectors", profile?.organization_id, effectiveBranchId],
@@ -116,7 +124,8 @@ export function useSectors(branchId?: string | null) {
 export function useEmployees(branchId?: string | null) {
   const { profile } = useAuth()
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
-  const effectiveBranchId = branchId ?? selectedBranchId
+  const effectiveBranchId =
+    arguments.length > 0 ? branchId ?? null : selectedBranchId
 
   return useQuery({
     queryKey: ["employees", profile?.organization_id, effectiveBranchId],
@@ -128,7 +137,8 @@ export function useEmployees(branchId?: string | null) {
 export function useSchedules(workDate: string, branchId?: string | null) {
   const { profile } = useAuth()
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
-  const effectiveBranchId = branchId ?? selectedBranchId
+  const effectiveBranchId =
+    arguments.length > 1 ? branchId ?? null : selectedBranchId
 
   return useQuery({
     queryKey: ["schedules", profile?.organization_id, effectiveBranchId, workDate],
@@ -390,6 +400,7 @@ export function useCreateSector() {
 
 export function useUpdateEmployee() {
   const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
 
   return useMutation({
     mutationFn: (input: {
@@ -404,10 +415,12 @@ export function useUpdateEmployee() {
         document?: string | null
         notes?: string | null
       }
-    }) => updateEmployee(input.employeeId, input.values),
+    }) => updateEmployee(profile, input.employeeId, input.values),
     onSuccess: async (_, variables) => {
       await queryClient.invalidateQueries({ queryKey: ["employees"] })
       await queryClient.invalidateQueries({ queryKey: ["employees-all"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
       if (variables.values.active === false) {
         toast.success("Colaborador desativado.")
       } else if (variables.values.active === true) {
@@ -441,6 +454,8 @@ export function useCreateSchedule() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["schedules"] })
       await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
       toast.success("Escala cadastrada com sucesso.")
     },
     onError: (error) => {
@@ -451,6 +466,7 @@ export function useCreateSchedule() {
 
 export function useUpdateSchedule() {
   const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
 
   return useMutation({
     mutationFn: (input: {
@@ -463,10 +479,12 @@ export function useUpdateSchedule() {
         status?: ScheduleStatus
         notes?: string | null
       }
-    }) => updateSchedule(input.scheduleId, input.values),
+    }) => updateSchedule(profile, input.scheduleId, input.values),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["schedules"] })
       await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
       toast.success("Escala atualizada com sucesso.")
     },
     onError: (error) => {
@@ -477,12 +495,15 @@ export function useUpdateSchedule() {
 
 export function useDeleteSchedule() {
   const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
 
   return useMutation({
-    mutationFn: (scheduleId: string) => deleteSchedule(scheduleId),
+    mutationFn: (scheduleId: string) => deleteSchedule(profile, scheduleId),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["schedules"] })
       await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
       toast.success("Escala removida.")
     },
     onError: (error) => {
@@ -744,11 +765,22 @@ export function useCopySchedules() {
   const profile = useRequiredProfile()
 
   return useMutation({
-    mutationFn: (input: { sourceDate: string; targetDate: string }) =>
-      copySchedulesFromDate(profile, input.sourceDate, input.targetDate),
+    mutationFn: (input: {
+      sourceDate: string
+      targetDate: string
+      branchId?: string | null
+    }) =>
+      copySchedulesFromDate(
+        profile,
+        input.sourceDate,
+        input.targetDate,
+        input.branchId
+      ),
     onSuccess: async (data) => {
       await queryClient.invalidateQueries({ queryKey: ["schedules"] })
       await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
       toast.success(`${data.length} escala(s) copiada(s) com sucesso.`)
     },
     onError: (error) => {
@@ -774,7 +806,51 @@ export function useCreateEmployee() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["employees"] })
       await queryClient.invalidateQueries({ queryKey: ["employees-all"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
       toast.success("Colaborador cadastrado com sucesso.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useImportEmployees() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation<BulkImportResult, Error, EmployeeImportInput[]>({
+    mutationFn: (rows) => importEmployees(profile, rows),
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries({ queryKey: ["employees"] })
+      await queryClient.invalidateQueries({ queryKey: ["employees-all"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success(
+        `${result.created} colaborador(es) importado(s). ${result.skipped} ignorado(s).`
+      )
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useImportSchedules() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation<BulkImportResult, Error, ScheduleImportInput[]>({
+    mutationFn: (rows) => importSchedules(profile, rows),
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries({ queryKey: ["schedules"] })
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success(
+        `${result.created} escala(s) importada(s). ${result.skipped} ignorada(s).`
+      )
     },
     onError: (error) => {
       toast.error(error.message)

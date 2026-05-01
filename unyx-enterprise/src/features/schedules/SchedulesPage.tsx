@@ -1,6 +1,12 @@
 import { useMemo, useState } from "react"
 import type { FormEvent } from "react"
-import { CalendarCog, CalendarPlus, Pencil, Trash2 } from "lucide-react"
+import {
+  CalendarCog,
+  CalendarPlus,
+  FileSpreadsheet,
+  Pencil,
+  Trash2,
+} from "lucide-react"
 
 import { PageHeader } from "@/components/shared/PageHeader"
 import { StateBlock } from "@/components/shared/StateBlock"
@@ -20,13 +26,28 @@ import {
   useCreateSchedule,
   useDeleteSchedule,
   useEmployees,
+  useImportSchedules,
   useSchedules,
   useUpdateSchedule,
 } from "@/hooks/useUnyxData"
 import { formatDateBR, formatTime, todayISO } from "@/lib/format"
 import { scheduleStatusLabel } from "@/lib/status"
+import {
+  cellToDate,
+  cellToText,
+  cellToTime,
+  getCell,
+  normalizeColumn,
+  parseSpreadsheet,
+} from "@/lib/spreadsheet"
 import { useAppStore } from "@/store/useAppStore"
-import type { ScheduleStatus, ScheduleWithRelations } from "@/types/domain"
+import type { ScheduleImportInput } from "@/services/unyxApi"
+import type {
+  Branch,
+  EmployeeWithRelations,
+  ScheduleStatus,
+  ScheduleWithRelations,
+} from "@/types/domain"
 
 const fieldClass =
   "h-8 w-full rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
@@ -44,6 +65,57 @@ interface ScheduleFormState {
   end_time: string
   status: ScheduleStatus
   notes: string
+}
+
+function normalizeLookup(value: string) {
+  return normalizeColumn(value).replace(/_/g, " ")
+}
+
+function scheduleStatusFromText(value: string): ScheduleStatus {
+  const normalized = normalizeLookup(value)
+
+  if (normalized.includes("folga")) return "day_off"
+  if (normalized.includes("falta")) return "absent"
+  if (normalized.includes("cancel")) return "cancelled"
+  if (normalized.includes("final")) return "finished"
+  if (normalized.includes("interval")) return "on_break"
+  if (normalized.includes("retorn")) return "returned"
+  if (normalized.includes("trabalh")) return "working"
+
+  return "scheduled"
+}
+
+function isScheduleIncomplete(schedule: ScheduleWithRelations) {
+  if (schedule.status === "day_off" || schedule.status === "cancelled") return false
+  if (!schedule.start_time || !schedule.end_time) return true
+  return Boolean(
+    (schedule.break_start && !schedule.break_end) ||
+      (!schedule.break_start && schedule.break_end)
+  )
+}
+
+function nextFormForStatus<
+  T extends {
+    status: ScheduleStatus
+    start_time: string
+    break_start: string
+    break_end: string
+    end_time: string
+  },
+>(
+  current: T,
+  status: ScheduleStatus
+) {
+  if (status !== "day_off") return { ...current, status }
+
+  return {
+    ...current,
+    status,
+    start_time: "",
+    break_start: "",
+    break_end: "",
+    end_time: "",
+  }
 }
 
 function ScheduleEditDialog({ schedule }: { schedule: ScheduleWithRelations }) {
@@ -114,7 +186,9 @@ function ScheduleEditDialog({ schedule }: { schedule: ScheduleWithRelations }) {
               className={fieldClass}
               value={form.status}
               onChange={(e) =>
-                setForm((c) => ({ ...c, status: e.target.value as ScheduleStatus }))
+                setForm((current) =>
+                  nextFormForStatus(current, e.target.value as ScheduleStatus)
+                )
               }
             >
               {Object.entries(scheduleStatusLabel).map(([value, label]) => (
@@ -195,16 +269,29 @@ function ScheduleDeleteDialog({ schedule }: { schedule: ScheduleWithRelations })
   )
 }
 
-function CopyDayDialog({ currentDate }: { currentDate: string }) {
+function CopyDayDialog({
+  branches,
+  currentDate,
+  selectedBranchId,
+}: {
+  branches: Branch[]
+  currentDate: string
+  selectedBranchId: string | null
+}) {
   const [open, setOpen] = useState(false)
   const [sourceDate, setSourceDate] = useState("")
+  const [branchId, setBranchId] = useState(selectedBranchId ?? "")
   const copySchedules = useCopySchedules()
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!sourceDate) return
 
-    await copySchedules.mutateAsync({ sourceDate, targetDate: currentDate })
+    await copySchedules.mutateAsync({
+      sourceDate,
+      targetDate: currentDate,
+      branchId: branchId || null,
+    })
     setOpen(false)
     setSourceDate("")
   }
@@ -226,6 +313,23 @@ function CopyDayDialog({ currentDate }: { currentDate: string }) {
             Selecione a data de origem. Todas as escalas desse dia serão copiadas
             para <span className="font-medium text-slate-950">{formatDateBR(currentDate)}</span>.
           </p>
+          <label className="space-y-1 text-sm">
+            <span className="font-medium">Escopo</span>
+            <select
+              className={fieldClass}
+              value={branchId}
+              onChange={(event) => setBranchId(event.target.value)}
+            >
+              <option value="">Todas as filiais</option>
+              {branches
+                .filter((branch) => branch.active)
+                .map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name}
+                  </option>
+                ))}
+            </select>
+          </label>
           <label className="space-y-1 text-sm">
             <span className="font-medium">Data de origem</span>
             <Input
@@ -250,6 +354,169 @@ function CopyDayDialog({ currentDate }: { currentDate: string }) {
   )
 }
 
+function SchedulesImportDialog({
+  branches,
+  currentDate,
+  employees,
+  selectedBranchId,
+}: {
+  branches: Branch[]
+  currentDate: string
+  employees: EmployeeWithRelations[]
+  selectedBranchId: string | null
+}) {
+  const [open, setOpen] = useState(false)
+  const [rows, setRows] = useState<ScheduleImportInput[]>([])
+  const [errors, setErrors] = useState<string[]>([])
+  const [fileName, setFileName] = useState("")
+  const importSchedules = useImportSchedules()
+
+  const activeBranches = useMemo(
+    () => branches.filter((branch) => branch.active),
+    [branches]
+  )
+
+  async function handleFile(file: File | null) {
+    setRows([])
+    setErrors([])
+    setFileName(file?.name ?? "")
+
+    if (!file) return
+
+    try {
+      const parsed = await parseSpreadsheet(file)
+      const branchByName = new Map(
+        activeBranches.map((branch) => [normalizeLookup(branch.name), branch.id])
+      )
+      const employeeByDocument = new Map(
+        employees
+          .filter((employee) => employee.active && employee.document)
+          .map((employee) => [
+            `${employee.branch_id}:${cellToText(employee.document).replace(/\D/g, "")}`,
+            employee.id,
+          ])
+      )
+      const employeeByBranchAndName = new Map(
+        employees
+          .filter((employee) => employee.active)
+          .map((employee) => [
+            `${employee.branch_id}:${normalizeLookup(employee.name)}`,
+            employee.id,
+          ])
+      )
+      const fallbackBranchId =
+        selectedBranchId && activeBranches.some((branch) => branch.id === selectedBranchId)
+          ? selectedBranchId
+          : activeBranches[0]?.id ?? ""
+      const nextRows: ScheduleImportInput[] = []
+      const nextErrors: string[] = []
+
+      parsed.forEach((row, index) => {
+        const branchName = cellToText(getCell(row, ["filial", "loja", "unidade"]))
+        const branchId = branchName
+          ? branchByName.get(normalizeLookup(branchName)) ?? ""
+          : fallbackBranchId
+        const document = cellToText(getCell(row, ["documento", "cpf"])).replace(/\D/g, "")
+        const employeeName = cellToText(
+          getCell(row, ["colaborador", "funcionario", "nome"])
+        )
+        const employeeId = document
+          ? employeeByDocument.get(`${branchId}:${document}`) ?? ""
+          : employeeByBranchAndName.get(`${branchId}:${normalizeLookup(employeeName)}`) ?? ""
+        const status = scheduleStatusFromText(
+          cellToText(getCell(row, ["status", "situacao"])) || "scheduled"
+        )
+
+        if (!branchId) {
+          nextErrors.push(`Linha ${index + 2}: filial nao encontrada.`)
+          return
+        }
+
+        if (!employeeId) {
+          nextErrors.push(`Linha ${index + 2}: colaborador nao encontrado na filial.`)
+          return
+        }
+
+        nextRows.push({
+          branch_id: branchId,
+          employee_id: employeeId,
+          work_date: cellToDate(getCell(row, ["data", "dia"]), currentDate),
+          start_time: cellToTime(getCell(row, ["entrada", "inicio"])) || null,
+          break_start: cellToTime(getCell(row, ["intervalo", "saida_intervalo"])) || null,
+          break_end: cellToTime(getCell(row, ["retorno", "fim_intervalo"])) || null,
+          end_time: cellToTime(getCell(row, ["saida", "fim"])) || null,
+          status,
+          notes: cellToText(getCell(row, ["observacoes", "obs", "notas"])) || null,
+        })
+      })
+
+      setRows(nextRows)
+      setErrors(nextErrors)
+    } catch (error) {
+      setErrors([error instanceof Error ? error.message : "Nao foi possivel ler a planilha."])
+    }
+  }
+
+  async function handleImport() {
+    const result = await importSchedules.mutateAsync(rows)
+    setErrors(result.errors)
+
+    if (result.created > 0) {
+      setRows([])
+      setFileName("")
+      if (result.errors.length === 0) setOpen(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline">
+          <FileSpreadsheet className="size-4" />
+          Importar
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Importar escalas</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="rounded-lg border bg-slate-50 p-3 text-sm text-slate-700">
+            Colunas aceitas: colaborador, cpf/documento, filial, data, entrada,
+            intervalo, retorno, saida, status e observacoes. Use .xlsx ou .csv.
+          </div>
+          <Input
+            type="file"
+            accept=".xlsx,.csv"
+            onChange={(event) => void handleFile(event.target.files?.[0] ?? null)}
+          />
+          {fileName ? (
+            <div className="text-sm text-muted-foreground">
+              {fileName}: {rows.length} linha(s) validas.
+            </div>
+          ) : null}
+          {errors.length > 0 ? (
+            <div className="max-h-40 overflow-auto rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+              {errors.slice(0, 12).map((error) => (
+                <div key={error}>{error}</div>
+              ))}
+              {errors.length > 12 ? <div>...mais {errors.length - 12}</div> : null}
+            </div>
+          ) : null}
+        </div>
+        <DialogFooter>
+          <Button
+            disabled={rows.length === 0 || importSchedules.isPending}
+            onClick={() => void handleImport()}
+          >
+            {importSchedules.isPending ? "Importando..." : "Importar escalas"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export function SchedulesPage() {
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
   const [date, setDate] = useState(todayISO())
@@ -269,7 +536,12 @@ export function SchedulesPage() {
   })
   const schedules = useSchedules(date)
   const employees = useEmployees(form.branch_id || selectedBranchId)
+  const allEmployees = useEmployees(null)
   const branches = useBranches()
+  const activeBranches = useMemo(
+    () => (branches.data ?? []).filter((branch) => branch.active),
+    [branches.data]
+  )
   const createSchedule = useCreateSchedule()
 
   const sectorOptions = useMemo(() => {
@@ -347,7 +619,17 @@ export function SchedulesPage() {
                 ))}
               </select>
             ) : null}
-            <CopyDayDialog currentDate={date} />
+            <SchedulesImportDialog
+              branches={branches.data ?? []}
+              currentDate={date}
+              employees={allEmployees.data ?? []}
+              selectedBranchId={selectedBranchId}
+            />
+            <CopyDayDialog
+              branches={branches.data ?? []}
+              currentDate={date}
+              selectedBranchId={selectedBranchId}
+            />
             <Dialog open={open} onOpenChange={setOpen}>
               <DialogTrigger asChild>
                 <Button>
@@ -371,7 +653,7 @@ export function SchedulesPage() {
                         }
                       >
                         <option value="">Selecione</option>
-                        {(branches.data ?? []).map((b) => (
+                        {activeBranches.map((b) => (
                           <option key={b.id} value={b.id}>
                             {b.name}
                           </option>
@@ -414,7 +696,9 @@ export function SchedulesPage() {
                         className={fieldClass}
                         value={form.status}
                         onChange={(e) =>
-                          setForm((c) => ({ ...c, status: e.target.value as ScheduleStatus }))
+                          setForm((current) =>
+                            nextFormForStatus(current, e.target.value as ScheduleStatus)
+                          )
                         }
                       >
                         {Object.entries(scheduleStatusLabel).map(([value, label]) => (
@@ -434,8 +718,9 @@ export function SchedulesPage() {
                             {{ start_time: "Entrada", break_start: "Intervalo", break_end: "Retorno", end_time: "Saída" }[field]}
                           </span>
                           <Input
-                            type="time"
-                            value={form[field]}
+                    type="time"
+                    disabled={form.status === "day_off"}
+                    value={form[field]}
                             onChange={(e) =>
                               setForm((c) => ({ ...c, [field]: e.target.value }))
                             }
@@ -499,6 +784,7 @@ export function SchedulesPage() {
               <thead className="border-b bg-slate-50 text-xs uppercase text-muted-foreground">
                 <tr>
                   <th className="px-4 py-3">Colaborador</th>
+                  <th className="px-4 py-3">Filial</th>
                   <th className="px-4 py-3">Setor</th>
                   <th className="px-4 py-3">Entrada</th>
                   <th className="px-4 py-3">Intervalo</th>
@@ -510,7 +796,7 @@ export function SchedulesPage() {
               </thead>
               <tbody className="divide-y">
                 {filteredSchedules.map((schedule) => {
-                  const incomplete = !schedule.start_time
+                  const incomplete = isScheduleIncomplete(schedule)
 
                   return (
                     <tr key={schedule.id} className="hover:bg-slate-50">
@@ -523,6 +809,9 @@ export function SchedulesPage() {
                             </span>
                           ) : null}
                         </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        {schedule.branches?.name ?? "-"}
                       </td>
                       <td className="px-4 py-3">
                         {schedule.employees?.sectors?.name ?? "-"}

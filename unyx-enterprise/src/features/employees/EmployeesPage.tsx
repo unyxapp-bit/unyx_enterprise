@@ -1,10 +1,17 @@
 import { useMemo, useState } from "react"
 import type { FormEvent } from "react"
-import { Pencil, Plus, Search, UserRoundCheck, UserRoundX } from "lucide-react"
+import {
+  FileSpreadsheet,
+  Pencil,
+  Plus,
+  Search,
+  UserRoundCheck,
+  UserRoundX,
+} from "lucide-react"
 
-import { StatusBadge } from "@/components/bento/StatusBadge"
 import { PageHeader } from "@/components/shared/PageHeader"
 import { StateBlock } from "@/components/shared/StateBlock"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -19,11 +26,19 @@ import {
   useBranches,
   useCreateEmployee,
   useEmployees,
+  useImportEmployees,
   useSectors,
   useUpdateEmployee,
 } from "@/hooks/useUnyxData"
+import {
+  cellToText,
+  getCell,
+  normalizeColumn,
+  parseSpreadsheet,
+} from "@/lib/spreadsheet"
 import { useAppStore } from "@/store/useAppStore"
-import type { EmployeeWithRelations } from "@/types/domain"
+import type { EmployeeImportInput } from "@/services/unyxApi"
+import type { Branch, EmployeeWithRelations, Sector } from "@/types/domain"
 
 const fieldClass =
   "h-8 w-full rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
@@ -60,12 +75,182 @@ function formatPhone(value: string) {
   return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`
 }
 
+function normalizeLookup(value: string) {
+  return normalizeColumn(value).replace(/_/g, " ")
+}
+
+function EmployeeStatusBadge({ active }: { active: boolean }) {
+  return (
+    <Badge
+      variant="outline"
+      className={
+        active
+          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+          : "border-zinc-200 bg-zinc-50 text-zinc-600"
+      }
+    >
+      {active ? "Ativo" : "Inativo"}
+    </Badge>
+  )
+}
+
+function EmployeesImportDialog({
+  branches,
+  sectors,
+  selectedBranchId,
+}: {
+  branches: Branch[]
+  sectors: Sector[]
+  selectedBranchId: string | null
+}) {
+  const [open, setOpen] = useState(false)
+  const [rows, setRows] = useState<EmployeeImportInput[]>([])
+  const [errors, setErrors] = useState<string[]>([])
+  const [fileName, setFileName] = useState("")
+  const importEmployees = useImportEmployees()
+
+  const activeBranches = useMemo(
+    () => branches.filter((branch) => branch.active),
+    [branches]
+  )
+
+  async function handleFile(file: File | null) {
+    setRows([])
+    setErrors([])
+    setFileName(file?.name ?? "")
+
+    if (!file) return
+
+    try {
+      const parsed = await parseSpreadsheet(file)
+      const branchByName = new Map(
+        activeBranches.map((branch) => [normalizeLookup(branch.name), branch.id])
+      )
+      const sectorByBranchAndName = new Map(
+        sectors
+          .filter((sector) => sector.active)
+          .map((sector) => [
+            `${sector.branch_id}:${normalizeLookup(sector.name)}`,
+            sector.id,
+          ])
+      )
+      const fallbackBranchId =
+        selectedBranchId && activeBranches.some((branch) => branch.id === selectedBranchId)
+          ? selectedBranchId
+          : activeBranches[0]?.id ?? ""
+      const nextRows: EmployeeImportInput[] = []
+      const nextErrors: string[] = []
+
+      parsed.forEach((row, index) => {
+        const name = cellToText(getCell(row, ["nome", "colaborador", "funcionario"]))
+        const branchName = cellToText(getCell(row, ["filial", "loja", "unidade"]))
+        const sectorName = cellToText(getCell(row, ["setor", "departamento"]))
+        const branchId = branchName
+          ? branchByName.get(normalizeLookup(branchName)) ?? ""
+          : fallbackBranchId
+        const sectorId = sectorName
+          ? sectorByBranchAndName.get(`${branchId}:${normalizeLookup(sectorName)}`) ?? ""
+          : ""
+
+        if (!name) {
+          nextErrors.push(`Linha ${index + 2}: nome obrigatorio.`)
+          return
+        }
+
+        if (!branchId) {
+          nextErrors.push(`Linha ${index + 2}: filial nao encontrada.`)
+          return
+        }
+
+        if (sectorName && !sectorId) {
+          nextErrors.push(`Linha ${index + 2}: setor nao encontrado na filial.`)
+          return
+        }
+
+        nextRows.push({
+          branch_id: branchId,
+          sector_id: sectorId || null,
+          name,
+          role: cellToText(getCell(row, ["cargo", "funcao"])) || null,
+          phone: formatPhone(cellToText(getCell(row, ["telefone", "celular"]))),
+          document: cellToText(getCell(row, ["documento", "cpf"])),
+          notes: cellToText(getCell(row, ["observacoes", "obs", "notas"])) || null,
+        })
+      })
+
+      setRows(nextRows)
+      setErrors(nextErrors)
+    } catch (error) {
+      setErrors([error instanceof Error ? error.message : "Nao foi possivel ler a planilha."])
+    }
+  }
+
+  async function handleImport() {
+    const result = await importEmployees.mutateAsync(rows)
+    setErrors(result.errors)
+
+    if (result.created > 0) {
+      setRows([])
+      setFileName("")
+      if (result.errors.length === 0) setOpen(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline">
+          <FileSpreadsheet className="size-4" />
+          Importar
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Importar colaboradores</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="rounded-lg border bg-slate-50 p-3 text-sm text-slate-700">
+            Colunas aceitas: nome, filial, setor, cargo, telefone, cpf/documento e
+            observacoes. Use arquivos .xlsx ou .csv.
+          </div>
+          <Input
+            type="file"
+            accept=".xlsx,.csv"
+            onChange={(event) => void handleFile(event.target.files?.[0] ?? null)}
+          />
+          {fileName ? (
+            <div className="text-sm text-muted-foreground">
+              {fileName}: {rows.length} linha(s) validas.
+            </div>
+          ) : null}
+          {errors.length > 0 ? (
+            <div className="max-h-40 overflow-auto rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+              {errors.slice(0, 12).map((error) => (
+                <div key={error}>{error}</div>
+              ))}
+              {errors.length > 12 ? <div>...mais {errors.length - 12}</div> : null}
+            </div>
+          ) : null}
+        </div>
+        <DialogFooter>
+          <Button
+            disabled={rows.length === 0 || importEmployees.isPending}
+            onClick={() => void handleImport()}
+          >
+            {importEmployees.isPending ? "Importando..." : "Importar colaboradores"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function EmployeeEditDialog({
   employee,
   branches,
 }: {
   employee: EmployeeWithRelations
-  branches: Array<{ id: string; name: string }>
+  branches: Branch[]
 }) {
   const [open, setOpen] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
@@ -150,7 +335,7 @@ function EmployeeEditDialog({
                 }
               >
                 <option value="">Selecione</option>
-                {branches.map((b) => (
+                {branches.filter((b) => b.active).map((b) => (
                   <option key={b.id} value={b.id}>
                     {b.name}
                   </option>
@@ -167,7 +352,7 @@ function EmployeeEditDialog({
                 }
               >
                 <option value="">Sem setor</option>
-                {(sectors.data ?? []).map((s) => (
+                {(sectors.data ?? []).filter((s) => s.active).map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
                   </option>
@@ -206,6 +391,13 @@ function EmployeeEditDialog({
               onChange={(e) => setForm((c) => ({ ...c, notes: e.target.value }))}
             />
           </label>
+
+          {form.branch_id !== employee.branch_id ||
+          form.sector_id !== (employee.sector_id ?? "") ? (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              Verifique escalas futuras deste colaborador depois de alterar filial ou setor.
+            </div>
+          ) : null}
 
           {formError || updateEmployee.error ? (
             <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -270,6 +462,11 @@ function DeactivateDialog({ employee }: { employee: EmployeeWithRelations }) {
 export function EmployeesPage() {
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
   const { data: branches = [] } = useBranches()
+  const allSectors = useSectors(null)
+  const activeBranches = useMemo(
+    () => branches.filter((branch) => branch.active),
+    [branches]
+  )
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState<EmployeeFormState>({
     ...initialForm,
@@ -336,14 +533,20 @@ export function EmployeesPage() {
         title="Colaboradores"
         description={`${activeCount} ativos na operação`}
         action={
-          <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="size-4" />
-                Novo colaborador
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
+          <div className="flex flex-wrap gap-2">
+            <EmployeesImportDialog
+              branches={branches}
+              sectors={allSectors.data ?? []}
+              selectedBranchId={selectedBranchId}
+            />
+            <Dialog open={open} onOpenChange={setOpen}>
+              <DialogTrigger asChild>
+                <Button>
+                  <Plus className="size-4" />
+                  Novo colaborador
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
               <DialogHeader>
                 <DialogTitle>Cadastrar colaborador</DialogTitle>
               </DialogHeader>
@@ -376,7 +579,7 @@ export function EmployeesPage() {
                       }
                     >
                       <option value="">Selecione</option>
-                      {branches.map((b) => (
+                      {activeBranches.map((b) => (
                         <option key={b.id} value={b.id}>
                           {b.name}
                         </option>
@@ -393,7 +596,7 @@ export function EmployeesPage() {
                       }
                     >
                       <option value="">Sem setor</option>
-                      {(formSectors.data ?? []).map((s) => (
+                      {(formSectors.data ?? []).filter((s) => s.active).map((s) => (
                         <option key={s.id} value={s.id}>
                           {s.name}
                         </option>
@@ -445,8 +648,9 @@ export function EmployeesPage() {
                   </Button>
                 </DialogFooter>
               </form>
-            </DialogContent>
-          </Dialog>
+              </DialogContent>
+            </Dialog>
+          </div>
         }
       />
 
@@ -528,13 +732,7 @@ export function EmployeesPage() {
                     <td className="px-4 py-3">{employee.sectors?.name ?? "-"}</td>
                     <td className="px-4 py-3">{employee.role ?? "-"}</td>
                     <td className="px-4 py-3">
-                      {employee.active ? (
-                        <StatusBadge status="trabalhando" />
-                      ) : (
-                        <span className="inline-flex h-5 items-center rounded-full border border-zinc-200 bg-zinc-50 px-2 text-xs font-medium text-zinc-600">
-                          Inativo
-                        </span>
-                      )}
+                      <EmployeeStatusBadge active={employee.active} />
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-2">

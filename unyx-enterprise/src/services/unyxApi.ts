@@ -27,6 +27,34 @@ import type {
   UserProfile,
 } from "@/types/domain"
 
+export interface BulkImportResult {
+  created: number
+  skipped: number
+  errors: string[]
+}
+
+export interface EmployeeImportInput {
+  branch_id: string
+  sector_id: string | null
+  name: string
+  role: string | null
+  phone: string | null
+  document: string | null
+  notes: string | null
+}
+
+export interface ScheduleImportInput {
+  branch_id: string
+  employee_id: string
+  work_date: string
+  start_time: string | null
+  break_start: string | null
+  break_end: string | null
+  end_time: string | null
+  status: ScheduleStatus
+  notes: string | null
+}
+
 function raise(error: { message: string } | null) {
   if (error) throw new Error(error.message)
 }
@@ -71,6 +99,188 @@ async function createAuditLog(
   })
 
   raise(error)
+}
+
+function normalizeText(value: string | null | undefined) {
+  return (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase()
+}
+
+function cleanDocument(value: string | null | undefined) {
+  return (value ?? "").replace(/\D/g, "")
+}
+
+function timeToMinutes(value: string | null | undefined) {
+  if (!value) return null
+  const [hours, minutes] = value.slice(0, 5).split(":").map(Number)
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null
+  return hours * 60 + minutes
+}
+
+function friendlyDatabaseError(error: { code?: string; message: string } | null) {
+  if (!error) return null
+  if (error.code === "23505" && error.message.includes("schedules")) {
+    return "Este colaborador ja possui escala nesta data."
+  }
+  return error.message
+}
+
+async function validateBranchAndSector(
+  profile: UserProfile,
+  branchId: string,
+  sectorId?: string | null
+) {
+  const { data: branch, error: branchError } = await supabase
+    .from("branches")
+    .select("id, organization_id, active")
+    .eq("id", branchId)
+    .maybeSingle()
+
+  raise(branchError)
+
+  if (!branch || branch.organization_id !== profile.organization_id) {
+    throw new Error("Filial invalida para esta organizacao.")
+  }
+
+  if (!branch.active) {
+    throw new Error("Nao e possivel usar uma filial inativa.")
+  }
+
+  if (!sectorId) return
+
+  const { data: sector, error: sectorError } = await supabase
+    .from("sectors")
+    .select("id, organization_id, branch_id, active")
+    .eq("id", sectorId)
+    .maybeSingle()
+
+  raise(sectorError)
+
+  if (
+    !sector ||
+    sector.organization_id !== profile.organization_id ||
+    sector.branch_id !== branchId
+  ) {
+    throw new Error("O setor selecionado nao pertence a filial informada.")
+  }
+
+  if (!sector.active) {
+    throw new Error("Nao e possivel usar um setor inativo.")
+  }
+}
+
+async function ensureEmployeeLimit(profile: UserProfile, extraActiveEmployees = 1) {
+  const subscription = await getSubscription(profile.organization_id)
+  const maxEmployees = subscription?.max_employees
+
+  if (!maxEmployees) return
+
+  const { count, error } = await supabase
+    .from("employees")
+    .select("id", { count: "exact", head: true })
+    .eq("organization_id", profile.organization_id)
+    .eq("active", true)
+
+  raise(error)
+
+  if ((count ?? 0) + extraActiveEmployees > maxEmployees) {
+    throw new Error(
+      `Limite do plano atingido: ${maxEmployees} colaboradores ativos.`
+    )
+  }
+}
+
+async function ensureEmployeeDocumentIsUnique(
+  profile: UserProfile,
+  document: string | null | undefined,
+  ignoreEmployeeId?: string
+) {
+  const cleaned = cleanDocument(document)
+  if (!cleaned) return
+
+  let query = supabase
+    .from("employees")
+    .select("id, document")
+    .eq("organization_id", profile.organization_id)
+
+  if (ignoreEmployeeId) query = query.neq("id", ignoreEmployeeId)
+
+  const { data, error } = await query
+
+  raise(error)
+
+  if ((data ?? []).some((employee) => cleanDocument(employee.document) === cleaned)) {
+    throw new Error("Ja existe um colaborador com este documento.")
+  }
+}
+
+async function validateScheduleEmployee(
+  profile: UserProfile,
+  branchId: string,
+  employeeId: string
+) {
+  await validateBranchAndSector(profile, branchId)
+
+  const { data: employee, error } = await supabase
+    .from("employees")
+    .select("id, organization_id, branch_id, active")
+    .eq("id", employeeId)
+    .maybeSingle()
+
+  raise(error)
+
+  if (!employee || employee.organization_id !== profile.organization_id) {
+    throw new Error("Colaborador invalido para esta organizacao.")
+  }
+
+  if (employee.branch_id !== branchId) {
+    throw new Error("O colaborador selecionado nao pertence a filial da escala.")
+  }
+
+  if (!employee.active) {
+    throw new Error("Nao e possivel escalar um colaborador inativo.")
+  }
+}
+
+function normalizeScheduleInput<T extends Partial<ScheduleImportInput>>(input: T) {
+  const normalized = { ...input }
+
+  if (normalized.status === "day_off") {
+    normalized.start_time = null
+    normalized.break_start = null
+    normalized.break_end = null
+    normalized.end_time = null
+    return normalized
+  }
+
+  const orderedTimes = [
+    ["entrada", normalized.start_time],
+    ["saida para intervalo", normalized.break_start],
+    ["retorno", normalized.break_end],
+    ["saida final", normalized.end_time],
+  ] as const
+
+  let previous: number | null = null
+  let previousLabel = ""
+
+  for (const [label, value] of orderedTimes) {
+    const minutes = timeToMinutes(value)
+    if (minutes === null) continue
+
+    if (previous !== null && minutes <= previous) {
+      throw new Error(
+        `Horario invalido: ${label} deve ser depois de ${previousLabel}.`
+      )
+    }
+
+    previous = minutes
+    previousLabel = label
+  }
+
+  return normalized
 }
 
 export async function getCurrentProfile() {
@@ -419,30 +629,48 @@ export async function listEmployees(branchId?: string | null) {
 
 export async function createEmployee(
   profile: UserProfile,
-  input: {
-    branch_id: string
-    sector_id: string | null
-    name: string
-    role: string | null
-    phone: string | null
-    document: string | null
-    notes: string | null
-  }
+  input: EmployeeImportInput
 ) {
+  const payload = {
+    ...input,
+    name: input.name.trim(),
+    role: input.role?.trim() || null,
+    phone: input.phone?.trim() || null,
+    document: cleanDocument(input.document) || null,
+    notes: input.notes?.trim() || null,
+  }
+
+  if (!payload.name) throw new Error("Informe o nome do colaborador.")
+
+  await validateBranchAndSector(profile, payload.branch_id, payload.sector_id)
+  await ensureEmployeeLimit(profile)
+  await ensureEmployeeDocumentIsUnique(profile, payload.document)
+
   const { data, error } = await supabase
     .from("employees")
     .insert({
-      ...input,
+      ...payload,
       organization_id: profile.organization_id,
     })
     .select("*, branches(name), sectors(name)")
     .single()
 
   raise(error)
+
+  await createAuditLog(profile, {
+    branch_id: data.branch_id,
+    action: "employee_created",
+    entity_type: "employees",
+    entity_id: data.id,
+    old_value: null,
+    new_value: data,
+  })
+
   return data as EmployeeWithRelations
 }
 
 export async function updateEmployee(
+  profile: UserProfile,
   employeeId: string,
   input: Partial<
     Pick<
@@ -451,15 +679,182 @@ export async function updateEmployee(
     >
   >
 ) {
+  const { data: previous, error: previousError } = await supabase
+    .from("employees")
+    .select("*")
+    .eq("id", employeeId)
+    .maybeSingle()
+
+  raise(previousError)
+
+  if (!previous || previous.organization_id !== profile.organization_id) {
+    throw new Error("Colaborador nao encontrado.")
+  }
+
+  const payload = { ...input }
+
+  if (typeof payload.name === "string") {
+    payload.name = payload.name.trim()
+    if (!payload.name) throw new Error("Informe o nome do colaborador.")
+  }
+
+  if (typeof payload.role === "string") payload.role = payload.role.trim() || null
+  if (typeof payload.phone === "string") payload.phone = payload.phone.trim() || null
+  if (typeof payload.notes === "string") payload.notes = payload.notes.trim() || null
+  if (typeof payload.document === "string") {
+    payload.document = cleanDocument(payload.document) || null
+  }
+
+  const nextBranchId = payload.branch_id ?? previous.branch_id
+  const nextSectorId =
+    payload.sector_id === undefined ? previous.sector_id : payload.sector_id
+
+  await validateBranchAndSector(profile, nextBranchId, nextSectorId)
+  await ensureEmployeeDocumentIsUnique(profile, payload.document, employeeId)
+
+  if (previous.active === false && payload.active === true) {
+    await ensureEmployeeLimit(profile)
+  }
+
   const { data, error } = await supabase
     .from("employees")
-    .update(input)
+    .update(payload)
     .eq("id", employeeId)
     .select("*, branches(name), sectors(name)")
     .single()
 
   raise(error)
+
+  await createAuditLog(profile, {
+    branch_id: data.branch_id,
+    action:
+      payload.active === false
+        ? "employee_deactivated"
+        : payload.active === true
+          ? "employee_activated"
+          : "employee_updated",
+    entity_type: "employees",
+    entity_id: data.id,
+    old_value: previous,
+    new_value: data,
+  })
+
   return data as EmployeeWithRelations
+}
+
+export async function importEmployees(
+  profile: UserProfile,
+  rows: EmployeeImportInput[]
+): Promise<BulkImportResult> {
+  const errors: string[] = []
+
+  const normalizedRows = rows
+    .map((row, index) => ({
+      index,
+      value: {
+        ...row,
+        name: row.name.trim(),
+        role: row.role?.trim() || null,
+        phone: row.phone?.trim() || null,
+        document: cleanDocument(row.document) || null,
+        notes: row.notes?.trim() || null,
+      },
+    }))
+    .filter((row) => {
+      if (!row.value.name) {
+        errors.push(`Linha ${row.index + 2}: nome obrigatorio.`)
+        return false
+      }
+      return true
+    })
+
+  if (normalizedRows.length === 0) {
+    return { created: 0, skipped: rows.length, errors }
+  }
+
+  const { data: existing, error: existingError } = await supabase
+    .from("employees")
+    .select("id, branch_id, name, document")
+    .eq("organization_id", profile.organization_id)
+
+  raise(existingError)
+
+  const existingDocuments = new Set(
+    (existing ?? [])
+      .map((employee) => cleanDocument(employee.document))
+      .filter(Boolean)
+  )
+  const existingNameBranch = new Set(
+    (existing ?? []).map(
+      (employee) => `${employee.branch_id}:${normalizeText(employee.name)}`
+    )
+  )
+  const seenDocuments = new Set<string>()
+  const seenNameBranch = new Set<string>()
+  const payload: Array<EmployeeImportInput & { organization_id: string }> = []
+
+  for (const row of normalizedRows) {
+    try {
+      await validateBranchAndSector(
+        profile,
+        row.value.branch_id,
+        row.value.sector_id
+      )
+
+      const document = cleanDocument(row.value.document)
+      const nameBranchKey = `${row.value.branch_id}:${normalizeText(row.value.name)}`
+
+      if (document && (existingDocuments.has(document) || seenDocuments.has(document))) {
+        errors.push(`Linha ${row.index + 2}: documento ja cadastrado.`)
+        continue
+      }
+
+      if (existingNameBranch.has(nameBranchKey) || seenNameBranch.has(nameBranchKey)) {
+        errors.push(`Linha ${row.index + 2}: colaborador ja existe nesta filial.`)
+        continue
+      }
+
+      if (document) seenDocuments.add(document)
+      seenNameBranch.add(nameBranchKey)
+      payload.push({
+        ...row.value,
+        document: document || null,
+        organization_id: profile.organization_id,
+      })
+    } catch (error) {
+      errors.push(
+        `Linha ${row.index + 2}: ${
+          error instanceof Error ? error.message : "registro invalido"
+        }`
+      )
+    }
+  }
+
+  if (payload.length === 0) {
+    return { created: 0, skipped: rows.length, errors }
+  }
+
+  await ensureEmployeeLimit(profile, payload.length)
+
+  const { data, error } = await supabase
+    .from("employees")
+    .insert(payload)
+    .select("*, branches(name), sectors(name)")
+
+  raise(error)
+
+  await createAuditLog(profile, {
+    action: "employees_imported",
+    entity_type: "employees",
+    old_value: null,
+    new_value: { created: data?.length ?? 0, skipped: rows.length - payload.length },
+  })
+
+  return {
+    created: data?.length ?? 0,
+    skipped: rows.length - payload.length,
+    errors,
+  }
 }
 
 export async function listSchedules(workDate: string, branchId?: string | null) {
@@ -478,32 +873,41 @@ export async function listSchedules(workDate: string, branchId?: string | null) 
 
 export async function createSchedule(
   profile: UserProfile,
-  input: {
-    branch_id: string
-    employee_id: string
-    work_date: string
-    start_time: string | null
-    break_start: string | null
-    break_end: string | null
-    end_time: string | null
-    status: ScheduleStatus
-    notes: string | null
-  }
+  input: ScheduleImportInput
 ) {
+  await validateScheduleEmployee(profile, input.branch_id, input.employee_id)
+  const normalizedInput = normalizeScheduleInput({
+    ...input,
+    notes: input.notes?.trim() || null,
+  }) as ScheduleImportInput
+
   const { data, error } = await supabase
     .from("schedules")
     .insert({
-      ...input,
+      ...normalizedInput,
       organization_id: profile.organization_id,
     })
     .select("*, branches(name), employees(*, sectors(name))")
     .single()
 
-  raise(error)
+  if (error) {
+    throw new Error(friendlyDatabaseError(error) ?? error.message)
+  }
+
+  await createAuditLog(profile, {
+    branch_id: data.branch_id,
+    action: "schedule_created",
+    entity_type: "schedules",
+    entity_id: data.id,
+    old_value: null,
+    new_value: data,
+  })
+
   return data as ScheduleWithRelations
 }
 
 export async function updateSchedule(
+  profile: UserProfile,
   scheduleId: string,
   input: Partial<
     Pick<
@@ -512,24 +916,80 @@ export async function updateSchedule(
     >
   >
 ) {
+  const { data: previous, error: previousError } = await supabase
+    .from("schedules")
+    .select("*")
+    .eq("id", scheduleId)
+    .maybeSingle()
+
+  raise(previousError)
+
+  if (!previous || previous.organization_id !== profile.organization_id) {
+    throw new Error("Escala nao encontrada.")
+  }
+
+  const normalizedInput = normalizeScheduleInput({
+    ...previous,
+    ...input,
+    notes: input.notes === undefined ? previous.notes : input.notes?.trim() || null,
+  })
+
   const { data, error } = await supabase
     .from("schedules")
-    .update(input)
+    .update({
+      start_time: normalizedInput.start_time,
+      break_start: normalizedInput.break_start,
+      break_end: normalizedInput.break_end,
+      end_time: normalizedInput.end_time,
+      status: normalizedInput.status,
+      notes: normalizedInput.notes,
+    })
     .eq("id", scheduleId)
     .select("*, branches(name), employees(*, sectors(name))")
     .single()
 
   raise(error)
+
+  await createAuditLog(profile, {
+    branch_id: data.branch_id,
+    action: "schedule_updated",
+    entity_type: "schedules",
+    entity_id: data.id,
+    old_value: previous,
+    new_value: data,
+  })
+
   return data as ScheduleWithRelations
 }
 
-export async function deleteSchedule(scheduleId: string) {
+export async function deleteSchedule(profile: UserProfile, scheduleId: string) {
+  const { data: previous, error: previousError } = await supabase
+    .from("schedules")
+    .select("*")
+    .eq("id", scheduleId)
+    .maybeSingle()
+
+  raise(previousError)
+
+  if (!previous || previous.organization_id !== profile.organization_id) {
+    throw new Error("Escala nao encontrada.")
+  }
+
   const { error } = await supabase
     .from("schedules")
     .delete()
     .eq("id", scheduleId)
 
   raise(error)
+
+  await createAuditLog(profile, {
+    branch_id: previous.branch_id,
+    action: "schedule_deleted",
+    entity_type: "schedules",
+    entity_id: previous.id,
+    old_value: previous,
+    new_value: null,
+  })
 }
 
 export async function listDashboardRows(
@@ -954,29 +1414,52 @@ export async function updateUserRole(profileId: string, role: UserProfile["role"
 export async function copySchedulesFromDate(
   profile: UserProfile,
   sourceDate: string,
-  targetDate: string
+  targetDate: string,
+  branchId?: string | null
 ) {
-  const { data: sourceSchedules, error: sourceError } = await supabase
+  let sourceQuery = supabase
     .from("schedules")
     .select("*")
     .eq("work_date", sourceDate)
     .eq("organization_id", profile.organization_id)
 
+  if (branchId) sourceQuery = sourceQuery.eq("branch_id", branchId)
+
+  const { data: sourceSchedules, error: sourceError } = await sourceQuery
+
   raise(sourceError)
   if (!sourceSchedules?.length) return []
 
-  const newSchedules = sourceSchedules.map((schedule) => ({
-    organization_id: schedule.organization_id,
-    branch_id: schedule.branch_id,
-    employee_id: schedule.employee_id,
-    work_date: targetDate,
-    start_time: schedule.start_time,
-    break_start: schedule.break_start,
-    break_end: schedule.break_end,
-    end_time: schedule.end_time,
-    status: "scheduled" as ScheduleStatus,
-    notes: schedule.notes,
-  }))
+  const { data: existingSchedules, error: existingError } = await supabase
+    .from("schedules")
+    .select("employee_id, work_date")
+    .eq("work_date", targetDate)
+    .eq("organization_id", profile.organization_id)
+
+  raise(existingError)
+
+  const existingKeys = new Set(
+    (existingSchedules ?? []).map(
+      (schedule) => `${schedule.employee_id}:${schedule.work_date}`
+    )
+  )
+
+  const newSchedules = sourceSchedules
+    .filter((schedule) => !existingKeys.has(`${schedule.employee_id}:${targetDate}`))
+    .map((schedule) => ({
+      organization_id: schedule.organization_id,
+      branch_id: schedule.branch_id,
+      employee_id: schedule.employee_id,
+      work_date: targetDate,
+      start_time: schedule.status === "day_off" ? null : schedule.start_time,
+      break_start: schedule.status === "day_off" ? null : schedule.break_start,
+      break_end: schedule.status === "day_off" ? null : schedule.break_end,
+      end_time: schedule.status === "day_off" ? null : schedule.end_time,
+      status: schedule.status as ScheduleStatus,
+      notes: schedule.notes,
+    }))
+
+  if (newSchedules.length === 0) return []
 
   const { data, error } = await supabase
     .from("schedules")
@@ -984,5 +1467,105 @@ export async function copySchedulesFromDate(
     .select("*, branches(name), employees(*, sectors(name))")
 
   raise(error)
+
+  await createAuditLog(profile, {
+    branch_id: branchId ?? null,
+    action: "schedules_copied",
+    entity_type: "schedules",
+    old_value: { sourceDate, targetDate },
+    new_value: {
+      created: data?.length ?? 0,
+      skipped: sourceSchedules.length - newSchedules.length,
+    },
+  })
+
   return (data ?? []) as ScheduleWithRelations[]
+}
+
+export async function importSchedules(
+  profile: UserProfile,
+  rows: ScheduleImportInput[]
+): Promise<BulkImportResult> {
+  const errors: string[] = []
+  const normalizedRows: ScheduleImportInput[] = []
+  const seen = new Set<string>()
+
+  for (const [index, row] of rows.entries()) {
+    try {
+      await validateScheduleEmployee(profile, row.branch_id, row.employee_id)
+      const normalized = normalizeScheduleInput({
+        ...row,
+        notes: row.notes?.trim() || null,
+      }) as ScheduleImportInput
+      const key = `${normalized.employee_id}:${normalized.work_date}`
+
+      if (seen.has(key)) {
+        errors.push(`Linha ${index + 2}: escala duplicada no arquivo.`)
+        continue
+      }
+
+      seen.add(key)
+      normalizedRows.push(normalized)
+    } catch (error) {
+      errors.push(
+        `Linha ${index + 2}: ${
+          error instanceof Error ? error.message : "registro invalido"
+        }`
+      )
+    }
+  }
+
+  if (normalizedRows.length === 0) {
+    return { created: 0, skipped: rows.length, errors }
+  }
+
+  const dates = Array.from(new Set(normalizedRows.map((row) => row.work_date)))
+  const employeeIds = Array.from(new Set(normalizedRows.map((row) => row.employee_id)))
+
+  const { data: existing, error: existingError } = await supabase
+    .from("schedules")
+    .select("employee_id, work_date")
+    .eq("organization_id", profile.organization_id)
+    .in("work_date", dates)
+    .in("employee_id", employeeIds)
+
+  raise(existingError)
+
+  const existingKeys = new Set(
+    (existing ?? []).map((schedule) => `${schedule.employee_id}:${schedule.work_date}`)
+  )
+  const payload = normalizedRows
+    .filter((row, index) => {
+      const exists = existingKeys.has(`${row.employee_id}:${row.work_date}`)
+      if (exists) errors.push(`Linha ${index + 2}: colaborador ja possui escala nesta data.`)
+      return !exists
+    })
+    .map((row) => ({
+      ...row,
+      organization_id: profile.organization_id,
+    }))
+
+  if (payload.length === 0) {
+    return { created: 0, skipped: rows.length, errors }
+  }
+
+  const { data, error } = await supabase
+    .from("schedules")
+    .insert(payload)
+    .select("*, branches(name), employees(*, sectors(name))")
+
+  raise(error)
+
+  await createAuditLog(profile, {
+    action: "schedules_imported",
+    entity_type: "schedules",
+    old_value: null,
+    new_value: { created: data?.length ?? 0, skipped: rows.length - payload.length },
+  })
+
+  return {
+    created: data?.length ?? 0,
+    skipped: rows.length - payload.length,
+    errors,
+  }
 }
