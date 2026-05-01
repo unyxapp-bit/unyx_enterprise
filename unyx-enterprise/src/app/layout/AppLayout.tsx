@@ -103,11 +103,11 @@ export function AppLayout() {
     <div className="min-h-screen bg-slate-50 text-slate-950">
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-40 w-72 border-r bg-white transition-transform lg:translate-x-0",
+          "fixed inset-y-0 left-0 z-40 flex h-dvh w-72 flex-col overflow-hidden border-r bg-white transition-transform lg:translate-x-0",
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
-        <div className="flex h-16 items-center border-b px-5">
+        <div className="flex h-16 shrink-0 items-center border-b px-5">
           <div className="min-w-0">
             <div className="text-lg font-semibold tracking-tight">
               Unyx Enterprise
@@ -120,7 +120,7 @@ export function AppLayout() {
             </div>
           </div>
         </div>
-        <nav className="space-y-5 px-3 py-4">
+        <nav className="flex-1 space-y-5 overflow-y-auto overscroll-contain px-3 py-4 pb-6">
           {navGroups.map((group) => (
             <div key={group.label} className="space-y-1">
               <div className="px-3 pb-1">
