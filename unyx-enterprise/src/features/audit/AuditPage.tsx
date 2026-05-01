@@ -17,6 +17,47 @@ import { useAppStore } from "@/store/useAppStore"
 const filterClass =
   "h-8 rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
 
+const actionLabels: Record<string, string> = {
+  bootstrap_first_access: "Primeiro acesso (bootstrap)",
+  create_employee: "Cadastro de colaborador",
+  update_employee: "Edicao de colaborador",
+  deactivate_employee: "Desativacao de colaborador",
+  activate_employee: "Reativacao de colaborador",
+  create_schedule: "Criacao de escala",
+  update_schedule: "Edicao de escala",
+  delete_schedule: "Exclusao de escala",
+  import_schedules: "Importacao de escalas",
+  copy_schedules: "Copia de escalas",
+  record_event: "Registro de evento operacional",
+  create_branch: "Criacao de filial",
+  update_branch: "Edicao de filial",
+  create_sector: "Criacao de setor",
+  update_sector: "Edicao de setor",
+  update_settings: "Atualizacao de configuracoes",
+  create_post: "Publicacao de comunicado",
+  update_post: "Edicao de comunicado",
+  delete_post: "Exclusao de comunicado",
+  invite_user: "Convite de usuario",
+  update_user_role: "Alteracao de perfil de usuario",
+}
+
+const entityLabels: Record<string, string> = {
+  employee: "Colaborador",
+  schedule: "Escala",
+  branch: "Filial",
+  sector: "Setor",
+  attendance_event: "Evento de presenca",
+  operational_setting: "Configuracao operacional",
+  comms_post: "Comunicado",
+  user: "Usuario",
+  organization: "Organizacao",
+}
+
+function labelFor(map: Record<string, string>, key: string) {
+  if (map[key]) return map[key]
+  return key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
 export function AuditPage() {
   const logs = useAllAuditLogs()
   const branches = useBranches()
@@ -63,7 +104,7 @@ export function AuditPage() {
                 <option value="">Todas as ações</option>
                 {actionOptions.map((a) => (
                   <option key={a} value={a}>
-                    {a}
+                    {labelFor(actionLabels, a)}
                   </option>
                 ))}
               </select>
@@ -123,9 +164,11 @@ export function AuditPage() {
                         <td className="px-4 py-3 text-muted-foreground">
                           {formatDateTimeBR(log.created_at)}
                         </td>
-                        <td className="px-4 py-3 font-medium">{log.action}</td>
+                        <td className="px-4 py-3 font-medium">
+                          {labelFor(actionLabels, log.action)}
+                        </td>
                         <td className="px-4 py-3 text-muted-foreground">
-                          {log.entity_type}
+                          {labelFor(entityLabels, log.entity_type)}
                         </td>
                         <td className="px-4 py-3">
                           {log.user_profiles?.name ?? (log.user_id ? "—" : "Sistema")}
