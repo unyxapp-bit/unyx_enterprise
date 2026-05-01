@@ -31,6 +31,7 @@ export type ScheduleStatus =
   | "cancelled"
 
 export type OperationalStatus =
+  | "aguardando_evento"
   | "trabalhando"
   | "deve_sair"
   | "aguardando_sangria"
@@ -38,6 +39,7 @@ export type OperationalStatus =
   | "em_intervalo"
   | "voltou"
   | "folga"
+  | "finalizado"
   | "alerta_critico"
 
 export type AttendanceEventType =

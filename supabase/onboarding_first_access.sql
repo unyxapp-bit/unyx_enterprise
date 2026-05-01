@@ -11,6 +11,11 @@
 
 drop function if exists public.bootstrap_current_user_profile();
 
+-- Se o Supabase avisar "unsafe use of new value", rode somente estes
+-- dois ALTER TYPE primeiro e depois execute o arquivo completo novamente.
+alter type public.operational_status_type add value if not exists 'aguardando_evento';
+alter type public.operational_status_type add value if not exists 'finalizado';
+
 insert into public.modules (key, name, description, active)
 values
   ('unyx_ops', 'Unyx Ops', 'Operacao em tempo real: dashboard, status, acoes e alertas.', true),
@@ -648,3 +653,371 @@ $$;
 
 revoke all on function public.update_current_user_profile(text, text, uuid) from public;
 grant execute on function public.update_current_user_profile(text, text, uuid) to authenticated;
+
+create or replace function public.record_operational_action(
+  p_branch_id uuid,
+  p_employee_id uuid,
+  p_schedule_id uuid,
+  p_event_type public.attendance_event_type,
+  p_delay_minutes integer default null,
+  p_notes text default null
+)
+returns public.attendance_events
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_auth_user_id uuid := auth.uid();
+  v_profile public.user_profiles%rowtype;
+  v_schedule public.schedules%rowtype;
+  v_employee public.employees%rowtype;
+  v_settings public.operational_settings%rowtype;
+  v_current_status public.operational_status_type;
+  v_next_status public.operational_status_type;
+  v_next_schedule_status public.schedule_status;
+  v_priority integer := 0;
+  v_delay integer := 0;
+  v_reason text;
+  v_sector_name text;
+  v_is_cashier boolean := false;
+  v_allowed boolean := false;
+  v_event public.attendance_events%rowtype;
+  v_status public.operational_status%rowtype;
+  v_previous_status jsonb;
+begin
+  if v_auth_user_id is null then
+    raise exception 'Usuario autenticado nao encontrado.';
+  end if;
+
+  select *
+  into v_profile
+  from public.user_profiles
+  where auth_user_id = v_auth_user_id
+    and active = true
+  limit 1;
+
+  if not found then
+    raise exception 'Perfil do usuario nao encontrado.';
+  end if;
+
+  if not public.can_manage_branch(p_branch_id) then
+    raise exception 'Usuario sem permissao para operar esta filial.';
+  end if;
+
+  select *
+  into v_schedule
+  from public.schedules
+  where id = p_schedule_id
+    and organization_id = v_profile.organization_id
+  for update;
+
+  if not found then
+    raise exception 'Escala nao encontrada.';
+  end if;
+
+  if v_schedule.branch_id <> p_branch_id or v_schedule.employee_id <> p_employee_id then
+    raise exception 'Evento nao corresponde a escala informada.';
+  end if;
+
+  if v_schedule.status in ('cancelled', 'day_off') and p_event_type <> 'ocorrencia_registrada' then
+    raise exception 'Esta escala nao pode receber acoes operacionais.';
+  end if;
+
+  select *
+  into v_employee
+  from public.employees
+  where id = p_employee_id
+    and organization_id = v_profile.organization_id
+    and branch_id = p_branch_id
+    and active = true;
+
+  if not found then
+    raise exception 'Colaborador ativo nao encontrado nesta filial.';
+  end if;
+
+  select name
+  into v_sector_name
+  from public.sectors
+  where id = v_employee.sector_id;
+
+  select *
+  into v_settings
+  from public.operational_settings
+  where organization_id = v_profile.organization_id
+    and (branch_id = p_branch_id or branch_id is null)
+  order by case when branch_id = p_branch_id then 0 else 1 end
+  limit 1;
+
+  select os.current_status, to_jsonb(os)
+  into v_current_status, v_previous_status
+  from public.operational_status os
+  where os.employee_id = p_employee_id
+    and os.schedule_id = p_schedule_id
+  for update;
+
+  if v_current_status is null or v_current_status = 'aguardando_evento' then
+    v_allowed := p_event_type in (
+      'entrada_confirmada',
+      'atraso_detectado',
+      'falta_detectada'
+    );
+  elsif v_current_status in ('trabalhando', 'voltou') then
+    v_allowed := p_event_type in (
+      'intervalo_solicitado',
+      'intervalo_iniciado',
+      'atraso_detectado',
+      'ocorrencia_registrada',
+      'saida_confirmada'
+    );
+  elsif v_current_status = 'aguardando_sangria' then
+    v_allowed := p_event_type in ('sangria_confirmada', 'ocorrencia_registrada');
+  elsif v_current_status = 'troca_de_caixa' then
+    v_allowed := p_event_type in ('troca_caixa_confirmada', 'ocorrencia_registrada');
+  elsif v_current_status = 'deve_sair' then
+    v_allowed := p_event_type in (
+      'intervalo_iniciado',
+      'saida_confirmada',
+      'ocorrencia_registrada'
+    );
+  elsif v_current_status = 'em_intervalo' then
+    v_allowed := p_event_type in ('retorno_confirmado', 'ocorrencia_registrada');
+  elsif v_current_status = 'alerta_critico' then
+    v_allowed := p_event_type in (
+      'entrada_confirmada',
+      'saida_confirmada',
+      'ocorrencia_registrada'
+    );
+  elsif v_current_status in ('finalizado', 'folga') then
+    v_allowed := p_event_type = 'ocorrencia_registrada';
+  end if;
+
+  if not v_allowed then
+    raise exception 'Esta acao nao e permitida no status operacional atual.';
+  end if;
+
+  v_is_cashier := lower(coalesce(v_employee.role, '') || ' ' || coalesce(v_sector_name, '')) similar to '%(caixa|checkout|frente)%';
+
+  if coalesce(v_settings.require_cashier_cash_count, false)
+    and v_is_cashier
+    and p_event_type = 'intervalo_iniciado'
+    and coalesce(v_current_status, 'aguardando_evento') in ('aguardando_evento', 'trabalhando', 'voltou')
+  then
+    raise exception 'Confirme a sangria antes de iniciar o intervalo deste caixa.';
+  end if;
+
+  case p_event_type
+    when 'entrada_confirmada' then
+      v_next_status := 'trabalhando';
+      v_next_schedule_status := 'working';
+      v_priority := 20;
+      v_reason := 'Entrada confirmada';
+    when 'atraso_detectado' then
+      v_next_status := 'alerta_critico';
+      v_priority := 100;
+      v_reason := 'Atraso detectado';
+    when 'falta_detectada' then
+      v_next_status := 'alerta_critico';
+      v_next_schedule_status := 'absent';
+      v_priority := 110;
+      v_reason := 'Falta detectada';
+    when 'intervalo_solicitado' then
+      v_next_status := 'aguardando_sangria';
+      v_priority := 80;
+      v_reason := 'Intervalo solicitado';
+    when 'sangria_confirmada' then
+      v_next_status := 'troca_de_caixa';
+      v_priority := 70;
+      v_reason := 'Sangria confirmada';
+    when 'troca_caixa_confirmada' then
+      v_next_status := 'deve_sair';
+      v_priority := 60;
+      v_reason := 'Troca de caixa confirmada';
+    when 'intervalo_iniciado' then
+      v_next_status := 'em_intervalo';
+      v_next_schedule_status := 'on_break';
+      v_priority := 50;
+      v_reason := 'Intervalo iniciado';
+    when 'retorno_confirmado' then
+      v_next_status := 'voltou';
+      v_next_schedule_status := 'returned';
+      v_priority := 30;
+      v_reason := 'Retorno confirmado';
+    when 'saida_confirmada' then
+      v_next_status := 'finalizado';
+      v_next_schedule_status := 'finished';
+      v_priority := 5;
+      v_reason := 'Saida confirmada';
+    when 'ocorrencia_registrada' then
+      v_next_status := 'alerta_critico';
+      v_priority := 95;
+      v_reason := 'Ocorrencia registrada';
+  end case;
+
+  v_delay := coalesce(
+    p_delay_minutes,
+    case when p_event_type = 'atraso_detectado' then 10 else 0 end
+  );
+  v_reason := coalesce(nullif(trim(p_notes), ''), v_reason, 'Evento operacional');
+
+  insert into public.attendance_events (
+    organization_id,
+    branch_id,
+    employee_id,
+    schedule_id,
+    event_type,
+    created_by,
+    notes
+  )
+  values (
+    v_profile.organization_id,
+    p_branch_id,
+    p_employee_id,
+    p_schedule_id,
+    p_event_type,
+    v_profile.id,
+    nullif(trim(p_notes), '')
+  )
+  returning * into v_event;
+
+  if v_next_schedule_status is not null then
+    update public.schedules
+    set status = v_next_schedule_status
+    where id = p_schedule_id;
+  end if;
+
+  insert into public.operational_status (
+    organization_id,
+    branch_id,
+    employee_id,
+    schedule_id,
+    current_status,
+    priority_level,
+    delay_minutes,
+    status_reason,
+    updated_at
+  )
+  values (
+    v_profile.organization_id,
+    p_branch_id,
+    p_employee_id,
+    p_schedule_id,
+    v_next_status,
+    v_priority,
+    v_delay,
+    v_reason,
+    now()
+  )
+  on conflict (employee_id, schedule_id)
+  do update set
+    current_status = excluded.current_status,
+    priority_level = excluded.priority_level,
+    delay_minutes = excluded.delay_minutes,
+    status_reason = excluded.status_reason,
+    updated_at = now()
+  returning * into v_status;
+
+  insert into public.audit_logs (
+    organization_id,
+    branch_id,
+    user_id,
+    action,
+    entity_type,
+    entity_id,
+    old_value,
+    new_value
+  )
+  values (
+    v_profile.organization_id,
+    p_branch_id,
+    v_profile.id,
+    p_event_type::text,
+    'attendance_events',
+    v_event.id,
+    v_previous_status,
+    jsonb_build_object(
+      'event', to_jsonb(v_event),
+      'operational_status', to_jsonb(v_status),
+      'schedule_status', v_next_schedule_status
+    )
+  );
+
+  return v_event;
+end;
+$$;
+
+revoke all on function public.record_operational_action(
+  uuid,
+  uuid,
+  uuid,
+  public.attendance_event_type,
+  integer,
+  text
+) from public;
+
+grant execute on function public.record_operational_action(
+  uuid,
+  uuid,
+  uuid,
+  public.attendance_event_type,
+  integer,
+  text
+) to authenticated;
+
+create or replace view public.v_operational_dashboard as
+select
+  coalesce(os.id, sc.id) as id,
+  sc.organization_id,
+  sc.branch_id,
+  b.name as branch_name,
+  sc.employee_id,
+  e.name as employee_name,
+  e.role as employee_role,
+  s.name as sector_name,
+  sc.work_date,
+  sc.start_time,
+  sc.break_start,
+  sc.break_end,
+  sc.end_time,
+  coalesce(
+    os.current_status,
+    case sc.status
+      when 'working' then 'trabalhando'::public.operational_status_type
+      when 'on_break' then 'em_intervalo'::public.operational_status_type
+      when 'returned' then 'voltou'::public.operational_status_type
+      when 'finished' then 'finalizado'::public.operational_status_type
+      when 'absent' then 'alerta_critico'::public.operational_status_type
+      when 'day_off' then 'folga'::public.operational_status_type
+      else 'aguardando_evento'::public.operational_status_type
+    end
+  ) as current_status,
+  coalesce(
+    os.priority_level,
+    case sc.status
+      when 'absent' then 110
+      when 'on_break' then 50
+      else 10
+    end
+  ) as priority_level,
+  coalesce(os.delay_minutes, 0) as delay_minutes,
+  coalesce(
+    os.status_reason,
+    case sc.status
+      when 'scheduled' then 'Aguardando primeiro evento'
+      when 'working' then 'Trabalhando pela escala'
+      when 'on_break' then 'Intervalo pela escala'
+      when 'returned' then 'Retorno registrado na escala'
+      when 'finished' then 'Turno finalizado'
+      when 'absent' then 'Falta registrada na escala'
+      when 'day_off' then 'Folga na escala'
+      when 'cancelled' then 'Escala cancelada'
+    end
+  ) as status_reason,
+  coalesce(os.updated_at, sc.updated_at) as updated_at
+from public.schedules sc
+join public.employees e on e.id = sc.employee_id
+join public.branches b on b.id = sc.branch_id
+left join public.sectors s on s.id = e.sector_id
+left join public.operational_status os
+  on os.schedule_id = sc.id
+  and os.employee_id = sc.employee_id;

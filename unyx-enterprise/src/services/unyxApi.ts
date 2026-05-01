@@ -76,6 +76,40 @@ function isMissingProfileRpc(error: { code?: string; message: string } | null) {
   )
 }
 
+function isMissingOperationalActionRpc(
+  error: { code?: string; message: string } | null
+) {
+  if (!error) return false
+  return (
+    error.code === "PGRST202" ||
+    error.message.includes("record_operational_action")
+  )
+}
+
+function isUnsupportedFinalizedStatus(
+  error: { code?: string; message: string } | null
+) {
+  if (!error) return false
+  return (
+    error.message.includes("finalizado") &&
+    error.message.includes("operational_status_type")
+  )
+}
+
+function scheduleStatusForEvent(
+  eventType: AttendanceEventType
+): ScheduleStatus | null {
+  const map: Partial<Record<AttendanceEventType, ScheduleStatus>> = {
+    entrada_confirmada: "working",
+    falta_detectada: "absent",
+    intervalo_iniciado: "on_break",
+    retorno_confirmado: "returned",
+    saida_confirmada: "finished",
+  }
+
+  return map[eventType] ?? null
+}
+
 async function createAuditLog(
   profile: UserProfile,
   input: {
@@ -1206,6 +1240,24 @@ export async function recordOperationalEvent(
 ) {
   const actionMeta = getActionMeta(input.event_type)
   const statusReason = input.notes || actionMeta?.label || "Evento operacional"
+  const nextScheduleStatus = scheduleStatusForEvent(input.event_type)
+
+  const { data: rpcEvent, error: rpcError } = await supabase.rpc(
+    "record_operational_action",
+    {
+      p_branch_id: input.branch_id,
+      p_employee_id: input.employee_id,
+      p_schedule_id: input.schedule_id,
+      p_event_type: input.event_type,
+      p_delay_minutes: input.delay_minutes ?? null,
+      p_notes: input.notes ?? null,
+    }
+  )
+
+  if (!rpcError) return rpcEvent as AttendanceEvent
+  if (!isMissingOperationalActionRpc(rpcError)) {
+    throw new Error(rpcError.message)
+  }
 
   const { data: event, error: eventError } = await supabase
     .from("attendance_events")
@@ -1223,26 +1275,45 @@ export async function recordOperationalEvent(
 
   raise(eventError)
 
+  if (nextScheduleStatus) {
+    const { error: scheduleError } = await supabase
+      .from("schedules")
+      .update({ status: nextScheduleStatus })
+      .eq("id", input.schedule_id)
+      .eq("organization_id", profile.organization_id)
+
+    raise(scheduleError)
+  }
+
   if (actionMeta) {
+    const statusPayload = {
+      organization_id: profile.organization_id,
+      branch_id: input.branch_id,
+      employee_id: input.employee_id,
+      schedule_id: input.schedule_id,
+      current_status: actionMeta.nextStatus,
+      priority_level: actionMeta.priorityLevel,
+      delay_minutes:
+        input.delay_minutes ?? (input.event_type === "atraso_detectado" ? 10 : 0),
+      status_reason: statusReason,
+      updated_at: new Date().toISOString(),
+    }
     const { error: statusError } = await supabase
       .from("operational_status")
-      .upsert(
-        {
-          organization_id: profile.organization_id,
-          branch_id: input.branch_id,
-          employee_id: input.employee_id,
-          schedule_id: input.schedule_id,
-          current_status: actionMeta.nextStatus,
-          priority_level: actionMeta.priorityLevel,
-          delay_minutes:
-            input.delay_minutes ?? (input.event_type === "atraso_detectado" ? 10 : 0),
-          status_reason: statusReason,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "employee_id,schedule_id" }
-      )
+      .upsert(statusPayload, { onConflict: "employee_id,schedule_id" })
 
-    raise(statusError)
+    if (isUnsupportedFinalizedStatus(statusError)) {
+      const { error: fallbackStatusError } = await supabase
+        .from("operational_status")
+        .upsert(
+          { ...statusPayload, current_status: "folga" },
+          { onConflict: "employee_id,schedule_id" }
+        )
+
+      raise(fallbackStatusError)
+    } else {
+      raise(statusError)
+    }
   }
 
   const { error: auditError } = await supabase.from("audit_logs").insert({

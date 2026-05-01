@@ -43,7 +43,7 @@ export function AiPage() {
     )
     const critical = (statuses.data ?? []).filter(
       (status) =>
-        status.current_status === "alerta_critico" || status.priority_level >= 4
+        status.current_status === "alerta_critico" || status.priority_level >= 70
     )
     const working = (statuses.data ?? []).filter(
       (status) => status.current_status === "trabalhando"

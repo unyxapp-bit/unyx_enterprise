@@ -16,6 +16,7 @@ interface PriorityContext {
 
 const priorityRules: Record<OperationalMode, Record<OperationalStatus, number>> = {
   supermarket: {
+    aguardando_evento: 10,
     alerta_critico: 100,
     em_intervalo: 70,
     deve_sair: 65,
@@ -23,9 +24,11 @@ const priorityRules: Record<OperationalMode, Record<OperationalStatus, number>> 
     troca_de_caixa: 55,
     trabalhando: 20,
     voltou: 15,
+    finalizado: 0,
     folga: 0,
   },
   retail_store: {
+    aguardando_evento: 10,
     alerta_critico: 100,
     em_intervalo: 60,
     deve_sair: 55,
@@ -33,9 +36,11 @@ const priorityRules: Record<OperationalMode, Record<OperationalStatus, number>> 
     troca_de_caixa: 35,
     trabalhando: 20,
     voltou: 15,
+    finalizado: 0,
     folga: 0,
   },
   restaurant: {
+    aguardando_evento: 10,
     alerta_critico: 100,
     em_intervalo: 65,
     deve_sair: 50,
@@ -43,9 +48,11 @@ const priorityRules: Record<OperationalMode, Record<OperationalStatus, number>> 
     troca_de_caixa: 35,
     trabalhando: 20,
     voltou: 15,
+    finalizado: 0,
     folga: 0,
   },
   pharmacy: {
+    aguardando_evento: 10,
     alerta_critico: 100,
     em_intervalo: 55,
     deve_sair: 50,
@@ -53,9 +60,11 @@ const priorityRules: Record<OperationalMode, Record<OperationalStatus, number>> 
     troca_de_caixa: 30,
     trabalhando: 20,
     voltou: 15,
+    finalizado: 0,
     folga: 0,
   },
   other: {
+    aguardando_evento: 10,
     alerta_critico: 100,
     em_intervalo: 60,
     deve_sair: 50,
@@ -63,6 +72,7 @@ const priorityRules: Record<OperationalMode, Record<OperationalStatus, number>> 
     troca_de_caixa: 35,
     trabalhando: 20,
     voltou: 15,
+    finalizado: 0,
     folga: 0,
   },
 }
@@ -176,7 +186,7 @@ export function getSchedulePriorityByMode(
   schedule: ScheduleWithRelations,
   status?: OperationalStatusRecord
 ) {
-  return getPriorityByMode(mode, status?.current_status ?? "trabalhando", {
+  return getPriorityByMode(mode, status?.current_status ?? "aguardando_evento", {
     delayMinutes: status?.delay_minutes ?? 0,
     role: schedule.employees?.role,
     sectorName: schedule.employees?.sectors?.name,

@@ -75,6 +75,7 @@ function getAvailableActions(
 
   switch (status) {
     case undefined:
+    case "aguardando_evento":
       return ["entrada_confirmada", "atraso_detectado", "falta_detectada"]
     case "trabalhando":
     case "voltou":
@@ -94,6 +95,9 @@ function getAvailableActions(
       return ["retorno_confirmado", "ocorrencia_registrada"]
     case "alerta_critico":
       return ["entrada_confirmada", "saida_confirmada", "ocorrencia_registrada"]
+    case "finalizado":
+    case "folga":
+      return ["ocorrencia_registrada"]
     default:
       return ["ocorrencia_registrada"]
   }

@@ -12,6 +12,8 @@ export const operationalStatuses: OperationalStatus[] = [
   "em_intervalo",
   "voltou",
   "trabalhando",
+  "aguardando_evento",
+  "finalizado",
   "folga",
 ]
 
@@ -24,6 +26,12 @@ export const statusMeta: Record<
     dotClassName: string
   }
 > = {
+  aguardando_evento: {
+    label: "Aguardando evento",
+    badgeClassName: "border-slate-200 bg-slate-50 text-slate-600",
+    cardClassName: "border-slate-200 bg-slate-50/70",
+    dotClassName: "bg-slate-400",
+  },
   trabalhando: {
     label: "Trabalhando",
     badgeClassName: "border-emerald-200 bg-emerald-50 text-emerald-700",
@@ -65,6 +73,12 @@ export const statusMeta: Record<
     badgeClassName: "border-zinc-200 bg-zinc-50 text-zinc-600",
     cardClassName: "border-zinc-200 bg-zinc-50/70",
     dotClassName: "bg-zinc-400",
+  },
+  finalizado: {
+    label: "Finalizado",
+    badgeClassName: "border-neutral-200 bg-neutral-50 text-neutral-700",
+    cardClassName: "border-neutral-200 bg-neutral-50/70",
+    dotClassName: "bg-neutral-500",
   },
   alerta_critico: {
     label: "Alerta crítico",
@@ -155,8 +169,8 @@ export const operationalActions: Array<{
   {
     eventType: "saida_confirmada",
     label: "Confirmar saída",
-    nextStatus: "folga",
-    priorityLevel: 10,
+    nextStatus: "finalizado",
+    priorityLevel: 5,
   },
   {
     eventType: "ocorrencia_registrada",
