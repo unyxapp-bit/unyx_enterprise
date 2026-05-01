@@ -22,10 +22,19 @@ import {
   useUpdateOrganization,
 } from "@/hooks/useUnyxData"
 import { formatDateTimeBR } from "@/lib/format"
-import type { BusinessSegment, Organization } from "@/types/domain"
+import type { BusinessSegment, Organization, UserRole } from "@/types/domain"
 
 const fieldClass =
   "h-8 w-full rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+
+const roleLabel: Record<UserRole, string> = {
+  owner: "Proprietário",
+  admin: "Administrador",
+  branch_manager: "Gerente de filial",
+  supervisor: "Supervisor",
+  operator: "Operador",
+  employee: "Colaborador",
+}
 
 const segmentLabel: Record<BusinessSegment, string> = {
   retail_store: "Loja de varejo",
@@ -193,7 +202,9 @@ export function SettingsPage() {
                 </div>
                 <div className="rounded-lg border bg-slate-50 p-3">
                   <div className="text-xs text-muted-foreground">Papel</div>
-                  <div className="mt-1 font-medium">{profile?.role}</div>
+                  <div className="mt-1 font-medium">
+                    {profile ? roleLabel[profile.role] : "-"}
+                  </div>
                 </div>
               </div>
             </CardContent>

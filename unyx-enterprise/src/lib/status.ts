@@ -153,6 +153,12 @@ export const operationalActions: Array<{
     priorityLevel: 30,
   },
   {
+    eventType: "saida_confirmada",
+    label: "Confirmar saída",
+    nextStatus: "folga",
+    priorityLevel: 10,
+  },
+  {
     eventType: "ocorrencia_registrada",
     label: "Ocorrência",
     nextStatus: "alerta_critico",

@@ -6,7 +6,7 @@ import {
   RefreshCw,
   Users,
 } from "lucide-react"
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import {
   Bar,
   BarChart,
@@ -39,10 +39,14 @@ import { formatTime, minutesLabel, todayISO } from "@/lib/format"
 import { operationalStatuses, statusMeta } from "@/lib/status"
 import type { OperationalStatus } from "@/types/domain"
 
+const fieldClass =
+  "h-8 rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+
 type StatusCount = { current_status: OperationalStatus; delay_minutes: number }
 
 export function DashboardPage() {
   const [date, setDate] = useState(todayISO())
+  const [sectorFilter, setSectorFilter] = useState("")
   const dashboard = useDashboardRows(date)
   const schedules = useSchedules(date)
   const statuses = useOperationalStatuses()
@@ -50,9 +54,18 @@ export function DashboardPage() {
   const liveStatuses = statuses.data ?? []
   const scheduledToday = schedules.data ?? []
 
+  const sectorOptions = useMemo(() => {
+    const names = new Set(rows.map((r) => r.sector_name).filter(Boolean) as string[])
+    return Array.from(names).sort()
+  }, [rows])
+
+  const filteredRows = sectorFilter
+    ? rows.filter((r) => r.sector_name === sectorFilter)
+    : rows
+
   const statusSource: StatusCount[] =
-    rows.length > 0
-      ? rows.map((r) => ({
+    filteredRows.length > 0
+      ? filteredRows.map((r) => ({
           current_status: r.current_status,
           delay_minutes: r.delay_minutes,
         }))
@@ -105,13 +118,27 @@ export function DashboardPage() {
         title="Dashboard Operacional"
         description="Visão viva da operação do dia, organizada por prioridade."
         action={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Input
               className="w-40"
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
             />
+            {sectorOptions.length > 0 ? (
+              <select
+                className={fieldClass}
+                value={sectorFilter}
+                onChange={(e) => setSectorFilter(e.target.value)}
+              >
+                <option value="">Todos os setores</option>
+                {sectorOptions.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            ) : null}
             <Button
               variant="outline"
               size="icon"
@@ -131,13 +158,14 @@ export function DashboardPage() {
         {lastUpdated ? (
           <p className="text-xs text-muted-foreground">
             Atualizado às {lastUpdated}
+            {sectorFilter ? ` · Setor: ${sectorFilter}` : ""}
           </p>
         ) : null}
 
         <BentoGrid>
           <MetricCard
             title="Escalados"
-            value={scheduledToday.length}
+            value={sectorFilter ? filteredRows.length : scheduledToday.length}
             detail="Colaboradores na escala"
             icon={<Users className="size-5" />}
           />
@@ -199,13 +227,13 @@ export function DashboardPage() {
               <CardTitle>Alertas críticos</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {rows.filter((row) => row.current_status === "alerta_critico").length === 0 ? (
+              {filteredRows.filter((row) => row.current_status === "alerta_critico").length === 0 ? (
                 <StateBlock
                   title="Nenhum alerta crítico"
                   description="A operação não possui registros críticos no momento."
                 />
               ) : (
-                rows
+                filteredRows
                   .filter((row) => row.current_status === "alerta_critico")
                   .slice(0, 6)
                   .map((row) => (
@@ -234,14 +262,14 @@ export function DashboardPage() {
           <CardContent>
             {dashboard.isLoading ? (
               <StateBlock type="loading" title="Carregando operação" />
-            ) : rows.length === 0 ? (
+            ) : filteredRows.length === 0 ? (
               <StateBlock
                 title="Dashboard aguardando eventos"
                 description="Depois que a operação do dia começar, os colaboradores aparecerão aqui por prioridade."
               />
             ) : (
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {rows.map((row) => (
+                {filteredRows.map((row) => (
                   <div
                     key={row.id}
                     className="rounded-lg border bg-white p-4 shadow-sm"

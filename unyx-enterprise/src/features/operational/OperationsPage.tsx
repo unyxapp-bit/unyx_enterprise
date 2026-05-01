@@ -25,6 +25,7 @@ import {
   useOperationalStatuses,
   useRecordOperationalEvent,
   useSchedules,
+  useSectors,
 } from "@/hooks/useUnyxData"
 import { formatDateTimeBR, formatTime, todayISO } from "@/lib/format"
 import { eventLabel, operationalActions } from "@/lib/status"
@@ -34,8 +35,12 @@ import type {
   ScheduleWithRelations,
 } from "@/types/domain"
 
+const fieldClass =
+  "h-8 rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+
 export function OperationsPage() {
   const [date, setDate] = useState(todayISO())
+  const [sectorFilter, setSectorFilter] = useState("")
   const [occurrenceSchedule, setOccurrenceSchedule] =
     useState<ScheduleWithRelations | null>(null)
   const [occurrenceNote, setOccurrenceNote] = useState("")
@@ -44,6 +49,13 @@ export function OperationsPage() {
   const statuses = useOperationalStatuses()
   const events = useAttendanceEvents()
   const recordEvent = useRecordOperationalEvent()
+  const sectors = useSectors()
+
+  const filteredSchedules = useMemo(() => {
+    const all = schedules.data ?? []
+    if (!sectorFilter) return all
+    return all.filter((s) => s.employees?.sectors?.name === sectorFilter || (sectorFilter === "__none__" && !s.employees?.sectors))
+  }, [schedules.data, sectorFilter])
 
   const statusByScheduleId = useMemo(() => {
     const map = new Map<string, OperationalStatusRecord>()
@@ -97,12 +109,28 @@ export function OperationsPage() {
         title="Operação do Dia"
         description="Registro real de eventos e status dos colaboradores."
         action={
-          <Input
-            className="w-40"
-            type="date"
-            value={date}
-            onChange={(event) => setDate(event.target.value)}
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              className="w-40"
+              type="date"
+              value={date}
+              onChange={(event) => setDate(event.target.value)}
+            />
+            {(sectors.data ?? []).length > 0 ? (
+              <select
+                className={fieldClass}
+                value={sectorFilter}
+                onChange={(e) => setSectorFilter(e.target.value)}
+              >
+                <option value="">Todos os setores</option>
+                {(sectors.data ?? []).map((s) => (
+                  <option key={s.id} value={s.name}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+          </div>
         }
       />
 
@@ -123,14 +151,14 @@ export function OperationsPage() {
                 title="Erro ao carregar operação"
                 description={schedules.error.message}
               />
-            ) : (schedules.data ?? []).length === 0 ? (
+            ) : filteredSchedules.length === 0 ? (
               <StateBlock
                 title="Sem escala para operar"
                 description="Cadastre a escala do dia antes de registrar eventos."
               />
             ) : (
               <div className="grid gap-3">
-                {(schedules.data ?? []).map((schedule) => {
+                {filteredSchedules.map((schedule) => {
                   const status = statusByScheduleId.get(schedule.id)
 
                   return (
@@ -167,7 +195,8 @@ export function OperationsPage() {
                         {operationalActions
                           .filter(
                             (action) =>
-                              action.eventType !== "ocorrencia_registrada"
+                              action.eventType !== "ocorrencia_registrada" &&
+                              action.eventType !== "saida_confirmada"
                           )
                           .map((action) => (
                           <Button
@@ -185,6 +214,15 @@ export function OperationsPage() {
                             {action.label}
                           </Button>
                         ))}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="border-slate-300 text-slate-600 hover:bg-slate-100"
+                          disabled={recordEvent.isPending}
+                          onClick={() => void handleAction(schedule, "saida_confirmada")}
+                        >
+                          Confirmar saída
+                        </Button>
                         <Button
                           variant="destructive"
                           size="sm"
