@@ -1,3 +1,4 @@
+@import "@fontsource-variable/geist";
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
@@ -124,5 +125,6 @@
 
   body {
     @apply bg-background text-foreground;
+    font-family: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
   }
 }
