@@ -3,6 +3,7 @@ import type { FormEvent } from "react"
 import {
   CalendarCog,
   CalendarPlus,
+  Download,
   FileSpreadsheet,
   Pencil,
   Trash2,
@@ -30,6 +31,7 @@ import {
   useSchedules,
   useUpdateSchedule,
 } from "@/hooks/useUnyxData"
+import { buildCsv, downloadCsv } from "@/lib/exportCsv"
 import { formatDateBR, formatTime, todayISO } from "@/lib/format"
 import { scheduleStatusLabel } from "@/lib/status"
 import {
@@ -564,6 +566,32 @@ export function SchedulesPage() {
     [employees.data]
   )
 
+  function handleExport() {
+    const headers = [
+      { key: "employee", label: "Colaborador" },
+      { key: "sector", label: "Setor" },
+      { key: "work_date", label: "Data" },
+      { key: "start_time", label: "Entrada" },
+      { key: "break_start", label: "Inicio intervalo" },
+      { key: "break_end", label: "Fim intervalo" },
+      { key: "end_time", label: "Saida" },
+      { key: "status", label: "Status" },
+      { key: "notes", label: "Observacoes" },
+    ]
+    const rows = filteredSchedules.map((s) => ({
+      employee: s.employees?.name ?? "",
+      sector: s.employees?.sectors?.name ?? "",
+      work_date: s.work_date,
+      start_time: s.start_time ?? "",
+      break_start: s.break_start ?? "",
+      break_end: s.break_end ?? "",
+      end_time: s.end_time ?? "",
+      status: scheduleStatusLabel[s.status as keyof typeof scheduleStatusLabel] ?? s.status,
+      notes: s.notes ?? "",
+    }))
+    downloadCsv(buildCsv(rows, headers), `escala_${date}.csv`)
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setFormError(null)
@@ -619,6 +647,15 @@ export function SchedulesPage() {
                 ))}
               </select>
             ) : null}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExport}
+              disabled={filteredSchedules.length === 0}
+            >
+              <Download className="mr-1.5 size-4" />
+              Exportar CSV
+            </Button>
             <SchedulesImportDialog
               branches={branches.data ?? []}
               currentDate={date}

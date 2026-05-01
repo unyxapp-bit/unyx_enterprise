@@ -26,6 +26,7 @@ export const modeUiConfig = {
     liveTitle: "Frente de caixa em tempo real",
     highPriorityTitle: "Prioridade da frente de caixa",
     secondaryTitle: "Intervalos e sangria",
+    minimumTeamSize: 2,
     dashboardCards: [
       "scheduled",
       "working",
@@ -46,6 +47,7 @@ export const modeUiConfig = {
     liveTitle: "Setores em tempo real",
     highPriorityTitle: "Setores em risco",
     secondaryTitle: "Cobertura por area",
+    minimumTeamSize: 2,
     dashboardCards: [
       "activeSectors",
       "sectorAlerts",
@@ -66,6 +68,7 @@ export const modeUiConfig = {
     liveTitle: "Turno em tempo real",
     highPriorityTitle: "Alertas do turno",
     secondaryTitle: "Pico e equipe minima",
+    minimumTeamSize: 3,
     dashboardCards: [
       "currentShift",
       "present",
@@ -86,6 +89,7 @@ export const modeUiConfig = {
     liveTitle: "Farmacia em tempo real",
     highPriorityTitle: "Alertas de conformidade",
     secondaryTitle: "Atendimento e responsavel",
+    minimumTeamSize: 1,
     dashboardCards: [
       "responsiblePresence",
       "serviceCoverage",
@@ -106,6 +110,7 @@ export const modeUiConfig = {
     liveTitle: "Operacao em tempo real",
     highPriorityTitle: "Alertas criticos",
     secondaryTitle: "Saidas e intervalos",
+    minimumTeamSize: 2,
     dashboardCards: ["scheduled", "working", "critical", "breaks", "delay"],
     ruleHighlights: [
       "Prioridade por status operacional.",
@@ -121,6 +126,7 @@ export const modeUiConfig = {
     liveTitle: string
     highPriorityTitle: string
     secondaryTitle: string
+    minimumTeamSize: number
     dashboardCards: DashboardMetricKey[]
     ruleHighlights: string[]
   }

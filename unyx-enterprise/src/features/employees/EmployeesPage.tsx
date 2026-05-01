@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react"
 import type { FormEvent } from "react"
 import {
+  Download,
   FileSpreadsheet,
+  History,
   Pencil,
   Plus,
   Search,
@@ -9,6 +11,7 @@ import {
   UserRoundX,
 } from "lucide-react"
 
+import { StatusBadge } from "@/components/bento/StatusBadge"
 import { PageHeader } from "@/components/shared/PageHeader"
 import { StateBlock } from "@/components/shared/StateBlock"
 import { Badge } from "@/components/ui/badge"
@@ -23,13 +26,18 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import {
+  useAttendanceEvents,
   useBranches,
   useCreateEmployee,
   useEmployees,
   useImportEmployees,
+  useOperationalStatuses,
   useSectors,
   useUpdateEmployee,
 } from "@/hooks/useUnyxData"
+import { buildCsv, downloadCsv } from "@/lib/exportCsv"
+import { formatDateTimeBR } from "@/lib/format"
+import { eventLabel, statusMeta } from "@/lib/status"
 import {
   cellToText,
   getCell,
@@ -459,6 +467,69 @@ function DeactivateDialog({ employee }: { employee: EmployeeWithRelations }) {
   )
 }
 
+function EmployeeHistoryDialog({
+  employeeId,
+  employeeName,
+}: {
+  employeeId: string
+  employeeName: string
+}) {
+  const [open, setOpen] = useState(false)
+  const attendanceEvents = useAttendanceEvents()
+
+  const employeeEvents = useMemo(() => {
+    return (attendanceEvents.data ?? [])
+      .filter((e) => e.employee_id === employeeId)
+      .slice(0, 50)
+  }, [attendanceEvents.data, employeeId])
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm">
+          <History className="size-4" />
+          Historico
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Historico — {employeeName}</DialogTitle>
+        </DialogHeader>
+        {attendanceEvents.isLoading ? (
+          <div className="py-4 text-center text-sm text-muted-foreground">
+            Carregando...
+          </div>
+        ) : employeeEvents.length === 0 ? (
+          <div className="py-4 text-center text-sm text-muted-foreground">
+            Nenhum evento registrado para este colaborador.
+          </div>
+        ) : (
+          <div className="max-h-96 space-y-2 overflow-y-auto pr-1">
+            {employeeEvents.map((e) => (
+              <div
+                key={e.id}
+                className="flex items-start justify-between gap-3 rounded-lg border bg-slate-50 px-3 py-2 text-sm"
+              >
+                <div>
+                  <div className="font-medium">
+                    {eventLabel[e.event_type as keyof typeof eventLabel] ?? e.event_type}
+                  </div>
+                  {e.notes ? (
+                    <div className="text-xs text-muted-foreground">{e.notes}</div>
+                  ) : null}
+                </div>
+                <div className="shrink-0 text-xs text-muted-foreground">
+                  {formatDateTimeBR(e.event_time)}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export function EmployeesPage() {
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
   const { data: branches = [] } = useBranches()
@@ -478,9 +549,18 @@ export function EmployeesPage() {
   const [statusFilter, setStatusFilter] = useState<"" | "active" | "inactive">("")
 
   const employees = useEmployees()
+  const operationalStatuses = useOperationalStatuses()
   const formSectors = useSectors(form.branch_id || selectedBranchId)
   const createEmployee = useCreateEmployee()
   const updateEmployee = useUpdateEmployee()
+
+  const statusMap = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const s of operationalStatuses.data ?? []) {
+      map.set(s.employee_id, s.current_status)
+    }
+    return map
+  }, [operationalStatuses.data])
 
   const sectorOptions = useMemo(() => {
     const names = new Set(
@@ -505,6 +585,33 @@ export function EmployeesPage() {
     if (statusFilter === "inactive") list = list.filter((e) => !e.active)
     return list
   }, [employees.data, search, sectorFilter, statusFilter])
+
+  function handleExport() {
+    const headers = [
+      { key: "name", label: "Nome" },
+      { key: "branch", label: "Filial" },
+      { key: "sector", label: "Setor" },
+      { key: "role", label: "Cargo" },
+      { key: "status", label: "Status" },
+      { key: "op_status", label: "Status Operacional" },
+      { key: "document", label: "Documento" },
+      { key: "phone", label: "Telefone" },
+    ]
+    const rows = filteredEmployees.map((e) => {
+      const opStatus = statusMap.get(e.id)
+      return {
+        name: e.name,
+        branch: e.branches?.name ?? "",
+        sector: e.sectors?.name ?? "",
+        role: e.role ?? "",
+        status: e.active ? "Ativo" : "Inativo",
+        op_status: opStatus ? (statusMeta[opStatus as keyof typeof statusMeta]?.label ?? opStatus) : "",
+        document: e.document ?? "",
+        phone: e.phone ?? "",
+      }
+    })
+    downloadCsv(buildCsv(rows, headers), "colaboradores.csv")
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -688,6 +795,15 @@ export function EmployeesPage() {
             <option value="active">Ativos</option>
             <option value="inactive">Inativos</option>
           </select>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExport}
+            disabled={filteredEmployees.length === 0}
+          >
+            <Download className="mr-1.5 size-4" />
+            Exportar CSV
+          </Button>
         </div>
 
         {employees.isLoading ? (
@@ -721,6 +837,7 @@ export function EmployeesPage() {
                   <th className="px-4 py-3">Setor</th>
                   <th className="px-4 py-3">Cargo</th>
                   <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Operacional</th>
                   <th className="px-4 py-3 text-right">Ações</th>
                 </tr>
               </thead>
@@ -735,7 +852,15 @@ export function EmployeesPage() {
                       <EmployeeStatusBadge active={employee.active} />
                     </td>
                     <td className="px-4 py-3">
+                      {statusMap.has(employee.id) ? (
+                        <StatusBadge status={statusMap.get(employee.id) as Parameters<typeof StatusBadge>[0]["status"]} />
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
                       <div className="flex justify-end gap-2">
+                        <EmployeeHistoryDialog employeeId={employee.id} employeeName={employee.name} />
                         <EmployeeEditDialog employee={employee} branches={branches} />
                         {employee.active ? (
                           <DeactivateDialog employee={employee} />

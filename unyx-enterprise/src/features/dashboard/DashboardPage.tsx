@@ -51,6 +51,7 @@ import {
   sortDashboardRowsByMode,
 } from "@/features/ops/modes/priorityRules"
 import {
+  useAttendanceEvents,
   useDashboardRows,
   useOperationalSettings,
   useOperationalStatuses,
@@ -81,6 +82,8 @@ interface MetricData {
   rows: DashboardRow[]
   statusSource: StatusCount[]
   schedules: ScheduleWithRelations[]
+  occurrencesCount: number
+  minimumTeamSize: number
 }
 
 function normalize(value?: string | null) {
@@ -129,7 +132,7 @@ function getMetricIcon(key: DashboardMetricKey): ReactNode {
 }
 
 function buildMetric(key: DashboardMetricKey, data: MetricData) {
-  const { rows, schedules, statusSource } = data
+  const { rows, schedules, statusSource, occurrencesCount, minimumTeamSize } = data
   const critical = statusSource.filter(
     (row) => row.current_status === "alerta_critico"
   ).length
@@ -245,9 +248,9 @@ function buildMetric(key: DashboardMetricKey, data: MetricData) {
     },
     minimumTeam: {
       title: "Equipe minima",
-      value: `${working}/3`,
-      detail: working >= 3 ? "Base minima coberta" : "Abaixo do minimo sugerido",
-      danger: working < 3,
+      value: `${working}/${minimumTeamSize}`,
+      detail: working >= minimumTeamSize ? "Base minima coberta" : "Abaixo do minimo sugerido",
+      danger: working < minimumTeamSize,
     },
     nextPeak: {
       title: "Proximo pico",
@@ -276,9 +279,9 @@ function buildMetric(key: DashboardMetricKey, data: MetricData) {
     },
     occurrences: {
       title: "Ocorrencias",
-      value: critical,
-      detail: "Eventos criticos rastreaveis",
-      danger: critical > 0,
+      value: occurrencesCount,
+      detail: "Registros de ocorrencia do dia",
+      danger: occurrencesCount > 0,
     },
   }
 
@@ -302,6 +305,8 @@ export function DashboardPage() {
   const statuses = useOperationalStatuses()
   const organization = useOrganization()
   const operationalSettings = useOperationalSettings()
+
+  const attendanceEvents = useAttendanceEvents()
 
   const mode = getOperationalMode(
     operationalSettings.data?.mode ?? organization.data?.segment
@@ -336,6 +341,12 @@ export function DashboardPage() {
       (schedule) => schedule.employees?.sectors?.name === sectorFilter
     )
   }, [scheduledToday, sectorFilter])
+
+  const occurrencesCount = useMemo(() => {
+    return (attendanceEvents.data ?? []).filter(
+      (e) => e.event_time.slice(0, 10) === date && e.event_type === "ocorrencia_registrada"
+    ).length
+  }, [attendanceEvents.data, date])
 
   const statusSource: StatusCount[] =
     filteredRows.length > 0
@@ -465,6 +476,8 @@ export function DashboardPage() {
               rows: filteredRows,
               schedules: filteredSchedules,
               statusSource,
+              occurrencesCount,
+              minimumTeamSize: modeConfig.minimumTeamSize,
             })
 
             return (
@@ -601,6 +614,50 @@ export function DashboardPage() {
             })()}
           </div>
         </div>
+
+        {(() => {
+          const branchMap = new Map<string, { name: string; working: number; critical: number; total: number }>()
+          for (const row of rows) {
+            const key = row.branch_id ?? row.branch_name ?? "–"
+            if (!branchMap.has(key)) {
+              branchMap.set(key, { name: row.branch_name ?? key, working: 0, critical: 0, total: 0 })
+            }
+            const entry = branchMap.get(key)!
+            entry.total++
+            if (["trabalhando", "voltou"].includes(row.current_status)) entry.working++
+            if (row.current_status === "alerta_critico") entry.critical++
+          }
+          if (branchMap.size <= 1) return null
+          return (
+            <Card className="border bg-white shadow-sm">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Building2 className="size-5" />
+                  Resumo por filial
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {Array.from(branchMap.values()).map((branch) => (
+                    <div
+                      key={branch.name}
+                      className={`rounded-lg border p-3 ${branch.critical > 0 ? "border-red-200 bg-red-50" : "border-slate-200 bg-slate-50"}`}
+                    >
+                      <div className="font-medium">{branch.name}</div>
+                      <div className="mt-1.5 flex gap-3 text-sm text-muted-foreground">
+                        <span>{branch.working} trabalhando</span>
+                        <span>{branch.total} total</span>
+                        {branch.critical > 0 ? (
+                          <span className="font-medium text-red-600">{branch.critical} critico{branch.critical > 1 ? "s" : ""}</span>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )
+        })()}
 
         <Card className="border bg-white shadow-sm">
           <CardHeader>

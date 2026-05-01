@@ -23,7 +23,7 @@ import { BranchSelector } from "@/components/shared/BranchSelector"
 import { StateBlock } from "@/components/shared/StateBlock"
 import { Button } from "@/components/ui/button"
 import { OnboardingPage } from "@/features/onboarding/OnboardingPage"
-import { useOrganization } from "@/hooks/useUnyxData"
+import { useOperationalStatuses, useOrganization } from "@/hooks/useUnyxData"
 import { cn } from "@/lib/utils"
 import { useAppStore } from "@/store/useAppStore"
 import type { UserRole } from "@/types/domain"
@@ -83,6 +83,10 @@ export function AppLayout() {
   const { data: organization } = useOrganization()
   const sidebarOpen = useAppStore((state) => state.sidebarOpen)
   const setSidebarOpen = useAppStore((state) => state.setSidebarOpen)
+  const { data: opStatuses } = useOperationalStatuses()
+  const criticalCount = (opStatuses ?? []).filter(
+    (s) => s.current_status === "alerta_critico"
+  ).length
 
   if (profileLoading) {
     return (
@@ -147,7 +151,12 @@ export function AppLayout() {
                   }
                 >
                   <item.icon className="size-4" />
-                  {item.label}
+                  <span className="flex-1">{item.label}</span>
+                  {item.to === "/app/alerts" && criticalCount > 0 ? (
+                    <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                      {criticalCount > 99 ? "99+" : criticalCount}
+                    </span>
+                  ) : null}
                 </NavLink>
               ))}
             </div>
