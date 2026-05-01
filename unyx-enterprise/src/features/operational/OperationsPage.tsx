@@ -26,7 +26,11 @@ import {
   getOperationalMode,
   operationalModeNames,
 } from "@/features/ops/modes/operationalModes"
-import { getSchedulePriorityByMode } from "@/features/ops/modes/priorityRules"
+import {
+  getSchedulePriorityByMode,
+  isCashierContext,
+  isResponsibleContext,
+} from "@/features/ops/modes/priorityRules"
 import {
   useAttendanceEvents,
   useOperationalSettings,
@@ -40,6 +44,8 @@ import { formatDateTimeBR, formatTime, todayISO } from "@/lib/format"
 import { eventLabel, operationalActions } from "@/lib/status"
 import type {
   AttendanceEventType,
+  OperationalSettings,
+  OperationalStatus,
   OperationalStatusRecord,
   ScheduleWithRelations,
 } from "@/types/domain"
@@ -47,13 +53,123 @@ import type {
 const fieldClass =
   "h-8 rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
 
+type PendingConfirm = {
+  scheduleId: string
+  eventType: AttendanceEventType
+}
+
+type ContextBadge = {
+  label: string
+  warning: boolean
+}
+
+// Maps each operational status to the actions that make sense from that state.
+// Cashier employees with require_cashier_cash_count follow the sangria flow
+// (intervalo_solicitado) instead of going straight to em_intervalo.
+function getAvailableActions(
+  status: OperationalStatus | undefined,
+  isCashier: boolean,
+  requireCashierCashCount: boolean
+): AttendanceEventType[] {
+  const sangriaFlow = isCashier && requireCashierCashCount
+
+  switch (status) {
+    case undefined:
+      return ["entrada_confirmada", "atraso_detectado", "falta_detectada"]
+    case "trabalhando":
+    case "voltou":
+      return [
+        sangriaFlow ? "intervalo_solicitado" : "intervalo_iniciado",
+        "atraso_detectado",
+        "ocorrencia_registrada",
+        "saida_confirmada",
+      ]
+    case "aguardando_sangria":
+      return ["sangria_confirmada", "ocorrencia_registrada"]
+    case "troca_de_caixa":
+      return ["troca_caixa_confirmada", "ocorrencia_registrada"]
+    case "deve_sair":
+      return ["intervalo_iniciado", "saida_confirmada", "ocorrencia_registrada"]
+    case "em_intervalo":
+      return ["retorno_confirmado", "ocorrencia_registrada"]
+    case "alerta_critico":
+      return ["entrada_confirmada", "saida_confirmada", "ocorrencia_registrada"]
+    default:
+      return ["ocorrencia_registrada"]
+  }
+}
+
+// Returns per-employee contextual badges. Each badge is only included when
+// the relevant setting is active AND the employee's role/sector matches.
+// warning=true triggers amber styling to signal a live risk.
+function getContextBadges(
+  schedule: ScheduleWithRelations,
+  status: OperationalStatusRecord | undefined,
+  settings: OperationalSettings | null | undefined
+): ContextBadge[] {
+  if (!settings) return []
+
+  const badges: ContextBadge[] = []
+  const isCashier = isCashierContext({
+    role: schedule.employees?.role,
+    sectorName: schedule.employees?.sectors?.name,
+  })
+  const isResponsible = isResponsibleContext({
+    role: schedule.employees?.role,
+    sectorName: schedule.employees?.sectors?.name,
+  })
+  const currentStatus = status?.current_status
+
+  if (settings.require_cashier_cash_count && isCashier) {
+    const waitingSangria = currentStatus === "aguardando_sangria"
+    badges.push({
+      label: waitingSangria ? "Sangria pendente" : "Sangria obrigatória",
+      warning: waitingSangria,
+    })
+  }
+
+  if (settings.block_break_on_peak_hours) {
+    const onBreak =
+      currentStatus === "em_intervalo" || currentStatus === "aguardando_sangria"
+    badges.push({
+      label: "Pico protege intervalo",
+      warning: onBreak,
+    })
+  }
+
+  if (settings.require_responsible_presence && isResponsible) {
+    const present =
+      currentStatus === "trabalhando" || currentStatus === "voltou"
+    badges.push({
+      label: present ? "Responsável presente" : "Responsável ausente",
+      warning: !present,
+    })
+  }
+
+  return badges
+}
+
+// Atraso and Falta require a two-step inline confirmation before firing.
+const REQUIRES_CONFIRM = new Set<AttendanceEventType>([
+  "atraso_detectado",
+  "falta_detectada",
+])
+
+// Short overrides for labels that are too terse out of context.
+const ACTION_LABEL_OVERRIDE: Partial<Record<AttendanceEventType, string>> = {
+  intervalo_iniciado: "Iniciar intervalo",
+  troca_caixa_confirmada: "Troca de caixa",
+}
+
 export function OperationsPage() {
   const [date, setDate] = useState(todayISO())
   const [sectorFilter, setSectorFilter] = useState("")
+  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null)
   const [occurrenceSchedule, setOccurrenceSchedule] =
     useState<ScheduleWithRelations | null>(null)
   const [occurrenceNote, setOccurrenceNote] = useState("")
   const [occurrenceError, setOccurrenceError] = useState<string | null>(null)
+
   const schedules = useSchedules(date)
   const statuses = useOperationalStatuses()
   const events = useAttendanceEvents()
@@ -61,6 +177,7 @@ export function OperationsPage() {
   const sectors = useSectors()
   const organization = useOrganization()
   const operationalSettings = useOperationalSettings()
+
   const mode = getOperationalMode(
     operationalSettings.data?.mode ?? organization.data?.segment
   )
@@ -68,11 +185,9 @@ export function OperationsPage() {
 
   const statusByScheduleId = useMemo(() => {
     const map = new Map<string, OperationalStatusRecord>()
-
     for (const status of statuses.data ?? []) {
       if (status.schedule_id) map.set(status.schedule_id, status)
     }
-
     return map
   }, [statuses.data])
 
@@ -98,7 +213,7 @@ export function OperationsPage() {
     })
   }, [mode, schedules.data, sectorFilter, statusByScheduleId])
 
-  async function handleAction(
+  async function fireAction(
     schedule: ScheduleWithRelations,
     eventType: AttendanceEventType
   ) {
@@ -111,17 +226,35 @@ export function OperationsPage() {
     })
   }
 
+  function handleAction(
+    schedule: ScheduleWithRelations,
+    eventType: AttendanceEventType
+  ) {
+    if (REQUIRES_CONFIRM.has(eventType)) {
+      setPendingConfirm({ scheduleId: schedule.id, eventType })
+      return
+    }
+    void fireAction(schedule, eventType)
+  }
+
+  async function handleConfirm(schedule: ScheduleWithRelations) {
+    if (!pendingConfirm) return
+    try {
+      await fireAction(schedule, pendingConfirm.eventType)
+      setPendingConfirm(null)
+    } catch {
+      // error surfaced via recordEvent.error — keep confirm visible so user can cancel
+    }
+  }
+
   async function handleOccurrenceSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setOccurrenceError(null)
-
     if (!occurrenceSchedule) return
-
     if (!occurrenceNote.trim()) {
-      setOccurrenceError("Descreva a ocorrencia.")
+      setOccurrenceError("Descreva a ocorrência.")
       return
     }
-
     await recordEvent.mutateAsync({
       branch_id: occurrenceSchedule.branch_id,
       employee_id: occurrenceSchedule.employee_id,
@@ -129,7 +262,6 @@ export function OperationsPage() {
       event_type: "ocorrencia_registrada",
       notes: occurrenceNote.trim(),
     })
-
     setOccurrenceNote("")
     setOccurrenceSchedule(null)
   }
@@ -184,11 +316,11 @@ export function OperationsPage() {
             </div>
 
             {schedules.isLoading || statuses.isLoading ? (
-              <StateBlock type="loading" title="Carregando operacao" />
+              <StateBlock type="loading" title="Carregando operação" />
             ) : schedules.isError ? (
               <StateBlock
                 type="error"
-                title="Erro ao carregar operacao"
+                title="Erro ao carregar operação"
                 description={schedules.error.message}
               />
             ) : orderedSchedules.length === 0 ? (
@@ -201,12 +333,35 @@ export function OperationsPage() {
                 {orderedSchedules.map((schedule) => {
                   const status = statusByScheduleId.get(schedule.id)
                   const priority = getSchedulePriorityByMode(mode, schedule, status)
+                  const isCashier = isCashierContext({
+                    role: schedule.employees?.role,
+                    sectorName: schedule.employees?.sectors?.name,
+                  })
+                  const availableActions = getAvailableActions(
+                    status?.current_status,
+                    isCashier,
+                    operationalSettings.data?.require_cashier_cash_count ?? false
+                  )
+                  const contextBadges = getContextBadges(
+                    schedule,
+                    status,
+                    operationalSettings.data
+                  )
+                  const isPending = pendingConfirm?.scheduleId === schedule.id
+
+                  // Split actions into flow, exit and occurrence for visual grouping
+                  const flowActions = availableActions.filter(
+                    (et) => et !== "ocorrencia_registrada" && et !== "saida_confirmada"
+                  )
+                  const hasExit = availableActions.includes("saida_confirmada")
+                  const hasOccurrence = availableActions.includes("ocorrencia_registrada")
 
                   return (
                     <div
                       key={schedule.id}
                       className="rounded-lg border bg-white p-4 shadow-sm"
                     >
+                      {/* Header: name, sector, schedule times, badges */}
                       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                         <div>
                           <div className="text-base font-medium">
@@ -220,21 +375,23 @@ export function OperationsPage() {
                             <span>Entrada {formatTime(schedule.start_time)}</span>
                             <span>Intervalo {formatTime(schedule.break_start)}</span>
                             <span>Retorno {formatTime(schedule.break_end)}</span>
-                            <span>Saida {formatTime(schedule.end_time)}</span>
+                            <span>Saída {formatTime(schedule.end_time)}</span>
                           </div>
                           <div className="mt-2 flex flex-wrap gap-1.5">
                             <Badge variant="outline">Prioridade {priority}</Badge>
-                            {operationalSettings.data?.require_cashier_cash_count ? (
-                              <Badge variant="outline">Sangria obrigatoria</Badge>
-                            ) : null}
-                            {operationalSettings.data?.block_break_on_peak_hours ? (
-                              <Badge variant="outline">Pico protege intervalo</Badge>
-                            ) : null}
-                            {operationalSettings.data?.require_responsible_presence ? (
-                              <Badge variant="outline">
-                                Responsavel obrigatorio
+                            {contextBadges.map((badge) => (
+                              <Badge
+                                key={badge.label}
+                                variant="outline"
+                                className={
+                                  badge.warning
+                                    ? "border-amber-300 bg-amber-50 text-amber-700"
+                                    : "border-slate-200 bg-slate-50 text-slate-600"
+                                }
+                              >
+                                {badge.label}
                               </Badge>
-                            ) : null}
+                            ))}
                           </div>
                         </div>
                         {status ? (
@@ -246,48 +403,93 @@ export function OperationsPage() {
                         )}
                       </div>
 
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        {operationalActions
-                          .filter(
-                            (action) =>
-                              action.eventType !== "ocorrencia_registrada" &&
-                              action.eventType !== "saida_confirmada"
-                          )
-                          .map((action) => (
+                      {/* Action area */}
+                      <div className="mt-4">
+                        {isPending ? (
+                          // Two-step confirmation for destructive actions
+                          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+                            <span className="text-sm text-red-800">
+                              Confirmar{" "}
+                              <span className="font-medium">
+                                {eventLabel[pendingConfirm.eventType].toLowerCase()}
+                              </span>
+                              ?
+                            </span>
                             <Button
-                              key={action.eventType}
-                              variant={
-                                action.eventType === "atraso_detectado" ||
-                                action.eventType === "falta_detectada"
-                                  ? "destructive"
-                                  : "outline"
-                              }
+                              variant="destructive"
                               size="sm"
                               disabled={recordEvent.isPending}
-                              onClick={() =>
-                                void handleAction(schedule, action.eventType)
-                              }
+                              onClick={() => void handleConfirm(schedule)}
                             >
-                              {action.label}
+                              {recordEvent.isPending ? "Registrando..." : "Confirmar"}
                             </Button>
-                          ))}
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="border-slate-300 text-slate-600 hover:bg-slate-100"
-                          disabled={recordEvent.isPending}
-                          onClick={() => void handleAction(schedule, "saida_confirmada")}
-                        >
-                          Confirmar saida
-                        </Button>
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          disabled={recordEvent.isPending}
-                          onClick={() => setOccurrenceSchedule(schedule)}
-                        >
-                          Ocorrencia
-                        </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={recordEvent.isPending}
+                              onClick={() => setPendingConfirm(null)}
+                            >
+                              Cancelar
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap items-center gap-2">
+                            {/* Flow actions (state-specific) */}
+                            {flowActions.map((eventType) => {
+                              const action = operationalActions.find(
+                                (a) => a.eventType === eventType
+                              )
+                              if (!action) return null
+                              const label =
+                                ACTION_LABEL_OVERRIDE[eventType] ?? action.label
+                              return (
+                                <Button
+                                  key={eventType}
+                                  variant={
+                                    REQUIRES_CONFIRM.has(eventType)
+                                      ? "destructive"
+                                      : "outline"
+                                  }
+                                  size="sm"
+                                  disabled={recordEvent.isPending}
+                                  onClick={() => handleAction(schedule, eventType)}
+                                >
+                                  {label}
+                                </Button>
+                              )
+                            })}
+
+                            {/* Separator before exit/occurrence when there are flow actions */}
+                            {flowActions.length > 0 && (hasExit || hasOccurrence) ? (
+                              <span className="text-slate-200">|</span>
+                            ) : null}
+
+                            {hasExit ? (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="border-slate-300 text-slate-600 hover:bg-slate-100"
+                                disabled={recordEvent.isPending}
+                                onClick={() =>
+                                  void fireAction(schedule, "saida_confirmada")
+                                }
+                              >
+                                Confirmar saída
+                              </Button>
+                            ) : null}
+
+                            {hasOccurrence ? (
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                disabled={recordEvent.isPending}
+                                onClick={() => setOccurrenceSchedule(schedule)}
+                              >
+                                Ocorrência
+                              </Button>
+                            ) : null}
+                          </div>
+                        )}
                       </div>
                     </div>
                   )
@@ -351,7 +553,7 @@ export function OperationsPage() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Registrar ocorrencia</DialogTitle>
+            <DialogTitle>Registrar ocorrência</DialogTitle>
           </DialogHeader>
           <form className="space-y-4" onSubmit={handleOccurrenceSubmit}>
             <div className="rounded-lg border bg-slate-50 p-3 text-sm">
@@ -365,7 +567,7 @@ export function OperationsPage() {
             </div>
 
             <label className="space-y-1 text-sm">
-              <span className="font-medium">Descricao da ocorrencia</span>
+              <span className="font-medium">Descrição da ocorrência</span>
               <textarea
                 className="min-h-28 w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
                 value={occurrenceNote}
