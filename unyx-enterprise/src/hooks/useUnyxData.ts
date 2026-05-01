@@ -4,6 +4,7 @@ import { toast } from "sonner"
 import { useAuth } from "@/app/providers/auth-context"
 import { useAppStore } from "@/store/useAppStore"
 import {
+  copySchedulesFromDate,
   createBranch,
   createEmployee,
   createSchedule,
@@ -11,6 +12,7 @@ import {
   deleteSchedule,
   getOrganization,
   getSubscription,
+  listAllAuditLogs,
   listAttendanceEvents,
   listAuditLogs,
   listBranches,
@@ -18,17 +20,26 @@ import {
   listEmployees,
   listModules,
   listOperationalStatuses,
+  listReportEvents,
   listSchedules,
   listSectors,
+  listUserProfiles,
   recordOperationalEvent,
+  toggleBranchActive,
+  toggleSectorActive,
+  updateBranch,
   updateEmployee,
   updateOrganization,
   updateSchedule,
+  updateSector,
+  updateUserRole,
 } from "@/services/unyxApi"
 import type {
   AttendanceEventType,
+  Branch,
   BusinessSegment,
   ScheduleStatus,
+  UserProfile,
 } from "@/types/domain"
 
 function useRequiredProfile() {
@@ -205,29 +216,6 @@ export function useCreateSector() {
   })
 }
 
-export function useCreateEmployee() {
-  const queryClient = useQueryClient()
-  const profile = useRequiredProfile()
-
-  return useMutation({
-    mutationFn: (input: {
-      branch_id: string
-      sector_id: string | null
-      name: string
-      role: string | null
-      phone: string | null
-      notes: string | null
-    }) => createEmployee(profile, input),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["employees"] })
-      toast.success("Colaborador cadastrado com sucesso.")
-    },
-    onError: (error) => {
-      toast.error(error.message)
-    },
-  })
-}
-
 export function useUpdateEmployee() {
   const queryClient = useQueryClient()
 
@@ -241,11 +229,13 @@ export function useUpdateEmployee() {
         name?: string
         role?: string | null
         phone?: string | null
+        document?: string | null
         notes?: string | null
       }
     }) => updateEmployee(input.employeeId, input.values),
     onSuccess: async (_, variables) => {
       await queryClient.invalidateQueries({ queryKey: ["employees"] })
+      await queryClient.invalidateQueries({ queryKey: ["employees-all"] })
       if (variables.values.active === false) {
         toast.success("Colaborador desativado.")
       } else if (variables.values.active === true) {
@@ -369,6 +359,175 @@ export function useUpdateOrganization() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["organization"] })
       toast.success("Dados da empresa atualizados.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useAllEmployees() {
+  const { profile } = useAuth()
+
+  return useQuery({
+    queryKey: ["employees-all", profile?.organization_id],
+    queryFn: () => listEmployees(null),
+    enabled: Boolean(profile),
+  })
+}
+
+export function useAllAuditLogs() {
+  const { profile } = useAuth()
+  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
+
+  return useQuery({
+    queryKey: ["audit-logs-all", profile?.organization_id, selectedBranchId],
+    queryFn: () => listAllAuditLogs(selectedBranchId),
+    enabled: Boolean(profile),
+  })
+}
+
+export function useReportEvents() {
+  const { profile } = useAuth()
+  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
+
+  return useQuery({
+    queryKey: ["report-events", profile?.organization_id, selectedBranchId],
+    queryFn: () => listReportEvents(selectedBranchId),
+    enabled: Boolean(profile),
+  })
+}
+
+export function useUpdateBranch() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (input: {
+      branchId: string
+      values: Pick<Branch, "name" | "city" | "state" | "address">
+    }) => updateBranch(input.branchId, input.values),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["branches"] })
+      toast.success("Filial atualizada com sucesso.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useToggleBranchActive() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (input: { branchId: string; active: boolean }) =>
+      toggleBranchActive(input.branchId, input.active),
+    onSuccess: async (_, variables) => {
+      await queryClient.invalidateQueries({ queryKey: ["branches"] })
+      toast.success(variables.active ? "Filial ativada." : "Filial desativada.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useUpdateSector() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (input: {
+      sectorId: string
+      values: { name: string; description: string | null }
+    }) => updateSector(input.sectorId, input.values),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["sectors"] })
+      toast.success("Setor atualizado com sucesso.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useToggleSectorActive() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (input: { sectorId: string; active: boolean }) =>
+      toggleSectorActive(input.sectorId, input.active),
+    onSuccess: async (_, variables) => {
+      await queryClient.invalidateQueries({ queryKey: ["sectors"] })
+      toast.success(variables.active ? "Setor ativado." : "Setor desativado.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useUserProfiles() {
+  const { profile } = useAuth()
+
+  return useQuery({
+    queryKey: ["user-profiles", profile?.organization_id],
+    queryFn: listUserProfiles,
+    enabled: Boolean(profile),
+  })
+}
+
+export function useUpdateUserRole() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (input: { profileId: string; role: UserProfile["role"] }) =>
+      updateUserRole(input.profileId, input.role),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["user-profiles"] })
+      toast.success("Papel atualizado com sucesso.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useCopySchedules() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: { sourceDate: string; targetDate: string }) =>
+      copySchedulesFromDate(profile, input.sourceDate, input.targetDate),
+    onSuccess: async (data) => {
+      await queryClient.invalidateQueries({ queryKey: ["schedules"] })
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      toast.success(`${data.length} escala(s) copiada(s) com sucesso.`)
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useCreateEmployee() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: {
+      branch_id: string
+      sector_id: string | null
+      name: string
+      role: string | null
+      phone: string | null
+      document: string | null
+      notes: string | null
+    }) => createEmployee(profile, input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["employees"] })
+      await queryClient.invalidateQueries({ queryKey: ["employees-all"] })
+      toast.success("Colaborador cadastrado com sucesso.")
     },
     onError: (error) => {
       toast.error(error.message)

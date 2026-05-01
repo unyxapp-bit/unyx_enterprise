@@ -2,8 +2,10 @@ import {
   AlertTriangle,
   Clock,
   Coffee,
+  DoorOpen,
   Gauge,
   RefreshCw,
+  ShieldAlert,
   Users,
 } from "lucide-react"
 import { useMemo, useState } from "react"
@@ -50,7 +52,7 @@ export function DashboardPage() {
   const dashboard = useDashboardRows(date)
   const schedules = useSchedules(date)
   const statuses = useOperationalStatuses()
-  const rows = dashboard.data ?? []
+  const rows = useMemo(() => dashboard.data ?? [], [dashboard.data])
   const liveStatuses = statuses.data ?? []
   const scheduledToday = schedules.data ?? []
 
@@ -222,37 +224,100 @@ export function DashboardPage() {
             </CardContent>
           </Card>
 
-          <Card className="border bg-white shadow-sm">
-            <CardHeader>
-              <CardTitle>Alertas críticos</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {filteredRows.filter((row) => row.current_status === "alerta_critico").length === 0 ? (
-                <StateBlock
-                  title="Nenhum alerta crítico"
-                  description="A operação não possui registros críticos no momento."
-                />
-              ) : (
-                filteredRows
-                  .filter((row) => row.current_status === "alerta_critico")
-                  .slice(0, 6)
-                  .map((row) => (
-                    <div
-                      key={row.id}
-                      className="rounded-lg border border-red-100 bg-red-50 p-3"
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="font-medium">{row.employee_name}</div>
-                        <StatusBadge status={row.current_status} />
+          <div className="space-y-4">
+            <Card className="border bg-white shadow-sm">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <AlertTriangle className="size-5 text-red-500" />
+                  Alertas críticos
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {filteredRows.filter((row) => row.current_status === "alerta_critico").length === 0 ? (
+                  <StateBlock
+                    title="Nenhum alerta crítico"
+                    description="A operação não possui registros críticos no momento."
+                  />
+                ) : (
+                  filteredRows
+                    .filter((row) => row.current_status === "alerta_critico")
+                    .slice(0, 5)
+                    .map((row) => (
+                      <div
+                        key={row.id}
+                        className="rounded-lg border border-red-100 bg-red-50 p-3"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="font-medium">{row.employee_name}</div>
+                          <StatusBadge status={row.current_status} />
+                        </div>
+                        <div className="mt-1 text-sm text-red-700">
+                          {row.status_reason ?? "Prioridade operacional alta"}
+                        </div>
                       </div>
-                      <div className="mt-1 text-sm text-red-700">
-                        {row.status_reason ?? "Prioridade operacional alta"}
+                    ))
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="border bg-white shadow-sm">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <DoorOpen className="size-5 text-amber-500" />
+                  Deve sair
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {filteredRows.filter((row) => row.current_status === "deve_sair").length === 0 ? (
+                  <StateBlock
+                    title="Nenhum pendente de saída"
+                    description="Todos os colaboradores estão com saída regularizada."
+                  />
+                ) : (
+                  filteredRows
+                    .filter((row) => row.current_status === "deve_sair")
+                    .slice(0, 5)
+                    .map((row) => (
+                      <div
+                        key={row.id}
+                        className="rounded-lg border border-amber-100 bg-amber-50 p-3"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="font-medium">{row.employee_name}</div>
+                          <StatusBadge status={row.current_status} />
+                        </div>
+                        <div className="mt-1 text-sm text-amber-700">
+                          {row.sector_name ?? "Sem setor"} · {row.branch_name}
+                        </div>
                       </div>
-                    </div>
-                  ))
-              )}
-            </CardContent>
-          </Card>
+                    ))
+                )}
+              </CardContent>
+            </Card>
+
+            {(() => {
+              const coverageRisk = filteredRows.filter(
+                (row) =>
+                  row.current_status === "alerta_critico" ||
+                  row.current_status === "deve_sair" ||
+                  row.current_status === "em_intervalo"
+              ).length
+              const total = filteredRows.length
+              if (total === 0) return null
+              const pct = Math.round((coverageRisk / total) * 100)
+              if (pct < 30) return null
+              return (
+                <div className="flex items-start gap-3 rounded-lg border border-orange-200 bg-orange-50 p-3">
+                  <ShieldAlert className="mt-0.5 size-4 shrink-0 text-orange-600" />
+                  <div className="text-sm text-orange-800">
+                    <span className="font-medium">Risco de cobertura:</span>{" "}
+                    {coverageRisk} de {total} colaboradores ({pct}%) estão em
+                    situação que pode impactar a operação.
+                  </div>
+                </div>
+              )
+            })()}
+          </div>
         </div>
 
         <Card className="border bg-white shadow-sm">

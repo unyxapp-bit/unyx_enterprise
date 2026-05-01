@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react"
 import type { FormEvent } from "react"
-import { Pencil, Plus, UserRoundCheck, UserRoundX } from "lucide-react"
+import { Pencil, Plus, Search, UserRoundCheck, UserRoundX } from "lucide-react"
 
 import { StatusBadge } from "@/components/bento/StatusBadge"
 import { PageHeader } from "@/components/shared/PageHeader"
@@ -28,12 +28,16 @@ import type { EmployeeWithRelations } from "@/types/domain"
 const fieldClass =
   "h-8 w-full rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
 
+const filterClass =
+  "h-9 rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+
 interface EmployeeFormState {
   branch_id: string
   sector_id: string
   name: string
   role: string
   phone: string
+  document: string
   notes: string
 }
 
@@ -43,6 +47,7 @@ const initialForm: EmployeeFormState = {
   name: "",
   role: "",
   phone: "",
+  document: "",
   notes: "",
 }
 
@@ -70,6 +75,7 @@ function EmployeeEditDialog({
     name: employee.name,
     role: employee.role ?? "",
     phone: employee.phone ?? "",
+    document: employee.document ?? "",
     notes: employee.notes ?? "",
   })
   const sectors = useSectors(form.branch_id)
@@ -83,7 +89,6 @@ function EmployeeEditDialog({
       setFormError("Selecione uma filial.")
       return
     }
-
     if (!form.name.trim()) {
       setFormError("Informe o nome do colaborador.")
       return
@@ -97,10 +102,10 @@ function EmployeeEditDialog({
         name: form.name.trim(),
         role: form.role.trim() || null,
         phone: form.phone.trim() || null,
+        document: form.document.trim() || null,
         notes: form.notes.trim() || null,
       },
     })
-
     setOpen(false)
   }
 
@@ -122,24 +127,14 @@ function EmployeeEditDialog({
               <span className="font-medium">Nome</span>
               <Input
                 value={form.name}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    name: event.target.value,
-                  }))
-                }
+                onChange={(e) => setForm((c) => ({ ...c, name: e.target.value }))}
               />
             </label>
             <label className="space-y-1 text-sm">
               <span className="font-medium">Cargo</span>
               <Input
                 value={form.role}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    role: event.target.value,
-                  }))
-                }
+                onChange={(e) => setForm((c) => ({ ...c, role: e.target.value }))}
               />
             </label>
           </div>
@@ -150,18 +145,14 @@ function EmployeeEditDialog({
               <select
                 className={fieldClass}
                 value={form.branch_id}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    branch_id: event.target.value,
-                    sector_id: "",
-                  }))
+                onChange={(e) =>
+                  setForm((c) => ({ ...c, branch_id: e.target.value, sector_id: "" }))
                 }
               >
                 <option value="">Selecione</option>
-                {branches.map((branch) => (
-                  <option key={branch.id} value={branch.id}>
-                    {branch.name}
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
                   </option>
                 ))}
               </select>
@@ -171,47 +162,48 @@ function EmployeeEditDialog({
               <select
                 className={fieldClass}
                 value={form.sector_id}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    sector_id: event.target.value,
-                  }))
+                onChange={(e) =>
+                  setForm((c) => ({ ...c, sector_id: e.target.value }))
                 }
               >
                 <option value="">Sem setor</option>
-                {(sectors.data ?? []).map((sector) => (
-                  <option key={sector.id} value={sector.id}>
-                    {sector.name}
+                {(sectors.data ?? []).map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
                   </option>
                 ))}
               </select>
             </label>
           </div>
 
-          <label className="space-y-1 text-sm">
-            <span className="font-medium">Telefone</span>
-            <Input
-              value={form.phone}
-              placeholder="(11) 99999-9999"
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  phone: formatPhone(event.target.value),
-                }))
-              }
-            />
-          </label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="space-y-1 text-sm">
+              <span className="font-medium">Telefone</span>
+              <Input
+                value={form.phone}
+                placeholder="(11) 99999-9999"
+                onChange={(e) =>
+                  setForm((c) => ({ ...c, phone: formatPhone(e.target.value) }))
+                }
+              />
+            </label>
+            <label className="space-y-1 text-sm">
+              <span className="font-medium">Documento (CPF)</span>
+              <Input
+                value={form.document}
+                placeholder="000.000.000-00"
+                onChange={(e) =>
+                  setForm((c) => ({ ...c, document: e.target.value }))
+                }
+              />
+            </label>
+          </div>
 
           <label className="space-y-1 text-sm">
             <span className="font-medium">Observações</span>
             <Input
               value={form.notes}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  notes: event.target.value,
-                }))
-              }
+              onChange={(e) => setForm((c) => ({ ...c, notes: e.target.value }))}
             />
           </label>
 
@@ -237,10 +229,7 @@ function DeactivateDialog({ employee }: { employee: EmployeeWithRelations }) {
   const updateEmployee = useUpdateEmployee()
 
   async function handleConfirm() {
-    await updateEmployee.mutateAsync({
-      employeeId: employee.id,
-      values: { active: false },
-    })
+    await updateEmployee.mutateAsync({ employeeId: employee.id, values: { active: false } })
     setOpen(false)
   }
 
@@ -257,8 +246,9 @@ function DeactivateDialog({ employee }: { employee: EmployeeWithRelations }) {
           <DialogTitle>Desativar colaborador</DialogTitle>
         </DialogHeader>
         <p className="text-sm text-muted-foreground">
-          Deseja desativar <span className="font-medium text-slate-950">{employee.name}</span>?
-          O colaborador não aparecerá mais em novas escalas.
+          Deseja desativar{" "}
+          <span className="font-medium text-slate-950">{employee.name}</span>? O
+          colaborador não aparecerá em novas escalas.
         </p>
         <DialogFooter className="gap-2">
           <Button variant="outline" onClick={() => setOpen(false)}>
@@ -286,29 +276,45 @@ export function EmployeesPage() {
     branch_id: selectedBranchId ?? "",
   })
   const [formError, setFormError] = useState<string | null>(null)
+  const [search, setSearch] = useState("")
+  const [sectorFilter, setSectorFilter] = useState("")
+  const [statusFilter, setStatusFilter] = useState<"" | "active" | "inactive">("")
+
   const employees = useEmployees()
-  const sectors = useSectors(form.branch_id || selectedBranchId)
+  const formSectors = useSectors(form.branch_id || selectedBranchId)
   const createEmployee = useCreateEmployee()
   const updateEmployee = useUpdateEmployee()
 
+  const sectorOptions = useMemo(() => {
+    const names = new Set(
+      (employees.data ?? []).map((e) => e.sectors?.name).filter(Boolean) as string[]
+    )
+    return Array.from(names).sort()
+  }, [employees.data])
+
   const activeCount = useMemo(
-    () => (employees.data ?? []).filter((employee) => employee.active).length,
+    () => (employees.data ?? []).filter((e) => e.active).length,
     [employees.data]
   )
+
+  const filteredEmployees = useMemo(() => {
+    let list = employees.data ?? []
+    if (search.trim()) {
+      const q = search.trim().toLowerCase()
+      list = list.filter((e) => e.name.toLowerCase().includes(q))
+    }
+    if (sectorFilter) list = list.filter((e) => e.sectors?.name === sectorFilter)
+    if (statusFilter === "active") list = list.filter((e) => e.active)
+    if (statusFilter === "inactive") list = list.filter((e) => !e.active)
+    return list
+  }, [employees.data, search, sectorFilter, statusFilter])
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setFormError(null)
 
-    if (!form.branch_id) {
-      setFormError("Selecione uma filial.")
-      return
-    }
-
-    if (!form.name.trim()) {
-      setFormError("Informe o nome do colaborador.")
-      return
-    }
+    if (!form.branch_id) { setFormError("Selecione uma filial."); return }
+    if (!form.name.trim()) { setFormError("Informe o nome do colaborador."); return }
 
     await createEmployee.mutateAsync({
       branch_id: form.branch_id,
@@ -316,6 +322,7 @@ export function EmployeesPage() {
       name: form.name.trim(),
       role: form.role.trim() || null,
       phone: form.phone.trim() || null,
+      document: form.document.trim() || null,
       notes: form.notes.trim() || null,
     })
 
@@ -346,24 +353,14 @@ export function EmployeesPage() {
                     <span className="font-medium">Nome</span>
                     <Input
                       value={form.name}
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          name: event.target.value,
-                        }))
-                      }
+                      onChange={(e) => setForm((c) => ({ ...c, name: e.target.value }))}
                     />
                   </label>
                   <label className="space-y-1 text-sm">
                     <span className="font-medium">Cargo</span>
                     <Input
                       value={form.role}
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          role: event.target.value,
-                        }))
-                      }
+                      onChange={(e) => setForm((c) => ({ ...c, role: e.target.value }))}
                     />
                   </label>
                 </div>
@@ -374,18 +371,14 @@ export function EmployeesPage() {
                     <select
                       className={fieldClass}
                       value={form.branch_id}
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          branch_id: event.target.value,
-                          sector_id: "",
-                        }))
+                      onChange={(e) =>
+                        setForm((c) => ({ ...c, branch_id: e.target.value, sector_id: "" }))
                       }
                     >
                       <option value="">Selecione</option>
-                      {branches.map((branch) => (
-                        <option key={branch.id} value={branch.id}>
-                          {branch.name}
+                      {branches.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.name}
                         </option>
                       ))}
                     </select>
@@ -395,47 +388,48 @@ export function EmployeesPage() {
                     <select
                       className={fieldClass}
                       value={form.sector_id}
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          sector_id: event.target.value,
-                        }))
+                      onChange={(e) =>
+                        setForm((c) => ({ ...c, sector_id: e.target.value }))
                       }
                     >
                       <option value="">Sem setor</option>
-                      {(sectors.data ?? []).map((sector) => (
-                        <option key={sector.id} value={sector.id}>
-                          {sector.name}
+                      {(formSectors.data ?? []).map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
                         </option>
                       ))}
                     </select>
                   </label>
                 </div>
 
-                <label className="space-y-1 text-sm">
-                  <span className="font-medium">Telefone</span>
-                  <Input
-                    value={form.phone}
-                    placeholder="(11) 99999-9999"
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        phone: formatPhone(event.target.value),
-                      }))
-                    }
-                  />
-                </label>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="space-y-1 text-sm">
+                    <span className="font-medium">Telefone</span>
+                    <Input
+                      value={form.phone}
+                      placeholder="(11) 99999-9999"
+                      onChange={(e) =>
+                        setForm((c) => ({ ...c, phone: formatPhone(e.target.value) }))
+                      }
+                    />
+                  </label>
+                  <label className="space-y-1 text-sm">
+                    <span className="font-medium">Documento (CPF)</span>
+                    <Input
+                      value={form.document}
+                      placeholder="000.000.000-00"
+                      onChange={(e) =>
+                        setForm((c) => ({ ...c, document: e.target.value }))
+                      }
+                    />
+                  </label>
+                </div>
 
                 <label className="space-y-1 text-sm">
                   <span className="font-medium">Observações</span>
                   <Input
                     value={form.notes}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        notes: event.target.value,
-                      }))
-                    }
+                    onChange={(e) => setForm((c) => ({ ...c, notes: e.target.value }))}
                   />
                 </label>
 
@@ -456,7 +450,42 @@ export function EmployeesPage() {
         }
       />
 
-      <div className="p-6">
+      <div className="space-y-4 p-6">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-48 flex-1">
+            <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              className="pl-8"
+              placeholder="Buscar por nome..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          {sectorOptions.length > 0 ? (
+            <select
+              className={filterClass}
+              value={sectorFilter}
+              onChange={(e) => setSectorFilter(e.target.value)}
+            >
+              <option value="">Todos os setores</option>
+              {sectorOptions.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          ) : null}
+          <select
+            className={filterClass}
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as "" | "active" | "inactive")}
+          >
+            <option value="">Todos os status</option>
+            <option value="active">Ativos</option>
+            <option value="inactive">Inativos</option>
+          </select>
+        </div>
+
         {employees.isLoading ? (
           <StateBlock type="loading" title="Carregando colaboradores" />
         ) : employees.isError ? (
@@ -465,10 +494,18 @@ export function EmployeesPage() {
             title="Erro ao carregar colaboradores"
             description={employees.error.message}
           />
-        ) : (employees.data ?? []).length === 0 ? (
+        ) : filteredEmployees.length === 0 ? (
           <StateBlock
-            title="Nenhum colaborador cadastrado"
-            description="Crie os primeiros registros para alimentar escalas e operação."
+            title={
+              (employees.data ?? []).length === 0
+                ? "Nenhum colaborador cadastrado"
+                : "Nenhum resultado encontrado"
+            }
+            description={
+              (employees.data ?? []).length === 0
+                ? "Crie os primeiros registros para alimentar escalas e operação."
+                : "Ajuste os filtros de busca."
+            }
           />
         ) : (
           <div className="overflow-hidden rounded-lg border bg-white shadow-sm">
@@ -484,15 +521,11 @@ export function EmployeesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {(employees.data ?? []).map((employee) => (
+                {filteredEmployees.map((employee) => (
                   <tr key={employee.id} className="hover:bg-slate-50">
                     <td className="px-4 py-3 font-medium">{employee.name}</td>
-                    <td className="px-4 py-3">
-                      {employee.branches?.name ?? "-"}
-                    </td>
-                    <td className="px-4 py-3">
-                      {employee.sectors?.name ?? "-"}
-                    </td>
+                    <td className="px-4 py-3">{employee.branches?.name ?? "-"}</td>
+                    <td className="px-4 py-3">{employee.sectors?.name ?? "-"}</td>
                     <td className="px-4 py-3">{employee.role ?? "-"}</td>
                     <td className="px-4 py-3">
                       {employee.active ? (
@@ -505,10 +538,7 @@ export function EmployeesPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-2">
-                        <EmployeeEditDialog
-                          employee={employee}
-                          branches={branches}
-                        />
+                        <EmployeeEditDialog employee={employee} branches={branches} />
                         {employee.active ? (
                           <DeactivateDialog employee={employee} />
                         ) : (

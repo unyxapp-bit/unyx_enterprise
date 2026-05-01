@@ -1,11 +1,15 @@
 import {
   Activity,
+  BarChart2,
+  BellRing,
   Building2,
   CalendarDays,
+  ClipboardList,
   LayoutDashboard,
   LogOut,
   Menu,
   Settings,
+  UserCog,
   Users,
 } from "lucide-react"
 import { NavLink, Outlet } from "react-router-dom"
@@ -31,10 +35,14 @@ const roleLabel: Record<UserRole, string> = {
 
 const navItems = [
   { to: "/app", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/app/alerts", label: "Alertas", icon: BellRing },
   { to: "/app/employees", label: "Colaboradores", icon: Users },
   { to: "/app/schedules", label: "Escalas", icon: CalendarDays },
   { to: "/app/operations", label: "Operação", icon: Activity },
   { to: "/app/branches", label: "Filiais", icon: Building2 },
+  { to: "/app/reports", label: "Relatórios", icon: BarChart2 },
+  { to: "/app/audit", label: "Auditoria", icon: ClipboardList },
+  { to: "/app/users", label: "Usuários", icon: UserCog },
   { to: "/app/settings", label: "Configurações", icon: Settings },
 ]
 

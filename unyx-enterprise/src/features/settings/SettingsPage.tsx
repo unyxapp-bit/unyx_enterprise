@@ -1,6 +1,6 @@
 import { useState } from "react"
 import type { FormEvent } from "react"
-import { Building, ClipboardList, CreditCard, Shield } from "lucide-react"
+import { Building, ClipboardList, CreditCard, Settings2, Shield } from "lucide-react"
 
 import { useAuth } from "@/app/providers/auth-context"
 import { PageHeader } from "@/components/shared/PageHeader"
@@ -16,12 +16,14 @@ import {
 import { Input } from "@/components/ui/input"
 import {
   useAuditLogs,
+  useBranches,
   useModules,
   useOrganization,
   useSubscription,
   useUpdateOrganization,
 } from "@/hooks/useUnyxData"
 import { formatDateTimeBR } from "@/lib/format"
+import { useAppStore } from "@/store/useAppStore"
 import type { BusinessSegment, Organization, UserRole } from "@/types/domain"
 
 const fieldClass =
@@ -55,7 +57,6 @@ function OrganizationForm({ organization }: { organization: Organization }) {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-
     await updateOrganization.mutateAsync({
       name: form.name.trim(),
       trade_name: form.trade_name.trim() || null,
@@ -71,24 +72,14 @@ function OrganizationForm({ organization }: { organization: Organization }) {
           <span className="font-medium">Razão social</span>
           <Input
             value={form.name}
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                name: event.target.value,
-              }))
-            }
+            onChange={(e) => setForm((c) => ({ ...c, name: e.target.value }))}
           />
         </label>
         <label className="space-y-1 text-sm">
           <span className="font-medium">Nome fantasia</span>
           <Input
             value={form.trade_name}
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                trade_name: event.target.value,
-              }))
-            }
+            onChange={(e) => setForm((c) => ({ ...c, trade_name: e.target.value }))}
           />
         </label>
       </div>
@@ -98,12 +89,7 @@ function OrganizationForm({ organization }: { organization: Organization }) {
           <span className="font-medium">Documento</span>
           <Input
             value={form.document}
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                document: event.target.value,
-              }))
-            }
+            onChange={(e) => setForm((c) => ({ ...c, document: e.target.value }))}
           />
         </label>
         <label className="space-y-1 text-sm">
@@ -111,11 +97,8 @@ function OrganizationForm({ organization }: { organization: Organization }) {
           <select
             className={fieldClass}
             value={form.segment}
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                segment: event.target.value as BusinessSegment,
-              }))
+            onChange={(e) =>
+              setForm((c) => ({ ...c, segment: e.target.value as BusinessSegment }))
             }
           >
             {Object.entries(segmentLabel).map(([value, label]) => (
@@ -135,6 +118,73 @@ function OrganizationForm({ organization }: { organization: Organization }) {
 
       <Button type="submit" disabled={updateOrganization.isPending}>
         {updateOrganization.isPending ? "Salvando..." : "Salvar alterações"}
+      </Button>
+    </form>
+  )
+}
+
+function OperationalSettings() {
+  const branches = useBranches()
+  const delayTolerance = useAppStore((state) => state.delayToleranceMinutes)
+  const breakTolerance = useAppStore((state) => state.breakToleranceMinutes)
+  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
+  const setDelayTolerance = useAppStore((state) => state.setDelayToleranceMinutes)
+  const setBreakTolerance = useAppStore((state) => state.setBreakToleranceMinutes)
+  const setSelectedBranchId = useAppStore((state) => state.setSelectedBranchId)
+  const [saved, setSaved] = useState(false)
+
+  function handleSave(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+  }
+
+  return (
+    <form className="space-y-4" onSubmit={handleSave}>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="space-y-1 text-sm">
+          <span className="font-medium">Tolerância de atraso (min)</span>
+          <Input
+            type="number"
+            min={0}
+            max={60}
+            value={delayTolerance}
+            onChange={(e) => setDelayTolerance(Number(e.target.value))}
+          />
+        </label>
+        <label className="space-y-1 text-sm">
+          <span className="font-medium">Tolerância de intervalo (min)</span>
+          <Input
+            type="number"
+            min={0}
+            max={60}
+            value={breakTolerance}
+            onChange={(e) => setBreakTolerance(Number(e.target.value))}
+          />
+        </label>
+      </div>
+
+      <label className="space-y-1 text-sm">
+        <span className="font-medium">Filial padrão</span>
+        <select
+          className={fieldClass}
+          value={selectedBranchId ?? ""}
+          onChange={(e) => setSelectedBranchId(e.target.value || null)}
+        >
+          <option value="">Todas as filiais</option>
+          {(branches.data ?? []).map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name}
+            </option>
+          ))}
+        </select>
+        <p className="text-xs text-muted-foreground">
+          Filtra automaticamente todas as páginas ao acessar o sistema.
+        </p>
+      </label>
+
+      <Button type="submit">
+        {saved ? "Salvo!" : "Salvar configurações"}
       </Button>
     </form>
   )
@@ -180,6 +230,18 @@ export function SettingsPage() {
               ) : (
                 <StateBlock title="Organização não encontrada" />
               )}
+            </CardContent>
+          </Card>
+
+          <Card className="border bg-white shadow-sm">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Settings2 className="size-5" />
+                Configurações operacionais
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <OperationalSettings />
             </CardContent>
           </Card>
 

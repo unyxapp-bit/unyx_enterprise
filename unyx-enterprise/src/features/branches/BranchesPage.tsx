@@ -1,6 +1,6 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import type { FormEvent } from "react"
-import { Building2, Plus } from "lucide-react"
+import { Building2, Pencil, Plus, ToggleLeft, ToggleRight } from "lucide-react"
 
 import { PageHeader } from "@/components/shared/PageHeader"
 import { StateBlock } from "@/components/shared/StateBlock"
@@ -21,43 +21,208 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import {
+  useAllEmployees,
   useBranches,
   useCreateBranch,
   useCreateSector,
   useSectors,
+  useToggleBranchActive,
+  useToggleSectorActive,
+  useUpdateBranch,
+  useUpdateSector,
 } from "@/hooks/useUnyxData"
+import type { Branch, Sector } from "@/types/domain"
 
 const fieldClass =
   "h-8 w-full rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
 
+function BranchEditDialog({ branch }: { branch: Branch }) {
+  const [open, setOpen] = useState(false)
+  const [form, setForm] = useState({
+    name: branch.name,
+    city: branch.city ?? "",
+    state: branch.state ?? "",
+    address: branch.address ?? "",
+  })
+  const [error, setError] = useState<string | null>(null)
+  const updateBranch = useUpdateBranch()
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setError(null)
+    if (!form.name.trim()) { setError("Informe o nome da filial."); return }
+
+    await updateBranch.mutateAsync({
+      branchId: branch.id,
+      values: {
+        name: form.name.trim(),
+        city: form.city.trim() || null,
+        state: form.state.trim() || null,
+        address: form.address.trim() || null,
+      },
+    })
+    setOpen(false)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm">
+          <Pencil className="size-4" />
+          Editar
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Editar filial</DialogTitle>
+        </DialogHeader>
+        <form className="space-y-4" onSubmit={handleSubmit}>
+          <label className="space-y-1 text-sm">
+            <span className="font-medium">Nome</span>
+            <Input
+              value={form.name}
+              onChange={(e) => setForm((c) => ({ ...c, name: e.target.value }))}
+            />
+          </label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="space-y-1 text-sm">
+              <span className="font-medium">Cidade</span>
+              <Input
+                value={form.city}
+                onChange={(e) => setForm((c) => ({ ...c, city: e.target.value }))}
+              />
+            </label>
+            <label className="space-y-1 text-sm">
+              <span className="font-medium">UF</span>
+              <Input
+                value={form.state}
+                onChange={(e) => setForm((c) => ({ ...c, state: e.target.value }))}
+              />
+            </label>
+          </div>
+          <label className="space-y-1 text-sm">
+            <span className="font-medium">Endereço</span>
+            <Input
+              value={form.address}
+              onChange={(e) => setForm((c) => ({ ...c, address: e.target.value }))}
+            />
+          </label>
+          {error || updateBranch.error ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {error ?? updateBranch.error?.message}
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button type="submit" disabled={updateBranch.isPending}>
+              {updateBranch.isPending ? "Salvando..." : "Salvar"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function SectorEditDialog({ sector }: { sector: Sector }) {
+  const [open, setOpen] = useState(false)
+  const [form, setForm] = useState({
+    name: sector.name,
+    description: sector.description ?? "",
+  })
+  const [error, setError] = useState<string | null>(null)
+  const updateSector = useUpdateSector()
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setError(null)
+    if (!form.name.trim()) { setError("Informe o nome do setor."); return }
+
+    await updateSector.mutateAsync({
+      sectorId: sector.id,
+      values: {
+        name: form.name.trim(),
+        description: form.description.trim() || null,
+      },
+    })
+    setOpen(false)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm">
+          <Pencil className="size-4" />
+          Editar
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Editar setor</DialogTitle>
+        </DialogHeader>
+        <form className="space-y-4" onSubmit={handleSubmit}>
+          <label className="space-y-1 text-sm">
+            <span className="font-medium">Nome</span>
+            <Input
+              value={form.name}
+              onChange={(e) => setForm((c) => ({ ...c, name: e.target.value }))}
+            />
+          </label>
+          <label className="space-y-1 text-sm">
+            <span className="font-medium">Descrição</span>
+            <Input
+              value={form.description}
+              onChange={(e) => setForm((c) => ({ ...c, description: e.target.value }))}
+            />
+          </label>
+          {error || updateSector.error ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {error ?? updateSector.error?.message}
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button type="submit" disabled={updateSector.isPending}>
+              {updateSector.isPending ? "Salvando..." : "Salvar"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export function BranchesPage() {
   const branches = useBranches()
   const sectors = useSectors(null)
+  const allEmployees = useAllEmployees()
   const createBranch = useCreateBranch()
   const createSector = useCreateSector()
+  const toggleBranchActive = useToggleBranchActive()
+  const toggleSectorActive = useToggleSectorActive()
   const [branchOpen, setBranchOpen] = useState(false)
   const [sectorOpen, setSectorOpen] = useState(false)
-  const [branchForm, setBranchForm] = useState({
-    name: "",
-    city: "",
-    state: "",
-    address: "",
-  })
-  const [sectorForm, setSectorForm] = useState({
-    branch_id: "",
-    name: "",
-    description: "",
-  })
+  const [branchForm, setBranchForm] = useState({ name: "", city: "", state: "", address: "" })
+  const [sectorForm, setSectorForm] = useState({ branch_id: "", name: "", description: "" })
   const [formError, setFormError] = useState<string | null>(null)
+  const [selectedBranchFilter, setSelectedBranchFilter] = useState<string | null>(null)
+
+  const employeeCountByBranch = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const emp of allEmployees.data ?? []) {
+      if (emp.active) counts[emp.branch_id] = (counts[emp.branch_id] ?? 0) + 1
+    }
+    return counts
+  }, [allEmployees.data])
+
+  const filteredSectors = useMemo(() => {
+    const all = sectors.data ?? []
+    if (!selectedBranchFilter) return all
+    return all.filter((s) => s.branch_id === selectedBranchFilter)
+  }, [sectors.data, selectedBranchFilter])
 
   async function handleCreateBranch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setFormError(null)
-
-    if (!branchForm.name.trim()) {
-      setFormError("Informe o nome da filial.")
-      return
-    }
+    if (!branchForm.name.trim()) { setFormError("Informe o nome da filial."); return }
 
     await createBranch.mutateAsync({
       name: branchForm.name.trim(),
@@ -65,7 +230,6 @@ export function BranchesPage() {
       state: branchForm.state.trim() || null,
       address: branchForm.address.trim() || null,
     })
-
     setBranchForm({ name: "", city: "", state: "", address: "" })
     setBranchOpen(false)
   }
@@ -73,7 +237,6 @@ export function BranchesPage() {
   async function handleCreateSector(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setFormError(null)
-
     if (!sectorForm.branch_id || !sectorForm.name.trim()) {
       setFormError("Selecione a filial e informe o setor.")
       return
@@ -84,7 +247,6 @@ export function BranchesPage() {
       name: sectorForm.name.trim(),
       description: sectorForm.description.trim() || null,
     })
-
     setSectorForm({ branch_id: "", name: "", description: "" })
     setSectorOpen(false)
   }
@@ -112,12 +274,7 @@ export function BranchesPage() {
                     <span className="font-medium">Nome</span>
                     <Input
                       value={branchForm.name}
-                      onChange={(event) =>
-                        setBranchForm((current) => ({
-                          ...current,
-                          name: event.target.value,
-                        }))
-                      }
+                      onChange={(e) => setBranchForm((c) => ({ ...c, name: e.target.value }))}
                     />
                   </label>
                   <div className="grid gap-3 sm:grid-cols-2">
@@ -125,24 +282,14 @@ export function BranchesPage() {
                       <span className="font-medium">Cidade</span>
                       <Input
                         value={branchForm.city}
-                        onChange={(event) =>
-                          setBranchForm((current) => ({
-                            ...current,
-                            city: event.target.value,
-                          }))
-                        }
+                        onChange={(e) => setBranchForm((c) => ({ ...c, city: e.target.value }))}
                       />
                     </label>
                     <label className="space-y-1 text-sm">
                       <span className="font-medium">UF</span>
                       <Input
                         value={branchForm.state}
-                        onChange={(event) =>
-                          setBranchForm((current) => ({
-                            ...current,
-                            state: event.target.value,
-                          }))
-                        }
+                        onChange={(e) => setBranchForm((c) => ({ ...c, state: e.target.value }))}
                       />
                     </label>
                   </div>
@@ -150,12 +297,7 @@ export function BranchesPage() {
                     <span className="font-medium">Endereço</span>
                     <Input
                       value={branchForm.address}
-                      onChange={(event) =>
-                        setBranchForm((current) => ({
-                          ...current,
-                          address: event.target.value,
-                        }))
-                      }
+                      onChange={(e) => setBranchForm((c) => ({ ...c, address: e.target.value }))}
                     />
                   </label>
                   {formError || createBranch.error ? (
@@ -189,17 +331,14 @@ export function BranchesPage() {
                     <select
                       className={fieldClass}
                       value={sectorForm.branch_id}
-                      onChange={(event) =>
-                        setSectorForm((current) => ({
-                          ...current,
-                          branch_id: event.target.value,
-                        }))
+                      onChange={(e) =>
+                        setSectorForm((c) => ({ ...c, branch_id: e.target.value }))
                       }
                     >
                       <option value="">Selecione</option>
-                      {(branches.data ?? []).map((branch) => (
-                        <option key={branch.id} value={branch.id}>
-                          {branch.name}
+                      {(branches.data ?? []).map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.name}
                         </option>
                       ))}
                     </select>
@@ -208,11 +347,8 @@ export function BranchesPage() {
                     <span className="font-medium">Nome do setor</span>
                     <Input
                       value={sectorForm.name}
-                      onChange={(event) =>
-                        setSectorForm((current) => ({
-                          ...current,
-                          name: event.target.value,
-                        }))
+                      onChange={(e) =>
+                        setSectorForm((c) => ({ ...c, name: e.target.value }))
                       }
                     />
                   </label>
@@ -220,11 +356,8 @@ export function BranchesPage() {
                     <span className="font-medium">Descrição</span>
                     <Input
                       value={sectorForm.description}
-                      onChange={(event) =>
-                        setSectorForm((current) => ({
-                          ...current,
-                          description: event.target.value,
-                        }))
+                      onChange={(e) =>
+                        setSectorForm((c) => ({ ...c, description: e.target.value }))
                       }
                     />
                   </label>
@@ -266,19 +399,63 @@ export function BranchesPage() {
                 {(branches.data ?? []).map((branch) => (
                   <div
                     key={branch.id}
-                    className="rounded-lg border bg-white p-4"
+                    className={`cursor-pointer rounded-lg border p-4 transition-colors ${
+                      selectedBranchFilter === branch.id
+                        ? "border-slate-400 bg-slate-50"
+                        : "bg-white hover:bg-slate-50"
+                    }`}
+                    onClick={() =>
+                      setSelectedBranchFilter(
+                        selectedBranchFilter === branch.id ? null : branch.id
+                      )
+                    }
                   >
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
                         <div className="font-medium">{branch.name}</div>
                         <div className="text-sm text-muted-foreground">
                           {[branch.city, branch.state].filter(Boolean).join(" / ") ||
                             "Localização não informada"}
                         </div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {employeeCountByBranch[branch.id] ?? 0} colaborador(es) ativo(s)
+                        </div>
                       </div>
-                      <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
-                        {branch.active ? "Ativa" : "Inativa"}
-                      </span>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span
+                          className={`rounded-full border px-2 py-0.5 text-xs font-medium ${
+                            branch.active
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                              : "border-zinc-200 bg-zinc-50 text-zinc-600"
+                          }`}
+                        >
+                          {branch.active ? "Ativa" : "Inativa"}
+                        </span>
+                      </div>
+                    </div>
+                    <div
+                      className="mt-3 flex gap-2"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <BranchEditDialog branch={branch} />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={toggleBranchActive.isPending}
+                        onClick={() =>
+                          toggleBranchActive.mutate({
+                            branchId: branch.id,
+                            active: !branch.active,
+                          })
+                        }
+                      >
+                        {branch.active ? (
+                          <ToggleLeft className="size-4" />
+                        ) : (
+                          <ToggleRight className="size-4" />
+                        )}
+                        {branch.active ? "Desativar" : "Ativar"}
+                      </Button>
                     </div>
                   </div>
                 ))}
@@ -289,7 +466,11 @@ export function BranchesPage() {
 
         <Card className="border bg-white shadow-sm">
           <CardHeader>
-            <CardTitle>Setores</CardTitle>
+            <CardTitle>
+              {selectedBranchFilter
+                ? `Setores — ${(branches.data ?? []).find((b) => b.id === selectedBranchFilter)?.name ?? ""}`
+                : "Setores"}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             {sectors.isLoading ? (
@@ -300,21 +481,61 @@ export function BranchesPage() {
                 title="Erro ao carregar setores"
                 description={sectors.error.message}
               />
-            ) : (sectors.data ?? []).length === 0 ? (
-              <StateBlock title="Nenhum setor cadastrado" />
+            ) : filteredSectors.length === 0 ? (
+              <StateBlock
+                title={
+                  selectedBranchFilter
+                    ? "Nenhum setor nesta filial"
+                    : "Nenhum setor cadastrado"
+                }
+              />
             ) : (
               <div className="grid gap-3 md:grid-cols-2">
-                {(sectors.data ?? []).map((sector) => (
+                {filteredSectors.map((sector) => (
                   <div key={sector.id} className="rounded-lg border bg-white p-4">
-                    <div className="font-medium">{sector.name}</div>
-                    <div className="text-sm text-muted-foreground">
-                      {sector.branches?.name ?? "Sem filial"}
-                    </div>
-                    {sector.description ? (
-                      <div className="mt-2 text-sm text-muted-foreground">
-                        {sector.description}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="font-medium">{sector.name}</div>
+                        <div className="text-sm text-muted-foreground">
+                          {sector.branches?.name ?? "Sem filial"}
+                        </div>
+                        {sector.description ? (
+                          <div className="mt-1 text-sm text-muted-foreground">
+                            {sector.description}
+                          </div>
+                        ) : null}
                       </div>
-                    ) : null}
+                      <span
+                        className={`shrink-0 rounded-full border px-2 py-0.5 text-xs font-medium ${
+                          sector.active
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                            : "border-zinc-200 bg-zinc-50 text-zinc-600"
+                        }`}
+                      >
+                        {sector.active ? "Ativo" : "Inativo"}
+                      </span>
+                    </div>
+                    <div className="mt-3 flex gap-2">
+                      <SectorEditDialog sector={sector} />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={toggleSectorActive.isPending}
+                        onClick={() =>
+                          toggleSectorActive.mutate({
+                            sectorId: sector.id,
+                            active: !sector.active,
+                          })
+                        }
+                      >
+                        {sector.active ? (
+                          <ToggleLeft className="size-4" />
+                        ) : (
+                          <ToggleRight className="size-4" />
+                        )}
+                        {sector.active ? "Desativar" : "Ativar"}
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>

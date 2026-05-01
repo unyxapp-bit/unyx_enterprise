@@ -3,14 +3,18 @@ import { BrowserRouter, Navigate, Outlet, Route, Routes } from "react-router-dom
 import { AppLayout } from "@/app/layout/AppLayout"
 import { useAuth } from "@/app/providers/auth-context"
 import { StateBlock } from "@/components/shared/StateBlock"
+import { AlertsPage } from "@/features/alerts/AlertsPage"
+import { AuditPage } from "@/features/audit/AuditPage"
 import { BranchesPage } from "@/features/branches/BranchesPage"
 import { DashboardPage } from "@/features/dashboard/DashboardPage"
 import { EmployeesPage } from "@/features/employees/EmployeesPage"
 import { LoginPage } from "@/features/auth/LoginPage"
 import { LandingPage } from "@/features/landing/LandingPage"
 import { OperationsPage } from "@/features/operational/OperationsPage"
+import { ReportsPage } from "@/features/reports/ReportsPage"
 import { SchedulesPage } from "@/features/schedules/SchedulesPage"
 import { SettingsPage } from "@/features/settings/SettingsPage"
+import { UsersPage } from "@/features/users/UsersPage"
 
 function ProtectedRoute() {
   const { loading, session } = useAuth()
@@ -42,10 +46,14 @@ export function AppRouter() {
         <Route element={<ProtectedRoute />}>
           <Route path="/app" element={<AppLayout />}>
             <Route index element={<DashboardPage />} />
+            <Route path="alerts" element={<AlertsPage />} />
             <Route path="employees" element={<EmployeesPage />} />
             <Route path="schedules" element={<SchedulesPage />} />
             <Route path="operations" element={<OperationsPage />} />
+            <Route path="reports" element={<ReportsPage />} />
+            <Route path="audit" element={<AuditPage />} />
             <Route path="branches" element={<BranchesPage />} />
+            <Route path="users" element={<UsersPage />} />
             <Route path="settings" element={<SettingsPage />} />
           </Route>
         </Route>

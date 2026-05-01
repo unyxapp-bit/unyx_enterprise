@@ -211,6 +211,7 @@ export interface AuditLog {
   old_value: unknown
   new_value: unknown
   created_at: string
+  user_profiles?: Pick<UserProfile, "name"> | null
 }
 
 export interface Module {

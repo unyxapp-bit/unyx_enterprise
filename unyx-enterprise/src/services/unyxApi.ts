@@ -199,6 +199,7 @@ export async function createEmployee(
     name: string
     role: string | null
     phone: string | null
+    document: string | null
     notes: string | null
   }
 ) {
@@ -220,7 +221,7 @@ export async function updateEmployee(
   input: Partial<
     Pick<
       Employee,
-      "active" | "branch_id" | "sector_id" | "name" | "role" | "phone" | "notes"
+      "active" | "branch_id" | "sector_id" | "name" | "role" | "phone" | "document" | "notes"
     >
   >
 ) {
@@ -432,6 +433,34 @@ export async function listAuditLogs(branchId?: string | null) {
   return (data ?? []) as AuditLog[]
 }
 
+export async function listAllAuditLogs(branchId?: string | null) {
+  let query = supabase
+    .from("audit_logs")
+    .select("*, user_profiles!user_id(name)")
+    .order("created_at", { ascending: false })
+    .limit(500)
+
+  if (branchId) query = query.eq("branch_id", branchId)
+
+  const { data, error } = await query
+  raise(error)
+  return (data ?? []) as AuditLog[]
+}
+
+export async function listReportEvents(branchId?: string | null) {
+  let query = supabase
+    .from("attendance_events")
+    .select("*, employees(name, sectors(name)), branches(name)")
+    .order("event_time", { ascending: false })
+    .limit(1000)
+
+  if (branchId) query = query.eq("branch_id", branchId)
+
+  const { data, error } = await query
+  raise(error)
+  return (data ?? []) as AttendanceEvent[]
+}
+
 export async function listModules() {
   const { data, error } = await supabase
     .from("modules")
@@ -451,4 +480,116 @@ export async function getSubscription(organizationId: string) {
 
   raise(error)
   return data as Subscription | null
+}
+
+export async function updateBranch(
+  branchId: string,
+  input: Pick<Branch, "name" | "city" | "state" | "address">
+) {
+  const { data, error } = await supabase
+    .from("branches")
+    .update(input)
+    .eq("id", branchId)
+    .select("*")
+    .single()
+
+  raise(error)
+  return data as Branch
+}
+
+export async function toggleBranchActive(branchId: string, active: boolean) {
+  const { data, error } = await supabase
+    .from("branches")
+    .update({ active })
+    .eq("id", branchId)
+    .select("*")
+    .single()
+
+  raise(error)
+  return data as Branch
+}
+
+export async function updateSector(
+  sectorId: string,
+  input: { name: string; description: string | null }
+) {
+  const { data, error } = await supabase
+    .from("sectors")
+    .update(input)
+    .eq("id", sectorId)
+    .select("*, branches(name)")
+    .single()
+
+  raise(error)
+  return data as Sector
+}
+
+export async function toggleSectorActive(sectorId: string, active: boolean) {
+  const { data, error } = await supabase
+    .from("sectors")
+    .update({ active })
+    .eq("id", sectorId)
+    .select("*, branches(name)")
+    .single()
+
+  raise(error)
+  return data as Sector
+}
+
+export async function listUserProfiles() {
+  const { data, error } = await supabase
+    .from("user_profiles")
+    .select("*")
+    .order("name")
+
+  raise(error)
+  return (data ?? []) as UserProfile[]
+}
+
+export async function updateUserRole(profileId: string, role: UserProfile["role"]) {
+  const { data, error } = await supabase
+    .from("user_profiles")
+    .update({ role })
+    .eq("id", profileId)
+    .select("*")
+    .single()
+
+  raise(error)
+  return data as UserProfile
+}
+
+export async function copySchedulesFromDate(
+  profile: UserProfile,
+  sourceDate: string,
+  targetDate: string
+) {
+  const { data: sourceSchedules, error: sourceError } = await supabase
+    .from("schedules")
+    .select("*")
+    .eq("work_date", sourceDate)
+    .eq("organization_id", profile.organization_id)
+
+  raise(sourceError)
+  if (!sourceSchedules?.length) return []
+
+  const newSchedules = sourceSchedules.map((schedule) => ({
+    organization_id: schedule.organization_id,
+    branch_id: schedule.branch_id,
+    employee_id: schedule.employee_id,
+    work_date: targetDate,
+    start_time: schedule.start_time,
+    break_start: schedule.break_start,
+    break_end: schedule.break_end,
+    end_time: schedule.end_time,
+    status: "scheduled" as ScheduleStatus,
+    notes: schedule.notes,
+  }))
+
+  const { data, error } = await supabase
+    .from("schedules")
+    .insert(newSchedules)
+    .select("*, branches(name), employees(*, sectors(name))")
+
+  raise(error)
+  return (data ?? []) as ScheduleWithRelations[]
 }

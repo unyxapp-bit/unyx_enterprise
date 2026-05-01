@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react"
 import type { FormEvent } from "react"
-import { CalendarPlus, Pencil, Trash2 } from "lucide-react"
+import { CalendarCog, CalendarPlus, Pencil, Trash2 } from "lucide-react"
 
 import { PageHeader } from "@/components/shared/PageHeader"
 import { StateBlock } from "@/components/shared/StateBlock"
@@ -16,6 +16,7 @@ import {
 import { Input } from "@/components/ui/input"
 import {
   useBranches,
+  useCopySchedules,
   useCreateSchedule,
   useDeleteSchedule,
   useEmployees,
@@ -29,6 +30,9 @@ import type { ScheduleStatus, ScheduleWithRelations } from "@/types/domain"
 
 const fieldClass =
   "h-8 w-full rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+
+const filterClass =
+  "h-8 rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
 
 interface ScheduleFormState {
   branch_id: string
@@ -90,23 +94,13 @@ function ScheduleEditDialog({ schedule }: { schedule: ScheduleWithRelations }) {
               (field) => (
                 <label className="space-y-1 text-sm" key={field}>
                   <span className="font-medium">
-                    {
-                      {
-                        start_time: "Entrada",
-                        break_start: "Intervalo",
-                        break_end: "Retorno",
-                        end_time: "Saída",
-                      }[field]
-                    }
+                    {{ start_time: "Entrada", break_start: "Intervalo", break_end: "Retorno", end_time: "Saída" }[field]}
                   </span>
                   <Input
                     type="time"
                     value={form[field]}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        [field]: event.target.value,
-                      }))
+                    onChange={(e) =>
+                      setForm((c) => ({ ...c, [field]: e.target.value }))
                     }
                   />
                 </label>
@@ -119,11 +113,8 @@ function ScheduleEditDialog({ schedule }: { schedule: ScheduleWithRelations }) {
             <select
               className={fieldClass}
               value={form.status}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  status: event.target.value as ScheduleStatus,
-                }))
+              onChange={(e) =>
+                setForm((c) => ({ ...c, status: e.target.value as ScheduleStatus }))
               }
             >
               {Object.entries(scheduleStatusLabel).map(([value, label]) => (
@@ -138,12 +129,7 @@ function ScheduleEditDialog({ schedule }: { schedule: ScheduleWithRelations }) {
             <span className="font-medium">Observações</span>
             <Input
               value={form.notes}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  notes: event.target.value,
-                }))
-              }
+              onChange={(e) => setForm((c) => ({ ...c, notes: e.target.value }))}
             />
           </label>
 
@@ -209,15 +195,71 @@ function ScheduleDeleteDialog({ schedule }: { schedule: ScheduleWithRelations })
   )
 }
 
+function CopyDayDialog({ currentDate }: { currentDate: string }) {
+  const [open, setOpen] = useState(false)
+  const [sourceDate, setSourceDate] = useState("")
+  const copySchedules = useCopySchedules()
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!sourceDate) return
+
+    await copySchedules.mutateAsync({ sourceDate, targetDate: currentDate })
+    setOpen(false)
+    setSourceDate("")
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline">
+          <CalendarCog className="size-4" />
+          Copiar dia
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Copiar escalas de outro dia</DialogTitle>
+        </DialogHeader>
+        <form className="space-y-4" onSubmit={handleSubmit}>
+          <p className="text-sm text-muted-foreground">
+            Selecione a data de origem. Todas as escalas desse dia serão copiadas
+            para <span className="font-medium text-slate-950">{formatDateBR(currentDate)}</span>.
+          </p>
+          <label className="space-y-1 text-sm">
+            <span className="font-medium">Data de origem</span>
+            <Input
+              type="date"
+              value={sourceDate}
+              onChange={(e) => setSourceDate(e.target.value)}
+            />
+          </label>
+          {copySchedules.error ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {copySchedules.error.message}
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button type="submit" disabled={copySchedules.isPending || !sourceDate}>
+              {copySchedules.isPending ? "Copiando..." : "Copiar escalas"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export function SchedulesPage() {
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
   const [date, setDate] = useState(todayISO())
+  const [sectorFilter, setSectorFilter] = useState("")
   const [open, setOpen] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [form, setForm] = useState<ScheduleFormState>({
     branch_id: selectedBranchId ?? "",
     employee_id: "",
-    work_date: date,
+    work_date: todayISO(),
     start_time: "08:00",
     break_start: "12:00",
     break_end: "13:00",
@@ -230,8 +272,23 @@ export function SchedulesPage() {
   const branches = useBranches()
   const createSchedule = useCreateSchedule()
 
+  const sectorOptions = useMemo(() => {
+    const names = new Set(
+      (schedules.data ?? [])
+        .map((s) => s.employees?.sectors?.name)
+        .filter(Boolean) as string[]
+    )
+    return Array.from(names).sort()
+  }, [schedules.data])
+
+  const filteredSchedules = useMemo(() => {
+    const all = schedules.data ?? []
+    if (!sectorFilter) return all
+    return all.filter((s) => s.employees?.sectors?.name === sectorFilter)
+  }, [schedules.data, sectorFilter])
+
   const activeEmployees = useMemo(
-    () => (employees.data ?? []).filter((employee) => employee.active),
+    () => (employees.data ?? []).filter((e) => e.active),
     [employees.data]
   )
 
@@ -271,14 +328,26 @@ export function SchedulesPage() {
               className="w-40"
               type="date"
               value={date}
-              onChange={(event) => {
-                setDate(event.target.value)
-                setForm((current) => ({
-                  ...current,
-                  work_date: event.target.value,
-                }))
+              onChange={(e) => {
+                setDate(e.target.value)
+                setForm((c) => ({ ...c, work_date: e.target.value }))
               }}
             />
+            {sectorOptions.length > 0 ? (
+              <select
+                className={filterClass}
+                value={sectorFilter}
+                onChange={(e) => setSectorFilter(e.target.value)}
+              >
+                <option value="">Todos os setores</option>
+                {sectorOptions.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+            <CopyDayDialog currentDate={date} />
             <Dialog open={open} onOpenChange={setOpen}>
               <DialogTrigger asChild>
                 <Button>
@@ -297,18 +366,14 @@ export function SchedulesPage() {
                       <select
                         className={fieldClass}
                         value={form.branch_id}
-                        onChange={(event) =>
-                          setForm((current) => ({
-                            ...current,
-                            branch_id: event.target.value,
-                            employee_id: "",
-                          }))
+                        onChange={(e) =>
+                          setForm((c) => ({ ...c, branch_id: e.target.value, employee_id: "" }))
                         }
                       >
                         <option value="">Selecione</option>
-                        {(branches.data ?? []).map((branch) => (
-                          <option key={branch.id} value={branch.id}>
-                            {branch.name}
+                        {(branches.data ?? []).map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.name}
                           </option>
                         ))}
                       </select>
@@ -318,17 +383,14 @@ export function SchedulesPage() {
                       <select
                         className={fieldClass}
                         value={form.employee_id}
-                        onChange={(event) =>
-                          setForm((current) => ({
-                            ...current,
-                            employee_id: event.target.value,
-                          }))
+                        onChange={(e) =>
+                          setForm((c) => ({ ...c, employee_id: e.target.value }))
                         }
                       >
                         <option value="">Selecione</option>
-                        {activeEmployees.map((employee) => (
-                          <option key={employee.id} value={employee.id}>
-                            {employee.name}
+                        {activeEmployees.map((e) => (
+                          <option key={e.id} value={e.id}>
+                            {e.name}
                           </option>
                         ))}
                       </select>
@@ -341,11 +403,8 @@ export function SchedulesPage() {
                       <Input
                         type="date"
                         value={form.work_date}
-                        onChange={(event) =>
-                          setForm((current) => ({
-                            ...current,
-                            work_date: event.target.value,
-                          }))
+                        onChange={(e) =>
+                          setForm((c) => ({ ...c, work_date: e.target.value }))
                         }
                       />
                     </label>
@@ -354,11 +413,8 @@ export function SchedulesPage() {
                       <select
                         className={fieldClass}
                         value={form.status}
-                        onChange={(event) =>
-                          setForm((current) => ({
-                            ...current,
-                            status: event.target.value as ScheduleStatus,
-                          }))
+                        onChange={(e) =>
+                          setForm((c) => ({ ...c, status: e.target.value as ScheduleStatus }))
                         }
                       >
                         {Object.entries(scheduleStatusLabel).map(([value, label]) => (
@@ -375,23 +431,13 @@ export function SchedulesPage() {
                       (field) => (
                         <label className="space-y-1 text-sm" key={field}>
                           <span className="font-medium">
-                            {
-                              {
-                                start_time: "Entrada",
-                                break_start: "Intervalo",
-                                break_end: "Retorno",
-                                end_time: "Saída",
-                              }[field]
-                            }
+                            {{ start_time: "Entrada", break_start: "Intervalo", break_end: "Retorno", end_time: "Saída" }[field]}
                           </span>
                           <Input
                             type="time"
                             value={form[field]}
-                            onChange={(event) =>
-                              setForm((current) => ({
-                                ...current,
-                                [field]: event.target.value,
-                              }))
+                            onChange={(e) =>
+                              setForm((c) => ({ ...c, [field]: e.target.value }))
                             }
                           />
                         </label>
@@ -403,12 +449,7 @@ export function SchedulesPage() {
                     <span className="font-medium">Observações</span>
                     <Input
                       value={form.notes}
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          notes: event.target.value,
-                        }))
-                      }
+                      onChange={(e) => setForm((c) => ({ ...c, notes: e.target.value }))}
                     />
                   </label>
 
@@ -439,10 +480,18 @@ export function SchedulesPage() {
             title="Erro ao carregar escala"
             description={schedules.error.message}
           />
-        ) : (schedules.data ?? []).length === 0 ? (
+        ) : filteredSchedules.length === 0 ? (
           <StateBlock
-            title="Nenhuma escala para esta data"
-            description="Cadastre a escala do dia para iniciar a operação."
+            title={
+              (schedules.data ?? []).length === 0
+                ? "Nenhuma escala para esta data"
+                : "Nenhum resultado para o setor selecionado"
+            }
+            description={
+              (schedules.data ?? []).length === 0
+                ? "Cadastre a escala do dia para iniciar a operação."
+                : undefined
+            }
           />
         ) : (
           <div className="overflow-hidden rounded-lg border bg-white shadow-sm">
@@ -460,29 +509,40 @@ export function SchedulesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {(schedules.data ?? []).map((schedule) => (
-                  <tr key={schedule.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-3 font-medium">
-                      {schedule.employees?.name ?? "-"}
-                    </td>
-                    <td className="px-4 py-3">
-                      {schedule.employees?.sectors?.name ?? "-"}
-                    </td>
-                    <td className="px-4 py-3">{formatTime(schedule.start_time)}</td>
-                    <td className="px-4 py-3">{formatTime(schedule.break_start)}</td>
-                    <td className="px-4 py-3">{formatTime(schedule.break_end)}</td>
-                    <td className="px-4 py-3">{formatTime(schedule.end_time)}</td>
-                    <td className="px-4 py-3">
-                      {scheduleStatusLabel[schedule.status]}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex justify-end gap-2">
-                        <ScheduleEditDialog schedule={schedule} />
-                        <ScheduleDeleteDialog schedule={schedule} />
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {filteredSchedules.map((schedule) => {
+                  const incomplete = !schedule.start_time
+
+                  return (
+                    <tr key={schedule.id} className="hover:bg-slate-50">
+                      <td className="px-4 py-3 font-medium">
+                        <div className="flex items-center gap-2">
+                          {schedule.employees?.name ?? "-"}
+                          {incomplete ? (
+                            <span className="inline-flex h-4 items-center rounded border border-amber-200 bg-amber-50 px-1.5 text-[10px] font-medium text-amber-700">
+                              Incompleta
+                            </span>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        {schedule.employees?.sectors?.name ?? "-"}
+                      </td>
+                      <td className="px-4 py-3">{formatTime(schedule.start_time)}</td>
+                      <td className="px-4 py-3">{formatTime(schedule.break_start)}</td>
+                      <td className="px-4 py-3">{formatTime(schedule.break_end)}</td>
+                      <td className="px-4 py-3">{formatTime(schedule.end_time)}</td>
+                      <td className="px-4 py-3">
+                        {scheduleStatusLabel[schedule.status]}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end gap-2">
+                          <ScheduleEditDialog schedule={schedule} />
+                          <ScheduleDeleteDialog schedule={schedule} />
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
