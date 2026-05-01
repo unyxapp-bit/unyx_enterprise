@@ -7,6 +7,7 @@ import { BranchesPage } from "@/features/branches/BranchesPage"
 import { DashboardPage } from "@/features/dashboard/DashboardPage"
 import { EmployeesPage } from "@/features/employees/EmployeesPage"
 import { LoginPage } from "@/features/auth/LoginPage"
+import { LandingPage } from "@/features/landing/LandingPage"
 import { OperationsPage } from "@/features/operational/OperationsPage"
 import { SchedulesPage } from "@/features/schedules/SchedulesPage"
 import { SettingsPage } from "@/features/settings/SettingsPage"
@@ -31,15 +32,16 @@ export function AppRouter() {
   return (
     <BrowserRouter>
       <Routes>
+        <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route element={<ProtectedRoute />}>
-          <Route element={<AppLayout />}>
+          <Route path="/app" element={<AppLayout />}>
             <Route index element={<DashboardPage />} />
-            <Route path="/employees" element={<EmployeesPage />} />
-            <Route path="/schedules" element={<SchedulesPage />} />
-            <Route path="/operations" element={<OperationsPage />} />
-            <Route path="/branches" element={<BranchesPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="employees" element={<EmployeesPage />} />
+            <Route path="schedules" element={<SchedulesPage />} />
+            <Route path="operations" element={<OperationsPage />} />
+            <Route path="branches" element={<BranchesPage />} />
+            <Route path="settings" element={<SettingsPage />} />
           </Route>
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

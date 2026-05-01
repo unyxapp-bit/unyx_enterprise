@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react"
 import type { FormEvent } from "react"
-import { Plus, UserRoundCheck, UserRoundX } from "lucide-react"
+import { Pencil, Plus, UserRoundCheck, UserRoundX } from "lucide-react"
 
 import { StatusBadge } from "@/components/bento/StatusBadge"
 import { PageHeader } from "@/components/shared/PageHeader"
@@ -23,6 +23,7 @@ import {
   useUpdateEmployee,
 } from "@/hooks/useUnyxData"
 import { useAppStore } from "@/store/useAppStore"
+import type { EmployeeWithRelations } from "@/types/domain"
 
 const fieldClass =
   "h-8 w-full rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
@@ -43,6 +44,182 @@ const initialForm: EmployeeFormState = {
   role: "",
   phone: "",
   notes: "",
+}
+
+function EmployeeEditDialog({
+  employee,
+  branches,
+}: {
+  employee: EmployeeWithRelations
+  branches: Array<{ id: string; name: string }>
+}) {
+  const [open, setOpen] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [form, setForm] = useState<EmployeeFormState>({
+    branch_id: employee.branch_id,
+    sector_id: employee.sector_id ?? "",
+    name: employee.name,
+    role: employee.role ?? "",
+    phone: employee.phone ?? "",
+    notes: employee.notes ?? "",
+  })
+  const sectors = useSectors(form.branch_id)
+  const updateEmployee = useUpdateEmployee()
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setFormError(null)
+
+    if (!form.branch_id) {
+      setFormError("Selecione uma filial.")
+      return
+    }
+
+    if (!form.name.trim()) {
+      setFormError("Informe o nome do colaborador.")
+      return
+    }
+
+    await updateEmployee.mutateAsync({
+      employeeId: employee.id,
+      values: {
+        branch_id: form.branch_id,
+        sector_id: form.sector_id || null,
+        name: form.name.trim(),
+        role: form.role.trim() || null,
+        phone: form.phone.trim() || null,
+        notes: form.notes.trim() || null,
+      },
+    })
+
+    setOpen(false)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm">
+          <Pencil className="size-4" />
+          Editar
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Editar colaborador</DialogTitle>
+        </DialogHeader>
+        <form className="space-y-4" onSubmit={handleSubmit}>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="space-y-1 text-sm">
+              <span className="font-medium">Nome</span>
+              <Input
+                value={form.name}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    name: event.target.value,
+                  }))
+                }
+              />
+            </label>
+            <label className="space-y-1 text-sm">
+              <span className="font-medium">Cargo</span>
+              <Input
+                value={form.role}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    role: event.target.value,
+                  }))
+                }
+              />
+            </label>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="space-y-1 text-sm">
+              <span className="font-medium">Filial</span>
+              <select
+                className={fieldClass}
+                value={form.branch_id}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    branch_id: event.target.value,
+                    sector_id: "",
+                  }))
+                }
+              >
+                <option value="">Selecione</option>
+                {branches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1 text-sm">
+              <span className="font-medium">Setor</span>
+              <select
+                className={fieldClass}
+                value={form.sector_id}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    sector_id: event.target.value,
+                  }))
+                }
+              >
+                <option value="">Sem setor</option>
+                {(sectors.data ?? []).map((sector) => (
+                  <option key={sector.id} value={sector.id}>
+                    {sector.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <label className="space-y-1 text-sm">
+            <span className="font-medium">Telefone</span>
+            <Input
+              value={form.phone}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  phone: event.target.value,
+                }))
+              }
+            />
+          </label>
+
+          <label className="space-y-1 text-sm">
+            <span className="font-medium">Observações</span>
+            <Input
+              value={form.notes}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  notes: event.target.value,
+                }))
+              }
+            />
+          </label>
+
+          {formError || updateEmployee.error ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {formError ?? updateEmployee.error?.message}
+            </div>
+          ) : null}
+
+          <DialogFooter>
+            <Button type="submit" disabled={updateEmployee.isPending}>
+              {updateEmployee.isPending ? "Salvando..." : "Salvar alterações"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
 }
 
 export function EmployeesPage() {
@@ -270,7 +447,12 @@ export function EmployeesPage() {
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-2">
+                        <EmployeeEditDialog
+                          employee={employee}
+                          branches={branches}
+                        />
                       <Button
                         variant="outline"
                         size="sm"
@@ -289,6 +471,7 @@ export function EmployeesPage() {
                         )}
                         {employee.active ? "Desativar" : "Ativar"}
                       </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}

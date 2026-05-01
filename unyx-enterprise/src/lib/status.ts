@@ -152,6 +152,12 @@ export const operationalActions: Array<{
     nextStatus: "voltou",
     priorityLevel: 30,
   },
+  {
+    eventType: "ocorrencia_registrada",
+    label: "Ocorrência",
+    nextStatus: "alerta_critico",
+    priorityLevel: 95,
+  },
 ]
 
 export function getActionMeta(eventType: AttendanceEventType) {

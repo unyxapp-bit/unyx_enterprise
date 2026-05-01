@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react"
+import type { FormEvent } from "react"
 import { Activity, History } from "lucide-react"
 
 import { StatusBadge } from "@/components/bento/StatusBadge"
@@ -11,6 +12,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import {
   useAttendanceEvents,
@@ -28,6 +36,10 @@ import type {
 
 export function OperationsPage() {
   const [date, setDate] = useState(todayISO())
+  const [occurrenceSchedule, setOccurrenceSchedule] =
+    useState<ScheduleWithRelations | null>(null)
+  const [occurrenceNote, setOccurrenceNote] = useState("")
+  const [occurrenceError, setOccurrenceError] = useState<string | null>(null)
   const schedules = useSchedules(date)
   const statuses = useOperationalStatuses()
   const events = useAttendanceEvents()
@@ -54,6 +66,29 @@ export function OperationsPage() {
       event_type: eventType,
       notes: eventLabel[eventType],
     })
+  }
+
+  async function handleOccurrenceSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setOccurrenceError(null)
+
+    if (!occurrenceSchedule) return
+
+    if (!occurrenceNote.trim()) {
+      setOccurrenceError("Descreva a ocorrência.")
+      return
+    }
+
+    await recordEvent.mutateAsync({
+      branch_id: occurrenceSchedule.branch_id,
+      employee_id: occurrenceSchedule.employee_id,
+      schedule_id: occurrenceSchedule.id,
+      event_type: "ocorrencia_registrada",
+      notes: occurrenceNote.trim(),
+    })
+
+    setOccurrenceNote("")
+    setOccurrenceSchedule(null)
   }
 
   return (
@@ -129,7 +164,12 @@ export function OperationsPage() {
                       </div>
 
                       <div className="mt-4 flex flex-wrap gap-2">
-                        {operationalActions.map((action) => (
+                        {operationalActions
+                          .filter(
+                            (action) =>
+                              action.eventType !== "ocorrencia_registrada"
+                          )
+                          .map((action) => (
                           <Button
                             key={action.eventType}
                             variant={
@@ -145,6 +185,14 @@ export function OperationsPage() {
                             {action.label}
                           </Button>
                         ))}
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          disabled={recordEvent.isPending}
+                          onClick={() => setOccurrenceSchedule(schedule)}
+                        >
+                          Ocorrência
+                        </Button>
                       </div>
                     </div>
                   )
@@ -195,6 +243,56 @@ export function OperationsPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog
+        open={Boolean(occurrenceSchedule)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setOccurrenceSchedule(null)
+            setOccurrenceNote("")
+            setOccurrenceError(null)
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Registrar ocorrência</DialogTitle>
+          </DialogHeader>
+          <form className="space-y-4" onSubmit={handleOccurrenceSubmit}>
+            <div className="rounded-lg border bg-slate-50 p-3 text-sm">
+              <div className="font-medium">
+                {occurrenceSchedule?.employees?.name ?? "Colaborador"}
+              </div>
+              <div className="mt-1 text-muted-foreground">
+                {occurrenceSchedule?.employees?.sectors?.name ?? "Sem setor"} ·{" "}
+                {occurrenceSchedule?.branches?.name ?? "Filial"}
+              </div>
+            </div>
+
+            <label className="space-y-1 text-sm">
+              <span className="font-medium">Descrição da ocorrência</span>
+              <textarea
+                className="min-h-28 w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+                value={occurrenceNote}
+                onChange={(event) => setOccurrenceNote(event.target.value)}
+                placeholder="Ex.: colaborador precisou cobrir outro setor por falta inesperada."
+              />
+            </label>
+
+            {occurrenceError || recordEvent.error ? (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {occurrenceError ?? recordEvent.error?.message}
+              </div>
+            ) : null}
+
+            <DialogFooter>
+              <Button type="submit" disabled={recordEvent.isPending}>
+                {recordEvent.isPending ? "Registrando..." : "Registrar"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

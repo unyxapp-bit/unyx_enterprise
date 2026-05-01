@@ -221,6 +221,8 @@ export function useUpdateEmployee() {
       employeeId: string
       values: {
         active?: boolean
+        branch_id?: string
+        sector_id?: string | null
         name?: string
         role?: string | null
         phone?: string | null

@@ -174,7 +174,12 @@ export async function createEmployee(
 
 export async function updateEmployee(
   employeeId: string,
-  input: Partial<Pick<Employee, "active" | "name" | "role" | "phone" | "notes">>
+  input: Partial<
+    Pick<
+      Employee,
+      "active" | "branch_id" | "sector_id" | "name" | "role" | "phone" | "notes"
+    >
+  >
 ) {
   const { data, error } = await supabase
     .from("employees")

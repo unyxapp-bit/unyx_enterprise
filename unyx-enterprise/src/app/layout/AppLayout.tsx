@@ -18,12 +18,12 @@ import { cn } from "@/lib/utils"
 import { useAppStore } from "@/store/useAppStore"
 
 const navItems = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/employees", label: "Colaboradores", icon: Users },
-  { to: "/schedules", label: "Escalas", icon: CalendarDays },
-  { to: "/operations", label: "Operação", icon: Activity },
-  { to: "/branches", label: "Filiais", icon: Building2 },
-  { to: "/settings", label: "Configurações", icon: Settings },
+  { to: "/app", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/app/employees", label: "Colaboradores", icon: Users },
+  { to: "/app/schedules", label: "Escalas", icon: CalendarDays },
+  { to: "/app/operations", label: "Operação", icon: Activity },
+  { to: "/app/branches", label: "Filiais", icon: Building2 },
+  { to: "/app/settings", label: "Configurações", icon: Settings },
 ]
 
 export function AppLayout() {
@@ -75,7 +75,7 @@ export function AppLayout() {
             <NavLink
               key={item.to}
               to={item.to}
-              end={item.to === "/"}
+              end={item.to === "/app"}
               onClick={() => setSidebarOpen(false)}
               className={({ isActive }) =>
                 cn(
