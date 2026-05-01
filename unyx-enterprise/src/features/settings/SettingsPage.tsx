@@ -454,7 +454,7 @@ function OperationalSettingsForm({
   const initialForm = buildOperationalSettingsForm(organization, settings.data)
   const editorKey = [
     settingsBranchId ?? "organization",
-    settings.data?.updated_at ?? organization?.updated_at ?? initialForm.mode,
+    settings.data?.updated_at ?? initialForm.mode,
   ].join(":")
 
   return (
@@ -957,6 +957,8 @@ export function SettingsPage() {
 
       <div className="grid gap-4 p-6 xl:grid-cols-[1fr_0.85fr]">
         <div className="space-y-4">
+          {profile ? <PlanSwitcherCard currentPlan={currentPlan} /> : null}
+
           <Card className="border bg-white shadow-sm">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -1017,7 +1019,6 @@ export function SettingsPage() {
             </CardContent>
           </Card>
 
-          {profile ? <PlanSwitcherCard currentPlan={currentPlan} /> : null}
         </div>
 
         <div className="space-y-4">
@@ -1037,21 +1038,22 @@ export function SettingsPage() {
                   title="Erro ao carregar modulos da organizacao"
                   description={organizationModules.error.message}
                 />
-              ) : subscription.isError ? (
-                <StateBlock
-                  type="error"
-                  title="Erro ao carregar assinatura"
-                  description={subscription.error.message}
-                />
               ) : (
-                <PlanModulesPanel
-                  branches={branches.data ?? []}
-                  canViewBilling={isAdmin}
-                  employees={employees.data ?? []}
-                  modules={organizationModules.data ?? []}
-                  organization={organization.data}
-                  subscription={subscription.data}
-                />
+                <>
+                  {subscription.isError ? (
+                    <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                      Nao foi possivel carregar os dados da assinatura. Os modulos continuam visiveis.
+                    </div>
+                  ) : null}
+                  <PlanModulesPanel
+                    branches={branches.data ?? []}
+                    canViewBilling={isAdmin}
+                    employees={employees.data ?? []}
+                    modules={organizationModules.data ?? []}
+                    organization={organization.data}
+                    subscription={subscription.isError ? undefined : subscription.data}
+                  />
+                </>
               )}
             </CardContent>
           </Card>
