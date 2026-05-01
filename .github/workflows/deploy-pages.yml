@@ -43,8 +43,8 @@ jobs:
           VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_BEBoq_BrXbmRRvDx2gmuqw_8npUhLub
           VITE_SUPABASE_PROJECT_ID: tctyxfedbbuycyvhafwk
 
-      - name: Add SPA fallback
-        run: cp dist/index.html dist/404.html
+      - name: Add SPA fallbacks
+        run: npm run pages:prepare
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v4
