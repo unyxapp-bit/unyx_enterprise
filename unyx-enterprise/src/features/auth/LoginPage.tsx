@@ -40,7 +40,7 @@ export function LoginPage() {
 
         if (result.needsEmailConfirmation) {
           setMessage(
-            "Cadastro criado. Confirme seu email e depois entre para completar os dados da empresa."
+            "Cadastro criado. Confirme seu email e depois faça login para acessar o sistema."
           )
         }
 

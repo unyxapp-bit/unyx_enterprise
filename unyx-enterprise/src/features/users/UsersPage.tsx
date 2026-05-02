@@ -5,7 +5,6 @@ import {
   ChevronDown,
   ChevronUp,
   Copy,
-  Link,
   MailPlus,
   MoreHorizontal,
   Search,
@@ -460,18 +459,23 @@ function HistoricInvites({ invitations }: { invitations: Invitation[] }) {
 }
 
 function InviteSection() {
-  const [email,    setEmail]    = useState("")
-  const [role,     setRole]     = useState<UserRole>("employee")
-  const [branchId, setBranchId] = useState("")
-  const [copied,   setCopied]   = useState(false)
-  const [showForm, setShowForm] = useState(false)
+  const [email,            setEmail]            = useState("")
+  const [role,             setRole]             = useState<UserRole>("employee")
+  const [branchId,         setBranchId]         = useState("")
+  const [copiedLink,       setCopiedLink]       = useState(false)
+  const [copiedEmail,      setCopiedEmail]      = useState(false)
+  const [showForm,         setShowForm]         = useState(false)
+  const [lastInvitedEmail, setLastInvitedEmail] = useState<string | null>(null)
 
   const branches    = useBranches()
   const invitations = useInvitations()
   const create      = useCreateInvitation()
   const cancel      = useCancelInvitation()
 
-  const inviteLink = `${window.location.origin}/`
+  const loginUrl =
+    window.location.origin +
+    (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "") +
+    "/login"
 
   const pending = useMemo(
     () => (invitations.data ?? []).filter((i) => i.status === "pending"),
@@ -482,16 +486,19 @@ function InviteSection() {
     [invitations.data]
   )
 
-  function handleCopyLink() {
-    void navigator.clipboard.writeText(inviteLink).then(() => {
+  function copyText(text: string, setCopied: (v: boolean) => void) {
+    if (!navigator.clipboard) return
+    void navigator.clipboard.writeText(text).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     })
   }
 
   async function handleInvite() {
-    if (!email.trim()) return
-    await create.mutateAsync({ email: email.trim(), role, branch_id: branchId || null })
+    const trimmedEmail = email.trim()
+    if (!trimmedEmail) return
+    await create.mutateAsync({ email: trimmedEmail, role, branch_id: branchId || null })
+    setLastInvitedEmail(trimmedEmail)
     setEmail("")
     setRole("employee")
     setBranchId("")
@@ -504,9 +511,9 @@ function InviteSection() {
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2">
             <MailPlus className="size-5" />
-            Convites
+            Convidar usuario
           </CardTitle>
-          <Button size="sm" variant="outline" onClick={() => setShowForm((v) => !v)}>
+          <Button size="sm" variant="outline" onClick={() => { setShowForm((v) => !v); setLastInvitedEmail(null) }}>
             {showForm
               ? <><X className="mr-1.5 size-4" />Cancelar</>
               : <><MailPlus className="mr-1.5 size-4" />Novo convite</>}
@@ -515,18 +522,31 @@ function InviteSection() {
       </CardHeader>
       <CardContent className="space-y-5">
 
+        {/* Como funciona */}
+        <div className="rounded-lg border bg-slate-50 px-4 py-3 text-sm space-y-1.5">
+          <p className="font-medium text-slate-700">Como funciona</p>
+          <ol className="list-decimal list-inside space-y-1 text-muted-foreground text-xs">
+            <li>Registre o convite com o email, papel e filial da pessoa.</li>
+            <li>Compartilhe o link do sistema e informe o email que deve ser usado no cadastro.</li>
+            <li>A pessoa cria conta usando <strong>exatamente o email convidado</strong>.</li>
+            <li>O sistema detecta o convite e configura o acesso automaticamente.</li>
+          </ol>
+        </div>
+
+        {/* Formulario de convite */}
         {showForm && (
           <div className="rounded-lg border bg-slate-50 p-4 space-y-3">
             <p className="text-sm font-medium">Registrar convite</p>
             <div className="grid gap-3 sm:grid-cols-3">
               <label className="space-y-1 text-sm">
-                <span className="text-muted-foreground">Email</span>
+                <span className="text-muted-foreground">Email *</span>
                 <Input
                   type="email"
                   placeholder="usuario@email.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter") void handleInvite() }}
+                  autoFocus
                 />
               </label>
               <label className="space-y-1 text-sm">
@@ -560,26 +580,60 @@ function InviteSection() {
           </div>
         )}
 
-        <div className="space-y-2">
-          <p className="text-sm font-medium flex items-center gap-1.5">
-            <Link className="size-4 text-muted-foreground" />
-            Link de acesso
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Compartilhe com novos usuários. Após o cadastro, atribua o papel e a filial manualmente.
-          </p>
-          <div className="flex items-center gap-2">
-            <Input readOnly value={inviteLink} className="font-mono text-xs text-muted-foreground" />
-            <Button variant="outline" size="sm" onClick={handleCopyLink}>
-              {copied ? <Check className="size-4 text-emerald-600" /> : <Copy className="size-4" />}
-              {copied ? "Copiado" : "Copiar"}
-            </Button>
+        {/* Card de sucesso apos criar convite */}
+        {lastInvitedEmail && (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 space-y-3">
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-sm font-medium text-emerald-800">
+                Convite registrado para <span className="font-mono">{lastInvitedEmail}</span>
+              </p>
+              <button
+                className="shrink-0 text-emerald-600 hover:text-emerald-800"
+                onClick={() => setLastInvitedEmail(null)}
+                aria-label="Fechar"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+            <p className="text-xs text-emerald-700">
+              Envie o link abaixo para a pessoa e instrua a criar conta usando{" "}
+              <strong>exatamente o email: {lastInvitedEmail}</strong>
+            </p>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-emerald-700 w-10 shrink-0">Link</span>
+                <Input readOnly value={loginUrl} className="font-mono text-xs bg-white" />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0 bg-white"
+                  onClick={() => copyText(loginUrl, setCopiedLink)}
+                >
+                  {copiedLink ? <Check className="size-4 text-emerald-600" /> : <Copy className="size-4" />}
+                  {copiedLink ? "Copiado" : "Copiar"}
+                </Button>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-emerald-700 w-10 shrink-0">Email</span>
+                <Input readOnly value={lastInvitedEmail} className="font-mono text-xs bg-white" />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0 bg-white"
+                  onClick={() => copyText(lastInvitedEmail, setCopiedEmail)}
+                >
+                  {copiedEmail ? <Check className="size-4 text-emerald-600" /> : <Copy className="size-4" />}
+                  {copiedEmail ? "Copiado" : "Copiar"}
+                </Button>
+              </div>
+            </div>
           </div>
-        </div>
+        )}
 
+        {/* Convites pendentes */}
         {pending.length > 0 && (
           <div className="space-y-2">
-            <p className="text-sm font-medium">Aguardando ({pending.length})</p>
+            <p className="text-sm font-medium">Aguardando cadastro ({pending.length})</p>
             <div className="overflow-hidden rounded-lg border">
               <table className="w-full text-left text-sm">
                 <thead className="border-b bg-slate-50 text-xs uppercase text-muted-foreground">
