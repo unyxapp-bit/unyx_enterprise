@@ -11,8 +11,118 @@
 
 drop function if exists public.bootstrap_current_user_profile();
 
--- Se o Supabase avisar "unsafe use of new value", rode somente estes
--- dois ALTER TYPE primeiro e depois execute o arquivo completo novamente.
+create extension if not exists "pgcrypto";
+
+do $$
+begin
+  create type public.organization_status as enum (
+    'active',
+    'inactive',
+    'trial',
+    'suspended',
+    'cancelled'
+  );
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  create type public.user_role as enum (
+    'owner',
+    'admin',
+    'branch_manager',
+    'supervisor',
+    'operator',
+    'employee'
+  );
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  create type public.business_segment as enum (
+    'retail_store',
+    'supermarket',
+    'restaurant',
+    'pharmacy',
+    'other'
+  );
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  create type public.schedule_status as enum (
+    'scheduled',
+    'working',
+    'on_break',
+    'returned',
+    'finished',
+    'absent',
+    'day_off',
+    'cancelled'
+  );
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  create type public.operational_status_type as enum (
+    'aguardando_evento',
+    'trabalhando',
+    'deve_sair',
+    'aguardando_sangria',
+    'troca_de_caixa',
+    'em_intervalo',
+    'voltou',
+    'folga',
+    'finalizado',
+    'alerta_critico'
+  );
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  create type public.attendance_event_type as enum (
+    'entrada_confirmada',
+    'atraso_detectado',
+    'falta_detectada',
+    'intervalo_solicitado',
+    'sangria_confirmada',
+    'troca_caixa_confirmada',
+    'intervalo_iniciado',
+    'retorno_confirmado',
+    'saida_confirmada',
+    'ocorrencia_registrada'
+  );
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  create type public.subscription_plan as enum (
+    'starter',
+    'growth',
+    'enterprise'
+  );
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  create type public.subscription_status as enum (
+    'trial',
+    'active',
+    'past_due',
+    'cancelled',
+    'suspended'
+  );
+exception when duplicate_object then null;
+end $$;
+
+-- Se o Supabase avisar "unsafe use of new value", rode somente estes dois
+-- ALTER TYPE primeiro e depois execute o arquivo completo novamente.
 alter type public.operational_status_type add value if not exists 'aguardando_evento';
 alter type public.operational_status_type add value if not exists 'finalizado';
 
