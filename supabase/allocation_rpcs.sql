@@ -399,15 +399,425 @@ end;
 $$;
 
 -- ─────────────────────────────────────────────
+-- 7. RPC: allocate_post
+-- ─────────────────────────────────────────────
+create or replace function public.allocate_post(
+  p_post_id     uuid,
+  p_employee_id uuid,
+  p_schedule_id uuid default null,
+  p_notes       text default null
+)
+returns public.post_allocations
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_auth_user_id uuid := auth.uid();
+  v_profile    public.user_profiles%rowtype;
+  v_post       public.operational_posts%rowtype;
+  v_employee   public.employees%rowtype;
+  v_schedule   public.schedules%rowtype;
+  v_allocation public.post_allocations%rowtype;
+begin
+  if v_auth_user_id is null then
+    raise exception 'Usuario autenticado nao encontrado.';
+  end if;
+
+  select * into v_profile
+  from public.user_profiles
+  where auth_user_id = v_auth_user_id and active = true
+  limit 1;
+
+  if not found then
+    raise exception 'Perfil do usuario nao encontrado.';
+  end if;
+
+  select * into v_post
+  from public.operational_posts
+  where id = p_post_id
+    and organization_id = v_profile.organization_id
+    and active = true
+  for update;
+
+  if not found then
+    raise exception 'Posto ativo nao encontrado.';
+  end if;
+
+  if not public.can_manage_branch(v_post.branch_id) then
+    raise exception 'Usuario sem permissao para operar esta filial.';
+  end if;
+
+  select * into v_employee
+  from public.employees
+  where id = p_employee_id
+    and organization_id = v_profile.organization_id
+    and branch_id = v_post.branch_id
+    and active = true;
+
+  if not found then
+    raise exception 'Colaborador ativo nao encontrado nesta filial.';
+  end if;
+
+  if p_schedule_id is not null then
+    select * into v_schedule
+    from public.schedules
+    where id = p_schedule_id
+      and organization_id = v_profile.organization_id;
+
+    if not found or v_schedule.employee_id <> p_employee_id or v_schedule.branch_id <> v_post.branch_id then
+      raise exception 'Escala invalida para esta alocacao.';
+    end if;
+  end if;
+
+  if exists (
+    select 1 from public.post_allocations
+    where post_id = p_post_id
+      and ended_at is null
+      and status in ('alocado', 'aguardando_troca', 'em_troca')
+  ) then
+    raise exception 'Este posto ja possui colaborador alocado.';
+  end if;
+
+  if exists (
+    select 1 from public.post_allocations
+    where employee_id = p_employee_id
+      and ended_at is null
+      and status in ('alocado', 'aguardando_troca', 'em_troca')
+  ) then
+    raise exception 'Este colaborador ja esta alocado em outro posto.';
+  end if;
+
+  insert into public.post_allocations (
+    organization_id, branch_id, post_id, employee_id,
+    schedule_id, status, created_by, notes
+  )
+  values (
+    v_profile.organization_id, v_post.branch_id, p_post_id, p_employee_id,
+    p_schedule_id, 'alocado', v_profile.id, nullif(trim(p_notes), '')
+  )
+  returning * into v_allocation;
+
+  insert into public.audit_logs (
+    organization_id, branch_id, user_id, action, entity_type, entity_id, old_value, new_value
+  )
+  values (
+    v_profile.organization_id, v_post.branch_id, v_profile.id,
+    'post_allocated', 'post_allocations', v_allocation.id,
+    null, to_jsonb(v_allocation)
+  );
+
+  return v_allocation;
+end;
+$$;
+
+-- ─────────────────────────────────────────────
+-- 8. RPC: transfer_post_allocation
+-- ─────────────────────────────────────────────
+create or replace function public.transfer_post_allocation(
+  p_allocation_id    uuid,
+  p_next_employee_id uuid,
+  p_next_schedule_id uuid default null,
+  p_notes            text default null
+)
+returns public.post_allocations
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_auth_user_id uuid := auth.uid();
+  v_profile    public.user_profiles%rowtype;
+  v_previous   public.post_allocations%rowtype;
+  v_next       public.post_allocations%rowtype;
+  v_post       public.operational_posts%rowtype;
+  v_employee   public.employees%rowtype;
+  v_schedule   public.schedules%rowtype;
+  v_event_type public.attendance_event_type;
+begin
+  if v_auth_user_id is null then
+    raise exception 'Usuario autenticado nao encontrado.';
+  end if;
+
+  select * into v_profile
+  from public.user_profiles
+  where auth_user_id = v_auth_user_id and active = true
+  limit 1;
+
+  if not found then
+    raise exception 'Perfil do usuario nao encontrado.';
+  end if;
+
+  select * into v_previous
+  from public.post_allocations
+  where id = p_allocation_id
+    and organization_id = v_profile.organization_id
+    and ended_at is null
+    and status in ('alocado', 'aguardando_troca', 'em_troca')
+  for update;
+
+  if not found then
+    raise exception 'Alocacao ativa nao encontrada.';
+  end if;
+
+  select * into v_post
+  from public.operational_posts
+  where id = v_previous.post_id
+  for update;
+
+  if not public.can_manage_branch(v_previous.branch_id) then
+    raise exception 'Usuario sem permissao para operar esta filial.';
+  end if;
+
+  select * into v_employee
+  from public.employees
+  where id = p_next_employee_id
+    and organization_id = v_profile.organization_id
+    and branch_id = v_previous.branch_id
+    and active = true;
+
+  if not found then
+    raise exception 'Substituto ativo nao encontrado nesta filial.';
+  end if;
+
+  if p_next_employee_id = v_previous.employee_id then
+    raise exception 'Escolha um substituto diferente do operador atual.';
+  end if;
+
+  if p_next_schedule_id is not null then
+    select * into v_schedule
+    from public.schedules
+    where id = p_next_schedule_id
+      and organization_id = v_profile.organization_id;
+
+    if not found or v_schedule.employee_id <> p_next_employee_id or v_schedule.branch_id <> v_previous.branch_id then
+      raise exception 'Escala invalida para o substituto.';
+    end if;
+  end if;
+
+  if exists (
+    select 1 from public.post_allocations
+    where employee_id = p_next_employee_id
+      and ended_at is null
+      and status in ('alocado', 'aguardando_troca', 'em_troca')
+  ) then
+    raise exception 'O substituto ja esta alocado em outro posto.';
+  end if;
+
+  update public.post_allocations
+  set ended_at = now(), ended_by = v_profile.id, status = 'finalizado'
+  where id = v_previous.id;
+
+  insert into public.post_allocations (
+    organization_id, branch_id, post_id, employee_id,
+    schedule_id, status, created_by, notes
+  )
+  values (
+    v_profile.organization_id, v_previous.branch_id, v_previous.post_id, p_next_employee_id,
+    p_next_schedule_id, 'alocado', v_profile.id, nullif(trim(p_notes), '')
+  )
+  returning * into v_next;
+
+  v_event_type := case
+    when v_post.type in ('cashier', 'self_checkout') then 'troca_caixa_confirmada'::public.attendance_event_type
+    else 'ocorrencia_registrada'::public.attendance_event_type
+  end;
+
+  insert into public.attendance_events (
+    organization_id, branch_id, employee_id, schedule_id, event_type, created_by, notes
+  )
+  values (
+    v_profile.organization_id, v_previous.branch_id, v_previous.employee_id,
+    v_previous.schedule_id, v_event_type, v_profile.id,
+    coalesce(nullif(trim(p_notes), ''), 'Troca de posto confirmada em ' || v_post.name)
+  );
+
+  insert into public.audit_logs (
+    organization_id, branch_id, user_id, action, entity_type, entity_id, old_value, new_value
+  )
+  values (
+    v_profile.organization_id, v_previous.branch_id, v_profile.id,
+    'post_allocation_transferred', 'post_allocations', v_next.id,
+    to_jsonb(v_previous),
+    jsonb_build_object('previous_allocation', to_jsonb(v_previous), 'next_allocation', to_jsonb(v_next))
+  );
+
+  return v_next;
+end;
+$$;
+
+-- ─────────────────────────────────────────────
+-- 9. RPC: finalize_post_allocation
+-- ─────────────────────────────────────────────
+create or replace function public.finalize_post_allocation(
+  p_allocation_id uuid,
+  p_notes         text default null
+)
+returns public.post_allocations
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_auth_user_id uuid := auth.uid();
+  v_profile    public.user_profiles%rowtype;
+  v_previous   public.post_allocations%rowtype;
+  v_allocation public.post_allocations%rowtype;
+begin
+  if v_auth_user_id is null then
+    raise exception 'Usuario autenticado nao encontrado.';
+  end if;
+
+  select * into v_profile
+  from public.user_profiles
+  where auth_user_id = v_auth_user_id and active = true
+  limit 1;
+
+  if not found then
+    raise exception 'Perfil do usuario nao encontrado.';
+  end if;
+
+  select * into v_previous
+  from public.post_allocations
+  where id = p_allocation_id
+    and organization_id = v_profile.organization_id
+    and ended_at is null
+  for update;
+
+  if not found then
+    raise exception 'Alocacao ativa nao encontrada.';
+  end if;
+
+  if not public.can_manage_branch(v_previous.branch_id) then
+    raise exception 'Usuario sem permissao para operar esta filial.';
+  end if;
+
+  update public.post_allocations
+  set
+    ended_at = now(),
+    ended_by = v_profile.id,
+    status = 'finalizado',
+    notes = coalesce(nullif(trim(p_notes), ''), notes)
+  where id = v_previous.id
+  returning * into v_allocation;
+
+  insert into public.audit_logs (
+    organization_id, branch_id, user_id, action, entity_type, entity_id, old_value, new_value
+  )
+  values (
+    v_profile.organization_id, v_previous.branch_id, v_profile.id,
+    'post_allocation_finalized', 'post_allocations', v_allocation.id,
+    to_jsonb(v_previous), to_jsonb(v_allocation)
+  );
+
+  return v_allocation;
+end;
+$$;
+
+-- ─────────────────────────────────────────────
+-- 10. RPC: confirm_cash_movement
+-- ─────────────────────────────────────────────
+create or replace function public.confirm_cash_movement(
+  p_allocation_id uuid,
+  p_movement_type public.cash_movement_type,
+  p_notes         text default null
+)
+returns public.cash_movements
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_auth_user_id uuid := auth.uid();
+  v_profile    public.user_profiles%rowtype;
+  v_allocation public.post_allocations%rowtype;
+  v_post       public.operational_posts%rowtype;
+  v_movement   public.cash_movements%rowtype;
+begin
+  if v_auth_user_id is null then
+    raise exception 'Usuario autenticado nao encontrado.';
+  end if;
+
+  select * into v_profile
+  from public.user_profiles
+  where auth_user_id = v_auth_user_id and active = true
+  limit 1;
+
+  if not found then
+    raise exception 'Perfil do usuario nao encontrado.';
+  end if;
+
+  select * into v_allocation
+  from public.post_allocations
+  where id = p_allocation_id
+    and organization_id = v_profile.organization_id
+    and ended_at is null
+  for update;
+
+  if not found then
+    raise exception 'Alocacao ativa nao encontrada para registrar sangria.';
+  end if;
+
+  if not public.can_manage_branch(v_allocation.branch_id) then
+    raise exception 'Usuario sem permissao para operar esta filial.';
+  end if;
+
+  select * into v_post
+  from public.operational_posts
+  where id = v_allocation.post_id;
+
+  insert into public.cash_movements (
+    organization_id, branch_id, post_id, employee_id,
+    allocation_id, movement_type, confirmed_by, notes
+  )
+  values (
+    v_profile.organization_id, v_allocation.branch_id, v_allocation.post_id, v_allocation.employee_id,
+    v_allocation.id, p_movement_type, v_profile.id, nullif(trim(p_notes), '')
+  )
+  returning * into v_movement;
+
+  if p_movement_type = 'sangria_confirmada' then
+    insert into public.attendance_events (
+      organization_id, branch_id, employee_id, schedule_id, event_type, created_by, notes
+    )
+    values (
+      v_profile.organization_id, v_allocation.branch_id, v_allocation.employee_id,
+      v_allocation.schedule_id, 'sangria_confirmada', v_profile.id,
+      coalesce(nullif(trim(p_notes), ''), 'Sangria confirmada em ' || v_post.name)
+    );
+  end if;
+
+  insert into public.audit_logs (
+    organization_id, branch_id, user_id, action, entity_type, entity_id, old_value, new_value
+  )
+  values (
+    v_profile.organization_id, v_allocation.branch_id, v_profile.id,
+    p_movement_type::text, 'cash_movements', v_movement.id,
+    null, to_jsonb(v_movement)
+  );
+
+  return v_movement;
+end;
+$$;
+
+-- ─────────────────────────────────────────────
 -- Permissões dos RPCs
 -- ─────────────────────────────────────────────
 revoke all on function public.create_operational_post(uuid, text, public.operational_post_type, uuid, boolean) from public;
 revoke all on function public.update_operational_post_record(uuid, text, public.operational_post_type, uuid, boolean, boolean) from public;
 revoke all on function public.setup_segment_defaults(uuid, text[], jsonb) from public;
+revoke all on function public.allocate_post(uuid, uuid, uuid, text) from public;
+revoke all on function public.transfer_post_allocation(uuid, uuid, uuid, text) from public;
+revoke all on function public.finalize_post_allocation(uuid, text) from public;
+revoke all on function public.confirm_cash_movement(uuid, public.cash_movement_type, text) from public;
 
 grant execute on function public.create_operational_post(uuid, text, public.operational_post_type, uuid, boolean) to authenticated;
 grant execute on function public.update_operational_post_record(uuid, text, public.operational_post_type, uuid, boolean, boolean) to authenticated;
 grant execute on function public.setup_segment_defaults(uuid, text[], jsonb) to authenticated;
+grant execute on function public.allocate_post(uuid, uuid, uuid, text) to authenticated;
+grant execute on function public.transfer_post_allocation(uuid, uuid, uuid, text) to authenticated;
+grant execute on function public.finalize_post_allocation(uuid, text) to authenticated;
+grant execute on function public.confirm_cash_movement(uuid, public.cash_movement_type, text) to authenticated;
 
 -- Recarrega o schema cache do PostgREST
 notify pgrst, 'reload schema';
