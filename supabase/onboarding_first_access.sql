@@ -2137,6 +2137,10 @@ grant execute on function public.transfer_post_allocation(uuid, uuid, uuid, text
 grant execute on function public.finalize_post_allocation(uuid, text) to authenticated;
 grant execute on function public.confirm_cash_movement(uuid, public.cash_movement_type, text) to authenticated;
 
+grant select, insert, update, delete on table public.operational_posts to authenticated;
+grant select, insert, update, delete on table public.post_allocations to authenticated;
+grant select, insert on table public.cash_movements to authenticated;
+
 create or replace function public.record_operational_action(
   p_branch_id uuid,
   p_employee_id uuid,
