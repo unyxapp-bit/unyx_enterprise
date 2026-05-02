@@ -2379,6 +2379,8 @@ left join public.operational_status os
   on os.schedule_id = sc.id
   and os.employee_id = sc.employee_id;
 
+notify pgrst, 'reload schema';
+
 -- =========================================================
 -- RLS PARA VIEW
 -- A view respeita as policies das tabelas base no Supabase quando security_invoker está disponível.

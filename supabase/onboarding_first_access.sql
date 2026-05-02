@@ -2504,3 +2504,5 @@ left join public.sectors s on s.id = e.sector_id
 left join public.operational_status os
   on os.schedule_id = sc.id
   and os.employee_id = sc.employee_id;
+
+notify pgrst, 'reload schema';

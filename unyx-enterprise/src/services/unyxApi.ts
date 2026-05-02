@@ -85,22 +85,30 @@ function isMissingOperationalSettings(error: { code?: string; message: string } 
 
 function isMissingAllocationFeature(error: { code?: string; message: string } | null) {
   if (!error) return false
+  const message = error.message.toLowerCase()
+  const mentionsAllocationObject =
+    message.includes("operational_posts") ||
+    message.includes("post_allocations") ||
+    message.includes("cash_movements") ||
+    message.includes("allocate_post") ||
+    message.includes("transfer_post_allocation") ||
+    message.includes("finalize_post_allocation") ||
+    message.includes("confirm_cash_movement")
+
   return (
     error.code === "42P01" ||
     error.code === "PGRST202" ||
+    error.code === "PGRST204" ||
     error.code === "PGRST205" ||
-    error.message.includes("operational_posts") ||
-    error.message.includes("post_allocations") ||
-    error.message.includes("cash_movements") ||
-    error.message.includes("allocate_post") ||
-    error.message.includes("transfer_post_allocation") ||
-    error.message.includes("finalize_post_allocation") ||
-    error.message.includes("confirm_cash_movement")
+    (mentionsAllocationObject &&
+      (message.includes("schema cache") ||
+        message.includes("does not exist") ||
+        message.includes("could not find")))
   )
 }
 
 function allocationFeatureMessage() {
-  return "Unyx Allocation ainda nao instalado no Supabase. Rode supabase/onboarding_first_access.sql no SQL Editor e tente novamente."
+  return "Unyx Allocation ainda nao apareceu na API do Supabase. Rode o supabase/onboarding_first_access.sql atualizado no SQL Editor, aguarde alguns segundos e recarregue o app."
 }
 
 function isMissingProfileRpc(error: { code?: string; message: string } | null) {
