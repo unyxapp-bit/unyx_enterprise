@@ -3,6 +3,25 @@
 -- É seguro rodar multiplas vezes (idempotente).
 
 -- ─────────────────────────────────────────────
+-- 0. Enum (cria se ainda nao existir)
+-- ─────────────────────────────────────────────
+do $$
+begin
+  create type public.operational_post_type as enum (
+    'cashier',
+    'self_checkout',
+    'counter',
+    'service_desk',
+    'delivery',
+    'stock',
+    'kitchen',
+    'reception',
+    'other'
+  );
+exception when duplicate_object then null;
+end $$;
+
+-- ─────────────────────────────────────────────
 -- 1. create_operational_post
 -- ─────────────────────────────────────────────
 create or replace function public.create_operational_post(
