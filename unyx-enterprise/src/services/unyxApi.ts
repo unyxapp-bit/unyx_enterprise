@@ -1195,7 +1195,7 @@ export async function listOperationalPosts(branchId?: string | null) {
 }
 
 export async function createOperationalPost(
-  profile: UserProfile,
+  _profile: UserProfile,
   input: OperationalPostInput
 ) {
   const name = input.name.trim()
@@ -1223,7 +1223,7 @@ export async function createOperationalPost(
 }
 
 export async function updateOperationalPost(
-  profile: UserProfile,
+  _profile: UserProfile,
   postId: string,
   input: Partial<Pick<OperationalPost, "name" | "type" | "sector_id" | "active">>
 ) {
