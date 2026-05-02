@@ -93,17 +93,22 @@ function isMissingAllocationFeature(error: { code?: string; message: string } | 
     message.includes("allocate_post") ||
     message.includes("transfer_post_allocation") ||
     message.includes("finalize_post_allocation") ||
-    message.includes("confirm_cash_movement")
+    message.includes("confirm_cash_movement") ||
+    message.includes("create_operational_post") ||
+    message.includes("update_operational_post_record") ||
+    message.includes("setup_segment_defaults")
 
   return (
-    error.code === "42P01" ||
-    error.code === "PGRST202" ||
-    error.code === "PGRST204" ||
-    error.code === "PGRST205" ||
-    (mentionsAllocationObject &&
-      (message.includes("schema cache") ||
-        message.includes("does not exist") ||
-        message.includes("could not find")))
+    mentionsAllocationObject &&
+    (
+      error.code === "42P01" ||
+      error.code === "PGRST202" ||
+      error.code === "PGRST204" ||
+      error.code === "PGRST205" ||
+      message.includes("schema cache") ||
+      message.includes("does not exist") ||
+      message.includes("could not find")
+    )
   )
 }
 
@@ -1193,36 +1198,27 @@ export async function createOperationalPost(
   profile: UserProfile,
   input: OperationalPostInput
 ) {
-  const payload = {
-    ...input,
-    name: input.name.trim(),
-    active: input.active ?? true,
-  }
+  const name = input.name.trim()
+  if (!name) throw new Error("Informe o nome do posto.")
 
-  if (!payload.name) throw new Error("Informe o nome do posto.")
-  await validateBranchAndSector(profile, payload.branch_id, payload.sector_id)
-
-  const { data, error } = await supabase
-    .from("operational_posts")
-    .insert({
-      ...payload,
-      organization_id: profile.organization_id,
-    })
-    .select("*, branches(name), sectors(name)")
-    .single()
+  const { data: postId, error } = await supabase.rpc("create_operational_post", {
+    p_branch_id: input.branch_id,
+    p_name: name,
+    p_type: input.type,
+    p_sector_id: input.sector_id ?? null,
+    p_active: input.active ?? true,
+  })
 
   if (isMissingAllocationFeature(error)) throw new Error(allocationFeatureMessage())
   raise(error)
 
-  await createAuditLog(profile, {
-    branch_id: data.branch_id,
-    action: "operational_post_created",
-    entity_type: "operational_posts",
-    entity_id: data.id,
-    old_value: null,
-    new_value: data,
-  })
+  const { data, error: fetchError } = await supabase
+    .from("operational_posts")
+    .select("*, branches(name), sectors(name)")
+    .eq("id", postId as string)
+    .single()
 
+  if (fetchError) raise(fetchError)
   return data as OperationalPost
 }
 
@@ -1231,50 +1227,27 @@ export async function updateOperationalPost(
   postId: string,
   input: Partial<Pick<OperationalPost, "name" | "type" | "sector_id" | "active">>
 ) {
-  const { data: previous, error: previousError } = await supabase
-    .from("operational_posts")
-    .select("*")
-    .eq("id", postId)
-    .maybeSingle()
-
-  if (isMissingAllocationFeature(previousError)) {
-    throw new Error(allocationFeatureMessage())
-  }
-  raise(previousError)
-
-  if (!previous || previous.organization_id !== profile.organization_id) {
-    throw new Error("Posto operacional nao encontrado.")
-  }
-
-  const payload = { ...input }
-  if (typeof payload.name === "string") {
-    payload.name = payload.name.trim()
-    if (!payload.name) throw new Error("Informe o nome do posto.")
-  }
-
-  const nextSectorId =
-    payload.sector_id === undefined ? previous.sector_id : payload.sector_id
-  await validateBranchAndSector(profile, previous.branch_id, nextSectorId)
-
-  const { data, error } = await supabase
-    .from("operational_posts")
-    .update(payload)
-    .eq("id", postId)
-    .select("*, branches(name), sectors(name)")
-    .single()
+  const { error } = await supabase.rpc("update_operational_post_record", {
+    p_post_id:      postId,
+    p_name:         input.name ?? null,
+    p_type:         input.type ?? null,
+    p_active:       input.active ?? null,
+    p_sector_id:    input.sector_id !== undefined && input.sector_id !== null
+                      ? input.sector_id
+                      : null,
+    p_clear_sector: input.sector_id === null,
+  })
 
   if (isMissingAllocationFeature(error)) throw new Error(allocationFeatureMessage())
   raise(error)
 
-  await createAuditLog(profile, {
-    branch_id: data.branch_id,
-    action: "operational_post_updated",
-    entity_type: "operational_posts",
-    entity_id: data.id,
-    old_value: previous,
-    new_value: data,
-  })
+  const { data, error: fetchError } = await supabase
+    .from("operational_posts")
+    .select("*, branches(name), sectors(name)")
+    .eq("id", postId)
+    .single()
 
+  if (fetchError) raise(fetchError)
   return data as OperationalPost
 }
 
@@ -1394,6 +1367,22 @@ export async function confirmCashMovement(input: {
   if (isMissingAllocationFeature(error)) throw new Error(allocationFeatureMessage())
   raise(error)
   return data as CashMovement
+}
+
+export async function setupSegmentDefaults(input: {
+  branch_id: string
+  sector_names: string[]
+  post_definitions: Array<{ name: string; type: string; sector_name: string }>
+}) {
+  const { data, error } = await supabase.rpc("setup_segment_defaults", {
+    p_branch_id:        input.branch_id,
+    p_sector_names:     input.sector_names,
+    p_post_definitions: input.post_definitions,
+  })
+
+  if (isMissingAllocationFeature(error)) throw new Error(allocationFeatureMessage())
+  raise(error)
+  return data as { sectors_created: number; posts_created: number }
 }
 
 export async function listCommsPosts(branchId?: string | null) {

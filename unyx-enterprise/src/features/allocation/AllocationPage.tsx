@@ -13,6 +13,7 @@ import {
   ShieldAlert,
   Store,
   UserRoundCheck,
+  Wand2,
 } from "lucide-react"
 
 import { BentoGrid } from "@/components/bento/BentoGrid"
@@ -45,13 +46,22 @@ import {
   useEmployees,
   useFinalizePostAllocation,
   useOperationalPosts,
+  useOrganization,
   usePostAllocations,
   useSchedules,
   useSectors,
+  useSetupSegmentDefaults,
   useToggleOperationalPost,
   useTransferPostAllocation,
   useUpdateOperationalPost,
 } from "@/hooks/useUnyxData"
+import {
+  SEGMENT_DEFAULT_POSTS,
+  SEGMENT_DEFAULT_SECTORS,
+  SEGMENT_LABELS,
+  SEGMENT_PANEL_ALERTS,
+  SEGMENT_POST_TYPES,
+} from "@/lib/segmentConfig"
 import { formatDateTimeBR, formatTime, todayISO } from "@/lib/format"
 import { useAppStore } from "@/store/useAppStore"
 import type {
@@ -162,10 +172,17 @@ export function AllocationPage() {
     movement_type: "sangria_confirmada" as CashMovementType,
     notes: "",
   })
-  const [finalizeAction, setFinalizeAction] = useState<PostAllocation | null>(
-    null
-  )
+  const [cashError, setCashError] = useState<string | null>(null)
+  const [finalizeAction, setFinalizeAction] = useState<PostAllocation | null>(null)
   const [finalizeNote, setFinalizeNote] = useState("")
+  const [finalizeError, setFinalizeError] = useState<string | null>(null)
+  const [setupOpen, setSetupOpen] = useState(false)
+
+  const org = useOrganization()
+  const setupDefaults = useSetupSegmentDefaults()
+  const segment = org.data?.segment ?? "other"
+  const sortedPostTypes = SEGMENT_POST_TYPES[segment]
+  const panelAlerts = SEGMENT_PANEL_ALERTS[segment]
 
   const defaultBranchId = selectedBranchId ?? branches.data?.[0]?.id ?? ""
   const allPosts = useMemo(() => posts.data ?? [], [posts.data])
@@ -319,26 +336,36 @@ export function AllocationPage() {
   async function handleCashSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!cashAction) return
+    setCashError(null)
 
-    await confirmCash.mutateAsync({
-      allocation_id: cashAction.id,
-      movement_type: cashForm.movement_type,
-      notes: cashForm.notes.trim() || null,
-    })
-    setCashAction(null)
-    setCashForm({ movement_type: "sangria_confirmada", notes: "" })
+    try {
+      await confirmCash.mutateAsync({
+        allocation_id: cashAction.id,
+        movement_type: cashForm.movement_type,
+        notes: cashForm.notes.trim() || null,
+      })
+      setCashAction(null)
+      setCashForm({ movement_type: "sangria_confirmada", notes: "" })
+    } catch (error) {
+      setCashError(error instanceof Error ? error.message : "Nao foi possivel confirmar.")
+    }
   }
 
   async function handleFinalizeSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!finalizeAction) return
+    setFinalizeError(null)
 
-    await finalize.mutateAsync({
-      allocation_id: finalizeAction.id,
-      notes: finalizeNote.trim() || null,
-    })
-    setFinalizeAction(null)
-    setFinalizeNote("")
+    try {
+      await finalize.mutateAsync({
+        allocation_id: finalizeAction.id,
+        notes: finalizeNote.trim() || null,
+      })
+      setFinalizeAction(null)
+      setFinalizeNote("")
+    } catch (error) {
+      setFinalizeError(error instanceof Error ? error.message : "Nao foi possivel finalizar.")
+    }
   }
 
   const isLoading =
@@ -379,6 +406,14 @@ export function AllocationPage() {
               aria-label="Atualizar alocacao"
             >
               <RefreshCw className="size-4" />
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setSetupOpen(true)}
+              disabled={!defaultBranchId}
+            >
+              <Wand2 className="size-4" />
+              Configurar {SEGMENT_LABELS[segment]}
             </Button>
             <Button onClick={openCreatePost} disabled={!defaultBranchId}>
               <Plus className="size-4" />
@@ -436,6 +471,23 @@ export function AllocationPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
+                  {panelAlerts.length > 0 && uncoveredPosts.length > 0 && (
+                    <div className="mb-4 flex flex-wrap gap-2">
+                      {panelAlerts
+                        .filter((a) => a.severity === "critical")
+                        .slice(0, 3)
+                        .map((alert) => (
+                          <div
+                            key={alert.label}
+                            className="rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-xs text-red-700"
+                          >
+                            <span className="font-medium">{alert.label}</span>
+                            {" — "}
+                            {alert.description}
+                          </div>
+                        ))}
+                    </div>
+                  )}
                   {activePosts.length === 0 ? (
                     <StateBlock
                       title="Nenhum posto ativo"
@@ -737,9 +789,9 @@ export function AllocationPage() {
                     }))
                   }
                 >
-                  {Object.entries(postTypeLabel).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
+                  {sortedPostTypes.map((type) => (
+                    <option key={type} value={type}>
+                      {postTypeLabel[type]}
                     </option>
                   ))}
                 </select>
@@ -885,7 +937,7 @@ export function AllocationPage() {
       <Dialog
         open={Boolean(cashAction)}
         onOpenChange={(open) => {
-          if (!open) setCashAction(null)
+          if (!open) { setCashAction(null); setCashError(null) }
         }}
       >
         <DialogContent>
@@ -924,6 +976,11 @@ export function AllocationPage() {
                 }
               />
             </label>
+            {cashError ? (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {cashError}
+              </div>
+            ) : null}
             <DialogFooter>
               <Button type="submit" disabled={confirmCash.isPending}>
                 Confirmar movimento
@@ -936,7 +993,7 @@ export function AllocationPage() {
       <Dialog
         open={Boolean(finalizeAction)}
         onOpenChange={(open) => {
-          if (!open) setFinalizeAction(null)
+          if (!open) { setFinalizeAction(null); setFinalizeError(null) }
         }}
       >
         <DialogContent>
@@ -954,12 +1011,73 @@ export function AllocationPage() {
                 onChange={(event) => setFinalizeNote(event.target.value)}
               />
             </label>
+            {finalizeError ? (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {finalizeError}
+              </div>
+            ) : null}
             <DialogFooter>
               <Button type="submit" variant="destructive" disabled={finalize.isPending}>
                 Finalizar
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={setupOpen} onOpenChange={setSetupOpen}>
+        <DialogContent className="max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              Configurar {SEGMENT_LABELS[segment]}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 text-sm">
+            <p className="text-muted-foreground">
+              Cria os setores e postos operacionais padrao para{" "}
+              <strong>{SEGMENT_LABELS[segment]}</strong>. Registros ja existentes
+              com o mesmo nome sao ignorados — a operacao e segura para repetir.
+            </p>
+            <div>
+              <p className="mb-1.5 font-medium">Setores ({SEGMENT_DEFAULT_SECTORS[segment].length})</p>
+              <ul className="space-y-0.5 text-muted-foreground">
+                {SEGMENT_DEFAULT_SECTORS[segment].map((s) => (
+                  <li key={s}>• {s}</li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <p className="mb-1.5 font-medium">
+                Postos ({SEGMENT_DEFAULT_POSTS[segment].length})
+              </p>
+              <ul className="space-y-0.5 text-muted-foreground">
+                {SEGMENT_DEFAULT_POSTS[segment].map((p) => (
+                  <li key={p.name}>
+                    • {p.name}{" "}
+                    <span className="text-xs">
+                      ({postTypeLabel[p.type]} — {p.sector_name})
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              disabled={setupDefaults.isPending || !defaultBranchId}
+              onClick={() => {
+                void setupDefaults.mutateAsync({
+                  branch_id: defaultBranchId,
+                  sector_names: SEGMENT_DEFAULT_SECTORS[segment],
+                  post_definitions: SEGMENT_DEFAULT_POSTS[segment],
+                })
+                setSetupOpen(false)
+              }}
+            >
+              <Wand2 className="size-4" />
+              Configurar agora
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>

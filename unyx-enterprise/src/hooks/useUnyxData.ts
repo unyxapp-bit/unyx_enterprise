@@ -24,6 +24,7 @@ import {
   importSchedules,
   listAllocationHistory,
   listOrganizationModules,
+  setupSegmentDefaults,
   listAllAuditLogs,
   listAttendanceEvents,
   listAuditLogs,
@@ -751,6 +752,31 @@ export function useConfirmCashMovement() {
       await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
       await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
       toast.success("Movimento confirmado.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useSetupSegmentDefaults() {
+  const queryClient = useQueryClient()
+  useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: {
+      branch_id: string
+      sector_names: string[]
+      post_definitions: Array<{ name: string; type: string; sector_name: string }>
+    }) => setupSegmentDefaults(input),
+    onSuccess: async (data) => {
+      await queryClient.invalidateQueries({ queryKey: ["sectors"] })
+      await queryClient.invalidateQueries({ queryKey: ["operational-posts"] })
+      await queryClient.invalidateQueries({ queryKey: ["post-allocations"] })
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      toast.success(
+        `Configuracao aplicada: ${data.sectors_created} setor(es) e ${data.posts_created} posto(s) criados.`
+      )
     },
     onError: (error) => {
       toast.error(error.message)
