@@ -146,6 +146,23 @@ export interface UserProfile {
   branches?: Pick<Branch, "name"> | null
 }
 
+export type InvitationStatus = "pending" | "accepted" | "cancelled" | "expired"
+
+export interface Invitation {
+  id: string
+  organization_id: string
+  email: string
+  role: UserRole
+  branch_id: string | null
+  invited_by: string | null
+  status: InvitationStatus
+  token: string
+  expires_at: string
+  created_at: string
+  branches?: Pick<Branch, "name"> | null
+  user_profiles?: Pick<UserProfile, "name"> | null
+}
+
 export interface Employee {
   id: string
   organization_id: string

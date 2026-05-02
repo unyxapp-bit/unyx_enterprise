@@ -14,6 +14,7 @@ import type {
   DashboardRow,
   Employee,
   EmployeeWithRelations,
+  Invitation,
   Module,
   OrganizationModule,
   OperationalPost,
@@ -1782,7 +1783,7 @@ export async function toggleSectorActive(sectorId: string, active: boolean) {
 export async function listUserProfiles() {
   const { data, error } = await supabase
     .from("user_profiles")
-    .select("*")
+    .select("*, branches(name)")
     .order("name")
 
   raise(error)
@@ -1794,11 +1795,65 @@ export async function updateUserRole(profileId: string, role: UserProfile["role"
     .from("user_profiles")
     .update({ role })
     .eq("id", profileId)
-    .select("*")
+    .select("*, branches(name)")
     .single()
 
   raise(error)
   return data as UserProfile
+}
+
+export async function setUserActive(profileId: string, active: boolean) {
+  const { error } = await supabase.rpc("set_user_active", {
+    p_profile_id: profileId,
+    p_active: active,
+  })
+  raise(error)
+}
+
+export async function setUserBranch(profileId: string, branchId: string | null) {
+  const { error } = await supabase.rpc("set_user_branch", {
+    p_profile_id: profileId,
+    p_branch_id: branchId,
+  })
+  raise(error)
+}
+
+export async function removeUserFromOrg(profileId: string) {
+  const { error } = await supabase.rpc("remove_user_from_org", {
+    p_profile_id: profileId,
+  })
+  raise(error)
+}
+
+export async function listInvitations() {
+  const { data, error } = await supabase
+    .from("invitations")
+    .select("*, branches(name), user_profiles!invited_by(name)")
+    .order("created_at", { ascending: false })
+
+  raise(error)
+  return (data ?? []) as Invitation[]
+}
+
+export async function createInvitation(input: {
+  email: string
+  role: UserProfile["role"]
+  branch_id: string | null
+}) {
+  const { data, error } = await supabase.rpc("invite_user", {
+    p_email: input.email,
+    p_role: input.role,
+    p_branch_id: input.branch_id,
+  })
+  raise(error)
+  return data as string
+}
+
+export async function cancelInvitation(invitationId: string) {
+  const { error } = await supabase.rpc("cancel_invitation", {
+    p_invitation_id: invitationId,
+  })
+  raise(error)
 }
 
 export async function copySchedulesFromDate(

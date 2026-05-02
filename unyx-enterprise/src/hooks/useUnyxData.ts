@@ -44,6 +44,12 @@ import {
   listTrainingItems,
   listTrainingProgress,
   listUserProfiles,
+  listInvitations,
+  setUserActive,
+  setUserBranch,
+  removeUserFromOrg,
+  createInvitation,
+  cancelInvitation,
   markCommsPostRead,
   recordOperationalEvent,
   saveOperationalSettings,
@@ -73,6 +79,7 @@ import type {
   Branch,
   BusinessSegment,
   CashMovementType,
+  Invitation,
   OperationalPost,
   OperationalPostType,
   OperationalSettings,
@@ -1146,5 +1153,77 @@ export function useImportSchedules() {
     onError: (error) => {
       toast.error(error.message)
     },
+  })
+}
+
+export function useSetUserActive() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { profileId: string; active: boolean }) =>
+      setUserActive(input.profileId, input.active),
+    onSuccess: async (_data, variables) => {
+      await queryClient.invalidateQueries({ queryKey: ["user-profiles"] })
+      toast.success(variables.active ? "Usuário ativado." : "Usuário desativado.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useSetUserBranch() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { profileId: string; branchId: string | null }) =>
+      setUserBranch(input.profileId, input.branchId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["user-profiles"] })
+      toast.success("Filial atualizada.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useRemoveUserFromOrg() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (profileId: string) => removeUserFromOrg(profileId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["user-profiles"] })
+      toast.success("Usuário removido da organização.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useInvitations() {
+  const { profile } = useAuth()
+  return useQuery({
+    queryKey: ["invitations", profile?.organization_id],
+    queryFn: listInvitations,
+    enabled: Boolean(profile),
+  })
+}
+
+export function useCreateInvitation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { email: string; role: Invitation["role"]; branch_id: string | null }) =>
+      createInvitation(input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["invitations"] })
+      toast.success("Convite registrado.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useCancelInvitation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (invitationId: string) => cancelInvitation(invitationId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["invitations"] })
+      toast.success("Convite cancelado.")
+    },
+    onError: (error) => { toast.error(error.message) },
   })
 }
