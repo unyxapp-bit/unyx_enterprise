@@ -10,7 +10,7 @@ export function formatDateBR(value: string | null | undefined) {
     month: "2-digit",
     year: "numeric",
     timeZone: "UTC",
-  }).format(new Date(`${value}T00:00:00.000Z`))
+  }).format(new Date(`${value.slice(0, 10)}T00:00:00.000Z`))
 }
 
 export function formatDateTimeBR(value: string | null | undefined) {
