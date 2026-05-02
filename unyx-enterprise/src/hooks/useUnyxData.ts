@@ -4,7 +4,11 @@ import { toast } from "sonner"
 import { useAuth } from "@/app/providers/auth-context"
 import { useAppStore } from "@/store/useAppStore"
 import {
+  closeCashSession,
+  completeSale,
   copySchedulesFromDate,
+  createPosCashMovement,
+  createProduct,
   allocatePost,
   confirmCashMovement,
   createBranch,
@@ -22,9 +26,18 @@ import {
   getSubscription,
   importEmployees,
   importSchedules,
+  getCurrentCashSession,
   listAllocationHistory,
+  listCashSessions,
   listOrganizationModules,
+  listPosCashMovements,
+  listProducts,
+  listSaleItems,
+  listSalePayments,
+  listSales,
+  openCashSession,
   setupSegmentDefaults,
+  updateProduct,
   listAllAuditLogs,
   listAttendanceEvents,
   listAuditLogs,
@@ -71,7 +84,9 @@ import {
 } from "@/services/unyxApi"
 import type {
   BulkImportResult,
+  CompleteSaleInput,
   EmployeeImportInput,
+  ProductInput,
   ScheduleImportInput,
 } from "@/services/unyxApi"
 import type {
@@ -83,6 +98,8 @@ import type {
   OperationalPost,
   OperationalPostType,
   OperationalSettings,
+  PaymentMethod,
+  PosCashMovementType,
   ScheduleStatus,
   SubscriptionPlan,
   TrainingType,
@@ -1227,3 +1244,183 @@ export function useCancelInvitation() {
     onError: (error) => { toast.error(error.message) },
   })
 }
+
+// ── Unyx POS hooks ────────────────────────────────────────────────────────────
+
+export function useProducts(branchId?: string | null) {
+  const { profile } = useAuth()
+  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
+  const effectiveBranchId = arguments.length > 0 ? branchId ?? null : selectedBranchId
+  return useQuery({
+    queryKey: ["pos-products", profile?.organization_id, effectiveBranchId],
+    queryFn: () => listProducts(effectiveBranchId),
+    enabled: Boolean(profile),
+  })
+}
+
+export function useCurrentCashSession(branchId?: string | null) {
+  const { profile } = useAuth()
+  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
+  const effectiveBranchId = (arguments.length > 0 ? branchId ?? null : selectedBranchId) ?? ""
+  return useQuery({
+    queryKey: ["pos-current-session", profile?.organization_id, effectiveBranchId],
+    queryFn: () => getCurrentCashSession(effectiveBranchId),
+    enabled: Boolean(profile) && Boolean(effectiveBranchId),
+    refetchInterval: 30_000,
+  })
+}
+
+export function useCashSessions(branchId?: string | null) {
+  const { profile } = useAuth()
+  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
+  const effectiveBranchId = arguments.length > 0 ? branchId ?? null : selectedBranchId
+  return useQuery({
+    queryKey: ["pos-sessions", profile?.organization_id, effectiveBranchId],
+    queryFn: () => listCashSessions(effectiveBranchId),
+    enabled: Boolean(profile),
+  })
+}
+
+export function usePosCashMovements(sessionId: string | null | undefined) {
+  const { profile } = useAuth()
+  return useQuery({
+    queryKey: ["pos-cash-movements", sessionId],
+    queryFn: () => listPosCashMovements(sessionId!),
+    enabled: Boolean(profile) && Boolean(sessionId),
+  })
+}
+
+export function useSales(branchId?: string | null, date?: string | null) {
+  const { profile } = useAuth()
+  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
+  const effectiveBranchId = arguments.length > 0 ? branchId ?? null : selectedBranchId
+  return useQuery({
+    queryKey: ["pos-sales", profile?.organization_id, effectiveBranchId, date],
+    queryFn: () => listSales(effectiveBranchId, date),
+    enabled: Boolean(profile),
+  })
+}
+
+export function useSaleItems(saleId: string | null | undefined) {
+  const { profile } = useAuth()
+  return useQuery({
+    queryKey: ["pos-sale-items", saleId],
+    queryFn: () => listSaleItems(saleId!),
+    enabled: Boolean(profile) && Boolean(saleId),
+  })
+}
+
+export function useSalePayments(saleId: string | null | undefined) {
+  const { profile } = useAuth()
+  return useQuery({
+    queryKey: ["pos-sale-payments", saleId],
+    queryFn: () => listSalePayments(saleId!),
+    enabled: Boolean(profile) && Boolean(saleId),
+  })
+}
+
+export function useCreateProduct() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+  return useMutation({
+    mutationFn: (input: ProductInput) => createProduct(profile, input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["pos-products"] })
+      toast.success("Produto cadastrado.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useUpdateProduct() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+  return useMutation({
+    mutationFn: (input: { productId: string; values: Partial<ProductInput & { active: boolean }> }) =>
+      updateProduct(profile, input.productId, input.values),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["pos-products"] })
+      toast.success("Produto atualizado.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useOpenCashSession() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: {
+      branch_id: string
+      post_id: string | null
+      employee_id: string | null
+      initial_amount: number
+      notes: string | null
+    }) => openCashSession(input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["pos-current-session"] })
+      await queryClient.invalidateQueries({ queryKey: ["pos-sessions"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      toast.success("Caixa aberto.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useCloseCashSession() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { session_id: string; final_amount: number; notes: string | null }) =>
+      closeCashSession(input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["pos-current-session"] })
+      await queryClient.invalidateQueries({ queryKey: ["pos-sessions"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      toast.success("Caixa fechado.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useCompleteSale() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: CompleteSaleInput) => completeSale(input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["pos-sales"] })
+      await queryClient.invalidateQueries({ queryKey: ["pos-current-session"] })
+      await queryClient.invalidateQueries({ queryKey: ["pos-cash-movements"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      toast.success("Venda finalizada.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useCreatePosCashMovement() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: {
+      session_id: string
+      movement_type: PosCashMovementType
+      amount: number
+      notes: string | null
+    }) => createPosCashMovement(input),
+    onSuccess: async (_data, variables) => {
+      await queryClient.invalidateQueries({ queryKey: ["pos-cash-movements"] })
+      await queryClient.invalidateQueries({ queryKey: ["pos-current-session"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      const labels: Record<string, string> = {
+        sangria: "Sangria registrada.",
+        cash_in: "Entrada registrada.",
+        cash_out: "Saída registrada.",
+        change_reinforcement: "Reforço de troco registrado.",
+        adjustment: "Ajuste registrado.",
+      }
+      toast.success(labels[variables.movement_type] ?? "Movimento registrado.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+// suppress unused import warning
+void (undefined as unknown as PaymentMethod)

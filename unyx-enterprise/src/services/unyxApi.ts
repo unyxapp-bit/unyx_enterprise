@@ -9,6 +9,8 @@ import type {
   BusinessSegment,
   CashMovement,
   CashMovementType,
+  CashSession,
+  CashSessionStatus,
   CommsPost,
   CommsPostComment,
   DashboardRow,
@@ -22,7 +24,14 @@ import type {
   OperationalSettings,
   OperationalStatusRecord,
   Organization,
+  PaymentMethod,
+  PosCashMovement,
+  PosCashMovementType,
   PostAllocation,
+  Product,
+  Sale,
+  SaleItem,
+  SalePayment,
   Schedule,
   ScheduleStatus,
   ScheduleWithRelations,
@@ -1854,6 +1863,255 @@ export async function cancelInvitation(invitationId: string) {
     p_invitation_id: invitationId,
   })
   raise(error)
+}
+
+// ── Unyx POS ─────────────────────────────────────────────────────────────────
+
+function isMissingPosFeature(error: { code?: string; message: string } | null) {
+  if (!error) return false
+  const message = error.message.toLowerCase()
+  const mentionsPos =
+    message.includes("cash_sessions") ||
+    message.includes("sale_items") ||
+    message.includes("sale_payments") ||
+    message.includes("pos_cash_movements") ||
+    message.includes("pos_open_cash_session") ||
+    message.includes("pos_complete_sale") ||
+    message.includes("pos_close_cash_session") ||
+    message.includes("pos_create_cash_movement")
+  return (
+    mentionsPos &&
+    (error.code === "42P01" ||
+      error.code === "PGRST202" ||
+      error.code === "PGRST204" ||
+      error.code === "PGRST205" ||
+      message.includes("does not exist") ||
+      message.includes("could not find") ||
+      message.includes("schema cache"))
+  )
+}
+
+function posFeatureMessage() {
+  return "Unyx POS ainda não instalado. Rode supabase/pos_setup.sql no SQL Editor e recarregue."
+}
+
+export interface ProductInput {
+  branch_id: string | null
+  name: string
+  barcode: string | null
+  sku: string | null
+  category: string | null
+  unit: string
+  price: number
+  cost_price: number | null
+  stock_quantity: number
+}
+
+export async function listProducts(branchId?: string | null) {
+  let query = supabase
+    .from("products")
+    .select("*")
+    .order("active", { ascending: false })
+    .order("name")
+  if (branchId) query = query.or(`branch_id.is.null,branch_id.eq.${branchId}`)
+  const { data, error } = await query
+  if (isMissingPosFeature(error)) return []
+  raise(error)
+  return (data ?? []) as Product[]
+}
+
+export async function createProduct(profile: UserProfile, input: ProductInput) {
+  const name = input.name.trim()
+  if (!name) throw new Error("Informe o nome do produto.")
+  const { data, error } = await supabase
+    .from("products")
+    .insert({ ...input, name, organization_id: profile.organization_id })
+    .select("*")
+    .single()
+  if (isMissingPosFeature(error)) throw new Error(posFeatureMessage())
+  raise(error)
+  return data as Product
+}
+
+export async function updateProduct(
+  _profile: UserProfile,
+  productId: string,
+  input: Partial<ProductInput & { active: boolean }>
+) {
+  const { data, error } = await supabase
+    .from("products")
+    .update(input)
+    .eq("id", productId)
+    .select("*")
+    .single()
+  if (isMissingPosFeature(error)) throw new Error(posFeatureMessage())
+  raise(error)
+  return data as Product
+}
+
+export async function getCurrentCashSession(
+  branchId: string,
+  status: CashSessionStatus = "open"
+) {
+  const { data, error } = await supabase
+    .from("cash_sessions")
+    .select("*, operational_posts(name, type), user_profiles!user_profile_id(name), employees(name)")
+    .eq("branch_id", branchId)
+    .eq("status", status)
+    .order("opened_at", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (isMissingPosFeature(error)) return null
+  raise(error)
+  return data as CashSession | null
+}
+
+export async function listCashSessions(branchId?: string | null) {
+  let query = supabase
+    .from("cash_sessions")
+    .select("*, operational_posts(name, type), user_profiles!user_profile_id(name), employees(name)")
+    .order("opened_at", { ascending: false })
+    .limit(50)
+  if (branchId) query = query.eq("branch_id", branchId)
+  const { data, error } = await query
+  if (isMissingPosFeature(error)) return []
+  raise(error)
+  return (data ?? []) as CashSession[]
+}
+
+export async function openCashSession(input: {
+  branch_id: string
+  post_id: string | null
+  employee_id: string | null
+  initial_amount: number
+  notes: string | null
+}) {
+  const { data, error } = await supabase.rpc("pos_open_cash_session", {
+    p_branch_id:      input.branch_id,
+    p_post_id:        input.post_id,
+    p_employee_id:    input.employee_id,
+    p_initial_amount: input.initial_amount,
+    p_notes:          input.notes,
+  })
+  if (isMissingPosFeature(error)) throw new Error(posFeatureMessage())
+  raise(error)
+  return data as string
+}
+
+export async function closeCashSession(input: {
+  session_id: string
+  final_amount: number
+  notes: string | null
+}) {
+  const { error } = await supabase.rpc("pos_close_cash_session", {
+    p_session_id:   input.session_id,
+    p_final_amount: input.final_amount,
+    p_notes:        input.notes,
+  })
+  if (isMissingPosFeature(error)) throw new Error(posFeatureMessage())
+  raise(error)
+}
+
+export interface CompleteSaleInput {
+  branch_id: string
+  session_id: string
+  post_id: string | null
+  customer_name: string | null
+  discount_amount: number
+  notes: string | null
+  items: Array<{
+    product_id: string | null
+    product_name: string
+    quantity: number
+    unit_price: number
+    discount_amount: number
+    total_amount: number
+  }>
+  payments: Array<{
+    method: PaymentMethod
+    amount: number
+    change_amount: number
+  }>
+}
+
+export async function completeSale(input: CompleteSaleInput) {
+  const { data, error } = await supabase.rpc("pos_complete_sale", {
+    p_branch_id:       input.branch_id,
+    p_session_id:      input.session_id,
+    p_post_id:         input.post_id,
+    p_items:           input.items,
+    p_payments:        input.payments,
+    p_customer_name:   input.customer_name,
+    p_discount_amount: input.discount_amount,
+    p_notes:           input.notes,
+  })
+  if (isMissingPosFeature(error)) throw new Error(posFeatureMessage())
+  raise(error)
+  return data as string
+}
+
+export async function createPosCashMovement(input: {
+  session_id: string
+  movement_type: PosCashMovementType
+  amount: number
+  notes: string | null
+}) {
+  const { data, error } = await supabase.rpc("pos_create_cash_movement", {
+    p_session_id:    input.session_id,
+    p_movement_type: input.movement_type,
+    p_amount:        input.amount,
+    p_notes:         input.notes,
+  })
+  if (isMissingPosFeature(error)) throw new Error(posFeatureMessage())
+  raise(error)
+  return data as string
+}
+
+export async function listPosCashMovements(sessionId: string) {
+  const { data, error } = await supabase
+    .from("pos_cash_movements")
+    .select("*, user_profiles!created_by(name)")
+    .eq("cash_session_id", sessionId)
+    .order("occurred_at", { ascending: false })
+  if (isMissingPosFeature(error)) return []
+  raise(error)
+  return (data ?? []) as PosCashMovement[]
+}
+
+export async function listSales(branchId?: string | null, date?: string | null) {
+  let query = supabase
+    .from("sales")
+    .select("*, operational_posts(name, type), user_profiles!user_profile_id(name)")
+    .order("sold_at", { ascending: false })
+    .limit(200)
+  if (branchId) query = query.eq("branch_id", branchId)
+  if (date) query = query.gte("sold_at", `${date}T00:00:00`).lte("sold_at", `${date}T23:59:59`)
+  const { data, error } = await query
+  if (isMissingPosFeature(error)) return []
+  raise(error)
+  return (data ?? []) as Sale[]
+}
+
+export async function listSaleItems(saleId: string) {
+  const { data, error } = await supabase
+    .from("sale_items")
+    .select("*")
+    .eq("sale_id", saleId)
+    .order("created_at")
+  if (isMissingPosFeature(error)) return []
+  raise(error)
+  return (data ?? []) as SaleItem[]
+}
+
+export async function listSalePayments(saleId: string) {
+  const { data, error } = await supabase
+    .from("sale_payments")
+    .select("*")
+    .eq("sale_id", saleId)
+    .order("created_at")
+  if (isMissingPosFeature(error)) return []
+  raise(error)
+  return (data ?? []) as SalePayment[]
 }
 
 export async function copySchedulesFromDate(

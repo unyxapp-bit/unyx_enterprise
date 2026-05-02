@@ -20,6 +20,10 @@ import { ReportsPage } from "@/features/reports/ReportsPage"
 import { SchedulesPage } from "@/features/schedules/SchedulesPage"
 import { SettingsPage } from "@/features/settings/SettingsPage"
 import { UsersPage } from "@/features/users/UsersPage"
+import { PosProductsPage } from "@/features/pos/PosProductsPage"
+import { PosCashPage } from "@/features/pos/PosCashPage"
+import { PosSellPage } from "@/features/pos/PosSellPage"
+import { PosSalesPage } from "@/features/pos/PosSalesPage"
 
 function ProtectedRoute() {
   const { loading, session } = useAuth()
@@ -65,6 +69,10 @@ export function AppRouter() {
             <Route path="game" element={<GamePage />} />
             <Route path="academy" element={<AcademyPage />} />
             <Route path="ai" element={<AiPage />} />
+            <Route path="pos/products" element={<PosProductsPage />} />
+            <Route path="pos/cash" element={<PosCashPage />} />
+            <Route path="pos/sell" element={<PosSellPage />} />
+            <Route path="pos/sales" element={<PosSalesPage />} />
           </Route>
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

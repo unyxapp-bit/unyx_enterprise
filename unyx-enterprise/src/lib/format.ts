@@ -34,3 +34,7 @@ export function minutesLabel(value: number) {
   if (value === 0) return "0 min"
   return `${value} min`
 }
+
+export function formatCurrency(value: number) {
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value)
+}

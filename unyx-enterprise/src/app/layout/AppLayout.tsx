@@ -11,11 +11,15 @@ import {
   MapPinned,
   Menu,
   MessageSquareText,
+  Package,
+  ReceiptText,
   Settings,
+  ShoppingCart,
   Sparkles,
   Trophy,
   UserCog,
   Users,
+  Wallet,
 } from "lucide-react"
 import { NavLink, Outlet } from "react-router-dom"
 
@@ -63,6 +67,16 @@ const navGroups = [
     label: "Unyx Allocation",
     summary: "Cobre postos e PDVs",
     items: [{ to: "/app/allocation", label: "Alocacao", icon: MapPinned }],
+  },
+  {
+    label: "Unyx POS",
+    summary: "Venda e controle de caixa",
+    items: [
+      { to: "/app/pos/sell", label: "PDV — Venda", icon: ShoppingCart },
+      { to: "/app/pos/cash", label: "Caixa", icon: Wallet },
+      { to: "/app/pos/products", label: "Produtos", icon: Package },
+      { to: "/app/pos/sales", label: "Historico", icon: ReceiptText },
+    ],
   },
   {
     label: "Unyx Insight",

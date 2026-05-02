@@ -397,6 +397,122 @@ export interface OrganizationModule {
   modules?: Module | null
 }
 
+// ── Unyx POS ──────────────────────────────────────────────────────────────────
+
+export type CashSessionStatus = "open" | "closed" | "cancelled"
+export type SaleStatus = "draft" | "completed" | "cancelled" | "refunded"
+export type PaymentMethod = "cash" | "pix" | "debit_card" | "credit_card" | "voucher" | "other"
+export type PaymentStatus = "pending" | "confirmed" | "cancelled"
+export type PosCashMovementType =
+  | "sale_cash_in"
+  | "cash_out"
+  | "cash_in"
+  | "sangria"
+  | "change_reinforcement"
+  | "adjustment"
+
+export interface Product {
+  id: string
+  organization_id: string
+  branch_id: string | null
+  name: string
+  barcode: string | null
+  sku: string | null
+  category: string | null
+  unit: string
+  price: number
+  cost_price: number | null
+  stock_quantity: number
+  active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface CashSession {
+  id: string
+  organization_id: string
+  branch_id: string
+  post_id: string | null
+  user_profile_id: string | null
+  employee_id: string | null
+  opened_at: string
+  closed_at: string | null
+  initial_amount: number
+  expected_amount: number
+  final_amount: number | null
+  difference_amount: number | null
+  status: CashSessionStatus
+  notes: string | null
+  created_at: string
+  updated_at: string
+  operational_posts?: Pick<OperationalPost, "name" | "type"> | null
+  user_profiles?: Pick<UserProfile, "name"> | null
+  employees?: Pick<Employee, "name"> | null
+}
+
+export interface Sale {
+  id: string
+  organization_id: string
+  branch_id: string
+  cash_session_id: string | null
+  post_id: string | null
+  user_profile_id: string | null
+  employee_id: string | null
+  customer_name: string | null
+  subtotal: number
+  discount_amount: number
+  total_amount: number
+  status: SaleStatus
+  sold_at: string
+  cancelled_at: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+  operational_posts?: Pick<OperationalPost, "name" | "type"> | null
+  user_profiles?: Pick<UserProfile, "name"> | null
+}
+
+export interface SaleItem {
+  id: string
+  organization_id: string
+  sale_id: string
+  product_id: string | null
+  product_name: string
+  quantity: number
+  unit_price: number
+  discount_amount: number
+  total_amount: number
+  created_at: string
+}
+
+export interface SalePayment {
+  id: string
+  organization_id: string
+  sale_id: string
+  method: PaymentMethod
+  amount: number
+  change_amount: number
+  status: PaymentStatus
+  paid_at: string
+  notes: string | null
+  created_at: string
+}
+
+export interface PosCashMovement {
+  id: string
+  organization_id: string
+  branch_id: string
+  cash_session_id: string
+  post_id: string | null
+  movement_type: PosCashMovementType
+  amount: number
+  created_by: string | null
+  occurred_at: string
+  notes: string | null
+  created_at: string
+  user_profiles?: Pick<UserProfile, "name"> | null
+}
+
 export interface Subscription {
   id: string
   organization_id: string
