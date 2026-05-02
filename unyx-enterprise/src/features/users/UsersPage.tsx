@@ -633,6 +633,26 @@ function InviteSection() {
 
 type SortKey = "name" | "role" | "branch" | "status" | "created_at"
 
+function SortIcon({ k, sortKey, sortAsc }: { k: SortKey; sortKey: SortKey; sortAsc: boolean }) {
+  if (sortKey !== k) return <span className="ml-1 opacity-30">↕</span>
+  return sortAsc
+    ? <ChevronUp className="ml-1 inline size-3" />
+    : <ChevronDown className="ml-1 inline size-3" />
+}
+
+function Th({ label, k, sortKey, sortAsc, onSort }: {
+  label: string; k: SortKey; sortKey: SortKey; sortAsc: boolean; onSort: (k: SortKey) => void
+}) {
+  return (
+    <th
+      className="cursor-pointer select-none px-4 py-3 hover:text-foreground"
+      onClick={() => onSort(k)}
+    >
+      {label}<SortIcon k={k} sortKey={sortKey} sortAsc={sortAsc} />
+    </th>
+  )
+}
+
 export function UsersPage() {
   const { profile: currentProfile } = useAuth()
   const profiles = useUserProfiles()
@@ -681,24 +701,6 @@ export function UsersPage() {
     })
     return list
   }, [profiles.data, search, roleFilter, branchFilter, statusFilter, sortKey, sortAsc])
-
-  function SortIcon({ k }: { k: SortKey }) {
-    if (sortKey !== k) return <span className="ml-1 opacity-30">↕</span>
-    return sortAsc
-      ? <ChevronUp className="ml-1 inline size-3" />
-      : <ChevronDown className="ml-1 inline size-3" />
-  }
-
-  function Th({ label, k }: { label: string; k: SortKey }) {
-    return (
-      <th
-        className="cursor-pointer select-none px-4 py-3 hover:text-foreground"
-        onClick={() => toggleSort(k)}
-      >
-        {label}<SortIcon k={k} />
-      </th>
-    )
-  }
 
   const activeCount   = (profiles.data ?? []).filter((p) =>  p.active).length
   const inactiveCount = (profiles.data ?? []).filter((p) => !p.active).length
@@ -780,12 +782,12 @@ export function UsersPage() {
                     <table className="w-full text-left text-sm">
                       <thead className="border-b bg-slate-50 text-xs uppercase text-muted-foreground">
                         <tr>
-                          <Th label="Nome"    k="name" />
+                          <Th label="Nome"    k="name"       sortKey={sortKey} sortAsc={sortAsc} onSort={toggleSort} />
                           <th className="px-4 py-3">Email</th>
-                          <Th label="Filial"  k="branch" />
-                          <Th label="Papel"   k="role" />
-                          <Th label="Status"  k="status" />
-                          <Th label="Desde"   k="created_at" />
+                          <Th label="Filial"  k="branch"     sortKey={sortKey} sortAsc={sortAsc} onSort={toggleSort} />
+                          <Th label="Papel"   k="role"       sortKey={sortKey} sortAsc={sortAsc} onSort={toggleSort} />
+                          <Th label="Status"  k="status"     sortKey={sortKey} sortAsc={sortAsc} onSort={toggleSort} />
+                          <Th label="Desde"   k="created_at" sortKey={sortKey} sortAsc={sortAsc} onSort={toggleSort} />
                           <th className="px-4 py-3 text-right">Ações</th>
                         </tr>
                       </thead>
