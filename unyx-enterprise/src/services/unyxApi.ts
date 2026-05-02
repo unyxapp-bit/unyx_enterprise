@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase"
 import { getActionMeta } from "@/lib/status"
+import { planConfig } from "@/lib/plans"
 import type {
   AttendanceEvent,
   AttendanceEventType,
@@ -74,6 +75,14 @@ function isMissingProfileRpc(error: { code?: string; message: string } | null) {
   return (
     error.code === "PGRST202" ||
     error.message.includes("update_current_user_profile")
+  )
+}
+
+function isMissingPlanRpc(error: { code?: string; message: string } | null) {
+  if (!error) return false
+  return (
+    error.code === "PGRST202" ||
+    error.message.includes("update_organization_plan")
   )
 }
 
@@ -208,8 +217,16 @@ async function validateBranchAndSector(
 }
 
 async function ensureEmployeeLimit(profile: UserProfile, extraActiveEmployees = 1) {
+  const organization = await getOrganization(profile.organization_id)
   const subscription = await getSubscription(profile.organization_id)
-  const maxEmployees = subscription?.max_employees
+  const effectivePlan = organization?.plan ?? subscription?.plan ?? "starter"
+  const configuredLimit = planConfig[effectivePlan].maxEmployees
+  const maxEmployees =
+    configuredLimit === null
+      ? 0
+      : subscription?.plan === effectivePlan
+        ? subscription.max_employees
+        : configuredLimit
 
   if (!maxEmployees) return
 
@@ -225,6 +242,33 @@ async function ensureEmployeeLimit(profile: UserProfile, extraActiveEmployees = 
     throw new Error(
       `Limite do plano atingido: ${maxEmployees} colaboradores ativos.`
     )
+  }
+}
+
+async function ensureBranchLimit(profile: UserProfile, extraActiveBranches = 1) {
+  const organization = await getOrganization(profile.organization_id)
+  const subscription = await getSubscription(profile.organization_id)
+  const effectivePlan = organization?.plan ?? subscription?.plan ?? "starter"
+  const configuredLimit = planConfig[effectivePlan].maxBranches
+  const maxBranches =
+    configuredLimit === null
+      ? 0
+      : subscription?.plan === effectivePlan
+        ? subscription.max_branches
+        : configuredLimit
+
+  if (!maxBranches) return
+
+  const { count, error } = await supabase
+    .from("branches")
+    .select("id", { count: "exact", head: true })
+    .eq("organization_id", profile.organization_id)
+    .eq("active", true)
+
+  raise(error)
+
+  if ((count ?? 0) + extraActiveBranches > maxBranches) {
+    throw new Error(`Limite do plano atingido: ${maxBranches} filiais ativas.`)
   }
 }
 
@@ -427,34 +471,16 @@ export async function updateOrganization(
   return data as Organization
 }
 
-export async function updateOrganizationPlan(
-  profile: UserProfile,
-  plan: SubscriptionPlan
-) {
-  const { data: previous, error: previousError } = await supabase
-    .from("organizations")
-    .select("*")
-    .eq("id", profile.organization_id)
-    .maybeSingle()
-
-  raise(previousError)
-
+export async function updateOrganizationPlan(plan: SubscriptionPlan) {
   const { data, error } = await supabase
-    .from("organizations")
-    .update({ plan })
-    .eq("id", profile.organization_id)
-    .select("*")
-    .single()
+    .rpc("update_organization_plan", { p_plan: plan })
 
+  if (isMissingPlanRpc(error)) {
+    throw new Error(
+      "Sistema de planos ainda nao instalado no Supabase. Rode supabase/onboarding_first_access.sql no SQL Editor e tente novamente."
+    )
+  }
   raise(error)
-
-  await createAuditLog(profile, {
-    action: "organization_plan_updated",
-    entity_type: "organizations",
-    entity_id: data.id,
-    old_value: previous,
-    new_value: data,
-  })
 
   return data as Organization
 }
@@ -633,6 +659,8 @@ export async function createBranch(
   profile: UserProfile,
   input: Pick<Branch, "name" | "city" | "state" | "address">
 ) {
+  await ensureBranchLimit(profile)
+
   const { data, error } = await supabase
     .from("branches")
     .insert({
@@ -1454,7 +1482,13 @@ export async function updateBranch(
   return data as Branch
 }
 
-export async function toggleBranchActive(branchId: string, active: boolean) {
+export async function toggleBranchActive(
+  profile: UserProfile,
+  branchId: string,
+  active: boolean
+) {
+  if (active) await ensureBranchLimit(profile)
+
   const { data, error } = await supabase
     .from("branches")
     .update({ active })

@@ -54,6 +54,7 @@ import {
   type ProductModuleKey,
 } from "@/lib/coreModules"
 import { formatDateTimeBR } from "@/lib/format"
+import { planConfig } from "@/lib/plans"
 import type {
   AuditLog,
   Branch,
@@ -95,9 +96,9 @@ const segmentLabel: Record<BusinessSegment, string> = {
 }
 
 const planLabel: Record<SubscriptionPlan, string> = {
-  starter: "Starter",
-  growth: "Growth",
-  enterprise: "Enterprise",
+  starter: planConfig.starter.label,
+  growth: planConfig.growth.label,
+  enterprise: planConfig.enterprise.label,
 }
 
 function canManageSettings(profile: UserProfile | null) {
@@ -740,6 +741,24 @@ const planAccessClass: Record<string, string> = {
   Indisponivel: "border-red-200 bg-red-50 text-red-600",
 }
 
+function effectiveBranchLimit(
+  plan: SubscriptionPlan,
+  subscription: Subscription | null | undefined
+) {
+  const configured = planConfig[plan].maxBranches
+  if (configured === null) return null
+  return subscription?.plan === plan ? subscription.max_branches : configured
+}
+
+function effectiveEmployeeLimit(
+  plan: SubscriptionPlan,
+  subscription: Subscription | null | undefined
+) {
+  const configured = planConfig[plan].maxEmployees
+  if (configured === null) return null
+  return subscription?.plan === plan ? subscription.max_employees : configured
+}
+
 function PlanModulesPanel({
   branches,
   canViewBilling,
@@ -757,6 +776,8 @@ function PlanModulesPanel({
 }) {
   const currentPlan = organization?.plan ?? subscription?.plan ?? "starter"
   const status = subscription?.status ?? organization?.status ?? ""
+  const branchLimit = effectiveBranchLimit(currentPlan, subscription)
+  const employeeLimit = effectiveEmployeeLimit(currentPlan, subscription)
   const moduleByKey = useMemo(() => {
     const map = new Map<string, OrganizationModule>()
     modules.forEach((module) => {
@@ -798,12 +819,12 @@ function PlanModulesPanel({
         <UsageItem
           label="Filiais ativas"
           current={branches.filter((branch) => branch.active).length}
-          limit={currentPlan === "enterprise" ? null : (subscription?.max_branches ?? null)}
+          limit={branchLimit}
         />
         <UsageItem
           label="Colaboradores ativos"
           current={employees.filter((employee) => employee.active).length}
-          limit={currentPlan === "enterprise" ? null : (subscription?.max_employees ?? null)}
+          limit={employeeLimit}
         />
       </div>
 
@@ -909,9 +930,9 @@ function auditLabel(map: Record<string, string>, key: string) {
 }
 
 const planSwitcherOptions: { plan: SubscriptionPlan; description: string }[] = [
-  { plan: "starter", description: "Core basico, 1 filial, 30 colaboradores" },
-  { plan: "growth", description: "Core completo + modulos opcionais" },
-  { plan: "enterprise", description: "Tudo liberado, sem limites" },
+  { plan: "starter", description: planConfig.starter.description },
+  { plan: "growth", description: planConfig.growth.description },
+  { plan: "enterprise", description: planConfig.enterprise.description },
 ]
 
 function PlanSwitcherCard({ currentPlan }: { currentPlan: SubscriptionPlan }) {

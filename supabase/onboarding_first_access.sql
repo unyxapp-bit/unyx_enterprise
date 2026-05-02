@@ -654,6 +654,145 @@ $$;
 revoke all on function public.update_current_user_profile(text, text, uuid) from public;
 grant execute on function public.update_current_user_profile(text, text, uuid) to authenticated;
 
+create or replace function public.update_organization_plan(
+  p_plan public.subscription_plan
+)
+returns public.organizations
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_auth_user_id uuid := auth.uid();
+  v_profile public.user_profiles%rowtype;
+  v_org public.organizations%rowtype;
+  v_subscription public.subscriptions%rowtype;
+  v_previous_org jsonb;
+  v_previous_subscription jsonb;
+  v_max_branches integer;
+  v_max_employees integer;
+begin
+  if v_auth_user_id is null then
+    raise exception 'Usuario autenticado nao encontrado.';
+  end if;
+
+  select *
+  into v_profile
+  from public.user_profiles
+  where auth_user_id = v_auth_user_id
+    and active = true
+  limit 1;
+
+  if not found then
+    raise exception 'Perfil do usuario nao encontrado.';
+  end if;
+
+  if v_profile.role not in ('owner', 'admin') then
+    raise exception 'Somente proprietarios e administradores podem alterar o plano.';
+  end if;
+
+  case p_plan
+    when 'starter' then
+      v_max_branches := 1;
+      v_max_employees := 30;
+    when 'growth' then
+      v_max_branches := 5;
+      v_max_employees := 150;
+    when 'enterprise' then
+      v_max_branches := 0;
+      v_max_employees := 0;
+  end case;
+
+  select *
+  into v_org
+  from public.organizations
+  where id = v_profile.organization_id
+  for update;
+
+  if not found then
+    raise exception 'Organizacao nao encontrada.';
+  end if;
+
+  v_previous_org := to_jsonb(v_org);
+
+  select *
+  into v_subscription
+  from public.subscriptions
+  where organization_id = v_profile.organization_id
+  for update;
+
+  v_previous_subscription := case
+    when found then to_jsonb(v_subscription)
+    else null
+  end;
+
+  update public.organizations
+  set plan = p_plan
+  where id = v_profile.organization_id
+  returning * into v_org;
+
+  insert into public.subscriptions (
+    organization_id,
+    plan,
+    status,
+    max_branches,
+    max_employees,
+    trial_ends_at,
+    current_period_start,
+    current_period_end
+  )
+  values (
+    v_profile.organization_id,
+    p_plan,
+    coalesce(v_subscription.status, 'trial'),
+    v_max_branches,
+    v_max_employees,
+    coalesce(v_subscription.trial_ends_at, now() + interval '14 days'),
+    coalesce(v_subscription.current_period_start, now()),
+    coalesce(v_subscription.current_period_end, now() + interval '30 days')
+  )
+  on conflict (organization_id)
+  do update set
+    plan = excluded.plan,
+    max_branches = excluded.max_branches,
+    max_employees = excluded.max_employees,
+    updated_at = now()
+  returning * into v_subscription;
+
+  insert into public.audit_logs (
+    organization_id,
+    branch_id,
+    user_id,
+    action,
+    entity_type,
+    entity_id,
+    old_value,
+    new_value
+  )
+  values (
+    v_profile.organization_id,
+    v_profile.branch_id,
+    v_profile.id,
+    'organization_plan_updated',
+    'organizations',
+    v_org.id,
+    jsonb_build_object(
+      'organization', v_previous_org,
+      'subscription', v_previous_subscription
+    ),
+    jsonb_build_object(
+      'organization', to_jsonb(v_org),
+      'subscription', to_jsonb(v_subscription)
+    )
+  );
+
+  return v_org;
+end;
+$$;
+
+revoke all on function public.update_organization_plan(public.subscription_plan) from public;
+grant execute on function public.update_organization_plan(public.subscription_plan) to authenticated;
+
 create or replace function public.record_operational_action(
   p_branch_id uuid,
   p_employee_id uuid,

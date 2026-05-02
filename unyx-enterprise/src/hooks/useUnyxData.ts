@@ -565,12 +565,12 @@ export function useUpdateOrganization() {
 
 export function useUpdateOrganizationPlan() {
   const queryClient = useQueryClient()
-  const profile = useRequiredProfile()
 
   return useMutation({
-    mutationFn: (plan: SubscriptionPlan) => updateOrganizationPlan(profile, plan),
+    mutationFn: (plan: SubscriptionPlan) => updateOrganizationPlan(plan),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["organization"] })
+      await queryClient.invalidateQueries({ queryKey: ["subscription"] })
       await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
       await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
       toast.success("Plano da organizacao atualizado.")
@@ -706,10 +706,11 @@ export function useUpdateBranch() {
 
 export function useToggleBranchActive() {
   const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
 
   return useMutation({
     mutationFn: (input: { branchId: string; active: boolean }) =>
-      toggleBranchActive(input.branchId, input.active),
+      toggleBranchActive(profile, input.branchId, input.active),
     onSuccess: async (_, variables) => {
       await queryClient.invalidateQueries({ queryKey: ["branches"] })
       toast.success(variables.active ? "Filial ativada." : "Filial desativada.")
