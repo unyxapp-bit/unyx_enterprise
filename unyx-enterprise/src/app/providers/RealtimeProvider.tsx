@@ -12,6 +12,9 @@ const tableQueryKeyMap: Record<string, string> = {
   schedules: "schedules",
   attendance_events: "attendance-events",
   operational_status: "operational-status",
+  operational_posts: "operational-posts",
+  post_allocations: "post-allocations",
+  cash_movements: "cash-movements",
   audit_logs: "audit-logs",
 }
 
@@ -35,7 +38,12 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         },
         () => {
           void queryClient.invalidateQueries({ queryKey: [queryKey] })
-          if (queryKey === "operational-status" || queryKey === "schedules") {
+          if (
+            queryKey === "operational-status" ||
+            queryKey === "schedules" ||
+            queryKey === "operational-posts" ||
+            queryKey === "post-allocations"
+          ) {
             void queryClient.invalidateQueries({ queryKey: ["dashboard"] })
           }
         }

@@ -7,6 +7,8 @@ import type {
   AuditLog,
   Branch,
   BusinessSegment,
+  CashMovement,
+  CashMovementType,
   CommsPost,
   CommsPostComment,
   DashboardRow,
@@ -14,9 +16,12 @@ import type {
   EmployeeWithRelations,
   Module,
   OrganizationModule,
+  OperationalPost,
+  OperationalPostType,
   OperationalSettings,
   OperationalStatusRecord,
   Organization,
+  PostAllocation,
   Schedule,
   ScheduleStatus,
   ScheduleWithRelations,
@@ -57,6 +62,14 @@ export interface ScheduleImportInput {
   notes: string | null
 }
 
+export interface OperationalPostInput {
+  branch_id: string
+  sector_id: string | null
+  name: string
+  type: OperationalPostType
+  active?: boolean
+}
+
 function raise(error: { message: string } | null) {
   if (error) throw new Error(error.message)
 }
@@ -68,6 +81,26 @@ function isMissingOperationalSettings(error: { code?: string; message: string } 
     error.code === "PGRST205" ||
     error.message.includes("operational_settings")
   )
+}
+
+function isMissingAllocationFeature(error: { code?: string; message: string } | null) {
+  if (!error) return false
+  return (
+    error.code === "42P01" ||
+    error.code === "PGRST202" ||
+    error.code === "PGRST205" ||
+    error.message.includes("operational_posts") ||
+    error.message.includes("post_allocations") ||
+    error.message.includes("cash_movements") ||
+    error.message.includes("allocate_post") ||
+    error.message.includes("transfer_post_allocation") ||
+    error.message.includes("finalize_post_allocation") ||
+    error.message.includes("confirm_cash_movement")
+  )
+}
+
+function allocationFeatureMessage() {
+  return "Unyx Allocation ainda nao instalado no Supabase. Rode supabase/onboarding_first_access.sql no SQL Editor e tente novamente."
 }
 
 function isMissingProfileRpc(error: { code?: string; message: string } | null) {
@@ -1131,6 +1164,228 @@ export async function listAttendanceEvents(branchId?: string | null) {
   const { data, error } = await query
   raise(error)
   return (data ?? []) as AttendanceEvent[]
+}
+
+export async function listOperationalPosts(branchId?: string | null) {
+  let query = supabase
+    .from("operational_posts")
+    .select("*, branches(name), sectors(name)")
+    .order("active", { ascending: false })
+    .order("name")
+
+  if (branchId) query = query.eq("branch_id", branchId)
+
+  const { data, error } = await query
+  if (isMissingAllocationFeature(error)) return []
+  raise(error)
+  return (data ?? []) as OperationalPost[]
+}
+
+export async function createOperationalPost(
+  profile: UserProfile,
+  input: OperationalPostInput
+) {
+  const payload = {
+    ...input,
+    name: input.name.trim(),
+    active: input.active ?? true,
+  }
+
+  if (!payload.name) throw new Error("Informe o nome do posto.")
+  await validateBranchAndSector(profile, payload.branch_id, payload.sector_id)
+
+  const { data, error } = await supabase
+    .from("operational_posts")
+    .insert({
+      ...payload,
+      organization_id: profile.organization_id,
+    })
+    .select("*, branches(name), sectors(name)")
+    .single()
+
+  if (isMissingAllocationFeature(error)) throw new Error(allocationFeatureMessage())
+  raise(error)
+
+  await createAuditLog(profile, {
+    branch_id: data.branch_id,
+    action: "operational_post_created",
+    entity_type: "operational_posts",
+    entity_id: data.id,
+    old_value: null,
+    new_value: data,
+  })
+
+  return data as OperationalPost
+}
+
+export async function updateOperationalPost(
+  profile: UserProfile,
+  postId: string,
+  input: Partial<Pick<OperationalPost, "name" | "type" | "sector_id" | "active">>
+) {
+  const { data: previous, error: previousError } = await supabase
+    .from("operational_posts")
+    .select("*")
+    .eq("id", postId)
+    .maybeSingle()
+
+  if (isMissingAllocationFeature(previousError)) {
+    throw new Error(allocationFeatureMessage())
+  }
+  raise(previousError)
+
+  if (!previous || previous.organization_id !== profile.organization_id) {
+    throw new Error("Posto operacional nao encontrado.")
+  }
+
+  const payload = { ...input }
+  if (typeof payload.name === "string") {
+    payload.name = payload.name.trim()
+    if (!payload.name) throw new Error("Informe o nome do posto.")
+  }
+
+  const nextSectorId =
+    payload.sector_id === undefined ? previous.sector_id : payload.sector_id
+  await validateBranchAndSector(profile, previous.branch_id, nextSectorId)
+
+  const { data, error } = await supabase
+    .from("operational_posts")
+    .update(payload)
+    .eq("id", postId)
+    .select("*, branches(name), sectors(name)")
+    .single()
+
+  if (isMissingAllocationFeature(error)) throw new Error(allocationFeatureMessage())
+  raise(error)
+
+  await createAuditLog(profile, {
+    branch_id: data.branch_id,
+    action: "operational_post_updated",
+    entity_type: "operational_posts",
+    entity_id: data.id,
+    old_value: previous,
+    new_value: data,
+  })
+
+  return data as OperationalPost
+}
+
+export async function toggleOperationalPost(
+  profile: UserProfile,
+  postId: string,
+  active: boolean
+) {
+  return updateOperationalPost(profile, postId, { active })
+}
+
+export async function listPostAllocations(
+  branchId?: string | null,
+  activeOnly = true
+) {
+  let query = supabase
+    .from("post_allocations")
+    .select(
+      "*, operational_posts(*, branches(name), sectors(name)), employees(*, sectors(name)), schedules(work_date, start_time, break_start, break_end, end_time)"
+    )
+    .order("started_at", { ascending: false })
+    .limit(activeOnly ? 200 : 500)
+
+  if (branchId) query = query.eq("branch_id", branchId)
+  if (activeOnly) {
+    query = query
+      .is("ended_at", null)
+      .in("status", ["alocado", "aguardando_troca", "em_troca"])
+  }
+
+  const { data, error } = await query
+  if (isMissingAllocationFeature(error)) return []
+  raise(error)
+  return (data ?? []) as PostAllocation[]
+}
+
+export async function listAllocationHistory(branchId?: string | null) {
+  return listPostAllocations(branchId, false)
+}
+
+export async function listCashMovements(branchId?: string | null) {
+  let query = supabase
+    .from("cash_movements")
+    .select("*, operational_posts(name, type), employees(name)")
+    .order("confirmed_at", { ascending: false })
+    .limit(300)
+
+  if (branchId) query = query.eq("branch_id", branchId)
+
+  const { data, error } = await query
+  if (isMissingAllocationFeature(error)) return []
+  raise(error)
+  return (data ?? []) as CashMovement[]
+}
+
+export async function allocatePost(input: {
+  post_id: string
+  employee_id: string
+  schedule_id?: string | null
+  notes?: string | null
+}) {
+  const { data, error } = await supabase.rpc("allocate_post", {
+    p_post_id: input.post_id,
+    p_employee_id: input.employee_id,
+    p_schedule_id: input.schedule_id ?? null,
+    p_notes: input.notes ?? null,
+  })
+
+  if (isMissingAllocationFeature(error)) throw new Error(allocationFeatureMessage())
+  raise(error)
+  return data as PostAllocation
+}
+
+export async function transferPostAllocation(input: {
+  allocation_id: string
+  next_employee_id: string
+  next_schedule_id?: string | null
+  notes?: string | null
+}) {
+  const { data, error } = await supabase.rpc("transfer_post_allocation", {
+    p_allocation_id: input.allocation_id,
+    p_next_employee_id: input.next_employee_id,
+    p_next_schedule_id: input.next_schedule_id ?? null,
+    p_notes: input.notes ?? null,
+  })
+
+  if (isMissingAllocationFeature(error)) throw new Error(allocationFeatureMessage())
+  raise(error)
+  return data as PostAllocation
+}
+
+export async function finalizePostAllocation(input: {
+  allocation_id: string
+  notes?: string | null
+}) {
+  const { data, error } = await supabase.rpc("finalize_post_allocation", {
+    p_allocation_id: input.allocation_id,
+    p_notes: input.notes ?? null,
+  })
+
+  if (isMissingAllocationFeature(error)) throw new Error(allocationFeatureMessage())
+  raise(error)
+  return data as PostAllocation
+}
+
+export async function confirmCashMovement(input: {
+  allocation_id: string
+  movement_type: CashMovementType
+  notes?: string | null
+}) {
+  const { data, error } = await supabase.rpc("confirm_cash_movement", {
+    p_allocation_id: input.allocation_id,
+    p_movement_type: input.movement_type,
+    p_notes: input.notes ?? null,
+  })
+
+  if (isMissingAllocationFeature(error)) throw new Error(allocationFeatureMessage())
+  raise(error)
+  return data as CashMovement
 }
 
 export async function listCommsPosts(branchId?: string | null) {

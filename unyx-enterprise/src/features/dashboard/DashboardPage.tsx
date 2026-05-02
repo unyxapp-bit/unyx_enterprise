@@ -5,6 +5,7 @@ import {
   Coffee,
   DoorOpen,
   Gauge,
+  MapPinned,
   RefreshCw,
   ShieldAlert,
   ShieldCheck,
@@ -54,8 +55,10 @@ import {
   useAttendanceEvents,
   useDashboardRows,
   useOperationalSettings,
+  useOperationalPosts,
   useOperationalStatuses,
   useOrganization,
+  usePostAllocations,
   useSchedules,
 } from "@/hooks/useUnyxData"
 import { formatTime, minutesLabel, todayISO } from "@/lib/format"
@@ -305,6 +308,8 @@ export function DashboardPage() {
   const statuses = useOperationalStatuses()
   const organization = useOrganization()
   const operationalSettings = useOperationalSettings()
+  const operationalPosts = useOperationalPosts()
+  const postAllocations = usePostAllocations()
 
   const attendanceEvents = useAttendanceEvents()
 
@@ -320,6 +325,23 @@ export function DashboardPage() {
   const scheduledToday = useMemo(
     () => schedules.data ?? [],
     [schedules.data]
+  )
+  const activeOperationalPosts = useMemo(
+    () => (operationalPosts.data ?? []).filter((post) => post.active),
+    [operationalPosts.data]
+  )
+  const coveredPostIds = useMemo(
+    () =>
+      new Set(
+        (postAllocations.data ?? [])
+          .filter((allocation) => !allocation.ended_at)
+          .map((allocation) => allocation.post_id)
+      ),
+    [postAllocations.data]
+  )
+  const uncoveredOperationalPosts = useMemo(
+    () => activeOperationalPosts.filter((post) => !coveredPostIds.has(post.id)),
+    [activeOperationalPosts, coveredPostIds]
   )
 
   const sectorOptions = useMemo(() => {
@@ -492,6 +514,57 @@ export function DashboardPage() {
             )
           })}
         </BentoGrid>
+
+        {activeOperationalPosts.length > 0 ? (
+          <Card
+            className={`border bg-white shadow-sm ${
+              uncoveredOperationalPosts.length > 0 ? "border-red-200" : ""
+            }`}
+          >
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <MapPinned className="size-5" />
+                Cobertura de postos
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-lg border bg-slate-50 p-3">
+                  <div className="text-sm text-muted-foreground">Postos ativos</div>
+                  <div className="mt-1 text-2xl font-semibold">
+                    {activeOperationalPosts.length}
+                  </div>
+                </div>
+                <div className="rounded-lg border bg-emerald-50 p-3">
+                  <div className="text-sm text-emerald-700">Cobertos</div>
+                  <div className="mt-1 text-2xl font-semibold text-emerald-900">
+                    {activeOperationalPosts.length - uncoveredOperationalPosts.length}
+                  </div>
+                </div>
+                <div className="rounded-lg border bg-red-50 p-3">
+                  <div className="text-sm text-red-700">Sem cobertura</div>
+                  <div className="mt-1 text-2xl font-semibold text-red-900">
+                    {uncoveredOperationalPosts.length}
+                  </div>
+                </div>
+              </div>
+
+              {uncoveredOperationalPosts.length > 0 ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {uncoveredOperationalPosts.slice(0, 8).map((post) => (
+                    <Badge key={post.id} variant="destructive">
+                      {post.name}
+                    </Badge>
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-3 text-sm text-muted-foreground">
+                  Todos os postos ativos estao cobertos.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        ) : null}
 
         <div className="grid gap-4 xl:grid-cols-[1.4fr_0.8fr]">
           <Card className="border bg-white shadow-sm">

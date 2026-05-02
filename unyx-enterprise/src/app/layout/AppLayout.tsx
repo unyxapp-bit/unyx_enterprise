@@ -8,6 +8,7 @@ import {
   GraduationCap,
   LayoutDashboard,
   LogOut,
+  MapPinned,
   Menu,
   MessageSquareText,
   Settings,
@@ -57,6 +58,11 @@ const navGroups = [
       { to: "/app/users", label: "Usuarios", icon: UserCog },
       { to: "/app/settings", label: "Configuracoes", icon: Settings },
     ],
+  },
+  {
+    label: "Unyx Allocation",
+    summary: "Cobre postos e PDVs",
+    items: [{ to: "/app/allocation", label: "Alocacao", icon: MapPinned }],
   },
   {
     label: "Unyx Insight",

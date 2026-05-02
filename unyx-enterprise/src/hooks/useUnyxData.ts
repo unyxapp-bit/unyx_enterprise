@@ -5,19 +5,24 @@ import { useAuth } from "@/app/providers/auth-context"
 import { useAppStore } from "@/store/useAppStore"
 import {
   copySchedulesFromDate,
+  allocatePost,
+  confirmCashMovement,
   createBranch,
   createCommsPost,
   createCommsPostComment,
   createEmployee,
+  createOperationalPost,
   createSchedule,
   createSector,
   createTrainingItem,
   deleteSchedule,
+  finalizePostAllocation,
   getOrganization,
   getOperationalSettings,
   getSubscription,
   importEmployees,
   importSchedules,
+  listAllocationHistory,
   listOrganizationModules,
   listAllAuditLogs,
   listAttendanceEvents,
@@ -25,10 +30,13 @@ import {
   listBranches,
   listDashboardRows,
   listEmployees,
+  listCashMovements,
   listCommsPosts,
   listCommsPostComments,
   listModules,
+  listOperationalPosts,
   listOperationalStatuses,
+  listPostAllocations,
   listReportEvents,
   listSchedules,
   listSectors,
@@ -40,11 +48,14 @@ import {
   saveOperationalSettings,
   setTrainingProgress,
   toggleBranchActive,
+  toggleOperationalPost,
   toggleSectorActive,
+  transferPostAllocation,
   updateBranch,
   updateEmployee,
   updateCurrentUserPassword,
   updateCurrentUserProfile,
+  updateOperationalPost,
   updateOrganization,
   updateOrganizationPlan,
   updateSchedule,
@@ -60,6 +71,9 @@ import type {
   AttendanceEventType,
   Branch,
   BusinessSegment,
+  CashMovementType,
+  OperationalPost,
+  OperationalPostType,
   OperationalSettings,
   ScheduleStatus,
   SubscriptionPlan,
@@ -180,6 +194,68 @@ export function useAttendanceEvents() {
   return useQuery({
     queryKey: ["attendance-events", profile?.organization_id, selectedBranchId],
     queryFn: () => listAttendanceEvents(selectedBranchId),
+    enabled: Boolean(profile),
+    refetchInterval: 45_000,
+  })
+}
+
+export function useOperationalPosts(branchId?: string | null) {
+  const { profile } = useAuth()
+  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
+  const effectiveBranchId =
+    arguments.length > 0 ? branchId ?? null : selectedBranchId
+
+  return useQuery({
+    queryKey: ["operational-posts", profile?.organization_id, effectiveBranchId],
+    queryFn: () => listOperationalPosts(effectiveBranchId),
+    enabled: Boolean(profile),
+  })
+}
+
+export function usePostAllocations(
+  branchId?: string | null,
+  activeOnly = true
+) {
+  const { profile } = useAuth()
+  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
+  const effectiveBranchId =
+    arguments.length > 0 ? branchId ?? null : selectedBranchId
+
+  return useQuery({
+    queryKey: [
+      "post-allocations",
+      profile?.organization_id,
+      effectiveBranchId,
+      activeOnly,
+    ],
+    queryFn: () => listPostAllocations(effectiveBranchId, activeOnly),
+    enabled: Boolean(profile),
+    refetchInterval: 45_000,
+  })
+}
+
+export function useAllocationHistory(branchId?: string | null) {
+  const { profile } = useAuth()
+  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
+  const effectiveBranchId =
+    arguments.length > 0 ? branchId ?? null : selectedBranchId
+
+  return useQuery({
+    queryKey: ["allocation-history", profile?.organization_id, effectiveBranchId],
+    queryFn: () => listAllocationHistory(effectiveBranchId),
+    enabled: Boolean(profile),
+  })
+}
+
+export function useCashMovements(branchId?: string | null) {
+  const { profile } = useAuth()
+  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
+  const effectiveBranchId =
+    arguments.length > 0 ? branchId ?? null : selectedBranchId
+
+  return useQuery({
+    queryKey: ["cash-movements", profile?.organization_id, effectiveBranchId],
+    queryFn: () => listCashMovements(effectiveBranchId),
     enabled: Boolean(profile),
     refetchInterval: 45_000,
   })
@@ -507,6 +583,174 @@ export function useDeleteSchedule() {
       await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
       await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
       toast.success("Escala removida.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useCreateOperationalPost() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: {
+      branch_id: string
+      sector_id: string | null
+      name: string
+      type: OperationalPostType
+      active?: boolean
+    }) => createOperationalPost(profile, input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["operational-posts"] })
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success("Posto operacional criado.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useUpdateOperationalPost() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: {
+      postId: string
+      values: Partial<
+        Pick<OperationalPost, "name" | "type" | "sector_id" | "active">
+      >
+    }) => updateOperationalPost(profile, input.postId, input.values),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["operational-posts"] })
+      await queryClient.invalidateQueries({ queryKey: ["post-allocations"] })
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success("Posto operacional atualizado.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useToggleOperationalPost() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: { postId: string; active: boolean }) =>
+      toggleOperationalPost(profile, input.postId, input.active),
+    onSuccess: async (_, variables) => {
+      await queryClient.invalidateQueries({ queryKey: ["operational-posts"] })
+      await queryClient.invalidateQueries({ queryKey: ["post-allocations"] })
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success(variables.active ? "Posto ativado." : "Posto desativado.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useAllocatePost() {
+  const queryClient = useQueryClient()
+  useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: {
+      post_id: string
+      employee_id: string
+      schedule_id?: string | null
+      notes?: string | null
+    }) => allocatePost(input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["post-allocations"] })
+      await queryClient.invalidateQueries({ queryKey: ["allocation-history"] })
+      await queryClient.invalidateQueries({ queryKey: ["operational-posts"] })
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success("Colaborador alocado.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useTransferPostAllocation() {
+  const queryClient = useQueryClient()
+  useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: {
+      allocation_id: string
+      next_employee_id: string
+      next_schedule_id?: string | null
+      notes?: string | null
+    }) => transferPostAllocation(input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["post-allocations"] })
+      await queryClient.invalidateQueries({ queryKey: ["allocation-history"] })
+      await queryClient.invalidateQueries({ queryKey: ["attendance-events"] })
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success("Troca confirmada.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useFinalizePostAllocation() {
+  const queryClient = useQueryClient()
+  useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: { allocation_id: string; notes?: string | null }) =>
+      finalizePostAllocation(input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["post-allocations"] })
+      await queryClient.invalidateQueries({ queryKey: ["allocation-history"] })
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success("Alocacao finalizada.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useConfirmCashMovement() {
+  const queryClient = useQueryClient()
+  useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: {
+      allocation_id: string
+      movement_type: CashMovementType
+      notes?: string | null
+    }) => confirmCashMovement(input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["cash-movements"] })
+      await queryClient.invalidateQueries({ queryKey: ["attendance-events"] })
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success("Movimento confirmado.")
     },
     onError: (error) => {
       toast.error(error.message)

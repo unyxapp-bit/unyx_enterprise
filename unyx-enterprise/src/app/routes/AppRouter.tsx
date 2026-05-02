@@ -6,6 +6,7 @@ import { StateBlock } from "@/components/shared/StateBlock"
 import { AlertsPage } from "@/features/alerts/AlertsPage"
 import { AcademyPage } from "@/features/academy/AcademyPage"
 import { AiPage } from "@/features/ai/AiPage"
+import { AllocationPage } from "@/features/allocation/AllocationPage"
 import { AuditPage } from "@/features/audit/AuditPage"
 import { BranchesPage } from "@/features/branches/BranchesPage"
 import { CommsPage } from "@/features/comms/CommsPage"
@@ -54,6 +55,7 @@ export function AppRouter() {
             <Route path="employees" element={<EmployeesPage />} />
             <Route path="schedules" element={<SchedulesPage />} />
             <Route path="operations" element={<OperationsPage />} />
+            <Route path="allocation" element={<AllocationPage />} />
             <Route path="reports" element={<ReportsPage />} />
             <Route path="audit" element={<AuditPage />} />
             <Route path="branches" element={<BranchesPage />} />

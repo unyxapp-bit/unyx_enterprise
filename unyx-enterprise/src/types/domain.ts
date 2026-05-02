@@ -54,6 +54,30 @@ export type AttendanceEventType =
   | "saida_confirmada"
   | "ocorrencia_registrada"
 
+export type OperationalPostType =
+  | "cashier"
+  | "self_checkout"
+  | "counter"
+  | "service_desk"
+  | "delivery"
+  | "stock"
+  | "kitchen"
+  | "reception"
+  | "other"
+
+export type PostAllocationStatus =
+  | "alocado"
+  | "aguardando_troca"
+  | "em_troca"
+  | "finalizado"
+  | "sem_cobertura"
+
+export type CashMovementType =
+  | "sangria_confirmada"
+  | "abertura_caixa"
+  | "fechamento_caixa"
+  | "troco_reforco"
+
 export type SubscriptionPlan = "starter" | "growth" | "enterprise"
 export type SubscriptionStatus = "trial" | "active" | "past_due" | "cancelled"
 
@@ -216,6 +240,59 @@ export interface AttendanceEvent {
   created_at: string
   employees?: Pick<Employee, "name"> | null
   branches?: Pick<Branch, "name"> | null
+}
+
+export interface OperationalPost {
+  id: string
+  organization_id: string
+  branch_id: string
+  sector_id: string | null
+  name: string
+  type: OperationalPostType
+  active: boolean
+  created_at: string
+  updated_at: string
+  branches?: Pick<Branch, "name"> | null
+  sectors?: Pick<Sector, "name"> | null
+}
+
+export interface PostAllocation {
+  id: string
+  organization_id: string
+  branch_id: string
+  post_id: string
+  employee_id: string
+  schedule_id: string | null
+  started_at: string
+  ended_at: string | null
+  status: PostAllocationStatus
+  created_by: string | null
+  ended_by: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+  operational_posts?: OperationalPost | null
+  employees?: EmployeeWithRelations | null
+  schedules?: Pick<
+    Schedule,
+    "work_date" | "start_time" | "break_start" | "break_end" | "end_time"
+  > | null
+}
+
+export interface CashMovement {
+  id: string
+  organization_id: string
+  branch_id: string
+  post_id: string
+  employee_id: string
+  allocation_id: string | null
+  movement_type: CashMovementType
+  confirmed_at: string
+  confirmed_by: string | null
+  notes: string | null
+  created_at: string
+  operational_posts?: Pick<OperationalPost, "name" | "type"> | null
+  employees?: Pick<Employee, "name"> | null
 }
 
 export interface CommsPost {
