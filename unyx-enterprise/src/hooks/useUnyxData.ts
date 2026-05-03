@@ -20,6 +20,7 @@ import {
   createSector,
   createTrainingItem,
   deactivateEmployees,
+  deleteEmployees,
   deleteSchedule,
   finalizePostAllocation,
   getOrganization,
@@ -555,6 +556,23 @@ export function useDeactivateEmployees() {
       } else {
         toast.success("Nenhum colaborador ativo para excluir.")
       }
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useDeleteEmployees() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (employeeIds: string[]) => deleteEmployees(profile, employeeIds),
+    onSuccess: (_, employeeIds) => {
+      void queryClient.invalidateQueries({ queryKey: ["employees"] })
+      void queryClient.invalidateQueries({ queryKey: ["employees-all"] })
+      toast.success(`${employeeIds.length} colaborador(es) excluido(s).`)
     },
     onError: (error) => {
       toast.error(error.message)

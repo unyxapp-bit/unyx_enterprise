@@ -893,6 +893,22 @@ export async function updateEmployee(
   return data as EmployeeWithRelations
 }
 
+export async function deleteEmployees(
+  profile: UserProfile,
+  employeeIds: string[]
+) {
+  const ids = Array.from(new Set(employeeIds.filter(Boolean)))
+  if (ids.length === 0) throw new Error("Selecione ao menos um colaborador.")
+
+  const { error } = await supabase
+    .from("employees")
+    .delete()
+    .eq("organization_id", profile.organization_id)
+    .in("id", ids)
+
+  raise(error)
+}
+
 export async function deactivateEmployees(
   profile: UserProfile,
   employeeIds: string[]

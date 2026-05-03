@@ -38,7 +38,7 @@ import {
   useAttendanceEvents,
   useBranches,
   useCreateEmployee,
-  useDeactivateEmployees,
+  useDeleteEmployees,
   useEmployees,
   useImportEmployees,
   useOperationalStatuses,
@@ -434,7 +434,7 @@ function EmployeeActionsMenu({
 }) {
   const [dialog, setDialog] = useState<EmployeeAction>(null)
   const updateEmployee = useUpdateEmployee()
-  const deactivateEmployees = useDeactivateEmployees()
+  const deleteEmployees = useDeleteEmployees()
 
   const employeeEvents = useMemo(
     () =>
@@ -453,7 +453,7 @@ function EmployeeActionsMenu({
   }
 
   async function handleDelete() {
-    await deactivateEmployees.mutateAsync([employee.id])
+    await deleteEmployees.mutateAsync([employee.id])
     setDialog(null)
   }
 
@@ -574,14 +574,14 @@ function EmployeeActionsMenu({
           </DialogHeader>
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              O colaborador será removido da operação. O histórico de escalas e eventos é preservado.
+              O colaborador e todos os seus dados serão removidos permanentemente.
             </p>
             <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-              Esta ação não pode ser desfeita facilmente. Tem certeza?
+              Esta ação não pode ser desfeita. Tem certeza?
             </div>
-            {deactivateEmployees.error && (
+            {deleteEmployees.error && (
               <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                {deactivateEmployees.error.message}
+                {deleteEmployees.error.message}
               </div>
             )}
           </div>
@@ -589,10 +589,10 @@ function EmployeeActionsMenu({
             <Button variant="outline" onClick={() => setDialog(null)}>Cancelar</Button>
             <Button
               variant="destructive"
-              disabled={deactivateEmployees.isPending}
+              disabled={deleteEmployees.isPending}
               onClick={() => void handleDelete()}
             >
-              {deactivateEmployees.isPending ? "Excluindo..." : "Excluir colaborador"}
+              {deleteEmployees.isPending ? "Excluindo..." : "Excluir colaborador"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -627,7 +627,7 @@ export function EmployeesPage() {
   const attendanceEventsQuery = useAttendanceEvents()
   const formSectors = useSectors(form.branch_id || selectedBranchId)
   const createEmployee = useCreateEmployee()
-  const deactivateEmployees = useDeactivateEmployees()
+  const deleteEmployeesBulk = useDeleteEmployees()
 
   const statusMap = useMemo(() => {
     const map = new Map<string, string>()
@@ -718,8 +718,8 @@ export function EmployeesPage() {
     })
   }
 
-  async function handleBulkDeactivate() {
-    await deactivateEmployees.mutateAsync(Array.from(selectedIds))
+  async function handleBulkDelete() {
+    await deleteEmployeesBulk.mutateAsync(Array.from(selectedIds))
     setSelectedIds(new Set())
     setBulkDeleteOpen(false)
   }
@@ -970,7 +970,7 @@ export function EmployeesPage() {
                   <Button
                     variant="destructive"
                     size="sm"
-                    disabled={deactivateEmployees.isPending}
+                    disabled={deleteEmployeesBulk.isPending}
                   >
                     <Trash2 className="size-4" />
                     {allFilteredSelected && selectedCount === filteredEmployees.length
@@ -983,9 +983,8 @@ export function EmployeesPage() {
                     <DialogTitle>Excluir colaboradores</DialogTitle>
                   </DialogHeader>
                   <p className="text-sm text-muted-foreground">
-                    Deseja excluir {selectedCount} colaborador(es)? Eles serao
-                    desativados e nao aparecerao em novas escalas. O historico
-                    permanece preservado.
+                    Deseja excluir permanentemente {selectedCount} colaborador(es)?
+                    Esta ação não pode ser desfeita.
                   </p>
                   <DialogFooter className="gap-2">
                     <Button variant="outline" onClick={() => setBulkDeleteOpen(false)}>
@@ -993,10 +992,10 @@ export function EmployeesPage() {
                     </Button>
                     <Button
                       variant="destructive"
-                      disabled={deactivateEmployees.isPending}
-                      onClick={() => void handleBulkDeactivate()}
+                      disabled={deleteEmployeesBulk.isPending}
+                      onClick={() => void handleBulkDelete()}
                     >
-                      {deactivateEmployees.isPending ? "Excluindo..." : "Confirmar"}
+                      {deleteEmployeesBulk.isPending ? "Excluindo..." : "Confirmar"}
                     </Button>
                   </DialogFooter>
                 </DialogContent>
