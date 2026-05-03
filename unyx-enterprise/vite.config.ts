@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
-  base: '/',
+  base: process.env.GITHUB_PAGES === 'true' ? '/unyx_enterprise/' : '/',
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
