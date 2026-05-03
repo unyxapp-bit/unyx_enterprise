@@ -29,7 +29,7 @@ import { StateBlock } from "@/components/shared/StateBlock"
 import { Button } from "@/components/ui/button"
 import { OnboardingPage } from "@/features/onboarding/OnboardingPage"
 import { useOperationalStatuses, useOrganization } from "@/hooks/useUnyxData"
-import { canAccess, type PermissionKey } from "@/lib/permissions"
+import { canAccessUser, type PermissionKey } from "@/lib/permissions"
 import { cn } from "@/lib/utils"
 import { useAppStore } from "@/store/useAppStore"
 import type { UserRole } from "@/types/domain"
@@ -150,7 +150,7 @@ export function AppLayout() {
         <nav className="flex-1 space-y-5 overflow-y-auto overscroll-contain px-3 py-4 pb-6">
           {navGroups.map((group) => {
             const visibleItems = group.items.filter((item) =>
-              canAccess(profile.role, item.perm)
+              canAccessUser(profile, item.perm)
             )
             if (visibleItems.length === 0) return null
             return (

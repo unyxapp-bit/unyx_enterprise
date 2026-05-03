@@ -15,7 +15,7 @@ import {
   UserMinus,
   X,
 } from "lucide-react"
-import { PERMISSION_GROUP, PERMISSION_LABEL, canAccess } from "@/lib/permissions"
+import { PERMISSION_GROUP, PERMISSION_LABEL, getPermissionsForRole, type PermissionKey } from "@/lib/permissions"
 
 import { useAuth } from "@/app/providers/auth-context"
 import { PageHeader } from "@/components/shared/PageHeader"
@@ -105,89 +105,6 @@ const fieldClass =
 const filterClass =
   "h-9 rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
 
-// ─── PermissionMatrix ─────────────────────────────────────────────────────────
-
-const ROLE_COLS: { key: UserRole; short: string }[] = [
-  { key: "owner",          short: "Prop." },
-  { key: "admin",          short: "Admin" },
-  { key: "branch_manager", short: "Ger." },
-  { key: "supervisor",     short: "Sup." },
-  { key: "operator",       short: "Oper." },
-  { key: "employee",       short: "Colab." },
-]
-
-function PermissionMatrix({ highlight }: { highlight: UserRole }) {
-  const [open, setOpen] = useState(false)
-
-  return (
-    <div className="space-y-1">
-      <button
-        type="button"
-        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-        onClick={() => setOpen((v) => !v)}
-      >
-        {open ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
-        Ver tabela de permissões
-      </button>
-
-      {open && (
-        <div className="overflow-x-auto rounded-lg border">
-          <table className="w-full text-xs">
-            <thead className="border-b bg-slate-50">
-              <tr>
-                <th className="px-3 py-2 text-left font-medium text-muted-foreground">Tela</th>
-                {ROLE_COLS.map((c) => (
-                  <th
-                    key={c.key}
-                    className={`px-2 py-2 text-center font-medium ${
-                      c.key === highlight ? "bg-sky-50 text-sky-700" : "text-muted-foreground"
-                    }`}
-                  >
-                    {c.short}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {Object.entries(PERMISSION_GROUP).map(([group, keys]) => (
-                <>
-                  <tr key={`g-${group}`} className="bg-slate-50">
-                    <td
-                      colSpan={ROLE_COLS.length + 1}
-                      className="px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-wide text-slate-400"
-                    >
-                      {group}
-                    </td>
-                  </tr>
-                  {keys.map((key) => (
-                    <tr key={key} className="hover:bg-slate-50">
-                      <td className="px-3 py-1.5 text-slate-700">{PERMISSION_LABEL[key]}</td>
-                      {ROLE_COLS.map((c) => (
-                        <td
-                          key={c.key}
-                          className={`px-2 py-1.5 text-center ${
-                            c.key === highlight ? "bg-sky-50" : ""
-                          }`}
-                        >
-                          {canAccess(c.key, key) ? (
-                            <span className="text-emerald-600">✓</span>
-                          ) : (
-                            <span className="text-slate-300">—</span>
-                          )}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ─── EditRoleDialog ───────────────────────────────────────────────────────────
 
 function EditRoleDialog({
@@ -201,15 +118,52 @@ function EditRoleDialog({
   open: boolean
   onClose: () => void
 }) {
+  const initialPerms = (): Set<PermissionKey> => {
+    if (user.custom_permissions && user.custom_permissions.length > 0)
+      return new Set(user.custom_permissions as PermissionKey[])
+    return new Set(getPermissionsForRole(user.role))
+  }
+
   const [role, setRole] = useState<UserRole>(user.role)
+  const [perms, setPerms] = useState<Set<PermissionKey>>(initialPerms)
   const updateRole = useUpdateUserRole()
 
+  function handleRoleChange(newRole: UserRole) {
+    setRole(newRole)
+    setPerms(new Set(getPermissionsForRole(newRole)))
+  }
+
+  function togglePerm(key: PermissionKey) {
+    setPerms((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  function resetToRoleDefaults() {
+    setPerms(new Set(getPermissionsForRole(role)))
+  }
+
+  const roleDefaults = new Set(getPermissionsForRole(role))
+  const isCustomized = [...perms].some((k) => !roleDefaults.has(k)) ||
+    [...roleDefaults].some((k) => !perms.has(k))
+
   function handleOpenChange(next: boolean) {
-    if (!next) { setRole(user.role); onClose() }
+    if (!next) {
+      setRole(user.role)
+      setPerms(initialPerms())
+      onClose()
+    }
   }
 
   async function handleSave() {
-    await updateRole.mutateAsync({ profileId: user.id, role })
+    await updateRole.mutateAsync({
+      profileId: user.id,
+      role,
+      custom_permissions: isCustomized ? Array.from(perms) : null,
+    })
     onClose()
   }
 
@@ -217,33 +171,83 @@ function EditRoleDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-lg max-h-[90vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle>Alterar papel — {user.name}</DialogTitle>
+          <DialogTitle>Permissões — {user.name}</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4">
+
+        <div className="flex-1 overflow-y-auto space-y-5 pr-1">
+          {/* Usuário */}
           <div className="rounded-lg border bg-slate-50 p-3 text-sm">
             <div className="font-medium">{user.name}</div>
             <div className="mt-0.5 text-muted-foreground">{user.email}</div>
-            <div className="mt-1">
+            <div className="mt-1.5">
               <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${roleBadge[user.role]}`}>
                 {roleLabel[user.role]} atual
               </span>
             </div>
           </div>
-          <label className="space-y-1 text-sm">
-            <span className="font-medium">Novo papel</span>
-            <select className={fieldClass} value={role} onChange={(e) => setRole(e.target.value as UserRole)}>
+
+          {/* Papel */}
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium">Papel base</label>
+            <select
+              className={fieldClass}
+              value={role}
+              onChange={(e) => handleRoleChange(e.target.value as UserRole)}
+            >
               {Object.entries(roleLabel).map(([value, label]) => (
                 <option key={value} value={value}>{label}</option>
               ))}
             </select>
-          </label>
-          <div className="rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-sm text-sky-800">
-            {roleDescription[role]}
+            <p className="text-xs text-muted-foreground">{roleDescription[role]}</p>
           </div>
 
-          <PermissionMatrix highlight={role} />
+          {/* Permissões */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Acessos</span>
+              {isCustomized && (
+                <button
+                  type="button"
+                  className="text-xs text-sky-600 hover:text-sky-800"
+                  onClick={resetToRoleDefaults}
+                >
+                  Restaurar padrão do papel
+                </button>
+              )}
+            </div>
+            {isCustomized && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-700">
+                Permissões personalizadas ativas para este usuário.
+              </div>
+            )}
+            <div className="rounded-lg border divide-y overflow-hidden">
+              {Object.entries(PERMISSION_GROUP).map(([group, keys]) => (
+                <div key={group}>
+                  <div className="bg-slate-50 px-3 py-1.5 text-[0.65rem] font-semibold uppercase tracking-wide text-slate-400">
+                    {group}
+                  </div>
+                  <div className="divide-y">
+                    {keys.map((key) => (
+                      <label
+                        key={key}
+                        className="flex cursor-pointer items-center justify-between px-3 py-2.5 hover:bg-slate-50"
+                      >
+                        <span className="text-sm text-slate-700">{PERMISSION_LABEL[key]}</span>
+                        <input
+                          type="checkbox"
+                          className="size-4 rounded border-slate-300 accent-slate-950"
+                          checked={perms.has(key)}
+                          onChange={() => togglePerm(key)}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
 
           {blocked && (
             <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -256,13 +260,14 @@ function EditRoleDialog({
             </div>
           )}
         </div>
-        <DialogFooter>
+
+        <DialogFooter className="pt-4 border-t">
           <Button variant="outline" onClick={onClose}>Cancelar</Button>
           <Button
             onClick={() => void handleSave()}
-            disabled={updateRole.isPending || blocked || role === user.role}
+            disabled={updateRole.isPending || blocked}
           >
-            {updateRole.isPending ? "Salvando..." : "Salvar"}
+            {updateRole.isPending ? "Salvando..." : "Salvar permissões"}
           </Button>
         </DialogFooter>
       </DialogContent>

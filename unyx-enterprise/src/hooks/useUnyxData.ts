@@ -1087,11 +1087,14 @@ export function useUpdateUserRole() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (input: { profileId: string; role: UserProfile["role"] }) =>
-      updateUserRole(input.profileId, input.role),
+    mutationFn: (input: {
+      profileId: string
+      role: UserProfile["role"]
+      custom_permissions: string[] | null
+    }) => updateUserRole(input.profileId, input.role, input.custom_permissions),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["user-profiles"] })
-      toast.success("Papel atualizado com sucesso.")
+      toast.success("Permissões atualizadas com sucesso.")
     },
     onError: (error) => {
       toast.error(error.message)

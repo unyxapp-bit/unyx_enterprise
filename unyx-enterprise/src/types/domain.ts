@@ -141,6 +141,7 @@ export interface UserProfile {
   email: string
   role: UserRole
   active: boolean
+  custom_permissions: string[] | null
   created_at: string
   updated_at: string
   branches?: Pick<Branch, "name"> | null

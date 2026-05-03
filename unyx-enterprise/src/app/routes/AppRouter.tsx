@@ -3,7 +3,7 @@ import { BrowserRouter, Navigate, Outlet, Route, Routes } from "react-router-dom
 import { AppLayout } from "@/app/layout/AppLayout"
 import { useAuth } from "@/app/providers/auth-context"
 import { StateBlock } from "@/components/shared/StateBlock"
-import { canAccess, type PermissionKey } from "@/lib/permissions"
+import { canAccessUser, type PermissionKey } from "@/lib/permissions"
 import { AlertsPage } from "@/features/alerts/AlertsPage"
 import { AcademyPage } from "@/features/academy/AcademyPage"
 import { AiPage } from "@/features/ai/AiPage"
@@ -44,7 +44,7 @@ function ProtectedRoute() {
 
 function RequirePermission({ perm }: { perm: PermissionKey }) {
   const { profile } = useAuth()
-  if (!profile || !canAccess(profile.role, perm)) {
+  if (!profile || !canAccessUser(profile, perm)) {
     return <Navigate to="/app" replace />
   }
   return <Outlet />

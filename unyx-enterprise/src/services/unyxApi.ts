@@ -1854,10 +1854,14 @@ export async function listUserProfiles() {
   return (data ?? []) as UserProfile[]
 }
 
-export async function updateUserRole(profileId: string, role: UserProfile["role"]) {
+export async function updateUserRole(
+  profileId: string,
+  role: UserProfile["role"],
+  custom_permissions: string[] | null
+) {
   const { data, error } = await supabase
     .from("user_profiles")
-    .update({ role })
+    .update({ role, custom_permissions })
     .eq("id", profileId)
     .select("*, branches(name)")
     .single()

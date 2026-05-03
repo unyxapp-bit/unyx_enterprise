@@ -77,3 +77,19 @@ export const PERMISSIONS: Record<PermissionKey, UserRole[]> = {
 export function canAccess(role: UserRole, key: PermissionKey): boolean {
   return PERMISSIONS[key].includes(role)
 }
+
+export function getPermissionsForRole(role: UserRole): PermissionKey[] {
+  return (Object.keys(PERMISSIONS) as PermissionKey[]).filter((key) =>
+    PERMISSIONS[key].includes(role)
+  )
+}
+
+export function canAccessUser(
+  profile: { role: UserRole; custom_permissions: string[] | null },
+  key: PermissionKey
+): boolean {
+  if (profile.custom_permissions && profile.custom_permissions.length > 0) {
+    return profile.custom_permissions.includes(key)
+  }
+  return canAccess(profile.role, key)
+}
