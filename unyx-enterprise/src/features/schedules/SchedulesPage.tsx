@@ -38,6 +38,7 @@ import {
 import { buildCsv, downloadCsv } from "@/lib/exportCsv"
 import { formatDateBR, formatTime, todayISO } from "@/lib/format"
 import { scheduleStatusLabel } from "@/lib/status"
+import { cn } from "@/lib/utils"
 import {
   cellToDate,
   cellToText,
