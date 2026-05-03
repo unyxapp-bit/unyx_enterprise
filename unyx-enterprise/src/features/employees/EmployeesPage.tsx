@@ -618,7 +618,7 @@ export function EmployeesPage() {
   const [formError, setFormError] = useState<string | null>(null)
   const [search, setSearch] = useState("")
   const [sectorFilter, setSectorFilter] = useState("")
-  const [statusFilter, setStatusFilter] = useState<"" | "active" | "inactive">("")
+  const [statusFilter, setStatusFilter] = useState<"" | "active" | "inactive">("active")
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
 
