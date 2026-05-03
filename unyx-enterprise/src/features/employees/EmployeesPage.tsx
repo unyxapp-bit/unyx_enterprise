@@ -1,12 +1,14 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import type { FormEvent } from "react"
 import {
   Download,
   FileSpreadsheet,
   History,
+  MoreHorizontal,
   Pencil,
   Plus,
   Search,
+  Trash2,
   UserRoundCheck,
   UserRoundX,
 } from "lucide-react"
@@ -24,11 +26,19 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import {
   useAttendanceEvents,
   useBranches,
   useCreateEmployee,
+  useDeactivateEmployees,
   useEmployees,
   useImportEmployees,
   useOperationalStatuses,
@@ -253,14 +263,17 @@ function EmployeesImportDialog({
   )
 }
 
-function EmployeeEditDialog({
+function EmployeeEditInlineDialog({
   employee,
   branches,
+  open,
+  onClose,
 }: {
   employee: EmployeeWithRelations
   branches: Branch[]
+  open: boolean
+  onClose: () => void
 }) {
-  const [open, setOpen] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [form, setForm] = useState<EmployeeFormState>({
     branch_id: employee.branch_id,
@@ -278,14 +291,8 @@ function EmployeeEditDialog({
     event.preventDefault()
     setFormError(null)
 
-    if (!form.branch_id) {
-      setFormError("Selecione uma filial.")
-      return
-    }
-    if (!form.name.trim()) {
-      setFormError("Informe o nome do colaborador.")
-      return
-    }
+    if (!form.branch_id) { setFormError("Selecione uma filial."); return }
+    if (!form.name.trim()) { setFormError("Informe o nome do colaborador."); return }
 
     await updateEmployee.mutateAsync({
       employeeId: employee.id,
@@ -299,17 +306,11 @@ function EmployeeEditDialog({
         notes: form.notes.trim() || null,
       },
     })
-    setOpen(false)
+    onClose()
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm">
-          <Pencil className="size-4" />
-          Editar
-        </Button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Editar colaborador</DialogTitle>
@@ -344,9 +345,7 @@ function EmployeeEditDialog({
               >
                 <option value="">Selecione</option>
                 {branches.filter((b) => b.active).map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
+                  <option key={b.id} value={b.id}>{b.name}</option>
                 ))}
               </select>
             </label>
@@ -361,9 +360,7 @@ function EmployeeEditDialog({
               >
                 <option value="">Sem setor</option>
                 {(sectors.data ?? []).filter((s) => s.active).map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
+                  <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
               </select>
             </label>
@@ -424,111 +421,186 @@ function EmployeeEditDialog({
   )
 }
 
-function DeactivateDialog({ employee }: { employee: EmployeeWithRelations }) {
-  const [open, setOpen] = useState(false)
-  const updateEmployee = useUpdateEmployee()
+type EmployeeAction = "history" | "edit" | "toggle" | "delete" | null
 
-  async function handleConfirm() {
-    await updateEmployee.mutateAsync({ employeeId: employee.id, values: { active: false } })
-    setOpen(false)
+function EmployeeActionsMenu({
+  employee,
+  branches,
+  attendanceEvents,
+}: {
+  employee: EmployeeWithRelations
+  branches: Branch[]
+  attendanceEvents: ReturnType<typeof useAttendanceEvents>
+}) {
+  const [dialog, setDialog] = useState<EmployeeAction>(null)
+  const updateEmployee = useUpdateEmployee()
+  const deactivateEmployees = useDeactivateEmployees()
+
+  const employeeEvents = useMemo(
+    () =>
+      (attendanceEvents.data ?? [])
+        .filter((e) => e.employee_id === employee.id)
+        .slice(0, 50),
+    [attendanceEvents.data, employee.id]
+  )
+
+  async function handleToggleActive() {
+    await updateEmployee.mutateAsync({
+      employeeId: employee.id,
+      values: { active: !employee.active },
+    })
+    setDialog(null)
+  }
+
+  async function handleDelete() {
+    await deactivateEmployees.mutateAsync([employee.id])
+    setDialog(null)
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm">
-          <UserRoundX className="size-4" />
-          Desativar
-        </Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Desativar colaborador</DialogTitle>
-        </DialogHeader>
-        <p className="text-sm text-muted-foreground">
-          Deseja desativar{" "}
-          <span className="font-medium text-slate-950">{employee.name}</span>? O
-          colaborador não aparecerá em novas escalas.
-        </p>
-        <DialogFooter className="gap-2">
-          <Button variant="outline" onClick={() => setOpen(false)}>
-            Cancelar
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="sm">
+            <MoreHorizontal className="size-4" />
           </Button>
-          <Button
-            variant="destructive"
-            disabled={updateEmployee.isPending}
-            onClick={() => void handleConfirm()}
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={() => setDialog("history")}>
+            <History className="mr-2 size-4" />
+            Histórico
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setDialog("edit")}>
+            <Pencil className="mr-2 size-4" />
+            Editar
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => setDialog("toggle")}>
+            {employee.active
+              ? <UserRoundX className="mr-2 size-4 text-amber-600" />
+              : <UserRoundCheck className="mr-2 size-4 text-emerald-600" />}
+            {employee.active ? "Desativar" : "Ativar"}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            className="text-red-600 focus:text-red-600"
+            onClick={() => setDialog("delete")}
           >
-            {updateEmployee.isPending ? "Desativando..." : "Confirmar"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
+            <Trash2 className="mr-2 size-4" />
+            Excluir
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
 
-function EmployeeHistoryDialog({
-  employeeId,
-  employeeName,
-}: {
-  employeeId: string
-  employeeName: string
-}) {
-  const [open, setOpen] = useState(false)
-  const attendanceEvents = useAttendanceEvents()
-
-  const employeeEvents = useMemo(() => {
-    return (attendanceEvents.data ?? [])
-      .filter((e) => e.employee_id === employeeId)
-      .slice(0, 50)
-  }, [attendanceEvents.data, employeeId])
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm">
-          <History className="size-4" />
-          Historico
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Historico — {employeeName}</DialogTitle>
-        </DialogHeader>
-        {attendanceEvents.isLoading ? (
-          <div className="py-4 text-center text-sm text-muted-foreground">
-            Carregando...
-          </div>
-        ) : employeeEvents.length === 0 ? (
-          <div className="py-4 text-center text-sm text-muted-foreground">
-            Nenhum evento registrado para este colaborador.
-          </div>
-        ) : (
-          <div className="max-h-96 space-y-2 overflow-y-auto pr-1">
-            {employeeEvents.map((e) => (
-              <div
-                key={e.id}
-                className="flex items-start justify-between gap-3 rounded-lg border bg-slate-50 px-3 py-2 text-sm"
-              >
-                <div>
-                  <div className="font-medium">
-                    {eventLabel[e.event_type as keyof typeof eventLabel] ?? e.event_type}
+      {/* Histórico */}
+      <Dialog open={dialog === "history"} onOpenChange={(o) => { if (!o) setDialog(null) }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Histórico — {employee.name}</DialogTitle>
+          </DialogHeader>
+          {attendanceEvents.isLoading ? (
+            <div className="py-4 text-center text-sm text-muted-foreground">Carregando...</div>
+          ) : employeeEvents.length === 0 ? (
+            <div className="py-4 text-center text-sm text-muted-foreground">
+              Nenhum evento registrado para este colaborador.
+            </div>
+          ) : (
+            <div className="max-h-96 space-y-2 overflow-y-auto pr-1">
+              {employeeEvents.map((e) => (
+                <div
+                  key={e.id}
+                  className="flex items-start justify-between gap-3 rounded-lg border bg-slate-50 px-3 py-2 text-sm"
+                >
+                  <div>
+                    <div className="font-medium">
+                      {eventLabel[e.event_type as keyof typeof eventLabel] ?? e.event_type}
+                    </div>
+                    {e.notes ? (
+                      <div className="text-xs text-muted-foreground">{e.notes}</div>
+                    ) : null}
                   </div>
-                  {e.notes ? (
-                    <div className="text-xs text-muted-foreground">{e.notes}</div>
-                  ) : null}
+                  <div className="shrink-0 text-xs text-muted-foreground">
+                    {formatDateTimeBR(e.event_time)}
+                  </div>
                 </div>
-                <div className="shrink-0 text-xs text-muted-foreground">
-                  {formatDateTimeBR(e.event_time)}
-                </div>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Editar */}
+      {dialog === "edit" && (
+        <EmployeeEditInlineDialog
+          employee={employee}
+          branches={branches}
+          open
+          onClose={() => setDialog(null)}
+        />
+      )}
+
+      {/* Desativar / Ativar */}
+      <Dialog open={dialog === "toggle"} onOpenChange={(o) => { if (!o) setDialog(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {employee.active ? "Desativar" : "Ativar"} colaborador — {employee.name}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            {employee.active
+              ? "O colaborador não aparecerá em novas escalas, mas pode ser reativado."
+              : "O colaborador voltará a aparecer em escalas."}
+          </p>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setDialog(null)}>Cancelar</Button>
+            <Button
+              variant={employee.active ? "destructive" : "default"}
+              disabled={updateEmployee.isPending}
+              onClick={() => void handleToggleActive()}
+            >
+              {updateEmployee.isPending
+                ? "Processando..."
+                : employee.active ? "Desativar" : "Ativar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Excluir */}
+      <Dialog open={dialog === "delete"} onOpenChange={(o) => { if (!o) setDialog(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Excluir colaborador — {employee.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              O colaborador será removido da operação. O histórico de escalas e eventos é preservado.
+            </p>
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              Esta ação não pode ser desfeita facilmente. Tem certeza?
+            </div>
+            {deactivateEmployees.error && (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {deactivateEmployees.error.message}
               </div>
-            ))}
+            )}
           </div>
-        )}
-      </DialogContent>
-    </Dialog>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setDialog(null)}>Cancelar</Button>
+            <Button
+              variant="destructive"
+              disabled={deactivateEmployees.isPending}
+              onClick={() => void handleDelete()}
+            >
+              {deactivateEmployees.isPending ? "Excluindo..." : "Excluir colaborador"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
+
 
 export function EmployeesPage() {
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
@@ -547,12 +619,15 @@ export function EmployeesPage() {
   const [search, setSearch] = useState("")
   const [sectorFilter, setSectorFilter] = useState("")
   const [statusFilter, setStatusFilter] = useState<"" | "active" | "inactive">("")
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
 
   const employees = useEmployees()
   const operationalStatuses = useOperationalStatuses()
+  const attendanceEventsQuery = useAttendanceEvents()
   const formSectors = useSectors(form.branch_id || selectedBranchId)
   const createEmployee = useCreateEmployee()
-  const updateEmployee = useUpdateEmployee()
+  const deactivateEmployees = useDeactivateEmployees()
 
   const statusMap = useMemo(() => {
     const map = new Map<string, string>()
@@ -585,6 +660,69 @@ export function EmployeesPage() {
     if (statusFilter === "inactive") list = list.filter((e) => !e.active)
     return list
   }, [employees.data, search, sectorFilter, statusFilter])
+
+  const filteredEmployeeIds = useMemo(
+    () => filteredEmployees.map((employee) => employee.id),
+    [filteredEmployees]
+  )
+
+  const selectedCount = selectedIds.size
+  const selectedFilteredCount = useMemo(
+    () => filteredEmployeeIds.filter((id) => selectedIds.has(id)).length,
+    [filteredEmployeeIds, selectedIds]
+  )
+  const allFilteredSelected =
+    filteredEmployeeIds.length > 0 &&
+    selectedFilteredCount === filteredEmployeeIds.length
+
+  useEffect(() => {
+    const currentEmployeeIds = new Set((employees.data ?? []).map((employee) => employee.id))
+
+    setSelectedIds((current) => {
+      let changed = false
+      const next = new Set<string>()
+
+      for (const id of current) {
+        if (currentEmployeeIds.has(id)) {
+          next.add(id)
+        } else {
+          changed = true
+        }
+      }
+
+      return changed ? next : current
+    })
+  }, [employees.data])
+
+  function setFilteredSelection(checked: boolean) {
+    setSelectedIds((current) => {
+      const next = new Set(current)
+
+      for (const id of filteredEmployeeIds) {
+        if (checked) next.add(id)
+        else next.delete(id)
+      }
+
+      return next
+    })
+  }
+
+  function toggleEmployeeSelection(employeeId: string, checked: boolean) {
+    setSelectedIds((current) => {
+      const next = new Set(current)
+
+      if (checked) next.add(employeeId)
+      else next.delete(employeeId)
+
+      return next
+    })
+  }
+
+  async function handleBulkDeactivate() {
+    await deactivateEmployees.mutateAsync(Array.from(selectedIds))
+    setSelectedIds(new Set())
+    setBulkDeleteOpen(false)
+  }
 
   function handleExport() {
     const headers = [
@@ -798,6 +936,14 @@ export function EmployeesPage() {
           <Button
             variant="outline"
             size="sm"
+            onClick={() => setFilteredSelection(!allFilteredSelected)}
+            disabled={filteredEmployees.length === 0}
+          >
+            {allFilteredSelected ? "Limpar selecao" : "Selecionar todos"}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             onClick={handleExport}
             disabled={filteredEmployees.length === 0}
           >
@@ -805,6 +951,59 @@ export function EmployeesPage() {
             Exportar CSV
           </Button>
         </div>
+
+        {selectedCount > 0 ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-slate-50 px-3 py-2 text-sm">
+            <span className="font-medium text-slate-700">
+              {selectedCount} colaborador(es) selecionado(s)
+            </span>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSelectedIds(new Set())}
+              >
+                Limpar selecao
+              </Button>
+              <Dialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+                <DialogTrigger asChild>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    disabled={deactivateEmployees.isPending}
+                  >
+                    <Trash2 className="size-4" />
+                    {allFilteredSelected && selectedCount === filteredEmployees.length
+                      ? "Excluir todos"
+                      : "Excluir selecionados"}
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Excluir colaboradores</DialogTitle>
+                  </DialogHeader>
+                  <p className="text-sm text-muted-foreground">
+                    Deseja excluir {selectedCount} colaborador(es)? Eles serao
+                    desativados e nao aparecerao em novas escalas. O historico
+                    permanece preservado.
+                  </p>
+                  <DialogFooter className="gap-2">
+                    <Button variant="outline" onClick={() => setBulkDeleteOpen(false)}>
+                      Cancelar
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      disabled={deactivateEmployees.isPending}
+                      onClick={() => void handleBulkDeactivate()}
+                    >
+                      {deactivateEmployees.isPending ? "Excluindo..." : "Confirmar"}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
+          </div>
+        ) : null}
 
         {employees.isLoading ? (
           <StateBlock type="loading" title="Carregando colaboradores" />
@@ -832,6 +1031,15 @@ export function EmployeesPage() {
             <table className="w-full text-left text-sm">
               <thead className="border-b bg-slate-50 text-xs uppercase text-muted-foreground">
                 <tr>
+                  <th className="w-10 px-4 py-3">
+                    <input
+                      type="checkbox"
+                      className="size-4 rounded border-slate-300 accent-slate-950"
+                      aria-label="Selecionar todos os colaboradores filtrados"
+                      checked={allFilteredSelected}
+                      onChange={(event) => setFilteredSelection(event.target.checked)}
+                    />
+                  </th>
                   <th className="px-4 py-3">Nome</th>
                   <th className="px-4 py-3">Filial</th>
                   <th className="px-4 py-3">Setor</th>
@@ -844,6 +1052,17 @@ export function EmployeesPage() {
               <tbody className="divide-y">
                 {filteredEmployees.map((employee) => (
                   <tr key={employee.id} className="hover:bg-slate-50">
+                    <td className="px-4 py-3">
+                      <input
+                        type="checkbox"
+                        className="size-4 rounded border-slate-300 accent-slate-950"
+                        aria-label={`Selecionar ${employee.name}`}
+                        checked={selectedIds.has(employee.id)}
+                        onChange={(event) =>
+                          toggleEmployeeSelection(employee.id, event.target.checked)
+                        }
+                      />
+                    </td>
                     <td className="px-4 py-3 font-medium">{employee.name}</td>
                     <td className="px-4 py-3">{employee.branches?.name ?? "-"}</td>
                     <td className="px-4 py-3">{employee.sectors?.name ?? "-"}</td>
@@ -858,29 +1077,12 @@ export function EmployeesPage() {
                         <span className="text-xs text-muted-foreground">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3">
-                      <div className="flex justify-end gap-2">
-                        <EmployeeHistoryDialog employeeId={employee.id} employeeName={employee.name} />
-                        <EmployeeEditDialog employee={employee} branches={branches} />
-                        {employee.active ? (
-                          <DeactivateDialog employee={employee} />
-                        ) : (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={updateEmployee.isPending}
-                            onClick={() =>
-                              updateEmployee.mutate({
-                                employeeId: employee.id,
-                                values: { active: true },
-                              })
-                            }
-                          >
-                            <UserRoundCheck className="size-4" />
-                            Ativar
-                          </Button>
-                        )}
-                      </div>
+                    <td className="px-4 py-3 text-right">
+                      <EmployeeActionsMenu
+                        employee={employee}
+                        branches={branches}
+                        attendanceEvents={attendanceEventsQuery}
+                      />
                     </td>
                   </tr>
                 ))}
