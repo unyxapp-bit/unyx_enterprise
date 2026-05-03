@@ -893,6 +893,61 @@ export async function updateEmployee(
   return data as EmployeeWithRelations
 }
 
+export async function deactivateEmployees(
+  profile: UserProfile,
+  employeeIds: string[]
+) {
+  const ids = Array.from(new Set(employeeIds.filter(Boolean)))
+  if (ids.length === 0) throw new Error("Selecione ao menos um colaborador.")
+
+  const { data: previousRows, error: previousError } = await supabase
+    .from("employees")
+    .select("*")
+    .in("id", ids)
+
+  raise(previousError)
+
+  const previousEmployees = (previousRows ?? []) as Employee[]
+  const previousById = new Map(previousEmployees.map((employee) => [employee.id, employee]))
+  const hasInvalidEmployee =
+    previousEmployees.length !== ids.length ||
+    previousEmployees.some(
+      (employee) => employee.organization_id !== profile.organization_id
+    )
+
+  if (hasInvalidEmployee) {
+    throw new Error("Um ou mais colaboradores nao foram encontrados.")
+  }
+
+  const activeIds = previousEmployees
+    .filter((employee) => employee.active)
+    .map((employee) => employee.id)
+
+  if (activeIds.length === 0) return [] as EmployeeWithRelations[]
+
+  const { data, error } = await supabase
+    .from("employees")
+    .update({ active: false })
+    .eq("organization_id", profile.organization_id)
+    .in("id", activeIds)
+    .select("*, branches(name), sectors(name)")
+
+  raise(error)
+
+  for (const employee of data ?? []) {
+    await createAuditLog(profile, {
+      branch_id: employee.branch_id,
+      action: "employee_deactivated",
+      entity_type: "employees",
+      entity_id: employee.id,
+      old_value: previousById.get(employee.id),
+      new_value: employee,
+    })
+  }
+
+  return (data ?? []) as EmployeeWithRelations[]
+}
+
 export async function importEmployees(
   profile: UserProfile,
   rows: EmployeeImportInput[]
