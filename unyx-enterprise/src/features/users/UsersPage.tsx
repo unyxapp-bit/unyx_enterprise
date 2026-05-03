@@ -15,6 +15,7 @@ import {
   UserMinus,
   X,
 } from "lucide-react"
+import { PERMISSION_GROUP, PERMISSION_LABEL, canAccess } from "@/lib/permissions"
 
 import { useAuth } from "@/app/providers/auth-context"
 import { PageHeader } from "@/components/shared/PageHeader"
@@ -104,6 +105,89 @@ const fieldClass =
 const filterClass =
   "h-9 rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
 
+// ─── PermissionMatrix ─────────────────────────────────────────────────────────
+
+const ROLE_COLS: { key: UserRole; short: string }[] = [
+  { key: "owner",          short: "Prop." },
+  { key: "admin",          short: "Admin" },
+  { key: "branch_manager", short: "Ger." },
+  { key: "supervisor",     short: "Sup." },
+  { key: "operator",       short: "Oper." },
+  { key: "employee",       short: "Colab." },
+]
+
+function PermissionMatrix({ highlight }: { highlight: UserRole }) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <div className="space-y-1">
+      <button
+        type="button"
+        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+        onClick={() => setOpen((v) => !v)}
+      >
+        {open ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+        Ver tabela de permissões
+      </button>
+
+      {open && (
+        <div className="overflow-x-auto rounded-lg border">
+          <table className="w-full text-xs">
+            <thead className="border-b bg-slate-50">
+              <tr>
+                <th className="px-3 py-2 text-left font-medium text-muted-foreground">Tela</th>
+                {ROLE_COLS.map((c) => (
+                  <th
+                    key={c.key}
+                    className={`px-2 py-2 text-center font-medium ${
+                      c.key === highlight ? "bg-sky-50 text-sky-700" : "text-muted-foreground"
+                    }`}
+                  >
+                    {c.short}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {Object.entries(PERMISSION_GROUP).map(([group, keys]) => (
+                <>
+                  <tr key={`g-${group}`} className="bg-slate-50">
+                    <td
+                      colSpan={ROLE_COLS.length + 1}
+                      className="px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-wide text-slate-400"
+                    >
+                      {group}
+                    </td>
+                  </tr>
+                  {keys.map((key) => (
+                    <tr key={key} className="hover:bg-slate-50">
+                      <td className="px-3 py-1.5 text-slate-700">{PERMISSION_LABEL[key]}</td>
+                      {ROLE_COLS.map((c) => (
+                        <td
+                          key={c.key}
+                          className={`px-2 py-1.5 text-center ${
+                            c.key === highlight ? "bg-sky-50" : ""
+                          }`}
+                        >
+                          {canAccess(c.key, key) ? (
+                            <span className="text-emerald-600">✓</span>
+                          ) : (
+                            <span className="text-slate-300">—</span>
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── EditRoleDialog ───────────────────────────────────────────────────────────
 
 function EditRoleDialog({
@@ -133,7 +217,7 @@ function EditRoleDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Alterar papel — {user.name}</DialogTitle>
         </DialogHeader>
@@ -158,6 +242,9 @@ function EditRoleDialog({
           <div className="rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-sm text-sky-800">
             {roleDescription[role]}
           </div>
+
+          <PermissionMatrix highlight={role} />
+
           {blocked && (
             <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
               Não é possível remover o único Proprietário. Promova outro usuário antes.

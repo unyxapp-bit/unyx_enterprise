@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Outlet, Route, Routes } from "react-router-dom
 import { AppLayout } from "@/app/layout/AppLayout"
 import { useAuth } from "@/app/providers/auth-context"
 import { StateBlock } from "@/components/shared/StateBlock"
+import { canAccess, type PermissionKey } from "@/lib/permissions"
 import { AlertsPage } from "@/features/alerts/AlertsPage"
 import { AcademyPage } from "@/features/academy/AcademyPage"
 import { AiPage } from "@/features/ai/AiPage"
@@ -41,6 +42,14 @@ function ProtectedRoute() {
   return <Outlet />
 }
 
+function RequirePermission({ perm }: { perm: PermissionKey }) {
+  const { profile } = useAuth()
+  if (!profile || !canAccess(profile.role, perm)) {
+    return <Navigate to="/app" replace />
+  }
+  return <Outlet />
+}
+
 export function AppRouter() {
   const basename =
     import.meta.env.BASE_URL === "/"
@@ -55,24 +64,66 @@ export function AppRouter() {
         <Route element={<ProtectedRoute />}>
           <Route path="/app" element={<AppLayout />}>
             <Route index element={<DashboardPage />} />
-            <Route path="alerts" element={<AlertsPage />} />
-            <Route path="employees" element={<EmployeesPage />} />
-            <Route path="schedules" element={<SchedulesPage />} />
-            <Route path="operations" element={<OperationsPage />} />
-            <Route path="allocation" element={<AllocationPage />} />
-            <Route path="reports" element={<ReportsPage />} />
-            <Route path="audit" element={<AuditPage />} />
-            <Route path="branches" element={<BranchesPage />} />
-            <Route path="users" element={<UsersPage />} />
-            <Route path="settings" element={<SettingsPage />} />
-            <Route path="comms" element={<CommsPage />} />
-            <Route path="game" element={<GamePage />} />
-            <Route path="academy" element={<AcademyPage />} />
-            <Route path="ai" element={<AiPage />} />
-            <Route path="pos/products" element={<PosProductsPage />} />
-            <Route path="pos/cash" element={<PosCashPage />} />
-            <Route path="pos/sell" element={<PosSellPage />} />
-            <Route path="pos/sales" element={<PosSalesPage />} />
+
+            <Route element={<RequirePermission perm="operations" />}>
+              <Route path="operations" element={<OperationsPage />} />
+            </Route>
+            <Route element={<RequirePermission perm="alerts" />}>
+              <Route path="alerts" element={<AlertsPage />} />
+            </Route>
+            <Route element={<RequirePermission perm="schedules" />}>
+              <Route path="schedules" element={<SchedulesPage />} />
+            </Route>
+
+            <Route element={<RequirePermission perm="branches" />}>
+              <Route path="branches" element={<BranchesPage />} />
+            </Route>
+            <Route element={<RequirePermission perm="employees" />}>
+              <Route path="employees" element={<EmployeesPage />} />
+            </Route>
+            <Route element={<RequirePermission perm="users" />}>
+              <Route path="users" element={<UsersPage />} />
+            </Route>
+            <Route element={<RequirePermission perm="settings" />}>
+              <Route path="settings" element={<SettingsPage />} />
+            </Route>
+
+            <Route element={<RequirePermission perm="allocation" />}>
+              <Route path="allocation" element={<AllocationPage />} />
+            </Route>
+
+            <Route element={<RequirePermission perm="pos_sell" />}>
+              <Route path="pos/sell" element={<PosSellPage />} />
+            </Route>
+            <Route element={<RequirePermission perm="pos_cash" />}>
+              <Route path="pos/cash" element={<PosCashPage />} />
+            </Route>
+            <Route element={<RequirePermission perm="pos_products" />}>
+              <Route path="pos/products" element={<PosProductsPage />} />
+            </Route>
+            <Route element={<RequirePermission perm="pos_sales" />}>
+              <Route path="pos/sales" element={<PosSalesPage />} />
+            </Route>
+
+            <Route element={<RequirePermission perm="reports" />}>
+              <Route path="reports" element={<ReportsPage />} />
+            </Route>
+            <Route element={<RequirePermission perm="audit" />}>
+              <Route path="audit" element={<AuditPage />} />
+            </Route>
+
+            <Route element={<RequirePermission perm="comms" />}>
+              <Route path="comms" element={<CommsPage />} />
+            </Route>
+            <Route element={<RequirePermission perm="game" />}>
+              <Route path="game" element={<GamePage />} />
+            </Route>
+            <Route element={<RequirePermission perm="academy" />}>
+              <Route path="academy" element={<AcademyPage />} />
+            </Route>
+            <Route element={<RequirePermission perm="ai" />}>
+              <Route path="ai" element={<AiPage />} />
+            </Route>
           </Route>
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

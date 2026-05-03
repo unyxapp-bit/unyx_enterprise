@@ -29,6 +29,7 @@ import { StateBlock } from "@/components/shared/StateBlock"
 import { Button } from "@/components/ui/button"
 import { OnboardingPage } from "@/features/onboarding/OnboardingPage"
 import { useOperationalStatuses, useOrganization } from "@/hooks/useUnyxData"
+import { canAccess, type PermissionKey } from "@/lib/permissions"
 import { cn } from "@/lib/utils"
 import { useAppStore } from "@/store/useAppStore"
 import type { UserRole } from "@/types/domain"
@@ -47,53 +48,55 @@ const navGroups = [
     label: "Unyx Ops",
     summary: "Mostra o agora",
     items: [
-      { to: "/app", label: "Dashboard", icon: LayoutDashboard },
-      { to: "/app/operations", label: "Operacao", icon: Activity },
-      { to: "/app/alerts", label: "Alertas", icon: BellRing },
-      { to: "/app/schedules", label: "Escalas", icon: CalendarDays },
+      { to: "/app",            label: "Dashboard", icon: LayoutDashboard, perm: "dashboard"  as PermissionKey },
+      { to: "/app/operations", label: "Operacao",  icon: Activity,        perm: "operations" as PermissionKey },
+      { to: "/app/alerts",     label: "Alertas",   icon: BellRing,        perm: "alerts"     as PermissionKey },
+      { to: "/app/schedules",  label: "Escalas",   icon: CalendarDays,    perm: "schedules"  as PermissionKey },
     ],
   },
   {
     label: "Unyx Control",
     summary: "Organiza a empresa",
     items: [
-      { to: "/app/branches", label: "Filiais", icon: Building2 },
-      { to: "/app/employees", label: "Colaboradores", icon: Users },
-      { to: "/app/users", label: "Usuarios", icon: UserCog },
-      { to: "/app/settings", label: "Configuracoes", icon: Settings },
+      { to: "/app/branches",  label: "Filiais",        icon: Building2, perm: "branches"  as PermissionKey },
+      { to: "/app/employees", label: "Colaboradores",  icon: Users,     perm: "employees" as PermissionKey },
+      { to: "/app/users",     label: "Usuarios",       icon: UserCog,   perm: "users"     as PermissionKey },
+      { to: "/app/settings",  label: "Configuracoes",  icon: Settings,  perm: "settings"  as PermissionKey },
     ],
   },
   {
     label: "Unyx Allocation",
     summary: "Cobre postos e PDVs",
-    items: [{ to: "/app/allocation", label: "Alocacao", icon: MapPinned }],
+    items: [
+      { to: "/app/allocation", label: "Alocacao", icon: MapPinned, perm: "allocation" as PermissionKey },
+    ],
   },
   {
     label: "Unyx POS",
     summary: "Venda e controle de caixa",
     items: [
-      { to: "/app/pos/sell", label: "PDV — Venda", icon: ShoppingCart },
-      { to: "/app/pos/cash", label: "Caixa", icon: Wallet },
-      { to: "/app/pos/products", label: "Produtos", icon: Package },
-      { to: "/app/pos/sales", label: "Historico", icon: ReceiptText },
+      { to: "/app/pos/sell",     label: "PDV — Venda", icon: ShoppingCart, perm: "pos_sell"     as PermissionKey },
+      { to: "/app/pos/cash",     label: "Caixa",       icon: Wallet,       perm: "pos_cash"     as PermissionKey },
+      { to: "/app/pos/products", label: "Produtos",    icon: Package,      perm: "pos_products" as PermissionKey },
+      { to: "/app/pos/sales",    label: "Historico",   icon: ReceiptText,  perm: "pos_sales"    as PermissionKey },
     ],
   },
   {
     label: "Unyx Insight",
     summary: "Explica o que aconteceu",
     items: [
-      { to: "/app/reports", label: "Relatorios", icon: BarChart2 },
-      { to: "/app/audit", label: "Auditoria", icon: ClipboardList },
+      { to: "/app/reports", label: "Relatorios", icon: BarChart2,    perm: "reports" as PermissionKey },
+      { to: "/app/audit",   label: "Auditoria",  icon: ClipboardList, perm: "audit"  as PermissionKey },
     ],
   },
   {
     label: "Expansao",
     summary: "Aumenta engajamento",
     items: [
-      { to: "/app/comms", label: "Comms", icon: MessageSquareText },
-      { to: "/app/game", label: "Game", icon: Trophy },
-      { to: "/app/academy", label: "Academy", icon: GraduationCap },
-      { to: "/app/ai", label: "AI", icon: Sparkles },
+      { to: "/app/comms",   label: "Comms",   icon: MessageSquareText, perm: "comms"   as PermissionKey },
+      { to: "/app/game",    label: "Game",    icon: Trophy,            perm: "game"    as PermissionKey },
+      { to: "/app/academy", label: "Academy", icon: GraduationCap,     perm: "academy" as PermissionKey },
+      { to: "/app/ai",      label: "AI",      icon: Sparkles,          perm: "ai"      as PermissionKey },
     ],
   },
 ]
@@ -145,42 +148,48 @@ export function AppLayout() {
           </div>
         </div>
         <nav className="flex-1 space-y-5 overflow-y-auto overscroll-contain px-3 py-4 pb-6">
-          {navGroups.map((group) => (
-            <div key={group.label} className="space-y-1">
-              <div className="px-3 pb-1">
-                <div className="text-[0.68rem] font-semibold uppercase tracking-wide text-slate-400">
-                  {group.label}
+          {navGroups.map((group) => {
+            const visibleItems = group.items.filter((item) =>
+              canAccess(profile.role, item.perm)
+            )
+            if (visibleItems.length === 0) return null
+            return (
+              <div key={group.label} className="space-y-1">
+                <div className="px-3 pb-1">
+                  <div className="text-[0.68rem] font-semibold uppercase tracking-wide text-slate-400">
+                    {group.label}
+                  </div>
+                  <div className="text-[0.7rem] text-muted-foreground">
+                    {group.summary}
+                  </div>
                 </div>
-                <div className="text-[0.7rem] text-muted-foreground">
-                  {group.summary}
-                </div>
+                {visibleItems.map((item) => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    end={item.to === "/app"}
+                    onClick={() => setSidebarOpen(false)}
+                    className={({ isActive }) =>
+                      cn(
+                        "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                        isActive
+                          ? "bg-slate-950 text-white"
+                          : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+                      )
+                    }
+                  >
+                    <item.icon className="size-4" />
+                    <span className="flex-1">{item.label}</span>
+                    {item.to === "/app/alerts" && criticalCount > 0 ? (
+                      <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                        {criticalCount > 99 ? "99+" : criticalCount}
+                      </span>
+                    ) : null}
+                  </NavLink>
+                ))}
               </div>
-              {group.items.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  end={item.to === "/app"}
-                  onClick={() => setSidebarOpen(false)}
-                  className={({ isActive }) =>
-                    cn(
-                      "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                      isActive
-                        ? "bg-slate-950 text-white"
-                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
-                    )
-                  }
-                >
-                  <item.icon className="size-4" />
-                  <span className="flex-1">{item.label}</span>
-                  {item.to === "/app/alerts" && criticalCount > 0 ? (
-                    <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
-                      {criticalCount > 99 ? "99+" : criticalCount}
-                    </span>
-                  ) : null}
-                </NavLink>
-              ))}
-            </div>
-          ))}
+            )
+          })}
         </nav>
       </aside>
 
