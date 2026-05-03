@@ -77,6 +77,7 @@ function scheduleStatusFromText(value: string): ScheduleStatus {
   const normalized = normalizeLookup(value)
 
   if (normalized.includes("folga")) return "day_off"
+  if (normalized.includes("feriado")) return "day_off"
   if (normalized.includes("falta")) return "absent"
   if (normalized.includes("cancel")) return "cancelled"
   if (normalized.includes("final")) return "finished"
@@ -398,14 +399,24 @@ function SchedulesImportDialog({
             employee.id,
           ])
       )
+      const activeEmployees = employees.filter((e) => e.active)
       const employeeByBranchAndName = new Map(
-        employees
-          .filter((employee) => employee.active)
-          .map((employee) => [
-            `${employee.branch_id}:${normalizeLookup(employee.name)}`,
-            employee.id,
-          ])
+        activeEmployees.map((employee) => [
+          `${employee.branch_id}:${normalizeLookup(employee.name)}`,
+          employee.id,
+        ])
       )
+      // fallback: match by first word(s) of name — handles truncated names in DB
+      function findEmployeeByPartialName(branchId: string, schedName: string) {
+        const norm = normalizeLookup(schedName)
+        for (const emp of activeEmployees) {
+          if (emp.branch_id !== branchId) continue
+          const empNorm = normalizeLookup(emp.name)
+          if (empNorm.startsWith(norm) || norm.startsWith(empNorm)) return emp.id
+        }
+        return ""
+      }
+
       const fallbackBranchId =
         selectedBranchId && activeBranches.some((branch) => branch.id === selectedBranchId)
           ? selectedBranchId
@@ -418,13 +429,14 @@ function SchedulesImportDialog({
         const branchId = branchName
           ? branchByName.get(normalizeLookup(branchName)) ?? ""
           : fallbackBranchId
-        const document = cellToText(getCell(row, ["documento", "cpf"])).replace(/\D/g, "")
+        const document = cellToText(getCell(row, ["documento", "cpf", "cpf_documento"])).replace(/\D/g, "")
         const employeeName = cellToText(
           getCell(row, ["colaborador", "funcionario", "nome"])
         )
         const employeeId = document
           ? employeeByDocument.get(`${branchId}:${document}`) ?? ""
-          : employeeByBranchAndName.get(`${branchId}:${normalizeLookup(employeeName)}`) ?? ""
+          : (employeeByBranchAndName.get(`${branchId}:${normalizeLookup(employeeName)}`) ||
+             findEmployeeByPartialName(branchId, employeeName))
         const status = scheduleStatusFromText(
           cellToText(getCell(row, ["status", "situacao"])) || "scheduled"
         )
@@ -435,7 +447,7 @@ function SchedulesImportDialog({
         }
 
         if (!employeeId) {
-          nextErrors.push(`Linha ${index + 2}: colaborador nao encontrado na filial.`)
+          nextErrors.push(`Linha ${index + 2}: colaborador "${employeeName}" nao encontrado na filial.`)
           return
         }
 
