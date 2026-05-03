@@ -377,6 +377,7 @@ function SchedulesImportDialog({
   const [rows, setRows] = useState<ScheduleImportInput[]>([])
   const [errors, setErrors] = useState<string[]>([])
   const [fileName, setFileName] = useState("")
+  const [dateRange, setDateRange] = useState<{ min: string; max: string } | null>(null)
   const importSchedules = useImportSchedules()
 
   const activeBranches = useMemo(
@@ -388,6 +389,7 @@ function SchedulesImportDialog({
     setRows([])
     setErrors([])
     setFileName(file?.name ?? "")
+    setDateRange(null)
 
     if (!file) return
 
@@ -456,10 +458,23 @@ function SchedulesImportDialog({
           return
         }
 
+        const work_date = cellToDate(getCell(row, ["data", "dia"]), currentDate)
+        const diffDays = Math.abs(
+          (new Date(work_date + "T12:00:00").getTime() -
+            new Date(currentDate + "T12:00:00").getTime()) /
+          (1000 * 60 * 60 * 24)
+        )
+        if (diffDays > 90) {
+          nextErrors.push(
+            `Linha ${index + 2}: data ${formatDateBR(work_date)} parece incorreta (muito distante de hoje). Verifique se a planilha usa o formato DD/MM/AAAA.`
+          )
+          return
+        }
+
         nextRows.push({
           branch_id: branchId,
           employee_id: employeeId,
-          work_date: cellToDate(getCell(row, ["data", "dia"]), currentDate),
+          work_date,
           start_time: cellToTime(getCell(row, ["entrada", "inicio"])) || null,
           break_start: cellToTime(getCell(row, ["intervalo", "saida_intervalo"])) || null,
           break_end: cellToTime(getCell(row, ["retorno", "fim_intervalo"])) || null,
@@ -468,6 +483,11 @@ function SchedulesImportDialog({
           notes: cellToText(getCell(row, ["observacoes", "obs", "notas"])) || null,
         })
       })
+
+      if (nextRows.length > 0) {
+        const dates = nextRows.map((r) => r.work_date).sort()
+        setDateRange({ min: dates[0], max: dates[dates.length - 1] })
+      }
 
       setRows(nextRows)
       setErrors(nextErrors)
@@ -514,6 +534,13 @@ function SchedulesImportDialog({
               {fileName}: {rows.length} linha(s) validas.
             </div>
           ) : null}
+          {dateRange ? (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+              Periodo detectado: <strong>{formatDateBR(dateRange.min)}</strong> a{" "}
+              <strong>{formatDateBR(dateRange.max)}</strong>. Confirme que as datas
+              estao corretas antes de importar.
+            </div>
+          ) : null}
           {errors.length > 0 ? (
             <div className="max-h-40 overflow-auto rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
               {errors.slice(0, 12).map((error) => (
@@ -552,9 +579,11 @@ function addDays(dateISO: string, n: number): string {
 
 export function SchedulesPage() {
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
-  const [viewMode, setViewMode] = useState<"day" | "week">("week")
+  const [viewMode, setViewMode] = useState<"day" | "week" | "range">("week")
   const [date, setDate] = useState(todayISO())
   const [weekStart, setWeekStart] = useState(() => getWeekStart(todayISO()))
+  const [rangeFrom, setRangeFrom] = useState(() => addDays(todayISO(), -180))
+  const [rangeTo, setRangeTo] = useState(() => addDays(todayISO(), 180))
   const [sectorFilter, setSectorFilter] = useState("")
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
@@ -575,7 +604,8 @@ export function SchedulesPage() {
   const weekEnd = addDays(weekStart, 6)
   const dayQuery = useSchedules(date)
   const weekQuery = useSchedulesRange(weekStart, weekEnd)
-  const currentQuery = viewMode === "week" ? weekQuery : dayQuery
+  const rangeQuery = useSchedulesRange(rangeFrom, rangeTo)
+  const currentQuery = viewMode === "week" ? weekQuery : viewMode === "range" ? rangeQuery : dayQuery
   const employees = useEmployees(form.branch_id || selectedBranchId)
   const allEmployees = useEmployees(null)
   const branches = useBranches()
@@ -675,7 +705,12 @@ export function SchedulesPage() {
       status: scheduleStatusLabel[s.status as keyof typeof scheduleStatusLabel] ?? s.status,
       notes: s.notes ?? "",
     }))
-    const filename = viewMode === "week" ? `escala_semana_${weekStart}.csv` : `escala_${date}.csv`
+    const filename =
+      viewMode === "week"
+        ? `escala_semana_${weekStart}.csv`
+        : viewMode === "range"
+        ? `escala_periodo_${rangeFrom}_${rangeTo}.csv`
+        : `escala_${date}.csv`
     downloadCsv(buildCsv(rows, headers), filename)
   }
 
@@ -703,12 +738,19 @@ export function SchedulesPage() {
   }
 
   const weekLabel = `${formatDateBR(weekStart)} — ${formatDateBR(weekEnd)}`
+  const rangeLabel = `${formatDateBR(rangeFrom)} — ${formatDateBR(rangeTo)}`
 
   return (
     <>
       <PageHeader
         title="Escalas"
-        description={viewMode === "week" ? `Semana de ${weekLabel}` : `Escala de ${formatDateBR(date)}`}
+        description={
+          viewMode === "week"
+            ? `Semana de ${weekLabel}`
+            : viewMode === "range"
+            ? `Período: ${rangeLabel}`
+            : `Escala de ${formatDateBR(date)}`
+        }
         action={
           <div className="flex flex-wrap items-center gap-2">
             {/* View toggle */}
@@ -733,6 +775,16 @@ export function SchedulesPage() {
               >
                 Dia
               </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("range")}
+                className={cn(
+                  "border-l px-3 py-1.5 text-sm font-medium transition-colors",
+                  viewMode === "range" ? "bg-slate-950 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
+                )}
+              >
+                Período
+              </button>
             </div>
 
             {/* Navigation */}
@@ -747,6 +799,22 @@ export function SchedulesPage() {
                 <Button variant="outline" size="icon" onClick={() => setWeekStart(addDays(weekStart, 7))}>
                   <ChevronRight className="size-4" />
                 </Button>
+              </div>
+            ) : viewMode === "range" ? (
+              <div className="flex items-center gap-2">
+                <Input
+                  className="w-36"
+                  type="date"
+                  value={rangeFrom}
+                  onChange={(e) => setRangeFrom(e.target.value)}
+                />
+                <span className="text-sm text-muted-foreground">até</span>
+                <Input
+                  className="w-36"
+                  type="date"
+                  value={rangeTo}
+                  onChange={(e) => setRangeTo(e.target.value)}
+                />
               </div>
             ) : (
               <Input
@@ -898,7 +966,7 @@ export function SchedulesPage() {
         ) : filteredSchedules.length === 0 ? (
           <StateBlock
             title={(currentQuery.data ?? []).length === 0 ? "Nenhuma escala para este período" : "Nenhum resultado para o setor selecionado"}
-            description={(currentQuery.data ?? []).length === 0 ? "Importe ou cadastre escalas para este período." : undefined}
+            description={(currentQuery.data ?? []).length === 0 && viewMode !== "range" ? "Importe ou cadastre escalas para este período." : undefined}
           />
         ) : (
           <div className="overflow-hidden rounded-lg border bg-white shadow-sm">
