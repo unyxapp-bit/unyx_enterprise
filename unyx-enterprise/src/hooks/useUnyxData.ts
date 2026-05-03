@@ -21,6 +21,8 @@ import {
   createTrainingItem,
   deactivateEmployees,
   deleteEmployees,
+  deleteSchedulesBulk,
+  listSchedulesRange,
   deleteSchedule,
   finalizePostAllocation,
   getOrganization,
@@ -187,6 +189,33 @@ export function useSchedules(workDate: string, branchId?: string | null) {
     queryKey: ["schedules", profile?.organization_id, effectiveBranchId, workDate],
     queryFn: () => listSchedules(workDate, effectiveBranchId),
     enabled: Boolean(profile),
+  })
+}
+
+export function useSchedulesRange(dateFrom: string, dateTo: string) {
+  const { profile } = useAuth()
+  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
+
+  return useQuery({
+    queryKey: ["schedules", profile?.organization_id, selectedBranchId, dateFrom, dateTo],
+    queryFn: () => listSchedulesRange(dateFrom, dateTo, selectedBranchId),
+    enabled: Boolean(profile) && Boolean(dateFrom) && Boolean(dateTo),
+  })
+}
+
+export function useDeleteSchedulesBulk() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (ids: string[]) => deleteSchedulesBulk(profile, ids),
+    onSuccess: (_, ids) => {
+      void queryClient.invalidateQueries({ queryKey: ["schedules"] })
+      toast.success(`${ids.length} escala(s) excluida(s).`)
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
   })
 }
 

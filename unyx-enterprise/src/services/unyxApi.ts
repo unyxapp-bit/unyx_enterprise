@@ -1093,6 +1093,26 @@ export async function listSchedules(workDate: string, branchId?: string | null) 
   return (data ?? []) as ScheduleWithRelations[]
 }
 
+export async function listSchedulesRange(
+  dateFrom: string,
+  dateTo: string,
+  branchId?: string | null
+) {
+  let query = supabase
+    .from("schedules")
+    .select("*, branches(name), employees(*, sectors(name))")
+    .gte("work_date", dateFrom)
+    .lte("work_date", dateTo)
+    .order("work_date", { ascending: true })
+    .order("start_time", { nullsFirst: false })
+
+  if (branchId) query = query.eq("branch_id", branchId)
+
+  const { data, error } = await query
+  raise(error)
+  return (data ?? []) as ScheduleWithRelations[]
+}
+
 export async function createSchedule(
   profile: UserProfile,
   input: ScheduleImportInput
@@ -1212,6 +1232,22 @@ export async function deleteSchedule(profile: UserProfile, scheduleId: string) {
     old_value: previous,
     new_value: null,
   })
+}
+
+export async function deleteSchedulesBulk(
+  profile: UserProfile,
+  scheduleIds: string[]
+) {
+  const ids = Array.from(new Set(scheduleIds.filter(Boolean)))
+  if (ids.length === 0) return
+
+  const { error } = await supabase
+    .from("schedules")
+    .delete()
+    .eq("organization_id", profile.organization_id)
+    .in("id", ids)
+
+  raise(error)
 }
 
 export async function listDashboardRows(

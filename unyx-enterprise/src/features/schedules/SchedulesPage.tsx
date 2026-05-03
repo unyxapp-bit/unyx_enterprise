@@ -3,6 +3,8 @@ import type { FormEvent } from "react"
 import {
   CalendarCog,
   CalendarPlus,
+  ChevronLeft,
+  ChevronRight,
   Download,
   FileSpreadsheet,
   Pencil,
@@ -26,9 +28,11 @@ import {
   useCopySchedules,
   useCreateSchedule,
   useDeleteSchedule,
+  useDeleteSchedulesBulk,
   useEmployees,
   useImportSchedules,
   useSchedules,
+  useSchedulesRange,
   useUpdateSchedule,
 } from "@/hooks/useUnyxData"
 import { buildCsv, downloadCsv } from "@/lib/exportCsv"
@@ -531,10 +535,28 @@ function SchedulesImportDialog({
   )
 }
 
+function getWeekStart(dateISO: string): string {
+  const d = new Date(dateISO + "T12:00:00")
+  const day = d.getDay()
+  const offset = day === 0 ? 6 : day - 1
+  d.setDate(d.getDate() - offset)
+  return d.toISOString().slice(0, 10)
+}
+
+function addDays(dateISO: string, n: number): string {
+  const d = new Date(dateISO + "T12:00:00")
+  d.setDate(d.getDate() + n)
+  return d.toISOString().slice(0, 10)
+}
+
 export function SchedulesPage() {
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
+  const [viewMode, setViewMode] = useState<"day" | "week">("week")
   const [date, setDate] = useState(todayISO())
+  const [weekStart, setWeekStart] = useState(() => getWeekStart(todayISO()))
   const [sectorFilter, setSectorFilter] = useState("")
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
   const [open, setOpen] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [form, setForm] = useState<ScheduleFormState>({
@@ -548,35 +570,86 @@ export function SchedulesPage() {
     status: "scheduled",
     notes: "",
   })
-  const schedules = useSchedules(date)
+
+  const weekEnd = addDays(weekStart, 6)
+  const dayQuery = useSchedules(date)
+  const weekQuery = useSchedulesRange(weekStart, weekEnd)
+  const currentQuery = viewMode === "week" ? weekQuery : dayQuery
   const employees = useEmployees(form.branch_id || selectedBranchId)
   const allEmployees = useEmployees(null)
   const branches = useBranches()
   const activeBranches = useMemo(
-    () => (branches.data ?? []).filter((branch) => branch.active),
+    () => (branches.data ?? []).filter((b) => b.active),
     [branches.data]
   )
   const createSchedule = useCreateSchedule()
+  const deleteSchedulesBulk = useDeleteSchedulesBulk()
 
   const sectorOptions = useMemo(() => {
     const names = new Set(
-      (schedules.data ?? [])
-        .map((s) => s.employees?.sectors?.name)
-        .filter(Boolean) as string[]
+      (currentQuery.data ?? []).map((s) => s.employees?.sectors?.name).filter(Boolean) as string[]
     )
     return Array.from(names).sort()
-  }, [schedules.data])
+  }, [currentQuery.data])
 
   const filteredSchedules = useMemo(() => {
-    const all = schedules.data ?? []
+    const all = currentQuery.data ?? []
     if (!sectorFilter) return all
     return all.filter((s) => s.employees?.sectors?.name === sectorFilter)
-  }, [schedules.data, sectorFilter])
+  }, [currentQuery.data, sectorFilter])
+
+  const allFilteredIds = useMemo(() => filteredSchedules.map((s) => s.id), [filteredSchedules])
+  const selectedCount = selectedIds.size
+  const allSelected = allFilteredIds.length > 0 && allFilteredIds.every((id) => selectedIds.has(id))
+
+  const schedulesByDate = useMemo(() => {
+    const map = new Map<string, ScheduleWithRelations[]>()
+    for (const s of filteredSchedules) {
+      if (!map.has(s.work_date)) map.set(s.work_date, [])
+      map.get(s.work_date)!.push(s)
+    }
+    return map
+  }, [filteredSchedules])
 
   const activeEmployees = useMemo(
     () => (employees.data ?? []).filter((e) => e.active),
     [employees.data]
   )
+
+  function toggleAll(checked: boolean) {
+    setSelectedIds(() => {
+      const next = new Set<string>()
+      if (checked) for (const id of allFilteredIds) next.add(id)
+      return next
+    })
+  }
+
+  function toggleOne(id: string, checked: boolean) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (checked) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }
+
+  function toggleDay(dayDate: string, checked: boolean) {
+    const dayIds = (schedulesByDate.get(dayDate) ?? []).map((s) => s.id)
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      for (const id of dayIds) {
+        if (checked) next.add(id)
+        else next.delete(id)
+      }
+      return next
+    })
+  }
+
+  async function handleBulkDelete() {
+    await deleteSchedulesBulk.mutateAsync(Array.from(selectedIds))
+    setSelectedIds(new Set())
+    setBulkDeleteOpen(false)
+  }
 
   function handleExport() {
     const headers = [
@@ -601,18 +674,17 @@ export function SchedulesPage() {
       status: scheduleStatusLabel[s.status as keyof typeof scheduleStatusLabel] ?? s.status,
       notes: s.notes ?? "",
     }))
-    downloadCsv(buildCsv(rows, headers), `escala_${date}.csv`)
+    const filename = viewMode === "week" ? `escala_semana_${weekStart}.csv` : `escala_${date}.csv`
+    downloadCsv(buildCsv(rows, headers), filename)
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setFormError(null)
-
     if (!form.branch_id || !form.employee_id) {
       setFormError("Selecione filial e colaborador.")
       return
     }
-
     await createSchedule.mutateAsync({
       branch_id: form.branch_id,
       employee_id: form.employee_id,
@@ -624,61 +696,93 @@ export function SchedulesPage() {
       status: form.status,
       notes: form.notes.trim() || null,
     })
-
-    setDate(form.work_date)
+    if (viewMode === "week") setWeekStart(getWeekStart(form.work_date))
+    else setDate(form.work_date)
     setOpen(false)
   }
+
+  const weekLabel = `${formatDateBR(weekStart)} — ${formatDateBR(weekEnd)}`
 
   return (
     <>
       <PageHeader
         title="Escalas"
-        description={`Escala planejada para ${formatDateBR(date)}`}
+        description={viewMode === "week" ? `Semana de ${weekLabel}` : `Escala de ${formatDateBR(date)}`}
         action={
           <div className="flex flex-wrap items-center gap-2">
-            <Input
-              className="w-40"
-              type="date"
-              value={date}
-              onChange={(e) => {
-                setDate(e.target.value)
-                setForm((c) => ({ ...c, work_date: e.target.value }))
-              }}
-            />
-            {sectorOptions.length > 0 ? (
-              <select
-                className={filterClass}
-                value={sectorFilter}
-                onChange={(e) => setSectorFilter(e.target.value)}
+            {/* View toggle */}
+            <div className="flex overflow-hidden rounded-lg border">
+              <button
+                type="button"
+                onClick={() => setViewMode("week")}
+                className={cn(
+                  "px-3 py-1.5 text-sm font-medium transition-colors",
+                  viewMode === "week" ? "bg-slate-950 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
+                )}
               >
+                Semana
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("day")}
+                className={cn(
+                  "border-l px-3 py-1.5 text-sm font-medium transition-colors",
+                  viewMode === "day" ? "bg-slate-950 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
+                )}
+              >
+                Dia
+              </button>
+            </div>
+
+            {/* Navigation */}
+            {viewMode === "week" ? (
+              <div className="flex items-center gap-1">
+                <Button variant="outline" size="icon" onClick={() => setWeekStart(addDays(weekStart, -7))}>
+                  <ChevronLeft className="size-4" />
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => { setWeekStart(getWeekStart(todayISO())); setDate(todayISO()) }}>
+                  Hoje
+                </Button>
+                <Button variant="outline" size="icon" onClick={() => setWeekStart(addDays(weekStart, 7))}>
+                  <ChevronRight className="size-4" />
+                </Button>
+              </div>
+            ) : (
+              <Input
+                className="w-40"
+                type="date"
+                value={date}
+                onChange={(e) => {
+                  setDate(e.target.value)
+                  setForm((c) => ({ ...c, work_date: e.target.value }))
+                }}
+              />
+            )}
+
+            {sectorOptions.length > 0 ? (
+              <select className={filterClass} value={sectorFilter} onChange={(e) => setSectorFilter(e.target.value)}>
                 <option value="">Todos os setores</option>
-                {sectorOptions.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
+                {sectorOptions.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
             ) : null}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleExport}
-              disabled={filteredSchedules.length === 0}
-            >
+
+            <Button variant="outline" size="sm" onClick={handleExport} disabled={filteredSchedules.length === 0}>
               <Download className="mr-1.5 size-4" />
               Exportar CSV
             </Button>
             <SchedulesImportDialog
               branches={branches.data ?? []}
-              currentDate={date}
+              currentDate={viewMode === "week" ? weekStart : date}
               employees={allEmployees.data ?? []}
               selectedBranchId={selectedBranchId}
             />
             <CopyDayDialog
               branches={branches.data ?? []}
-              currentDate={date}
+              currentDate={viewMode === "week" ? weekStart : date}
               selectedBranchId={selectedBranchId}
             />
+
+            {/* Nova escala */}
             <Dialog open={open} onOpenChange={setOpen}>
               <DialogTrigger asChild>
                 <Button>
@@ -687,112 +791,60 @@ export function SchedulesPage() {
                 </Button>
               </DialogTrigger>
               <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Cadastrar escala</DialogTitle>
-                </DialogHeader>
+                <DialogHeader><DialogTitle>Cadastrar escala</DialogTitle></DialogHeader>
                 <form className="space-y-4" onSubmit={handleSubmit}>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <label className="space-y-1 text-sm">
                       <span className="font-medium">Filial</span>
-                      <select
-                        className={fieldClass}
-                        value={form.branch_id}
-                        onChange={(e) =>
-                          setForm((c) => ({ ...c, branch_id: e.target.value, employee_id: "" }))
-                        }
-                      >
+                      <select className={fieldClass} value={form.branch_id}
+                        onChange={(e) => setForm((c) => ({ ...c, branch_id: e.target.value, employee_id: "" }))}>
                         <option value="">Selecione</option>
-                        {activeBranches.map((b) => (
-                          <option key={b.id} value={b.id}>
-                            {b.name}
-                          </option>
-                        ))}
+                        {activeBranches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                       </select>
                     </label>
                     <label className="space-y-1 text-sm">
                       <span className="font-medium">Colaborador</span>
-                      <select
-                        className={fieldClass}
-                        value={form.employee_id}
-                        onChange={(e) =>
-                          setForm((c) => ({ ...c, employee_id: e.target.value }))
-                        }
-                      >
+                      <select className={fieldClass} value={form.employee_id}
+                        onChange={(e) => setForm((c) => ({ ...c, employee_id: e.target.value }))}>
                         <option value="">Selecione</option>
-                        {activeEmployees.map((e) => (
-                          <option key={e.id} value={e.id}>
-                            {e.name}
-                          </option>
-                        ))}
+                        {activeEmployees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
                       </select>
                     </label>
                   </div>
-
                   <div className="grid gap-3 sm:grid-cols-2">
                     <label className="space-y-1 text-sm">
                       <span className="font-medium">Data</span>
-                      <Input
-                        type="date"
-                        value={form.work_date}
-                        onChange={(e) =>
-                          setForm((c) => ({ ...c, work_date: e.target.value }))
-                        }
-                      />
+                      <Input type="date" value={form.work_date}
+                        onChange={(e) => setForm((c) => ({ ...c, work_date: e.target.value }))} />
                     </label>
                     <label className="space-y-1 text-sm">
                       <span className="font-medium">Status</span>
-                      <select
-                        className={fieldClass}
-                        value={form.status}
-                        onChange={(e) =>
-                          setForm((current) =>
-                            nextFormForStatus(current, e.target.value as ScheduleStatus)
-                          )
-                        }
-                      >
-                        {Object.entries(scheduleStatusLabel).map(([value, label]) => (
-                          <option key={value} value={value}>
-                            {label}
-                          </option>
-                        ))}
+                      <select className={fieldClass} value={form.status}
+                        onChange={(e) => setForm((c) => nextFormForStatus(c, e.target.value as ScheduleStatus))}>
+                        {Object.entries(scheduleStatusLabel).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                       </select>
                     </label>
                   </div>
-
                   <div className="grid gap-3 sm:grid-cols-4">
-                    {(["start_time", "break_start", "break_end", "end_time"] as const).map(
-                      (field) => (
-                        <label className="space-y-1 text-sm" key={field}>
-                          <span className="font-medium">
-                            {{ start_time: "Entrada", break_start: "Intervalo", break_end: "Retorno", end_time: "Saída" }[field]}
-                          </span>
-                          <Input
-                    type="time"
-                    disabled={form.status === "day_off"}
-                    value={form[field]}
-                            onChange={(e) =>
-                              setForm((c) => ({ ...c, [field]: e.target.value }))
-                            }
-                          />
-                        </label>
-                      )
-                    )}
+                    {(["start_time", "break_start", "break_end", "end_time"] as const).map((field) => (
+                      <label className="space-y-1 text-sm" key={field}>
+                        <span className="font-medium">
+                          {{ start_time: "Entrada", break_start: "Intervalo", break_end: "Retorno", end_time: "Saída" }[field]}
+                        </span>
+                        <Input type="time" disabled={form.status === "day_off"} value={form[field]}
+                          onChange={(e) => setForm((c) => ({ ...c, [field]: e.target.value }))} />
+                      </label>
+                    ))}
                   </div>
-
                   <label className="space-y-1 text-sm">
                     <span className="font-medium">Observações</span>
-                    <Input
-                      value={form.notes}
-                      onChange={(e) => setForm((c) => ({ ...c, notes: e.target.value }))}
-                    />
+                    <Input value={form.notes} onChange={(e) => setForm((c) => ({ ...c, notes: e.target.value }))} />
                   </label>
-
                   {formError || createSchedule.error ? (
                     <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                       {formError ?? createSchedule.error?.message}
                     </div>
                   ) : null}
-
                   <DialogFooter>
                     <Button type="submit" disabled={createSchedule.isPending}>
                       {createSchedule.isPending ? "Salvando..." : "Salvar"}
@@ -805,35 +857,64 @@ export function SchedulesPage() {
         }
       />
 
-      <div className="p-6">
-        {schedules.isLoading ? (
-          <StateBlock type="loading" title="Carregando escala" />
-        ) : schedules.isError ? (
-          <StateBlock
-            type="error"
-            title="Erro ao carregar escala"
-            description={schedules.error.message}
-          />
+      <div className="space-y-4 p-6">
+        {/* Barra de seleção */}
+        {selectedCount > 0 ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-slate-50 px-3 py-2 text-sm">
+            <span className="font-medium text-slate-700">{selectedCount} escala(s) selecionada(s)</span>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setSelectedIds(new Set())}>Limpar seleção</Button>
+              <Dialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="destructive" size="sm" disabled={deleteSchedulesBulk.isPending}>
+                    <Trash2 className="size-4" />
+                    Excluir selecionadas
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader><DialogTitle>Excluir escalas</DialogTitle></DialogHeader>
+                  <p className="text-sm text-muted-foreground">
+                    Deseja excluir permanentemente {selectedCount} escala(s)? Esta ação não pode ser desfeita.
+                  </p>
+                  <DialogFooter className="gap-2">
+                    <Button variant="outline" onClick={() => setBulkDeleteOpen(false)}>Cancelar</Button>
+                    <Button variant="destructive" disabled={deleteSchedulesBulk.isPending}
+                      onClick={() => void handleBulkDelete()}>
+                      {deleteSchedulesBulk.isPending ? "Excluindo..." : "Confirmar"}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
+          </div>
+        ) : null}
+
+        {/* Conteúdo */}
+        {currentQuery.isLoading ? (
+          <StateBlock type="loading" title="Carregando escalas" />
+        ) : currentQuery.isError ? (
+          <StateBlock type="error" title="Erro ao carregar escalas" description={currentQuery.error.message} />
         ) : filteredSchedules.length === 0 ? (
           <StateBlock
-            title={
-              (schedules.data ?? []).length === 0
-                ? "Nenhuma escala para esta data"
-                : "Nenhum resultado para o setor selecionado"
-            }
-            description={
-              (schedules.data ?? []).length === 0
-                ? "Cadastre a escala do dia para iniciar a operação."
-                : undefined
-            }
+            title={(currentQuery.data ?? []).length === 0 ? "Nenhuma escala para este período" : "Nenhum resultado para o setor selecionado"}
+            description={(currentQuery.data ?? []).length === 0 ? "Importe ou cadastre escalas para este período." : undefined}
           />
         ) : (
           <div className="overflow-hidden rounded-lg border bg-white shadow-sm">
             <table className="w-full text-left text-sm">
               <thead className="border-b bg-slate-50 text-xs uppercase text-muted-foreground">
                 <tr>
+                  <th className="w-10 px-4 py-3">
+                    <input
+                      type="checkbox"
+                      className="size-4 rounded border-slate-300 accent-slate-950"
+                      checked={allSelected}
+                      onChange={(e) => toggleAll(e.target.checked)}
+                      aria-label="Selecionar todas as escalas"
+                    />
+                  </th>
+                  {viewMode === "week" && <th className="px-4 py-3">Data</th>}
                   <th className="px-4 py-3">Colaborador</th>
-                  <th className="px-4 py-3">Filial</th>
                   <th className="px-4 py-3">Setor</th>
                   <th className="px-4 py-3">Entrada</th>
                   <th className="px-4 py-3">Intervalo</th>
@@ -844,43 +925,104 @@ export function SchedulesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {filteredSchedules.map((schedule) => {
-                  const incomplete = isScheduleIncomplete(schedule)
-
-                  return (
-                    <tr key={schedule.id} className="hover:bg-slate-50">
-                      <td className="px-4 py-3 font-medium">
-                        <div className="flex items-center gap-2">
-                          {schedule.employees?.name ?? "-"}
-                          {incomplete ? (
-                            <span className="inline-flex h-4 items-center rounded border border-amber-200 bg-amber-50 px-1.5 text-[10px] font-medium text-amber-700">
-                              Incompleta
-                            </span>
-                          ) : null}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        {schedule.branches?.name ?? "-"}
-                      </td>
-                      <td className="px-4 py-3">
-                        {schedule.employees?.sectors?.name ?? "-"}
-                      </td>
-                      <td className="px-4 py-3">{formatTime(schedule.start_time)}</td>
-                      <td className="px-4 py-3">{formatTime(schedule.break_start)}</td>
-                      <td className="px-4 py-3">{formatTime(schedule.break_end)}</td>
-                      <td className="px-4 py-3">{formatTime(schedule.end_time)}</td>
-                      <td className="px-4 py-3">
-                        {scheduleStatusLabel[schedule.status]}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex justify-end gap-2">
-                          <ScheduleEditDialog schedule={schedule} />
-                          <ScheduleDeleteDialog schedule={schedule} />
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
+                {viewMode === "week"
+                  ? Array.from(schedulesByDate.entries()).map(([dayDate, daySchedules]) => {
+                      const dayAllIds = daySchedules.map((s) => s.id)
+                      const dayAllSelected = dayAllIds.every((id) => selectedIds.has(id))
+                      return (
+                        <>
+                          <tr key={`day-${dayDate}`} className="bg-slate-50">
+                            <td className="px-4 py-2">
+                              <input
+                                type="checkbox"
+                                className="size-4 rounded border-slate-300 accent-slate-950"
+                                checked={dayAllSelected}
+                                onChange={(e) => toggleDay(dayDate, e.target.checked)}
+                                aria-label={`Selecionar ${dayDate}`}
+                              />
+                            </td>
+                            <td colSpan={9} className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              {formatDateBR(dayDate)} — {daySchedules.length} escala(s)
+                            </td>
+                          </tr>
+                          {daySchedules.map((schedule) => {
+                            const incomplete = isScheduleIncomplete(schedule)
+                            return (
+                              <tr key={schedule.id} className="hover:bg-slate-50">
+                                <td className="px-4 py-3">
+                                  <input
+                                    type="checkbox"
+                                    className="size-4 rounded border-slate-300 accent-slate-950"
+                                    checked={selectedIds.has(schedule.id)}
+                                    onChange={(e) => toggleOne(schedule.id, e.target.checked)}
+                                  />
+                                </td>
+                                <td className="px-4 py-3 text-muted-foreground" />
+                                <td className="px-4 py-3 font-medium">
+                                  <div className="flex items-center gap-2">
+                                    {schedule.employees?.name ?? "-"}
+                                    {incomplete ? (
+                                      <span className="inline-flex h-4 items-center rounded border border-amber-200 bg-amber-50 px-1.5 text-[10px] font-medium text-amber-700">
+                                        Incompleta
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3">{schedule.employees?.sectors?.name ?? "-"}</td>
+                                <td className="px-4 py-3">{formatTime(schedule.start_time)}</td>
+                                <td className="px-4 py-3">{formatTime(schedule.break_start)}</td>
+                                <td className="px-4 py-3">{formatTime(schedule.break_end)}</td>
+                                <td className="px-4 py-3">{formatTime(schedule.end_time)}</td>
+                                <td className="px-4 py-3">{scheduleStatusLabel[schedule.status]}</td>
+                                <td className="px-4 py-3">
+                                  <div className="flex justify-end gap-2">
+                                    <ScheduleEditDialog schedule={schedule} />
+                                    <ScheduleDeleteDialog schedule={schedule} />
+                                  </div>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </>
+                      )
+                    })
+                  : filteredSchedules.map((schedule) => {
+                      const incomplete = isScheduleIncomplete(schedule)
+                      return (
+                        <tr key={schedule.id} className="hover:bg-slate-50">
+                          <td className="px-4 py-3">
+                            <input
+                              type="checkbox"
+                              className="size-4 rounded border-slate-300 accent-slate-950"
+                              checked={selectedIds.has(schedule.id)}
+                              onChange={(e) => toggleOne(schedule.id, e.target.checked)}
+                            />
+                          </td>
+                          <td className="px-4 py-3 font-medium">
+                            <div className="flex items-center gap-2">
+                              {schedule.employees?.name ?? "-"}
+                              {incomplete ? (
+                                <span className="inline-flex h-4 items-center rounded border border-amber-200 bg-amber-50 px-1.5 text-[10px] font-medium text-amber-700">
+                                  Incompleta
+                                </span>
+                              ) : null}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">{schedule.employees?.sectors?.name ?? "-"}</td>
+                          <td className="px-4 py-3">{formatTime(schedule.start_time)}</td>
+                          <td className="px-4 py-3">{formatTime(schedule.break_start)}</td>
+                          <td className="px-4 py-3">{formatTime(schedule.break_end)}</td>
+                          <td className="px-4 py-3">{formatTime(schedule.end_time)}</td>
+                          <td className="px-4 py-3">{scheduleStatusLabel[schedule.status]}</td>
+                          <td className="px-4 py-3">
+                            <div className="flex justify-end gap-2">
+                              <ScheduleEditDialog schedule={schedule} />
+                              <ScheduleDeleteDialog schedule={schedule} />
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
               </tbody>
             </table>
           </div>
