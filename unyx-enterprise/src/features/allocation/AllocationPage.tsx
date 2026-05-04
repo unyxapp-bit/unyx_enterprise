@@ -249,6 +249,14 @@ function getScheduleLabel(schedule: ScheduleWithRelations) {
   ].join(" / ")
 }
 
+function scheduleStatusNote(status: string): string {
+  if (status === "returned") return " — Retornou do intervalo"
+  if (status === "on_break") return " — Em intervalo"
+  if (status === "working") return " — Trabalhando"
+  if (status === "scheduled") return " — Aguardando entrada"
+  return ""
+}
+
 function getEmployeeSubtitle(employee: EmployeeWithRelations) {
   return [employee.role, employee.sectors?.name].filter(Boolean).join(" - ")
 }
@@ -504,6 +512,22 @@ export function AllocationPage() {
           notes: allocationForm.notes.trim() || null,
         })
       }
+
+      // If employee was on break or returned, restore schedule to "working"
+      const linkedSchedule = allocationForm.schedule_id
+        ? scheduleById.get(allocationForm.schedule_id)
+        : scheduleByEmployeeId.get(allocationForm.employee_id)
+      if (linkedSchedule && ["returned", "on_break"].includes(linkedSchedule.status)) {
+        try {
+          await updateSchedule.mutateAsync({
+            scheduleId: linkedSchedule.id,
+            values: { status: "working" },
+          })
+        } catch (_e) {
+          // non-critical — allocation already created
+        }
+      }
+
       setAllocationAction(null)
     } catch (error) {
       setAllocationError(
@@ -1210,14 +1234,24 @@ export function AllocationPage() {
                 required
               >
                 <option value="">Selecione</option>
-                {allocationEmployees.map((employee) => (
-                  <option key={employee.id} value={employee.id}>
-                    {employee.name}
-                    {getEmployeeSubtitle(employee)
-                      ? ` - ${getEmployeeSubtitle(employee)}`
-                      : ""}
-                  </option>
-                ))}
+                {allocationEmployees.map((employee) => {
+                  const empSched = scheduleByEmployeeId.get(employee.id)
+                  const breakNote =
+                    empSched?.status === "returned"
+                      ? " ✓ retornou"
+                      : empSched?.status === "on_break"
+                        ? " ● intervalo"
+                        : ""
+                  return (
+                    <option key={employee.id} value={employee.id}>
+                      {employee.name}
+                      {getEmployeeSubtitle(employee)
+                        ? ` - ${getEmployeeSubtitle(employee)}`
+                        : ""}
+                      {breakNote}
+                    </option>
+                  )
+                })}
               </select>
             </label>
 
@@ -1237,10 +1271,32 @@ export function AllocationPage() {
                 {allocationSchedules.map((schedule) => (
                   <option key={schedule.id} value={schedule.id}>
                     {getScheduleLabel(schedule)}
+                    {scheduleStatusNote(schedule.status)}
                   </option>
                 ))}
               </select>
             </label>
+
+            {(() => {
+              const empSched = allocationForm.employee_id
+                ? scheduleByEmployeeId.get(allocationForm.employee_id)
+                : null
+              if (empSched?.status === "returned") {
+                return (
+                  <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-700">
+                    Este colaborador ja realizou o intervalo hoje. Ao confirmar, a escala volta automaticamente para &quot;trabalhando&quot;.
+                  </div>
+                )
+              }
+              if (empSched?.status === "on_break") {
+                return (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                    Atencao: este colaborador esta em intervalo agora. A escala sera restaurada para &quot;trabalhando&quot; ao confirmar.
+                  </div>
+                )
+              }
+              return null
+            })()}
 
             <label className="space-y-1 text-sm">
               <span className="font-medium">Observacao</span>
