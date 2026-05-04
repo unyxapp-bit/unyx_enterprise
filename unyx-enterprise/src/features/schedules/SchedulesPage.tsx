@@ -362,6 +362,19 @@ function CopyDayDialog({
   )
 }
 
+type RawScheduleRow = {
+  branchName: string
+  document: string
+  employeeName: string
+  dateRaw: unknown
+  startRaw: unknown
+  breakStartRaw: unknown
+  breakEndRaw: unknown
+  endRaw: unknown
+  statusRaw: string
+  notesRaw: string
+}
+
 function SchedulesImportDialog({
   branches,
   currentDate,
@@ -374,9 +387,11 @@ function SchedulesImportDialog({
   selectedBranchId: string | null
 }) {
   const [open, setOpen] = useState(false)
+  const [inputMode, setInputMode] = useState<"file" | "paste">("file")
   const [rows, setRows] = useState<ScheduleImportInput[]>([])
   const [errors, setErrors] = useState<string[]>([])
   const [fileName, setFileName] = useState("")
+  const [pasteText, setPasteText] = useState("")
   const [dateRange, setDateRange] = useState<{ min: string; max: string } | null>(null)
   const importSchedules = useImportSchedules()
 
@@ -385,88 +400,76 @@ function SchedulesImportDialog({
     [branches]
   )
 
-  async function handleFile(file: File | null) {
-    setRows([])
-    setErrors([])
-    setFileName(file?.name ?? "")
-    setDateRange(null)
-
-    if (!file) return
-
-    try {
-      const parsed = await parseSpreadsheet(file)
-      const branchByName = new Map(
-        activeBranches.map((branch) => [normalizeLookup(branch.name), branch.id])
-      )
-      const employeeByDocument = new Map(
-        employees
-          .filter((employee) => employee.active && employee.document)
-          .map((employee) => [
-            `${employee.branch_id}:${cellToText(employee.document).replace(/\D/g, "")}`,
-            employee.id,
-          ])
-      )
-      const activeEmployees = employees.filter((e) => e.active)
-      const employeeByBranchAndName = new Map(
-        activeEmployees.map((employee) => [
-          `${employee.branch_id}:${normalizeLookup(employee.name)}`,
-          employee.id,
+  function processRawRows(rawRows: RawScheduleRow[], lineOffset = 2) {
+    const branchByName = new Map(
+      activeBranches.map((branch) => [normalizeLookup(branch.name), branch.id])
+    )
+    const employeeByDocument = new Map(
+      employees
+        .filter((e) => e.active && e.document)
+        .map((e) => [
+          `${e.branch_id}:${cellToText(e.document).replace(/\D/g, "")}`,
+          e.id,
         ])
-      )
-      // fallback: match by first word(s) of name — handles truncated names in DB
-      function findEmployeeByPartialName(branchId: string, schedName: string) {
-        const norm = normalizeLookup(schedName)
-        for (const emp of activeEmployees) {
-          if (emp.branch_id !== branchId) continue
-          const empNorm = normalizeLookup(emp.name)
-          if (empNorm.startsWith(norm) || norm.startsWith(empNorm)) return emp.id
-        }
-        return ""
+    )
+    const activeEmployees = employees.filter((e) => e.active)
+    const employeeByBranchAndName = new Map(
+      activeEmployees.map((e) => [
+        `${e.branch_id}:${normalizeLookup(e.name)}`,
+        e.id,
+      ])
+    )
+    function findEmployeeByPartialName(branchId: string, schedName: string) {
+      const norm = normalizeLookup(schedName)
+      for (const emp of activeEmployees) {
+        if (emp.branch_id !== branchId) continue
+        const empNorm = normalizeLookup(emp.name)
+        if (empNorm.startsWith(norm) || norm.startsWith(empNorm)) return emp.id
       }
+      return ""
+    }
+    const fallbackBranchId =
+      selectedBranchId && activeBranches.some((b) => b.id === selectedBranchId)
+        ? selectedBranchId
+        : activeBranches[0]?.id ?? ""
 
-      const fallbackBranchId =
-        selectedBranchId && activeBranches.some((branch) => branch.id === selectedBranchId)
-          ? selectedBranchId
-          : activeBranches[0]?.id ?? ""
-      const nextRows: ScheduleImportInput[] = []
-      const nextErrors: string[] = []
+    const nextRows: ScheduleImportInput[] = []
+    const nextErrors: string[] = []
 
-      parsed.forEach((row, index) => {
-        const branchName = cellToText(getCell(row, ["filial", "loja", "unidade"]))
+    rawRows.forEach(
+      (
+        { branchName, document, employeeName, dateRaw, startRaw, breakStartRaw, breakEndRaw, endRaw, statusRaw, notesRaw },
+        index
+      ) => {
+        const lineNum = index + lineOffset
         const branchId = branchName
           ? branchByName.get(normalizeLookup(branchName)) ?? ""
           : fallbackBranchId
-        const document = cellToText(getCell(row, ["documento", "cpf", "cpf_documento"])).replace(/\D/g, "")
-        const employeeName = cellToText(
-          getCell(row, ["colaborador", "funcionario", "nome"])
-        )
-        const employeeId = document
-          ? employeeByDocument.get(`${branchId}:${document}`) ?? ""
-          : (employeeByBranchAndName.get(`${branchId}:${normalizeLookup(employeeName)}`) ||
-             findEmployeeByPartialName(branchId, employeeName))
-        const status = scheduleStatusFromText(
-          cellToText(getCell(row, ["status", "situacao"])) || "scheduled"
-        )
+        const cleanDoc = document.replace(/\D/g, "")
+        const employeeId = cleanDoc
+          ? employeeByDocument.get(`${branchId}:${cleanDoc}`) ?? ""
+          : employeeByBranchAndName.get(`${branchId}:${normalizeLookup(employeeName)}`) ||
+            findEmployeeByPartialName(branchId, employeeName)
+        const status = scheduleStatusFromText(statusRaw || "scheduled")
 
         if (!branchId) {
-          nextErrors.push(`Linha ${index + 2}: filial nao encontrada.`)
+          nextErrors.push(`Linha ${lineNum}: filial nao encontrada.`)
           return
         }
-
         if (!employeeId) {
-          nextErrors.push(`Linha ${index + 2}: colaborador "${employeeName}" nao encontrado na filial.`)
+          nextErrors.push(`Linha ${lineNum}: colaborador "${employeeName}" nao encontrado na filial.`)
           return
         }
 
-        const work_date = cellToDate(getCell(row, ["data", "dia"]), currentDate)
+        const work_date = cellToDate(dateRaw, currentDate)
         const diffDays = Math.abs(
           (new Date(work_date + "T12:00:00").getTime() -
             new Date(currentDate + "T12:00:00").getTime()) /
-          (1000 * 60 * 60 * 24)
+            (1000 * 60 * 60 * 24)
         )
         if (diffDays > 90) {
           nextErrors.push(
-            `Linha ${index + 2}: data ${formatDateBR(work_date)} parece incorreta (muito distante de hoje). Verifique se a planilha usa o formato DD/MM/AAAA.`
+            `Linha ${lineNum}: data ${formatDateBR(work_date)} parece incorreta (muito distante de hoje). Verifique se o formato e DD/MM/AAAA.`
           )
           return
         }
@@ -475,37 +478,104 @@ function SchedulesImportDialog({
           branch_id: branchId,
           employee_id: employeeId,
           work_date,
-          start_time: cellToTime(getCell(row, ["entrada", "inicio"])) || null,
-          break_start: cellToTime(getCell(row, ["intervalo", "saida_intervalo"])) || null,
-          break_end: cellToTime(getCell(row, ["retorno", "fim_intervalo"])) || null,
-          end_time: cellToTime(getCell(row, ["saida", "fim"])) || null,
+          start_time: cellToTime(startRaw) || null,
+          break_start: cellToTime(breakStartRaw) || null,
+          break_end: cellToTime(breakEndRaw) || null,
+          end_time: cellToTime(endRaw) || null,
           status,
-          notes: cellToText(getCell(row, ["observacoes", "obs", "notas"])) || null,
+          notes: notesRaw || null,
         })
-      })
-
-      if (nextRows.length > 0) {
-        const dates = nextRows.map((r) => r.work_date).sort()
-        setDateRange({ min: dates[0], max: dates[dates.length - 1] })
       }
+    )
 
-      setRows(nextRows)
-      setErrors(nextErrors)
+    return { nextRows, nextErrors }
+  }
+
+  function applyResult(nextRows: ScheduleImportInput[], nextErrors: string[]) {
+    if (nextRows.length > 0) {
+      const dates = nextRows.map((r) => r.work_date).sort()
+      setDateRange({ min: dates[0], max: dates[dates.length - 1] })
+    } else {
+      setDateRange(null)
+    }
+    setRows(nextRows)
+    setErrors(nextErrors)
+  }
+
+  async function handleFile(file: File | null) {
+    setRows([])
+    setErrors([])
+    setFileName(file?.name ?? "")
+    setDateRange(null)
+    if (!file) return
+
+    try {
+      const parsed = await parseSpreadsheet(file)
+      const rawRows: RawScheduleRow[] = parsed.map((row) => ({
+        branchName: cellToText(getCell(row, ["filial", "loja", "unidade"])),
+        document: cellToText(getCell(row, ["documento", "cpf", "cpf_documento"])),
+        employeeName: cellToText(getCell(row, ["colaborador", "funcionario", "nome"])),
+        dateRaw: getCell(row, ["data", "dia"]),
+        startRaw: getCell(row, ["entrada", "inicio"]),
+        breakStartRaw: getCell(row, ["intervalo", "saida_intervalo"]),
+        breakEndRaw: getCell(row, ["retorno", "fim_intervalo"]),
+        endRaw: getCell(row, ["saida", "fim"]),
+        statusRaw: cellToText(getCell(row, ["status", "situacao"])),
+        notesRaw: cellToText(getCell(row, ["observacoes", "obs", "notas"])),
+      }))
+      const { nextRows, nextErrors } = processRawRows(rawRows)
+      applyResult(nextRows, nextErrors)
     } catch (error) {
       setErrors([error instanceof Error ? error.message : "Nao foi possivel ler a planilha."])
     }
   }
 
+  function handlePasteChange(text: string) {
+    setPasteText(text)
+    setRows([])
+    setErrors([])
+    setDateRange(null)
+    if (!text.trim()) return
+
+    const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0)
+    const rawRows: RawScheduleRow[] = lines.map((line) => {
+      const cols = line.split("\t")
+      const get = (i: number) => {
+        const v = (cols[i] ?? "").trim()
+        return v === "null" ? "" : v
+      }
+      return {
+        employeeName: get(0),
+        document: get(1),
+        branchName: get(2),
+        dateRaw: get(3),
+        startRaw: get(4),
+        breakStartRaw: get(5),
+        breakEndRaw: get(6),
+        endRaw: get(7),
+        statusRaw: get(8),
+        notesRaw: get(9),
+      }
+    })
+    const { nextRows, nextErrors } = processRawRows(rawRows, 1)
+    applyResult(nextRows, nextErrors)
+  }
+
   async function handleImport() {
     const result = await importSchedules.mutateAsync(rows)
     setErrors(result.errors)
-
     if (result.created > 0) {
       setRows([])
       setFileName("")
+      setPasteText("")
       if (result.errors.length === 0) setOpen(false)
     }
   }
+
+  const tabClass = (active: boolean) =>
+    `flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+      active ? "bg-white shadow-sm" : "text-muted-foreground hover:text-foreground"
+    }`
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -520,20 +590,58 @@ function SchedulesImportDialog({
           <DialogTitle>Importar escalas</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
-          <div className="rounded-lg border bg-slate-50 p-3 text-sm text-slate-700">
-            Colunas aceitas: colaborador, cpf/documento, filial, data, entrada,
-            intervalo, retorno, saida, status e observacoes. Use .xlsx ou .csv.
+          <div className="flex gap-1 rounded-lg border bg-slate-100 p-1">
+            <button
+              className={tabClass(inputMode === "file")}
+              onClick={() => { setInputMode("file"); setRows([]); setErrors([]); setDateRange(null); setPasteText("") }}
+            >
+              Arquivo
+            </button>
+            <button
+              className={tabClass(inputMode === "paste")}
+              onClick={() => { setInputMode("paste"); setRows([]); setErrors([]); setDateRange(null); setFileName("") }}
+            >
+              Colar texto
+            </button>
           </div>
-          <Input
-            type="file"
-            accept=".xlsx,.csv"
-            onChange={(event) => void handleFile(event.target.files?.[0] ?? null)}
-          />
-          {fileName ? (
-            <div className="text-sm text-muted-foreground">
-              {fileName}: {rows.length} linha(s) validas.
-            </div>
-          ) : null}
+
+          {inputMode === "file" ? (
+            <>
+              <div className="rounded-lg border bg-slate-50 p-3 text-sm text-slate-700">
+                Colunas aceitas: colaborador, cpf/documento, filial, data, entrada,
+                intervalo, retorno, saida, status e observacoes. Use .xlsx ou .csv.
+              </div>
+              <Input
+                type="file"
+                accept=".xlsx,.csv"
+                onChange={(event) => void handleFile(event.target.files?.[0] ?? null)}
+              />
+              {fileName ? (
+                <div className="text-sm text-muted-foreground">
+                  {fileName}: {rows.length} linha(s) validas.
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <div className="rounded-lg border bg-slate-50 p-3 text-sm text-slate-700">
+                Cole o texto copiado da planilha. Colunas esperadas (separadas por tabulacao):{" "}
+                <span className="font-medium">nome, documento, filial, data, entrada, inicio intervalo, fim intervalo, saida, status, observacoes</span>.
+              </div>
+              <textarea
+                className="h-40 w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50 resize-none font-mono"
+                placeholder={"JOAO\tnull\tloja principal\t05/05/2026\t07:40\t12:30\t14:30\t17:40\tTrabalhando\tnull"}
+                value={pasteText}
+                onChange={(e) => handlePasteChange(e.target.value)}
+              />
+              {pasteText.trim() ? (
+                <div className="text-sm text-muted-foreground">
+                  {rows.length} linha(s) validas de {pasteText.split(/\r?\n/).filter((l) => l.trim()).length} coladas.
+                </div>
+              ) : null}
+            </>
+          )}
+
           {dateRange ? (
             <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
               Periodo detectado: <strong>{formatDateBR(dateRange.min)}</strong> a{" "}
