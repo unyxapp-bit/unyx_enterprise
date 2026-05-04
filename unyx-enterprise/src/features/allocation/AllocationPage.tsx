@@ -427,13 +427,16 @@ export function AllocationPage() {
   const allocationEmployees = useMemo(() => {
     if (!allocationAction) return []
 
+    const nowMin = new Date().getHours() * 60 + new Date().getMinutes()
     const scheduledEmployeeIds = new Set(
       (schedules.data ?? [])
-        .filter(
-          (s) =>
-            s.branch_id === allocationAction.post.branch_id &&
-            !["day_off", "cancelled", "finished", "absent"].includes(s.status)
-        )
+        .filter((s) => {
+          if (s.branch_id !== allocationAction.post.branch_id) return false
+          if (["day_off", "cancelled", "finished", "absent"].includes(s.status)) return false
+          const endMin = timeToMinutes(s.end_time)
+          if (endMin !== null && nowMin > endMin) return false
+          return true
+        })
         .map((s) => s.employee_id)
     )
 
