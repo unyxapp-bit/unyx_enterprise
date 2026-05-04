@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ClipboardCheck,
+  Clock,
   Coffee,
   HelpCircle,
   History,
@@ -316,6 +317,11 @@ export function AllocationPage() {
     allocation: PostAllocation
     schedule: ScheduleWithRelations | null
   } | null>(null)
+  const [coffeeAction, setCoffeeAction] = useState<{
+    allocation: PostAllocation
+    schedule: ScheduleWithRelations | null
+    slot: CoffeeSlot
+  } | null>(null)
 
   const navigate = useNavigate()
   const updateSchedule = useUpdateSchedule()
@@ -586,6 +592,40 @@ export function AllocationPage() {
     }
   }
 
+  function handleCoffeeBadgeClick(
+    allocation: PostAllocation,
+    schedule: ScheduleWithRelations | null,
+    slot: CoffeeSlot
+  ) {
+    const now = new Date()
+    const nowMin = now.getHours() * 60 + now.getMinutes()
+    const slotStart = timeToMinutes(slot.start) ?? 0
+    if (nowMin >= slotStart) {
+      void doCoffeeBreak(allocation, schedule)
+    } else {
+      setCoffeeAction({ allocation, schedule, slot })
+    }
+  }
+
+  async function doCoffeeBreak(
+    allocation: PostAllocation,
+    schedule: ScheduleWithRelations | null
+  ) {
+    try {
+      await finalize.mutateAsync({ allocation_id: allocation.id, notes: "Cafe" })
+      if (schedule) {
+        await updateSchedule.mutateAsync({
+          scheduleId: schedule.id,
+          values: { status: "on_break" },
+        })
+      }
+      setCoffeeAction(null)
+      navigate("/app/intervals")
+    } catch (_e) {
+      // errors handled by mutation toasts
+    }
+  }
+
   async function doBreak(
     allocation: PostAllocation,
     schedule: ScheduleWithRelations | null
@@ -782,6 +822,10 @@ export function AllocationPage() {
                         const coffeeSlot = allocation
                           ? (coffeeTimes.get(allocation.employee_id) ?? null)
                           : null
+                        const nowMinCard = new Date().getHours() * 60 + new Date().getMinutes()
+                        const breakEndMinCard = timeToMinutes(employeeSchedule?.break_end ?? null)
+                        const breakAlreadyDone =
+                          breakEndMinCard !== null && nowMinCard > breakEndMinCard
                         const isAtendimentoFiscal =
                           post.type === "service_desk" &&
                           (post.sectors?.name ?? "").toLowerCase().includes("fiscal")
@@ -820,27 +864,38 @@ export function AllocationPage() {
                                     <CashierScheduleInfo schedule={cashierSchedule} />
                                   ) : null}
                                   {coffeeSlot ? (() => {
-                                    const now = new Date()
-                                    const nowMin = now.getHours() * 60 + now.getMinutes()
                                     const slotStart = timeToMinutes(coffeeSlot.start) ?? 0
                                     const slotEnd = timeToMinutes(coffeeSlot.end) ?? 0
-                                    const active = nowMin >= slotStart && nowMin < slotEnd
-                                    const done = nowMin >= slotEnd
+                                    const active = nowMinCard >= slotStart && nowMinCard < slotEnd
+                                    const done = nowMinCard >= slotEnd
+                                    if (done) {
+                                      return (
+                                        <div className="mt-2 flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-400">
+                                          <Coffee className="size-3 shrink-0" />
+                                          Cafe concluido ({coffeeSlot.start})
+                                        </div>
+                                      )
+                                    }
                                     return (
-                                      <div className={`mt-2 flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs ${
-                                        active
-                                          ? "border-amber-400 bg-amber-100 font-medium text-amber-800"
-                                          : done
-                                            ? "border-slate-200 bg-slate-50 text-slate-400"
-                                            : "border-amber-200 bg-amber-50 text-amber-700"
-                                      }`}>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleCoffeeBadgeClick(allocation, employeeSchedule, coffeeSlot)}
+                                        className={`mt-2 flex w-full items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors ${
+                                          active
+                                            ? "border-amber-400 bg-amber-100 font-medium text-amber-800 hover:bg-amber-200"
+                                            : "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                                        }`}
+                                      >
                                         <Coffee className="size-3 shrink-0" />
-                                        {active
-                                          ? `Cafe agora — ate ${coffeeSlot.end}`
-                                          : done
-                                            ? `Cafe concluido (${coffeeSlot.start})`
+                                        <span className="flex-1">
+                                          {active
+                                            ? `Cafe agora — ate ${coffeeSlot.end}`
                                             : `Cafe: ${coffeeSlot.start} — ${coffeeSlot.end}`}
-                                      </div>
+                                        </span>
+                                        <span className="text-[10px] opacity-60">
+                                          {active ? "Liberar" : "Iniciar"}
+                                        </span>
+                                      </button>
                                     )
                                   })() : null}
                                 </div>
@@ -859,14 +914,21 @@ export function AllocationPage() {
                                     <ArrowRightLeft className="size-4" />
                                     Trocar
                                   </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => handleBreakClick(allocation, employeeSchedule)}
-                                  >
-                                    <Coffee className="size-4" />
-                                    Intervalo
-                                  </Button>
+                                  {breakAlreadyDone ? (
+                                    <Button size="sm" variant="outline" disabled>
+                                      <CheckCircle2 className="size-4 text-emerald-500" />
+                                      Intervalo feito
+                                    </Button>
+                                  ) : (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => handleBreakClick(allocation, employeeSchedule)}
+                                    >
+                                      <Clock className="size-4" />
+                                      Intervalo
+                                    </Button>
+                                  )}
                                   {isAtendimentoFiscal ? (
                                     <>
                                       <Button size="sm" variant="outline">
@@ -1462,6 +1524,45 @@ export function AllocationPage() {
             >
               <Coffee className="size-4" />
               Sim, iniciar intervalo
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(coffeeAction)}
+        onOpenChange={(open) => { if (!open) setCoffeeAction(null) }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirmar cafe</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <div className="rounded-lg border bg-slate-50 p-3">
+              <div className="font-medium">
+                {coffeeAction?.allocation.employees?.name ?? "Colaborador"}
+              </div>
+            </div>
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-800">
+              O horario de cafe esta previsto para{" "}
+              <strong>{coffeeAction?.slot.start}</strong>
+              {coffeeAction?.slot.end ? ` — ${coffeeAction.slot.end}` : ""}.
+              Deseja antecipar e liberar para o cafe agora?
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setCoffeeAction(null)}>
+              Nao
+            </Button>
+            <Button
+              disabled={finalize.isPending || updateSchedule.isPending}
+              onClick={() => {
+                if (coffeeAction)
+                  void doCoffeeBreak(coffeeAction.allocation, coffeeAction.schedule)
+              }}
+            >
+              <Coffee className="size-4" />
+              Sim, liberar para o cafe
             </Button>
           </DialogFooter>
         </DialogContent>
