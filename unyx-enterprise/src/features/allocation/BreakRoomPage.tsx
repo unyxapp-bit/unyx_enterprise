@@ -1,11 +1,16 @@
-import { useEffect, useState } from "react"
-import { CheckCircle2, Clock, Coffee, RotateCcw } from "lucide-react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { CheckCircle2, Clock, Coffee, RotateCcw, Timer } from "lucide-react"
 
-import { useSchedules, useUpdateSchedule } from "@/hooks/useUnyxData"
+import {
+  useOperationalSettings,
+  usePostAllocations,
+  useSchedules,
+  useUpdateSchedule,
+} from "@/hooks/useUnyxData"
 import { StateBlock } from "@/components/shared/StateBlock"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import type { ScheduleWithRelations } from "@/types/domain"
+import type { PostAllocation, ScheduleWithRelations } from "@/types/domain"
 
 function timeToMinutes(t: string | null | undefined): number {
   if (!t) return 0
@@ -22,7 +27,95 @@ function formatElapsed(startMin: number, nowMin: number): string {
   return `${m}min`
 }
 
-function BreakCard({
+function addNoteMarker(current: string | null, marker: string): string {
+  if (!current) return marker
+  if (current.includes(marker)) return current
+  return `${current},${marker}`
+}
+
+function CoffeeCard({
+  schedule,
+  now,
+  durationMinutes,
+  onReturn,
+  isPending,
+}: {
+  schedule: ScheduleWithRelations
+  now: Date
+  durationMinutes: number
+  onReturn: (schedule: ScheduleWithRelations) => void
+  isPending: boolean
+}) {
+  const startMs = new Date(schedule.updated_at).getTime()
+  const elapsedMs = now.getTime() - startMs
+  const remainingMs = durationMinutes * 60_000 - elapsedMs
+  const remainingMin = Math.max(0, Math.ceil(remainingMs / 60_000))
+  const isDone = remainingMs <= 0
+
+  return (
+    <div className="flex items-start gap-4 rounded-lg border border-amber-200 bg-amber-50 p-4 shadow-sm">
+      <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-amber-100">
+        <Coffee className="size-5 text-amber-600" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-medium">
+            {schedule.employees?.name ?? "—"}
+          </span>
+          {isDone ? (
+            <Badge variant="destructive" className="text-xs">
+              Tempo esgotado
+            </Badge>
+          ) : (
+            <Badge
+              variant="outline"
+              className="border-amber-300 bg-amber-100 text-xs text-amber-700"
+            >
+              Pausa cafe
+            </Badge>
+          )}
+        </div>
+        <div className="mt-1 flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+          {schedule.branches?.name && <span>{schedule.branches.name}</span>}
+          {schedule.employees?.sectors?.name && (
+            <span>{schedule.employees.sectors.name}</span>
+          )}
+        </div>
+        <div className="mt-2 flex flex-wrap gap-x-4 text-xs">
+          <span className="flex items-center gap-1 text-muted-foreground">
+            <Timer className="size-3" />
+            {durationMinutes}min de pausa
+          </span>
+          {isDone ? (
+            <span className="font-medium text-red-600">
+              Retornar ao posto
+            </span>
+          ) : (
+            <span
+              className={
+                remainingMin <= 1 ? "font-medium text-amber-700" : "text-slate-600"
+              }
+            >
+              {remainingMin}min restante{remainingMin !== 1 ? "s" : ""}
+            </span>
+          )}
+        </div>
+      </div>
+      <Button
+        size="sm"
+        variant={isDone ? "default" : "outline"}
+        className="shrink-0 text-xs"
+        disabled={isPending}
+        onClick={() => onReturn(schedule)}
+      >
+        <CheckCircle2 className="mr-1 size-3.5" />
+        {isDone ? "Retornar" : "Retornar do cafe"}
+      </Button>
+    </div>
+  )
+}
+
+function LunchCard({
   schedule,
   nowMin,
   onConfirmReturn,
@@ -30,7 +123,7 @@ function BreakCard({
 }: {
   schedule: ScheduleWithRelations
   nowMin: number
-  onConfirmReturn: (id: string) => void
+  onConfirmReturn: (schedule: ScheduleWithRelations) => void
   isPending: boolean
 }) {
   const isReturned = schedule.status === "returned"
@@ -42,12 +135,13 @@ function BreakCard({
 
   return (
     <div
-      className={`flex items-start gap-4 rounded-lg border bg-white p-4 shadow-sm ${isReturned ? "opacity-55" : ""}`}
+      className={`flex items-start gap-4 rounded-lg border bg-white p-4 shadow-sm ${
+        isReturned ? "opacity-55" : ""
+      }`}
     >
       <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-amber-100">
         <Coffee className="size-5 text-amber-600" />
       </div>
-
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm font-medium">
@@ -73,14 +167,12 @@ function BreakCard({
             </Badge>
           )}
         </div>
-
-        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+        <div className="mt-1 flex flex-wrap gap-x-3 text-xs text-muted-foreground">
           {schedule.branches?.name && <span>{schedule.branches.name}</span>}
           {schedule.employees?.sectors?.name && (
             <span>{schedule.employees.sectors.name}</span>
           )}
         </div>
-
         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
           {schedule.break_start && (
             <span className="flex items-center gap-1 text-muted-foreground">
@@ -107,14 +199,13 @@ function BreakCard({
           )}
         </div>
       </div>
-
       {!isReturned && (
         <Button
           size="sm"
           variant="outline"
           className="shrink-0 text-xs"
           disabled={isPending}
-          onClick={() => onConfirmReturn(schedule.id)}
+          onClick={() => onConfirmReturn(schedule)}
         >
           <CheckCircle2 className="mr-1 size-3.5" />
           Confirmar retorno
@@ -129,27 +220,75 @@ export function BreakRoomPage() {
   const [now, setNow] = useState(() => new Date())
 
   useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 30_000)
+    const id = setInterval(() => setNow(new Date()), 15_000)
     return () => clearInterval(id)
   }, [])
 
   const nowMin = now.getHours() * 60 + now.getMinutes()
 
   const schedulesQuery = useSchedules(today, null)
+  const allocationsQuery = usePostAllocations()
+  const coffeeSettings = useOperationalSettings(null)
   const updateSchedule = useUpdateSchedule()
 
-  const onBreak = (schedulesQuery.data ?? []).filter(
+  const coffeeDuration = coffeeSettings.data?.coffee_break_duration_minutes ?? 10
+
+  const activeAllocationEmployeeIds = useMemo(() => {
+    const set = new Set<string>()
+    for (const alloc of (allocationsQuery.data ?? []) as PostAllocation[]) {
+      if (!alloc.ended_at) set.add(alloc.employee_id)
+    }
+    return set
+  }, [allocationsQuery.data])
+
+  const allOnBreak = (schedulesQuery.data ?? []).filter(
     (s) => s.status === "on_break"
   )
   const returned = (schedulesQuery.data ?? []).filter(
     (s) => s.status === "returned"
   )
 
-  function handleConfirmReturn(scheduleId: string) {
-    const now_time = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`
+  // Coffee = on_break + allocation still active (post not freed)
+  const onCoffee = allOnBreak.filter((s) =>
+    activeAllocationEmployeeIds.has(s.employee_id)
+  )
+  // Lunch = on_break + no active allocation (post was freed via finalize)
+  const onLunch = allOnBreak.filter(
+    (s) => !activeAllocationEmployeeIds.has(s.employee_id)
+  )
+
+  // Auto-return coffee employees when timer expires
+  const autoReturnedRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    for (const s of onCoffee) {
+      if (autoReturnedRef.current.has(s.id)) continue
+      const startMs = new Date(s.updated_at).getTime()
+      const elapsed = (now.getTime() - startMs) / 60_000
+      if (elapsed >= coffeeDuration) {
+        autoReturnedRef.current.add(s.id)
+        const notes = addNoteMarker(s.notes, "cafe_done")
+        updateSchedule.mutate({
+          scheduleId: s.id,
+          values: { status: "working", notes },
+        })
+      }
+    }
+  }, [now, onCoffee, coffeeDuration, updateSchedule])
+
+  function handleCoffeeReturn(schedule: ScheduleWithRelations) {
+    const notes = addNoteMarker(schedule.notes, "cafe_done")
     updateSchedule.mutate({
-      scheduleId,
-      values: { status: "returned", break_end: now_time },
+      scheduleId: schedule.id,
+      values: { status: "working", notes },
+    })
+  }
+
+  function handleLunchReturn(schedule: ScheduleWithRelations) {
+    const nowTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`
+    const notes = addNoteMarker(schedule.notes, "lunch_done")
+    updateSchedule.mutate({
+      scheduleId: schedule.id,
+      values: { status: "returned", break_end: nowTime, notes },
     })
   }
 
@@ -160,6 +299,8 @@ export function BreakRoomPage() {
       </main>
     )
   }
+
+  const totalActive = onCoffee.length + onLunch.length
 
   return (
     <main className="min-h-[calc(100vh-4rem)] bg-slate-50 p-4 sm:p-6">
@@ -176,7 +317,10 @@ export function BreakRoomPage() {
             variant="outline"
             size="icon"
             className="ml-auto"
-            onClick={() => void schedulesQuery.refetch()}
+            onClick={() => {
+              void schedulesQuery.refetch()
+              void allocationsQuery.refetch()
+            }}
             disabled={schedulesQuery.isFetching}
           >
             <RotateCcw
@@ -185,50 +329,67 @@ export function BreakRoomPage() {
           </Button>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <div className="flex items-center gap-3 rounded-lg border bg-white px-4 py-3 shadow-sm">
             <Coffee className="size-4 shrink-0 text-amber-500" />
             <div>
-              <div className="text-xl font-bold leading-none">
-                {onBreak.length}
-              </div>
-              <div className="mt-0.5 text-xs text-muted-foreground">
-                Em intervalo
-              </div>
+              <div className="text-xl font-bold leading-none">{onCoffee.length}</div>
+              <div className="mt-0.5 text-xs text-muted-foreground">Pausa cafe</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 rounded-lg border bg-white px-4 py-3 shadow-sm">
+            <Clock className="size-4 shrink-0 text-amber-500" />
+            <div>
+              <div className="text-xl font-bold leading-none">{onLunch.length}</div>
+              <div className="mt-0.5 text-xs text-muted-foreground">Em intervalo</div>
             </div>
           </div>
           <div className="flex items-center gap-3 rounded-lg border bg-white px-4 py-3 shadow-sm">
             <CheckCircle2 className="size-4 shrink-0 text-green-500" />
             <div>
-              <div className="text-xl font-bold leading-none">
-                {returned.length}
-              </div>
-              <div className="mt-0.5 text-xs text-muted-foreground">
-                Retornaram
-              </div>
+              <div className="text-xl font-bold leading-none">{returned.length}</div>
+              <div className="mt-0.5 text-xs text-muted-foreground">Retornaram</div>
             </div>
           </div>
         </div>
 
-        {onBreak.length === 0 && returned.length === 0 ? (
+        {totalActive === 0 && returned.length === 0 ? (
           <StateBlock
             type="empty"
-            title="Nenhum colaborador em intervalo"
-            description="Quando alguém sair para o intervalo, aparecerá aqui."
+            title="Nenhum colaborador em pausa"
+            description="Quando alguem sair para o intervalo ou cafe, aparecera aqui."
           />
         ) : (
           <>
-            {onBreak.length > 0 && (
+            {onCoffee.length > 0 && (
+              <div className="space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Pausa / Cafe ({coffeeDuration}min)
+                </p>
+                {onCoffee.map((s) => (
+                  <CoffeeCard
+                    key={s.id}
+                    schedule={s}
+                    now={now}
+                    durationMinutes={coffeeDuration}
+                    onReturn={handleCoffeeReturn}
+                    isPending={updateSchedule.isPending}
+                  />
+                ))}
+              </div>
+            )}
+
+            {onLunch.length > 0 && (
               <div className="space-y-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   Em intervalo
                 </p>
-                {onBreak.map((s) => (
-                  <BreakCard
+                {onLunch.map((s) => (
+                  <LunchCard
                     key={s.id}
                     schedule={s}
                     nowMin={nowMin}
-                    onConfirmReturn={handleConfirmReturn}
+                    onConfirmReturn={handleLunchReturn}
                     isPending={updateSchedule.isPending}
                   />
                 ))}
@@ -241,11 +402,11 @@ export function BreakRoomPage() {
                   Retornaram hoje
                 </p>
                 {returned.map((s) => (
-                  <BreakCard
+                  <LunchCard
                     key={s.id}
                     schedule={s}
                     nowMin={nowMin}
-                    onConfirmReturn={handleConfirmReturn}
+                    onConfirmReturn={handleLunchReturn}
                     isPending={updateSchedule.isPending}
                   />
                 ))}

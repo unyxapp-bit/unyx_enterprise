@@ -608,11 +608,11 @@ export function AllocationPage() {
   }
 
   async function doCoffeeBreak(
-    allocation: PostAllocation,
+    _allocation: PostAllocation,
     schedule: ScheduleWithRelations | null
   ) {
+    // Coffee: keep allocation active (post stays with employee), just mark schedule on_break
     try {
-      await finalize.mutateAsync({ allocation_id: allocation.id, notes: "Cafe" })
       if (schedule) {
         await updateSchedule.mutateAsync({
           scheduleId: schedule.id,
@@ -823,9 +823,17 @@ export function AllocationPage() {
                           ? (coffeeTimes.get(allocation.employee_id) ?? null)
                           : null
                         const nowMinCard = new Date().getHours() * 60 + new Date().getMinutes()
-                        const breakEndMinCard = timeToMinutes(employeeSchedule?.break_end ?? null)
+                        // Coffee break: allocation still active + schedule on_break → post stays with employee
+                        const isOnCoffeeBreak = Boolean(
+                          allocation && employeeSchedule?.status === "on_break"
+                        )
+                        // Lunch done: confirmed via notes marker or "returned" status (reliable, not time-based)
                         const breakAlreadyDone =
-                          breakEndMinCard !== null && nowMinCard > breakEndMinCard
+                          (employeeSchedule?.notes?.includes("lunch_done") ?? false) ||
+                          employeeSchedule?.status === "returned"
+                        // Coffee done: marked in notes when employee returns from coffee in BreakRoomPage
+                        const coffeeWasDone =
+                          employeeSchedule?.notes?.includes("cafe_done") ?? false
                         const isAtendimentoFiscal =
                           post.type === "service_desk" &&
                           (post.sectors?.name ?? "").toLowerCase().includes("fiscal")
@@ -833,9 +841,11 @@ export function AllocationPage() {
                           <div
                             key={post.id}
                             className={`rounded-lg border p-4 ${
-                              allocation
-                                ? "border-emerald-200 bg-emerald-50"
-                                : "border-red-200 bg-red-50"
+                              isOnCoffeeBreak
+                                ? "border-amber-200 bg-amber-50"
+                                : allocation
+                                  ? "border-emerald-200 bg-emerald-50"
+                                  : "border-red-200 bg-red-50"
                             }`}
                           >
                             <div className="flex items-start justify-between gap-3">
@@ -846,36 +856,47 @@ export function AllocationPage() {
                                   {post.sectors?.name ?? "Sem setor"}
                                 </div>
                               </div>
-                              <Badge variant={allocation ? "default" : "destructive"}>
-                                {allocation ? "Coberto" : "Sem cobertura"}
-                              </Badge>
+                              {isOnCoffeeBreak ? (
+                                <Badge
+                                  variant="outline"
+                                  className="border-amber-300 bg-amber-100 text-amber-700"
+                                >
+                                  Em cafe
+                                </Badge>
+                              ) : (
+                                <Badge variant={allocation ? "default" : "destructive"}>
+                                  {allocation ? "Coberto" : "Sem cobertura"}
+                                </Badge>
+                              )}
                             </div>
 
                             {allocation ? (
                               <div className="mt-4 space-y-3">
-                                <div className="rounded-lg border bg-white/70 p-3">
+                                <div className={`rounded-lg border p-3 ${isOnCoffeeBreak ? "border-amber-200 bg-white/60" : "bg-white/70"}`}>
                                   <div className="text-sm font-medium">
                                     {allocation.employees?.name ?? "Colaborador"}
                                   </div>
                                   <div className="mt-1 text-xs text-muted-foreground">
                                     Desde {formatDateTimeBR(allocation.started_at)}
                                   </div>
-                                  {cashierSchedule ? (
+                                  {cashierSchedule && !isOnCoffeeBreak ? (
                                     <CashierScheduleInfo schedule={cashierSchedule} />
                                   ) : null}
-                                  {coffeeSlot ? (() => {
+                                  {isOnCoffeeBreak ? (
+                                    <div className="mt-2 flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-100 px-2.5 py-1.5 text-xs font-medium text-amber-800">
+                                      <Coffee className="size-3 shrink-0" />
+                                      Em pausa de cafe — acompanhe em Intervalo / Cafe
+                                    </div>
+                                  ) : coffeeWasDone ? (
+                                    <div className="mt-2 flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-400">
+                                      <Coffee className="size-3 shrink-0" />
+                                      Cafe feito
+                                      {coffeeSlot ? ` (${coffeeSlot.start})` : ""}
+                                    </div>
+                                  ) : coffeeSlot ? (() => {
                                     const slotStart = timeToMinutes(coffeeSlot.start) ?? 0
                                     const slotEnd = timeToMinutes(coffeeSlot.end) ?? 0
                                     const active = nowMinCard >= slotStart && nowMinCard < slotEnd
-                                    const done = nowMinCard >= slotEnd
-                                    if (done) {
-                                      return (
-                                        <div className="mt-2 flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-400">
-                                          <Coffee className="size-3 shrink-0" />
-                                          Cafe concluido ({coffeeSlot.start})
-                                        </div>
-                                      )
-                                    }
                                     return (
                                       <button
                                         type="button"
@@ -899,6 +920,7 @@ export function AllocationPage() {
                                     )
                                   })() : null}
                                 </div>
+                                {!isOnCoffeeBreak && (
                                 <div className="flex flex-wrap gap-2">
                                   <Button
                                     size="sm"
@@ -962,6 +984,7 @@ export function AllocationPage() {
                                     Finalizar
                                   </Button>
                                 </div>
+                                )}
                               </div>
                             ) : (
                               <div className="mt-4">
