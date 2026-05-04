@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react"
 import type { FormEvent } from "react"
-import { Activity, History } from "lucide-react"
+import { Activity, History, MapPinned } from "lucide-react"
 
 import { StatusBadge } from "@/components/bento/StatusBadge"
 import { PageHeader } from "@/components/shared/PageHeader"
@@ -33,12 +33,15 @@ import {
 } from "@/features/ops/modes/priorityRules"
 import {
   useAttendanceEvents,
+  useFinalizePostAllocation,
   useOperationalSettings,
   useOperationalStatuses,
   useOrganization,
+  usePostAllocations,
   useRecordOperationalEvent,
   useSchedules,
   useSectors,
+  useUpdateSchedule,
 } from "@/hooks/useUnyxData"
 import { formatDateTimeBR, formatTime, minutesLabel, todayISO } from "@/lib/format"
 import { eventLabel, operationalActions, statusMeta } from "@/lib/status"
@@ -47,8 +50,15 @@ import type {
   OperationalSettings,
   OperationalStatus,
   OperationalStatusRecord,
+  PostAllocation,
   ScheduleWithRelations,
 } from "@/types/domain"
+
+function addNoteMarker(current: string | null, marker: string): string {
+  if (!current) return marker
+  if (current.includes(marker)) return current
+  return `${current},${marker}`
+}
 
 const fieldClass =
   "h-8 rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
@@ -184,10 +194,21 @@ export function OperationsPage() {
   const schedules = useSchedules(date)
   const statuses = useOperationalStatuses()
   const events = useAttendanceEvents()
+  const allocations = usePostAllocations()
   const recordEvent = useRecordOperationalEvent()
+  const finalize = useFinalizePostAllocation()
+  const updateSchedule = useUpdateSchedule()
   const sectors = useSectors()
   const organization = useOrganization()
   const operationalSettings = useOperationalSettings()
+
+  const activeAllocationByEmployeeId = useMemo(() => {
+    const map = new Map<string, PostAllocation>()
+    for (const alloc of (allocations.data ?? []) as PostAllocation[]) {
+      if (!alloc.ended_at) map.set(alloc.employee_id, alloc)
+    }
+    return map
+  }, [allocations.data])
 
   const mode = getOperationalMode(
     operationalSettings.data?.mode ?? organization.data?.segment
@@ -228,6 +249,9 @@ export function OperationsPage() {
     schedule: ScheduleWithRelations,
     eventType: AttendanceEventType
   ) {
+    const now = new Date()
+    const nowTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`
+
     await recordEvent.mutateAsync({
       branch_id: schedule.branch_id,
       employee_id: schedule.employee_id,
@@ -235,6 +259,42 @@ export function OperationsPage() {
       event_type: eventType,
       notes: eventLabel[eventType],
     })
+
+    // Cross-module: sync with Alocacao
+    const activeAlloc = activeAllocationByEmployeeId.get(schedule.employee_id)
+
+    if (eventType === "entrada_confirmada") {
+      // Mark schedule as working
+      updateSchedule.mutate({ scheduleId: schedule.id, values: { status: "working" } })
+    }
+
+    if (eventType === "intervalo_iniciado") {
+      // Free the post + mark schedule on_break
+      if (activeAlloc) {
+        finalize.mutate({ allocation_id: activeAlloc.id, notes: "Intervalo via operacao" })
+      }
+      updateSchedule.mutate({
+        scheduleId: schedule.id,
+        values: { status: "on_break", break_start: nowTime },
+      })
+    }
+
+    if (eventType === "retorno_confirmado") {
+      // Mark schedule as returned + record lunch_done marker
+      const notes = addNoteMarker(schedule.notes, "lunch_done")
+      updateSchedule.mutate({
+        scheduleId: schedule.id,
+        values: { status: "returned", break_end: nowTime, notes },
+      })
+    }
+
+    if (eventType === "saida_confirmada") {
+      // Free the post + mark schedule as finished
+      if (activeAlloc) {
+        finalize.mutate({ allocation_id: activeAlloc.id, notes: "Saida confirmada" })
+      }
+      updateSchedule.mutate({ scheduleId: schedule.id, values: { status: "finished" } })
+    }
   }
 
   function handleAction(
@@ -361,6 +421,7 @@ export function OperationsPage() {
                     status,
                     operationalSettings.data
                   )
+                  const activeAlloc = activeAllocationByEmployeeId.get(schedule.employee_id)
                   const isPending = pendingConfirm?.scheduleId === schedule.id
 
                   const flowActions = availableActions.filter(
@@ -402,6 +463,15 @@ export function OperationsPage() {
                           </div>
                           <div className="mt-2 flex flex-wrap gap-1.5">
                             <Badge variant="outline">Prioridade {priority}</Badge>
+                            {activeAlloc?.operational_posts?.name ? (
+                              <Badge
+                                variant="outline"
+                                className="border-blue-200 bg-blue-50 text-blue-700"
+                              >
+                                <MapPinned className="mr-1 size-3" />
+                                {activeAlloc.operational_posts.name}
+                              </Badge>
+                            ) : null}
                             {status && status.delay_minutes > 0 ? (
                               <Badge variant="destructive">
                                 {minutesLabel(status.delay_minutes)} atraso

@@ -53,6 +53,7 @@ import {
   useOperationalSettings,
   useOrganization,
   usePostAllocations,
+  useRecordOperationalEvent,
   useSchedules,
   useSectors,
   useSetupSegmentDefaults,
@@ -325,6 +326,7 @@ export function AllocationPage() {
 
   const navigate = useNavigate()
   const updateSchedule = useUpdateSchedule()
+  const recordEvent = useRecordOperationalEvent()
 
   const org = useOrganization()
   const setupDefaults = useSetupSegmentDefaults()
@@ -618,6 +620,14 @@ export function AllocationPage() {
           scheduleId: schedule.id,
           values: { status: "on_break" },
         })
+        // Sync to operational_status_records (non-critical)
+        recordEvent.mutate({
+          branch_id: schedule.branch_id,
+          employee_id: schedule.employee_id,
+          schedule_id: schedule.id,
+          event_type: "intervalo_iniciado",
+          notes: "Pausa cafe via alocacao",
+        })
       }
       setCoffeeAction(null)
       navigate("/app/intervals")
@@ -638,6 +648,14 @@ export function AllocationPage() {
         await updateSchedule.mutateAsync({
           scheduleId: schedule.id,
           values: { status: "on_break", break_start: currentTimeStr },
+        })
+        // Sync to operational_status_records (non-critical)
+        recordEvent.mutate({
+          branch_id: schedule.branch_id,
+          employee_id: schedule.employee_id,
+          schedule_id: schedule.id,
+          event_type: "intervalo_iniciado",
+          notes: "Intervalo via alocacao",
         })
       }
       setBreakAction(null)

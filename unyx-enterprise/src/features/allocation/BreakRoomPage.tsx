@@ -4,6 +4,7 @@ import { CheckCircle2, Clock, Coffee, RotateCcw, Timer } from "lucide-react"
 import {
   useOperationalSettings,
   usePostAllocations,
+  useRecordOperationalEvent,
   useSchedules,
   useUpdateSchedule,
 } from "@/hooks/useUnyxData"
@@ -230,6 +231,7 @@ export function BreakRoomPage() {
   const allocationsQuery = usePostAllocations()
   const coffeeSettings = useOperationalSettings(null)
   const updateSchedule = useUpdateSchedule()
+  const recordEvent = useRecordOperationalEvent()
 
   const coffeeDuration = coffeeSettings.data?.coffee_break_duration_minutes ?? 10
 
@@ -267,19 +269,27 @@ export function BreakRoomPage() {
       if (elapsed >= coffeeDuration) {
         autoReturnedRef.current.add(s.id)
         const notes = addNoteMarker(s.notes, "cafe_done")
-        updateSchedule.mutate({
-          scheduleId: s.id,
-          values: { status: "working", notes },
+        updateSchedule.mutate({ scheduleId: s.id, values: { status: "working", notes } })
+        recordEvent.mutate({
+          branch_id: s.branch_id,
+          employee_id: s.employee_id,
+          schedule_id: s.id,
+          event_type: "retorno_confirmado",
+          notes: "Retorno automatico do cafe",
         })
       }
     }
-  }, [now, onCoffee, coffeeDuration, updateSchedule])
+  }, [now, onCoffee, coffeeDuration, updateSchedule, recordEvent])
 
   function handleCoffeeReturn(schedule: ScheduleWithRelations) {
     const notes = addNoteMarker(schedule.notes, "cafe_done")
-    updateSchedule.mutate({
-      scheduleId: schedule.id,
-      values: { status: "working", notes },
+    updateSchedule.mutate({ scheduleId: schedule.id, values: { status: "working", notes } })
+    recordEvent.mutate({
+      branch_id: schedule.branch_id,
+      employee_id: schedule.employee_id,
+      schedule_id: schedule.id,
+      event_type: "retorno_confirmado",
+      notes: "Retorno do cafe",
     })
   }
 
@@ -289,6 +299,13 @@ export function BreakRoomPage() {
     updateSchedule.mutate({
       scheduleId: schedule.id,
       values: { status: "returned", break_end: nowTime, notes },
+    })
+    recordEvent.mutate({
+      branch_id: schedule.branch_id,
+      employee_id: schedule.employee_id,
+      schedule_id: schedule.id,
+      event_type: "retorno_confirmado",
+      notes: "Retorno do intervalo",
     })
   }
 
