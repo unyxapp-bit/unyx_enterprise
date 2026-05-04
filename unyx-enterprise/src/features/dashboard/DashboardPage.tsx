@@ -16,13 +16,11 @@ import {
 import type { ReactNode } from "react"
 import { useMemo, useState } from "react"
 import {
-  Bar,
-  BarChart,
-  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
   ResponsiveContainer,
   Tooltip,
-  XAxis,
-  YAxis,
 } from "recharts"
 
 import { BentoGrid } from "@/components/bento/BentoGrid"
@@ -72,6 +70,19 @@ import type {
 
 const fieldClass =
   "h-8 rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+
+const STATUS_COLORS: Record<string, string> = {
+  alerta_critico:    "#ef4444",
+  aguardando_sangria:"#f97316",
+  troca_de_caixa:    "#0ea5e9",
+  deve_sair:         "#f59e0b",
+  em_intervalo:      "#8b5cf6",
+  voltou:            "#14b8a6",
+  trabalhando:       "#22c55e",
+  aguardando_evento: "#94a3b8",
+  finalizado:        "#737373",
+  folga:             "#a1a1aa",
+}
 
 type StatusCount = {
   current_status: OperationalStatus
@@ -387,10 +398,13 @@ export function DashboardPage() {
           reason: s.status_reason,
         }))
 
-  const statusChartData = operationalStatuses.map((status) => ({
-    label: statusMeta[status].label,
-    total: statusSource.filter((row) => row.current_status === status).length,
-  }))
+  const statusChartData = operationalStatuses
+    .map((status) => ({
+      status,
+      label: statusMeta[status].label,
+      total: statusSource.filter((row) => row.current_status === status).length,
+    }))
+    .filter((d) => d.total > 0)
 
   const liveRows = useMemo(() => {
     const now = new Date()
@@ -595,22 +609,72 @@ export function DashboardPage() {
             <CardContent>
               {dashboard.isLoading || statuses.isLoading ? (
                 <StateBlock type="loading" title="Carregando status" />
-              ) : statusSource.length === 0 ? (
+              ) : statusChartData.length === 0 ? (
                 <StateBlock
                   title="Sem status operacional"
                   description="Cadastre escalas e registre eventos para alimentar o painel."
                 />
               ) : (
-                <div className="h-72">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={statusChartData}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                      <XAxis dataKey="label" tickLine={false} axisLine={false} />
-                      <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
-                      <Tooltip />
-                      <Bar dataKey="total" fill="#0f172a" radius={[6, 6, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
+                <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
+                  <div className="relative mx-auto h-52 w-52 shrink-0 sm:mx-0">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={statusChartData}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={62}
+                          outerRadius={96}
+                          paddingAngle={2}
+                          dataKey="total"
+                          strokeWidth={0}
+                        >
+                          {statusChartData.map((entry) => (
+                            <Cell
+                              key={entry.status}
+                              fill={STATUS_COLORS[entry.status] ?? "#94a3b8"}
+                            />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          formatter={(value, _name, props) => [
+                            value,
+                            props.payload?.label ?? "",
+                          ]}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                      <span className="text-3xl font-bold leading-none">
+                        {statusSource.length}
+                      </span>
+                      <span className="mt-1 text-xs text-muted-foreground">
+                        {statusSource.length === 1 ? "colaborador" : "colaboradores"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-1 flex-col gap-2">
+                    {statusChartData.map((entry) => (
+                      <div
+                        key={entry.status}
+                        className="flex items-center justify-between gap-2"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span
+                            className="size-2.5 shrink-0 rounded-full"
+                            style={{ backgroundColor: STATUS_COLORS[entry.status] ?? "#94a3b8" }}
+                          />
+                          <span className="truncate text-sm text-slate-700">
+                            {entry.label}
+                          </span>
+                        </div>
+                        <span className="text-sm font-semibold tabular-nums">
+                          {entry.total}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </CardContent>
