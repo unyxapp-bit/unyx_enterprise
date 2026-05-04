@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react"
 import type { FormEvent } from "react"
+import { useNavigate } from "react-router-dom"
 import {
   AlertCircle,
   ArrowRightLeft,
@@ -7,6 +8,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ClipboardCheck,
+  Coffee,
   HelpCircle,
   History,
   MapPinned,
@@ -55,6 +57,7 @@ import {
   useToggleOperationalPost,
   useTransferPostAllocation,
   useUpdateOperationalPost,
+  useUpdateSchedule,
 } from "@/hooks/useUnyxData"
 import {
   SEGMENT_DEFAULT_POSTS,
@@ -242,6 +245,13 @@ export function AllocationPage() {
   const [cashMovOpen, setCashMovOpen] = useState(false)
   const [postsOpen, setPostsOpen] = useState(false)
   const [activePostType, setActivePostType] = useState<OperationalPostType | null>(null)
+  const [breakAction, setBreakAction] = useState<{
+    allocation: PostAllocation
+    schedule: ScheduleWithRelations | null
+  } | null>(null)
+
+  const navigate = useNavigate()
+  const updateSchedule = useUpdateSchedule()
 
   const org = useOrganization()
   const setupDefaults = useSetupSegmentDefaults()
@@ -473,6 +483,42 @@ export function AllocationPage() {
     }
   }
 
+  function handleBreakClick(
+    allocation: PostAllocation,
+    schedule: ScheduleWithRelations | null
+  ) {
+    const now = new Date()
+    const nowMin = now.getHours() * 60 + now.getMinutes()
+    const breakStartMin =
+      schedule?.break_start ? timeToMinutes(schedule.break_start) : null
+    if (breakStartMin !== null && nowMin >= breakStartMin) {
+      void doBreak(allocation, schedule)
+    } else {
+      setBreakAction({ allocation, schedule })
+    }
+  }
+
+  async function doBreak(
+    allocation: PostAllocation,
+    schedule: ScheduleWithRelations | null
+  ) {
+    const now = new Date()
+    const currentTimeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`
+    try {
+      await finalize.mutateAsync({ allocation_id: allocation.id, notes: "Intervalo" })
+      if (schedule) {
+        await updateSchedule.mutateAsync({
+          scheduleId: schedule.id,
+          values: { status: "on_break", break_start: currentTimeStr },
+        })
+      }
+      setBreakAction(null)
+      navigate("/app/intervals")
+    } catch (_e) {
+      // errors surfaced by mutation toasts
+    }
+  }
+
   const isLoading =
     posts.isLoading ||
     allocations.isLoading ||
@@ -638,12 +684,13 @@ export function AllocationPage() {
                     <div className="grid gap-3 lg:grid-cols-2">
                       {visiblePosts.map((post) => {
                         const allocation = allocationByPostId.get(post.id)
+                        const employeeSchedule: ScheduleWithRelations | null = allocation
+                          ? (allocation.schedule_id
+                              ? scheduleById.get(allocation.schedule_id)
+                              : scheduleByEmployeeId.get(allocation.employee_id)) ?? null
+                          : null
                         const cashierSchedule =
-                          allocation && post.type === "cashier"
-                            ? (allocation.schedule_id
-                                ? scheduleById.get(allocation.schedule_id)
-                                : scheduleByEmployeeId.get(allocation.employee_id)) ?? null
-                            : null
+                          allocation && post.type === "cashier" ? employeeSchedule : null
                         const isAtendimentoFiscal =
                           post.type === "service_desk" &&
                           (post.sectors?.name ?? "").toLowerCase().includes("fiscal")
@@ -696,6 +743,14 @@ export function AllocationPage() {
                                   >
                                     <ArrowRightLeft className="size-4" />
                                     Trocar
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => handleBreakClick(allocation, employeeSchedule)}
+                                  >
+                                    <Coffee className="size-4" />
+                                    Intervalo
                                   </Button>
                                   {isAtendimentoFiscal ? (
                                     <>
@@ -1214,6 +1269,54 @@ export function AllocationPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(breakAction)}
+        onOpenChange={(open) => { if (!open) setBreakAction(null) }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirmar intervalo</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <div className="rounded-lg border bg-slate-50 p-3">
+              <div className="font-medium">
+                {breakAction?.allocation.employees?.name ?? "Colaborador"}
+              </div>
+            </div>
+            {breakAction?.schedule?.break_start ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-800">
+                O intervalo previsto e{" "}
+                <strong>{breakAction.schedule.break_start}</strong>
+                {breakAction.schedule.break_end
+                  ? ` — ${breakAction.schedule.break_end}`
+                  : ""}
+                . Deseja antecipar e iniciar o intervalo agora?
+              </div>
+            ) : (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-800">
+                Este colaborador nao tem horario de intervalo definido na escala
+                de hoje. Deseja iniciar o intervalo agora mesmo?
+              </div>
+            )}
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setBreakAction(null)}>
+              Nao
+            </Button>
+            <Button
+              disabled={finalize.isPending || updateSchedule.isPending}
+              onClick={() => {
+                if (breakAction)
+                  void doBreak(breakAction.allocation, breakAction.schedule)
+              }}
+            >
+              <Coffee className="size-4" />
+              Sim, iniciar intervalo
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
