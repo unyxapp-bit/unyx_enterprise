@@ -2,6 +2,7 @@ import { useMemo, useState } from "react"
 import type { FormEvent } from "react"
 import {
   CalendarCog,
+  CalendarDays,
   CalendarPlus,
   ChevronLeft,
   ChevronRight,
@@ -671,6 +672,164 @@ function SchedulesImportDialog({
   )
 }
 
+const weekDayNames = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sab", "Dom"]
+
+function WeekCalendarView({
+  onDaySelect,
+  schedulesByDate,
+  selectedDay,
+  today,
+  weekDays,
+}: {
+  onDaySelect: (day: string | null) => void
+  schedulesByDate: Map<string, ScheduleWithRelations[]>
+  selectedDay: string | null
+  today: string
+  weekDays: string[]
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-7 gap-2">
+        {weekDays.map((day) => {
+          const daySchedules = schedulesByDate.get(day) ?? []
+          const isToday = day === today
+          const isSelected = day === selectedDay
+          const dateObj = new Date(day + "T12:00:00")
+          const dayName = weekDayNames[dateObj.getDay() === 0 ? 6 : dateObj.getDay() - 1]
+          const dateNum = dateObj.getDate()
+          const workingCount = daySchedules.filter(
+            (s) => s.status !== "day_off" && s.status !== "cancelled"
+          ).length
+          const dayOffCount = daySchedules.filter((s) => s.status === "day_off").length
+
+          return (
+            <button
+              key={day}
+              onClick={() => onDaySelect(isSelected ? null : day)}
+              className={`min-h-28 rounded-lg border p-2 text-left transition-colors ${
+                isSelected
+                  ? "border-primary bg-primary/5 shadow-sm"
+                  : isToday
+                  ? "border-blue-300 bg-blue-50"
+                  : "border-slate-200 bg-white hover:bg-slate-50"
+              }`}
+            >
+              <div
+                className={`text-[11px] font-semibold uppercase ${
+                  isToday ? "text-blue-600" : "text-muted-foreground"
+                }`}
+              >
+                {dayName}
+              </div>
+              <div
+                className={`text-xl font-bold leading-tight ${
+                  isToday ? "text-blue-700" : isSelected ? "text-primary" : "text-slate-900"
+                }`}
+              >
+                {dateNum}
+              </div>
+              {daySchedules.length > 0 ? (
+                <div className="mt-1.5 space-y-1">
+                  <div className="flex flex-wrap gap-1">
+                    {workingCount > 0 ? (
+                      <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
+                        {workingCount} trab.
+                      </span>
+                    ) : null}
+                    {dayOffCount > 0 ? (
+                      <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">
+                        {dayOffCount} folga
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="space-y-0.5">
+                    {daySchedules.slice(0, 4).map((s) => (
+                      <div key={s.id} className="truncate text-[11px] text-slate-600">
+                        {s.employees?.name}
+                      </div>
+                    ))}
+                    {daySchedules.length > 4 ? (
+                      <div className="text-[10px] text-muted-foreground">
+                        +{daySchedules.length - 4} mais
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-2 text-[11px] text-slate-300">Nenhuma escala</div>
+              )}
+            </button>
+          )
+        })}
+      </div>
+
+      {selectedDay ? (
+        <div className="overflow-hidden rounded-lg border bg-white shadow-sm">
+          <div className="border-b bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
+            {formatDateBR(selectedDay)} — {schedulesByDate.get(selectedDay)?.length ?? 0} escala(s)
+          </div>
+          {(schedulesByDate.get(selectedDay) ?? []).length === 0 ? (
+            <div className="p-6 text-center text-sm text-muted-foreground">
+              Nenhuma escala neste dia.
+            </div>
+          ) : (
+            <table className="w-full text-left text-sm">
+              <thead className="border-b bg-slate-50 text-xs uppercase text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-3">Colaborador</th>
+                  <th className="px-4 py-3">Setor</th>
+                  <th className="px-4 py-3">Entrada</th>
+                  <th className="px-4 py-3">Intervalo</th>
+                  <th className="px-4 py-3">Retorno</th>
+                  <th className="px-4 py-3">Saída</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3 text-right">Ações</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {(schedulesByDate.get(selectedDay) ?? []).map((schedule) => {
+                  const incomplete = isScheduleIncomplete(schedule)
+                  return (
+                    <tr key={schedule.id} className="hover:bg-slate-50">
+                      <td className="px-4 py-3 font-medium">
+                        <div className="flex items-center gap-2">
+                          {schedule.employees?.name ?? "-"}
+                          {incomplete ? (
+                            <span className="inline-flex h-4 items-center rounded border border-amber-200 bg-amber-50 px-1.5 text-[10px] font-medium text-amber-700">
+                              Incompleta
+                            </span>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">{schedule.employees?.sectors?.name ?? "-"}</td>
+                      <td className="px-4 py-3">{formatTime(schedule.start_time)}</td>
+                      <td className="px-4 py-3">{formatTime(schedule.break_start)}</td>
+                      <td className="px-4 py-3">{formatTime(schedule.break_end)}</td>
+                      <td className="px-4 py-3">{formatTime(schedule.end_time)}</td>
+                      <td className="px-4 py-3">{scheduleStatusLabel[schedule.status]}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end gap-2">
+                          <ScheduleEditDialog schedule={schedule} />
+                          <ScheduleDeleteDialog schedule={schedule} />
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      ) : (
+        <div className="flex items-center justify-center gap-2 rounded-lg border border-dashed bg-slate-50 p-10 text-sm text-slate-400">
+          <CalendarDays className="size-4" />
+          Clique em um dia para ver as escalas
+        </div>
+      )}
+    </div>
+  )
+}
+
 function getWeekStart(dateISO: string): string {
   const d = new Date(dateISO + "T12:00:00")
   const day = d.getDay()
@@ -687,9 +846,10 @@ function addDays(dateISO: string, n: number): string {
 
 export function SchedulesPage() {
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
-  const [viewMode, setViewMode] = useState<"day" | "week" | "range">("week")
+  const [viewMode, setViewMode] = useState<"day" | "week" | "range" | "calendar">("week")
   const [date, setDate] = useState(todayISO())
   const [weekStart, setWeekStart] = useState(() => getWeekStart(todayISO()))
+  const [selectedDay, setSelectedDay] = useState<string | null>(null)
   const [rangeFrom, setRangeFrom] = useState(() => addDays(todayISO(), -180))
   const [rangeTo, setRangeTo] = useState(() => addDays(todayISO(), 180))
   const [sectorFilter, setSectorFilter] = useState("")
@@ -713,7 +873,11 @@ export function SchedulesPage() {
   const dayQuery = useSchedules(date)
   const weekQuery = useSchedulesRange(weekStart, weekEnd)
   const rangeQuery = useSchedulesRange(rangeFrom, rangeTo)
-  const currentQuery = viewMode === "week" ? weekQuery : viewMode === "range" ? rangeQuery : dayQuery
+  const currentQuery = viewMode === "day" ? dayQuery : viewMode === "range" ? rangeQuery : weekQuery
+  const weekDays = useMemo(
+    () => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)),
+    [weekStart]
+  )
   const employees = useEmployees(form.branch_id || selectedBranchId)
   const allEmployees = useEmployees(null)
   const branches = useBranches()
@@ -853,7 +1017,7 @@ export function SchedulesPage() {
       <PageHeader
         title="Escalas"
         description={
-          viewMode === "week"
+          viewMode === "week" || viewMode === "calendar"
             ? `Semana de ${weekLabel}`
             : viewMode === "range"
             ? `Período: ${rangeLabel}`
@@ -865,9 +1029,19 @@ export function SchedulesPage() {
             <div className="flex overflow-hidden rounded-lg border">
               <button
                 type="button"
-                onClick={() => setViewMode("week")}
+                onClick={() => setViewMode("calendar")}
                 className={cn(
                   "px-3 py-1.5 text-sm font-medium transition-colors",
+                  viewMode === "calendar" ? "bg-slate-950 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
+                )}
+              >
+                Calendário
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("week")}
+                className={cn(
+                  "border-l px-3 py-1.5 text-sm font-medium transition-colors",
                   viewMode === "week" ? "bg-slate-950 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
                 )}
               >
@@ -896,15 +1070,15 @@ export function SchedulesPage() {
             </div>
 
             {/* Navigation */}
-            {viewMode === "week" ? (
+            {viewMode === "week" || viewMode === "calendar" ? (
               <div className="flex items-center gap-1">
-                <Button variant="outline" size="icon" onClick={() => setWeekStart(addDays(weekStart, -7))}>
+                <Button variant="outline" size="icon" onClick={() => { setWeekStart(addDays(weekStart, -7)); setSelectedDay(null) }}>
                   <ChevronLeft className="size-4" />
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => { setWeekStart(getWeekStart(todayISO())); setDate(todayISO()) }}>
+                <Button variant="outline" size="sm" onClick={() => { setWeekStart(getWeekStart(todayISO())); setDate(todayISO()); setSelectedDay(null) }}>
                   Hoje
                 </Button>
-                <Button variant="outline" size="icon" onClick={() => setWeekStart(addDays(weekStart, 7))}>
+                <Button variant="outline" size="icon" onClick={() => { setWeekStart(addDays(weekStart, 7)); setSelectedDay(null) }}>
                   <ChevronRight className="size-4" />
                 </Button>
               </div>
@@ -1071,6 +1245,14 @@ export function SchedulesPage() {
           <StateBlock type="loading" title="Carregando escalas" />
         ) : currentQuery.isError ? (
           <StateBlock type="error" title="Erro ao carregar escalas" description={currentQuery.error.message} />
+        ) : viewMode === "calendar" ? (
+          <WeekCalendarView
+            weekDays={weekDays}
+            schedulesByDate={schedulesByDate}
+            selectedDay={selectedDay}
+            today={todayISO()}
+            onDaySelect={setSelectedDay}
+          />
         ) : filteredSchedules.length === 0 ? (
           <StateBlock
             title={(currentQuery.data ?? []).length === 0 ? "Nenhuma escala para este período" : "Nenhum resultado para o setor selecionado"}
