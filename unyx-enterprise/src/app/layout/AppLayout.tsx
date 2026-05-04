@@ -4,6 +4,7 @@ import {
   BellRing,
   Building2,
   CalendarDays,
+  Coffee,
   ClipboardList,
   GraduationCap,
   LayoutDashboard,
@@ -68,7 +69,8 @@ const navGroups = [
     label: "Unyx Allocation",
     summary: "Cobre postos e PDVs",
     items: [
-      { to: "/app/allocation", label: "Alocacao", icon: MapPinned, perm: "allocation" as PermissionKey },
+      { to: "/app/allocation", label: "Alocacao",       icon: MapPinned, perm: "allocation" as PermissionKey },
+      { to: "/app/intervals", label: "Intervalo / Cafe", icon: Coffee,    perm: "intervals"  as PermissionKey },
     ],
   },
   {

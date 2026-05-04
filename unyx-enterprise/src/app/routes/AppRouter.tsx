@@ -8,6 +8,7 @@ import { AlertsPage } from "@/features/alerts/AlertsPage"
 import { AcademyPage } from "@/features/academy/AcademyPage"
 import { AiPage } from "@/features/ai/AiPage"
 import { AllocationPage } from "@/features/allocation/AllocationPage"
+import { BreakRoomPage } from "@/features/allocation/BreakRoomPage"
 import { AuditPage } from "@/features/audit/AuditPage"
 import { BranchesPage } from "@/features/branches/BranchesPage"
 import { CommsPage } from "@/features/comms/CommsPage"
@@ -90,6 +91,9 @@ export function AppRouter() {
 
             <Route element={<RequirePermission perm="allocation" />}>
               <Route path="allocation" element={<AllocationPage />} />
+            </Route>
+            <Route element={<RequirePermission perm="intervals" />}>
+              <Route path="intervals" element={<BreakRoomPage />} />
             </Route>
 
             <Route element={<RequirePermission perm="pos_sell" />}>
