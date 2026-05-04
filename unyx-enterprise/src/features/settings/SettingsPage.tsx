@@ -5,7 +5,6 @@ import {
   Building,
   CheckCircle2,
   ChevronDown,
-  ClipboardList,
   CreditCard,
   Gauge,
   KeyRound,
@@ -29,7 +28,6 @@ import {
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import {
-  useAllAuditLogs,
   useAllEmployees,
   useBranches,
   useOperationalSettings,
@@ -883,53 +881,6 @@ function PlanModulesPanel({
   )
 }
 
-const auditActionLabels: Record<string, string> = {
-  bootstrap_first_access: "Primeiro acesso (bootstrap)",
-  create_employee: "Cadastro de colaborador",
-  update_employee: "Edicao de colaborador",
-  deactivate_employee: "Desativacao de colaborador",
-  activate_employee: "Reativacao de colaborador",
-  create_schedule: "Criacao de escala",
-  update_schedule: "Edicao de escala",
-  delete_schedule: "Exclusao de escala",
-  import_schedules: "Importacao de escalas",
-  copy_schedules: "Copia de escalas",
-  schedules_imported: "Importacao de escalas",
-  schedules_copied: "Copia de escalas",
-  employees_imported: "Importacao de colaboradores",
-  record_event: "Registro de evento operacional",
-  entrada_confirmada: "Entrada confirmada",
-  saida_confirmada: "Saida confirmada",
-  operational_settings_updated: "Configuracoes operacionais atualizadas",
-  organization_updated: "Dados da organizacao atualizados",
-  organization_plan_updated: "Plano da organizacao atualizado",
-  employee_updated: "Colaborador atualizado",
-  create_branch: "Criacao de filial",
-  update_branch: "Edicao de filial",
-  create_sector: "Criacao de setor",
-  create_post: "Publicacao de comunicado",
-  invite_user: "Convite de usuario",
-  update_user_role: "Alteracao de papel de usuario",
-}
-
-const auditEntityLabels: Record<string, string> = {
-  employee: "Colaborador",
-  employees: "Colaboradores",
-  schedule: "Escala",
-  schedules: "Escalas",
-  branch: "Filial",
-  sector: "Setor",
-  attendance_events: "Evento de presenca",
-  operational_settings: "Configuracoes operacionais",
-  organizations: "Organizacao",
-  comms_post: "Comunicado",
-  user: "Usuario",
-}
-
-function auditLabel(map: Record<string, string>, key: string) {
-  return map[key] ?? key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
-}
-
 const planSwitcherOptions: { plan: SubscriptionPlan; description: string }[] = [
   { plan: "starter", description: planConfig.starter.description },
   { plan: "growth", description: planConfig.growth.description },
@@ -1032,40 +983,6 @@ function PlanCard({
   )
 }
 
-function AuditSummary({ logs }: { logs: AuditLog[] }) {
-  if (logs.length === 0) return <StateBlock title="Nenhuma acao auditada" />
-
-  return (
-    <div className="space-y-3">
-      {logs.slice(0, 10).map((log) => (
-        <div key={log.id} className="rounded-lg border bg-slate-50 p-3">
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <div>
-              <div className="text-sm font-medium">{auditLabel(auditActionLabels, log.action)}</div>
-              <div className="mt-1 text-sm text-muted-foreground">
-                {auditLabel(auditEntityLabels, log.entity_type)} — {formatDateTimeBR(log.created_at)}
-              </div>
-            </div>
-            <Badge variant="outline">
-              {log.user_profiles?.name ?? (log.user_id ? "Usuario" : "Sistema")}
-            </Badge>
-          </div>
-          <details className="mt-2 text-xs text-muted-foreground">
-            <summary className="cursor-pointer">Detalhes</summary>
-            <pre className="mt-2 max-h-48 overflow-auto rounded-lg bg-white p-2 text-[0.7rem]">
-              {JSON.stringify(
-                { antes: log.old_value, depois: log.new_value },
-                null,
-                2
-              )}
-            </pre>
-          </details>
-        </div>
-      ))}
-    </div>
-  )
-}
-
 export function SettingsPage() {
   const { profile } = useAuth()
   const organization = useOrganization()
@@ -1073,7 +990,6 @@ export function SettingsPage() {
   const employees = useAllEmployees()
   const organizationModules = useOrganizationModules()
   const subscription = useSubscription()
-  const auditLogs = useAllAuditLogs()
   const isAdmin = canManageSettings(profile)
   const [opsOpen, setOpsOpen] = useState(false)
   const [userOpen, setUserOpen] = useState(false)
@@ -1217,27 +1133,6 @@ export function SettingsPage() {
             />
           )}
 
-          <Card className="border bg-white shadow-sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <ClipboardList className="size-5" />
-                Auditoria recente
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {auditLogs.isLoading ? (
-                <StateBlock type="loading" title="Carregando auditoria" />
-              ) : auditLogs.isError ? (
-                <StateBlock
-                  type="error"
-                  title="Erro ao carregar auditoria"
-                  description={auditLogs.error.message}
-                />
-              ) : (
-                <AuditSummary logs={auditLogs.data ?? []} />
-              )}
-            </CardContent>
-          </Card>
         </div>
       </div>
     </>
