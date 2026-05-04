@@ -413,15 +413,26 @@ export function AllocationPage() {
   const allocationEmployees = useMemo(() => {
     if (!allocationAction) return []
 
+    const scheduledEmployeeIds = new Set(
+      (schedules.data ?? [])
+        .filter(
+          (s) =>
+            s.branch_id === allocationAction.post.branch_id &&
+            !["day_off", "cancelled", "finished", "absent"].includes(s.status)
+        )
+        .map((s) => s.employee_id)
+    )
+
     return (employees.data ?? [])
       .filter(
         (employee) =>
           employee.active &&
           employee.branch_id === allocationAction.post.branch_id &&
+          scheduledEmployeeIds.has(employee.id) &&
           !busyEmployeeIds.has(employee.id)
       )
       .sort((a, b) => a.name.localeCompare(b.name))
-  }, [allocationAction, busyEmployeeIds, employees.data])
+  }, [allocationAction, busyEmployeeIds, employees.data, schedules.data])
 
   const allocationSchedules = useMemo(() => {
     if (!allocationAction || !allocationForm.employee_id) return []
