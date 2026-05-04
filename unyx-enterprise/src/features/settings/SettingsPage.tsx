@@ -1075,6 +1075,8 @@ export function SettingsPage() {
   const subscription = useSubscription()
   const auditLogs = useAllAuditLogs()
   const isAdmin = canManageSettings(profile)
+  const [opsOpen, setOpsOpen] = useState(false)
+  const [userOpen, setUserOpen] = useState(false)
 
   return (
     <>
@@ -1114,35 +1116,75 @@ export function SettingsPage() {
           </Card>
 
           <Card className="border bg-white shadow-sm">
-            <CardHeader>
+            <CardHeader
+              className="cursor-pointer select-none"
+              onClick={() => setOpsOpen((v) => !v)}
+            >
               <CardTitle className="flex items-center gap-2">
                 <Settings2 className="size-5" />
-                Regras operacionais
+                <span className="flex-1">Regras operacionais</span>
+                <ChevronDown
+                  className={`size-4 text-muted-foreground transition-transform duration-200 ${opsOpen ? "rotate-180" : ""}`}
+                />
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <OperationalSettingsForm
-                branches={branches.data ?? []}
-                disabled={!isAdmin}
-                organization={organization.data}
-              />
-            </CardContent>
+            {opsOpen ? (
+              <CardContent className="space-y-5">
+                <OperationalSettingsForm
+                  branches={branches.data ?? []}
+                  disabled={!isAdmin}
+                  organization={organization.data}
+                />
+                <div className="space-y-3 border-t pt-4">
+                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    <Gauge className="size-3.5" />
+                    Saude da configuracao
+                  </div>
+                  {[
+                    { label: "Organizacao cadastrada", done: Boolean(organization.data) },
+                    { label: "Filial ativa", done: Boolean((branches.data ?? []).some((b) => b.active)) },
+                    { label: "Colaboradores ativos", done: Boolean((employees.data ?? []).some((e) => e.active)) },
+                    { label: "Modulos vinculados", done: Boolean((organizationModules.data ?? []).length) },
+                  ].map((item) => (
+                    <div
+                      key={item.label}
+                      className="flex items-center justify-between gap-3 rounded-lg border bg-slate-50 p-3 text-sm"
+                    >
+                      <span>{item.label}</span>
+                      {item.done ? (
+                        <CheckCircle2 className="size-4 text-emerald-600" />
+                      ) : (
+                        <AlertTriangle className="size-4 text-amber-600" />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            ) : null}
           </Card>
 
           <Card className="border bg-white shadow-sm">
-            <CardHeader>
+            <CardHeader
+              className="cursor-pointer select-none"
+              onClick={() => setUserOpen((v) => !v)}
+            >
               <CardTitle className="flex items-center gap-2">
                 <Shield className="size-5" />
-                Usuario atual
+                <span className="flex-1">Usuario atual</span>
+                <ChevronDown
+                  className={`size-4 text-muted-foreground transition-transform duration-200 ${userOpen ? "rotate-180" : ""}`}
+                />
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              {profile ? (
-                <CurrentUserForm branches={branches.data ?? []} profile={profile} />
-              ) : (
-                <StateBlock title="Perfil nao encontrado" />
-              )}
-            </CardContent>
+            {userOpen ? (
+              <CardContent>
+                {profile ? (
+                  <CurrentUserForm branches={branches.data ?? []} profile={profile} />
+                ) : (
+                  <StateBlock title="Perfil nao encontrado" />
+                )}
+              </CardContent>
+            ) : null}
           </Card>
 
         </div>
@@ -1174,47 +1216,6 @@ export function SettingsPage() {
               subscription={subscription.isError ? undefined : subscription.data}
             />
           )}
-
-          <Card className="border bg-white shadow-sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Gauge className="size-5" />
-                Saude da configuracao
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {[
-                {
-                  label: "Organizacao cadastrada",
-                  done: Boolean(organization.data),
-                },
-                {
-                  label: "Filial ativa",
-                  done: Boolean((branches.data ?? []).some((branch) => branch.active)),
-                },
-                {
-                  label: "Colaboradores ativos",
-                  done: Boolean((employees.data ?? []).some((employee) => employee.active)),
-                },
-                {
-                  label: "Modulos vinculados",
-                  done: Boolean((organizationModules.data ?? []).length),
-                },
-              ].map((item) => (
-                <div
-                  key={item.label}
-                  className="flex items-center justify-between gap-3 rounded-lg border bg-slate-50 p-3 text-sm"
-                >
-                  <span>{item.label}</span>
-                  {item.done ? (
-                    <CheckCircle2 className="size-4 text-emerald-600" />
-                  ) : (
-                    <AlertTriangle className="size-4 text-amber-600" />
-                  )}
-                </div>
-              ))}
-            </CardContent>
-          </Card>
 
           <Card className="border bg-white shadow-sm">
             <CardHeader>
