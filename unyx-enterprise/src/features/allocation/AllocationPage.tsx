@@ -4,6 +4,7 @@ import {
   ArrowRightLeft,
   Banknote,
   CheckCircle2,
+  ChevronDown,
   History,
   MapPinned,
   Pencil,
@@ -15,9 +16,6 @@ import {
   UserRoundCheck,
   Wand2,
 } from "lucide-react"
-
-import { BentoGrid } from "@/components/bento/BentoGrid"
-import { MetricCard } from "@/components/bento/MetricCard"
 import { PageHeader } from "@/components/shared/PageHeader"
 import { StateBlock } from "@/components/shared/StateBlock"
 import { Badge } from "@/components/ui/badge"
@@ -177,6 +175,9 @@ export function AllocationPage() {
   const [finalizeNote, setFinalizeNote] = useState("")
   const [finalizeError, setFinalizeError] = useState<string | null>(null)
   const [setupOpen, setSetupOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [cashMovOpen, setCashMovOpen] = useState(false)
+  const [postsOpen, setPostsOpen] = useState(false)
 
   const org = useOrganization()
   const setupDefaults = useSetupSegmentDefaults()
@@ -434,33 +435,30 @@ export function AllocationPage() {
           />
         ) : (
           <>
-            <BentoGrid>
-              <MetricCard
-                title="Postos ativos"
-                value={activePosts.length}
-                detail="Bases operacionais abertas"
-                icon={<Store className="size-5" />}
-              />
-              <MetricCard
-                title="Cobertos"
-                value={coveredPosts.length}
-                detail="Com colaborador alocado"
-                icon={<CheckCircle2 className="size-5" />}
-              />
-              <MetricCard
-                title="Sem cobertura"
-                value={uncoveredPosts.length}
-                detail="Exigem acao do supervisor"
-                icon={<ShieldAlert className="size-5" />}
-                className={uncoveredPosts.length > 0 ? "border-red-200" : undefined}
-              />
-              <MetricCard
-                title="Sangrias hoje"
-                value={sangriasToday}
-                detail="Confirmadas no dia selecionado"
-                icon={<Banknote className="size-5" />}
-              />
-            </BentoGrid>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {[
+                { label: "Postos ativos", value: activePosts.length, Icon: Store, extra: "" },
+                { label: "Cobertos", value: coveredPosts.length, Icon: CheckCircle2, extra: "" },
+                {
+                  label: "Sem cobertura",
+                  value: uncoveredPosts.length,
+                  Icon: ShieldAlert,
+                  extra: uncoveredPosts.length > 0 ? "border-red-200 bg-red-50" : "",
+                },
+                { label: "Sangrias hoje", value: sangriasToday, Icon: Banknote, extra: "" },
+              ].map(({ label, value, Icon, extra }) => (
+                <div
+                  key={label}
+                  className={`flex items-center gap-3 rounded-lg border bg-white px-4 py-3 shadow-sm ${extra}`}
+                >
+                  <Icon className="size-4 shrink-0 text-muted-foreground" />
+                  <div>
+                    <div className="text-xl font-bold leading-none">{value}</div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">{label}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
 
             <div className="grid gap-4 xl:grid-cols-[1.4fr_0.8fr]">
               <Card className="border bg-white shadow-sm">
@@ -584,68 +582,88 @@ export function AllocationPage() {
 
               <div className="space-y-4">
                 <Card className="border bg-white shadow-sm">
-                  <CardHeader>
+                  <CardHeader
+                    className="cursor-pointer select-none"
+                    onClick={() => setHistoryOpen((v) => !v)}
+                  >
                     <CardTitle className="flex items-center gap-2">
                       <History className="size-5" />
-                      Historico recente
+                      <span className="flex-1">Historico recente</span>
+                      <ChevronDown className={`size-4 text-muted-foreground transition-transform duration-200 ${historyOpen ? "rotate-180" : ""}`} />
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-3">
-                    {(history.data ?? []).slice(0, 6).length === 0 ? (
-                      <StateBlock title="Sem trocas registradas" />
-                    ) : (
-                      (history.data ?? []).slice(0, 6).map((item) => (
-                        <div key={item.id} className="rounded-lg border p-3">
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="font-medium">
-                              {item.operational_posts?.name ?? "Posto"}
+                  {historyOpen ? (
+                    <CardContent className="space-y-3">
+                      {(history.data ?? []).slice(0, 6).length === 0 ? (
+                        <StateBlock title="Sem trocas registradas" />
+                      ) : (
+                        (history.data ?? []).slice(0, 6).map((item) => (
+                          <div key={item.id} className="rounded-lg border p-3">
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="font-medium">
+                                {item.operational_posts?.name ?? "Posto"}
+                              </div>
+                              <Badge variant="outline">
+                                {item.ended_at ? "Finalizado" : "Ativo"}
+                              </Badge>
                             </div>
-                            <Badge variant="outline">
-                              {item.ended_at ? "Finalizado" : "Ativo"}
-                            </Badge>
+                            <div className="mt-1 text-sm text-muted-foreground">
+                              {item.employees?.name ?? "Colaborador"} -{" "}
+                              {formatDateTimeBR(item.started_at)}
+                            </div>
                           </div>
-                          <div className="mt-1 text-sm text-muted-foreground">
-                            {item.employees?.name ?? "Colaborador"} -{" "}
-                            {formatDateTimeBR(item.started_at)}
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </CardContent>
+                        ))
+                      )}
+                    </CardContent>
+                  ) : null}
                 </Card>
 
                 <Card className="border bg-white shadow-sm">
-                  <CardHeader>
+                  <CardHeader
+                    className="cursor-pointer select-none"
+                    onClick={() => setCashMovOpen((v) => !v)}
+                  >
                     <CardTitle className="flex items-center gap-2">
                       <Banknote className="size-5" />
-                      Movimentos de caixa
+                      <span className="flex-1">Movimentos de caixa</span>
+                      <ChevronDown className={`size-4 text-muted-foreground transition-transform duration-200 ${cashMovOpen ? "rotate-180" : ""}`} />
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-3">
-                    {(cashMovements.data ?? []).slice(0, 5).length === 0 ? (
-                      <StateBlock title="Sem movimentos registrados" />
-                    ) : (
-                      (cashMovements.data ?? []).slice(0, 5).map((movement) => (
-                        <div key={movement.id} className="rounded-lg border p-3">
-                          <div className="font-medium">
-                            {cashMovementLabel[movement.movement_type]}
+                  {cashMovOpen ? (
+                    <CardContent className="space-y-3">
+                      {(cashMovements.data ?? []).slice(0, 5).length === 0 ? (
+                        <StateBlock title="Sem movimentos registrados" />
+                      ) : (
+                        (cashMovements.data ?? []).slice(0, 5).map((movement) => (
+                          <div key={movement.id} className="rounded-lg border p-3">
+                            <div className="font-medium">
+                              {cashMovementLabel[movement.movement_type]}
+                            </div>
+                            <div className="mt-1 text-sm text-muted-foreground">
+                              {movement.operational_posts?.name ?? "Posto"} -{" "}
+                              {movement.employees?.name ?? "Colaborador"}
+                            </div>
                           </div>
-                          <div className="mt-1 text-sm text-muted-foreground">
-                            {movement.operational_posts?.name ?? "Posto"} -{" "}
-                            {movement.employees?.name ?? "Colaborador"}
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </CardContent>
+                        ))
+                      )}
+                    </CardContent>
+                  ) : null}
                 </Card>
               </div>
             </div>
 
             <Card className="border bg-white shadow-sm">
-              <CardHeader>
-                <CardTitle>Cadastro de postos</CardTitle>
+              <CardHeader
+                className="cursor-pointer select-none"
+                onClick={() => setPostsOpen((v) => !v)}
+              >
+                <CardTitle className="flex items-center gap-2">
+                  <Store className="size-5" />
+                  <span className="flex-1">Postos cadastrados</span>
+                  <ChevronDown className={`size-4 text-muted-foreground transition-transform duration-200 ${postsOpen ? "rotate-180" : ""}`} />
+                </CardTitle>
               </CardHeader>
+              {postsOpen ? (
               <CardContent>
                 {allPosts.length === 0 ? (
                   <StateBlock title="Nenhum posto cadastrado" />
@@ -699,6 +717,7 @@ export function AllocationPage() {
                   </div>
                 )}
               </CardContent>
+              ) : null}
             </Card>
           </>
         )}
