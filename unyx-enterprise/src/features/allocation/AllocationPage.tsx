@@ -1422,13 +1422,24 @@ export function AllocationPage() {
               <select
                 className={fieldClass}
                 value={allocationForm.employee_id}
-                onChange={(event) =>
+                onChange={(event) => {
+                  const empId = event.target.value
+                  const empSchedules = (schedules.data ?? []).filter(
+                    (s) =>
+                      s.branch_id === allocationAction?.post.branch_id &&
+                      s.employee_id === empId &&
+                      !["day_off", "cancelled", "finished", "absent"].includes(s.status)
+                  )
+                  const autoSchedule =
+                    empSchedules.find((s) =>
+                      ["working", "returned", "scheduled", "on_break"].includes(s.status)
+                    ) ?? empSchedules[0] ?? null
                   setAllocationForm((current) => ({
                     ...current,
-                    employee_id: event.target.value,
-                    schedule_id: "",
+                    employee_id: empId,
+                    schedule_id: autoSchedule?.id ?? "",
                   }))
-                }
+                }}
                 required
               >
                 <option value="">Selecione</option>
