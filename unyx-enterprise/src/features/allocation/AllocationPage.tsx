@@ -75,6 +75,66 @@ import type {
 const fieldClass =
   "h-8 w-full rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
 
+function timeToMinutes(time: string | null): number | null {
+  if (!time) return null
+  const [h, m] = time.split(":").map(Number)
+  return h * 60 + m
+}
+
+function formatMinuteDuration(minutes: number): string {
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  if (h === 0) return `${m}min`
+  return m === 0 ? `${h}h` : `${h}h ${m}min`
+}
+
+function CashierScheduleInfo({ schedule }: { schedule: ScheduleWithRelations }) {
+  const now = new Date()
+  const nowMin = now.getHours() * 60 + now.getMinutes()
+  const startMin = timeToMinutes(schedule.start_time)
+  const breakStartMin = timeToMinutes(schedule.break_start)
+  const breakEndMin = timeToMinutes(schedule.break_end)
+  const endMin = timeToMinutes(schedule.end_time)
+
+  const shiftDuration =
+    startMin !== null && endMin !== null
+      ? endMin -
+        startMin -
+        (breakStartMin !== null && breakEndMin !== null ? breakEndMin - breakStartMin : 0)
+      : null
+
+  let breakStatus: string | null = null
+  if (breakStartMin !== null) {
+    if (nowMin < breakStartMin) {
+      const remaining = breakStartMin - nowMin
+      breakStatus = formatMinuteDuration(remaining)
+    } else if (breakEndMin !== null && nowMin < breakEndMin) {
+      breakStatus = "Em intervalo"
+    } else {
+      breakStatus = "Concluido"
+    }
+  }
+
+  const items = [
+    schedule.start_time ? { label: "Entrada", value: formatTime(schedule.start_time) } : null,
+    shiftDuration !== null ? { label: "Jornada", value: formatMinuteDuration(shiftDuration) } : null,
+    breakStatus ? { label: "Ate intervalo", value: breakStatus } : null,
+  ].filter((item): item is { label: string; value: string } => item !== null)
+
+  if (items.length === 0) return null
+
+  return (
+    <div className="mt-2 flex flex-wrap gap-4 rounded-lg border bg-white/60 px-3 py-2">
+      {items.map((item) => (
+        <div key={item.label} className="text-xs">
+          <div className="text-muted-foreground">{item.label}</div>
+          <div className="font-medium tabular-nums">{item.value}</div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 const postTypeLabel: Record<OperationalPostType, string> = {
   cashier: "Caixa",
   self_checkout: "Self-checkout",
@@ -215,6 +275,18 @@ export function AllocationPage() {
     () => new Set(activeAllocations.map((allocationItem) => allocationItem.employee_id)),
     [activeAllocations]
   )
+  const scheduleById = useMemo(() => {
+    const map = new Map<string, ScheduleWithRelations>()
+    for (const s of schedules.data ?? []) map.set(s.id, s)
+    return map
+  }, [schedules.data])
+  const scheduleByEmployeeId = useMemo(() => {
+    const map = new Map<string, ScheduleWithRelations>()
+    for (const s of schedules.data ?? []) {
+      if (!map.has(s.employee_id)) map.set(s.employee_id, s)
+    }
+    return map
+  }, [schedules.data])
 
   const allocationEmployees = useMemo(() => {
     if (!allocationAction) return []
@@ -495,6 +567,12 @@ export function AllocationPage() {
                     <div className="grid gap-3 lg:grid-cols-2">
                       {activePosts.map((post) => {
                         const allocation = allocationByPostId.get(post.id)
+                        const cashierSchedule =
+                          allocation && post.type === "cashier"
+                            ? (allocation.schedule_id
+                                ? scheduleById.get(allocation.schedule_id)
+                                : scheduleByEmployeeId.get(allocation.employee_id)) ?? null
+                            : null
                         return (
                           <div
                             key={post.id}
@@ -526,6 +604,9 @@ export function AllocationPage() {
                                   <div className="mt-1 text-xs text-muted-foreground">
                                     Desde {formatDateTimeBR(allocation.started_at)}
                                   </div>
+                                  {cashierSchedule ? (
+                                    <CashierScheduleInfo schedule={cashierSchedule} />
+                                  ) : null}
                                 </div>
                                 <div className="flex flex-wrap gap-2">
                                   <Button
