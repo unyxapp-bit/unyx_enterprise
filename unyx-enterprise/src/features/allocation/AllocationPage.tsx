@@ -410,6 +410,20 @@ export function AllocationPage() {
     return map
   }, [schedules.data])
 
+  const overdueAllocations = useMemo(() => {
+    const now = new Date()
+    const nowMin = now.getHours() * 60 + now.getMinutes()
+    return activeAllocations.filter((allocation) => {
+      if (allocation.ended_at) return false
+      const schedule = allocation.schedule_id
+        ? scheduleById.get(allocation.schedule_id)
+        : scheduleByEmployeeId.get(allocation.employee_id)
+      if (!schedule?.end_time) return false
+      const endMin = timeToMinutes(schedule.end_time)
+      return endMin !== null && nowMin > endMin
+    })
+  }, [activeAllocations, scheduleById, scheduleByEmployeeId])
+
   const allocationEmployees = useMemo(() => {
     if (!allocationAction) return []
 
@@ -570,6 +584,19 @@ export function AllocationPage() {
       setCashForm({ movement_type: "sangria_confirmada", notes: "" })
     } catch (error) {
       setCashError(error instanceof Error ? error.message : "Nao foi possivel confirmar.")
+    }
+  }
+
+  async function handleFinalizeAll() {
+    for (const allocation of overdueAllocations) {
+      try {
+        await finalize.mutateAsync({
+          allocation_id: allocation.id,
+          notes: "Saida por horario excedido",
+        })
+      } catch (_e) {
+        // individual errors are surfaced by mutation toasts
+      }
     }
   }
 
@@ -766,6 +793,60 @@ export function AllocationPage() {
                 </div>
               ))}
             </div>
+
+            {overdueAllocations.length > 0 ? (
+              <Card className="border border-orange-200 bg-orange-50 shadow-sm">
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 text-orange-800">
+                      <Clock className="size-5" />
+                      Colaboradores alem do horario de saida ({overdueAllocations.length})
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      disabled={finalize.isPending}
+                      onClick={() => void handleFinalizeAll()}
+                    >
+                      Finalizar todos
+                    </Button>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    {overdueAllocations.map((allocation) => {
+                      const schedule = allocation.schedule_id
+                        ? scheduleById.get(allocation.schedule_id)
+                        : scheduleByEmployeeId.get(allocation.employee_id)
+                      return (
+                        <div
+                          key={allocation.id}
+                          className="flex items-center justify-between gap-3 rounded-lg border border-orange-200 bg-white p-3"
+                        >
+                          <div>
+                            <div className="font-medium">
+                              {allocation.employees?.name ?? "Colaborador"}
+                            </div>
+                            <div className="mt-0.5 text-xs text-muted-foreground">
+                              {allocation.operational_posts?.name ?? "Posto"} · saida prevista{" "}
+                              {formatTime(schedule?.end_time)}
+                            </div>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={finalize.isPending}
+                            onClick={() => setFinalizeAction(allocation)}
+                          >
+                            Finalizar
+                          </Button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            ) : null}
 
             <div className="grid gap-4 xl:grid-cols-[1.4fr_0.8fr]">
               <Card className="border bg-white shadow-sm">
