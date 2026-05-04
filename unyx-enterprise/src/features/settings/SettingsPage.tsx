@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   Building,
   CheckCircle2,
+  ChevronDown,
   ClipboardList,
   CreditCard,
   Gauge,
@@ -935,57 +936,98 @@ const planSwitcherOptions: { plan: SubscriptionPlan; description: string }[] = [
   { plan: "enterprise", description: planConfig.enterprise.description },
 ]
 
-function PlanSwitcherCard({ currentPlan }: { currentPlan: SubscriptionPlan }) {
+function PlanCard({
+  branches,
+  canViewBilling,
+  employees,
+  modules,
+  organization,
+  subscription,
+}: {
+  branches: Branch[]
+  canViewBilling: boolean
+  employees: EmployeeWithRelations[]
+  modules: OrganizationModule[]
+  organization: Organization | null | undefined
+  subscription: Subscription | null | undefined
+}) {
+  const [open, setOpen] = useState(true)
   const updatePlan = useUpdateOrganizationPlan()
+  const currentPlan: SubscriptionPlan = organization?.plan ?? subscription?.plan ?? "starter"
 
   return (
     <Card className="border bg-white shadow-sm">
-      <CardHeader>
+      <CardHeader
+        className="cursor-pointer select-none"
+        onClick={() => setOpen((v) => !v)}
+      >
         <CardTitle className="flex items-center gap-2">
           <CreditCard className="size-5" />
-          Plano de acesso
+          <span className="flex-1">Plano e modulos</span>
+          <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${planBadgeClass[currentPlan]}`}>
+            {planLabel[currentPlan]}
+          </span>
+          <ChevronDown
+            className={`size-4 text-muted-foreground transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+          />
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-3">
-        <p className="text-sm text-muted-foreground">
-          Altere o plano para testar diferentes niveis de acesso e limites.
-        </p>
-        <div className="grid gap-2 sm:grid-cols-3">
-          {planSwitcherOptions.map(({ plan, description }) => {
-            const active = currentPlan === plan
-            return (
-              <button
-                key={plan}
-                disabled={updatePlan.isPending || active}
-                onClick={() => updatePlan.mutate(plan)}
-                className={`rounded-lg border p-3 text-left transition-colors disabled:cursor-not-allowed ${
-                  active
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-slate-100 disabled:opacity-50"
-                }`}
-              >
-                <div className="text-sm font-semibold">{planLabel[plan]}</div>
-                <div className={`mt-0.5 text-xs ${active ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
-                  {description}
-                </div>
-              </button>
-            )
-          })}
-        </div>
-        {updatePlan.isPending ? (
-          <p className="text-xs text-muted-foreground">Atualizando plano...</p>
-        ) : null}
-        {updatePlan.error ? (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-            {updatePlan.error.message}
+
+      {open ? (
+        <CardContent className="space-y-5">
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Altere o plano para testar diferentes niveis de acesso e limites.
+            </p>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {planSwitcherOptions.map(({ plan, description }) => {
+                const active = currentPlan === plan
+                return (
+                  <button
+                    key={plan}
+                    disabled={updatePlan.isPending || active}
+                    onClick={(e) => { e.stopPropagation(); updatePlan.mutate(plan) }}
+                    className={`rounded-lg border p-3 text-left transition-colors disabled:cursor-not-allowed ${
+                      active
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-slate-100 disabled:opacity-50"
+                    }`}
+                  >
+                    <div className="text-sm font-semibold">{planLabel[plan]}</div>
+                    <div className={`mt-0.5 text-xs ${active ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
+                      {description}
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+            {updatePlan.isPending ? (
+              <p className="text-xs text-muted-foreground">Atualizando plano...</p>
+            ) : null}
+            {updatePlan.error ? (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {updatePlan.error.message}
+              </div>
+            ) : null}
+            {updatePlan.isSuccess ? (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                Plano atualizado. Os modulos refletem a mudanca imediatamente.
+              </div>
+            ) : null}
           </div>
-        ) : null}
-        {updatePlan.isSuccess ? (
-          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-            Plano atualizado. Os modulos refletem a mudanca imediatamente.
+
+          <div className="border-t pt-4">
+            <PlanModulesPanel
+              branches={branches}
+              canViewBilling={canViewBilling}
+              employees={employees}
+              modules={modules}
+              organization={organization}
+              subscription={subscription}
+            />
           </div>
-        ) : null}
-      </CardContent>
+        </CardContent>
+      ) : null}
     </Card>
   )
 }
@@ -1033,7 +1075,6 @@ export function SettingsPage() {
   const subscription = useSubscription()
   const auditLogs = useAllAuditLogs()
   const isAdmin = canManageSettings(profile)
-  const currentPlan: SubscriptionPlan = organization.data?.plan ?? "starter"
 
   return (
     <>
@@ -1044,8 +1085,6 @@ export function SettingsPage() {
 
       <div className="grid gap-4 p-6 xl:grid-cols-[1fr_0.85fr]">
         <div className="space-y-4">
-          {profile ? <PlanSwitcherCard currentPlan={currentPlan} /> : null}
-
           <Card className="border bg-white shadow-sm">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -1109,41 +1148,32 @@ export function SettingsPage() {
         </div>
 
         <div className="space-y-4">
-          <Card className="border bg-white shadow-sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <CreditCard className="size-5" />
-                Plano e modulos
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {branches.isLoading || employees.isLoading || organizationModules.isLoading ? (
+          {branches.isLoading || employees.isLoading || organizationModules.isLoading ? (
+            <Card className="border bg-white shadow-sm">
+              <CardContent className="pt-6">
                 <StateBlock type="loading" title="Carregando plano e modulos" />
-              ) : organizationModules.isError ? (
+              </CardContent>
+            </Card>
+          ) : organizationModules.isError ? (
+            <Card className="border bg-white shadow-sm">
+              <CardContent className="pt-6">
                 <StateBlock
                   type="error"
                   title="Erro ao carregar modulos da organizacao"
                   description={organizationModules.error.message}
                 />
-              ) : (
-                <>
-                  {subscription.isError ? (
-                    <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                      Nao foi possivel carregar os dados da assinatura. Os modulos continuam visiveis.
-                    </div>
-                  ) : null}
-                  <PlanModulesPanel
-                    branches={branches.data ?? []}
-                    canViewBilling={isAdmin}
-                    employees={employees.data ?? []}
-                    modules={organizationModules.data ?? []}
-                    organization={organization.data}
-                    subscription={subscription.isError ? undefined : subscription.data}
-                  />
-                </>
-              )}
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          ) : (
+            <PlanCard
+              branches={branches.data ?? []}
+              canViewBilling={isAdmin}
+              employees={employees.data ?? []}
+              modules={organizationModules.data ?? []}
+              organization={organization.data}
+              subscription={subscription.isError ? undefined : subscription.data}
+            />
+          )}
 
           <Card className="border bg-white shadow-sm">
             <CardHeader>
