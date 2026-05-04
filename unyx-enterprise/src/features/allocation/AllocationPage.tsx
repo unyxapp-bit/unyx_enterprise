@@ -1,10 +1,13 @@
 import { useMemo, useState } from "react"
 import type { FormEvent } from "react"
 import {
+  AlertCircle,
   ArrowRightLeft,
   Banknote,
   CheckCircle2,
   ChevronDown,
+  ClipboardCheck,
+  HelpCircle,
   History,
   MapPinned,
   Pencil,
@@ -573,6 +576,9 @@ export function AllocationPage() {
                                 ? scheduleById.get(allocation.schedule_id)
                                 : scheduleByEmployeeId.get(allocation.employee_id)) ?? null
                             : null
+                        const isAtendimentoFiscal =
+                          post.type === "service_desk" &&
+                          (post.sectors?.name ?? "").toLowerCase().includes("fiscal")
                         return (
                           <div
                             key={post.id}
@@ -623,14 +629,31 @@ export function AllocationPage() {
                                     <ArrowRightLeft className="size-4" />
                                     Trocar
                                   </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => setCashAction(allocation)}
-                                  >
-                                    <Banknote className="size-4" />
-                                    Sangria
-                                  </Button>
+                                  {isAtendimentoFiscal ? (
+                                    <>
+                                      <Button size="sm" variant="outline">
+                                        <AlertCircle className="size-4" />
+                                        Ocorrencias
+                                      </Button>
+                                      <Button size="sm" variant="outline">
+                                        <HelpCircle className="size-4" />
+                                        Ajuda
+                                      </Button>
+                                      <Button size="sm" variant="outline">
+                                        <ClipboardCheck className="size-4" />
+                                        Checklists
+                                      </Button>
+                                    </>
+                                  ) : (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => setCashAction(allocation)}
+                                    >
+                                      <Banknote className="size-4" />
+                                      Sangria
+                                    </Button>
+                                  )}
                                   <Button
                                     size="sm"
                                     variant="destructive"
