@@ -49,6 +49,7 @@ import {
   useEmployees,
   useFinalizePostAllocation,
   useOperationalPosts,
+  useOperationalSettings,
   useOrganization,
   usePostAllocations,
   useSchedules,
@@ -73,6 +74,7 @@ import type {
   EmployeeWithRelations,
   OperationalPost,
   OperationalPostType,
+  OperationalSettings,
   PostAllocation,
   ScheduleWithRelations,
   Sector,
@@ -139,6 +141,47 @@ function CashierScheduleInfo({ schedule }: { schedule: ScheduleWithRelations }) 
       ))}
     </div>
   )
+}
+
+type CoffeeSlot = { start: string; end: string }
+
+function minToTime(min: number): string {
+  const h = Math.floor(min / 60) % 24
+  const m = min % 60
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`
+}
+
+function calcCoffeeTimes(
+  scheduleList: ScheduleWithRelations[],
+  settings: OperationalSettings | null | undefined
+): Map<string, CoffeeSlot> {
+  const result = new Map<string, CoffeeSlot>()
+  if (!settings?.coffee_break_enabled) return result
+
+  const windowStart = timeToMinutes(settings.coffee_window_start)
+  const windowEnd = timeToMinutes(settings.coffee_window_end)
+  const duration = settings.coffee_break_duration_minutes ?? 10
+  if (windowStart === null || windowEnd === null) return result
+
+  const active = scheduleList
+    .filter(
+      (s) =>
+        s.break_start &&
+        !["day_off", "cancelled", "absent", "finished"].includes(s.status)
+    )
+    .sort((a, b) => (timeToMinutes(a.break_start) ?? 0) - (timeToMinutes(b.break_start) ?? 0))
+
+  ;[...active].reverse().forEach((schedule, index) => {
+    const coffeeStart = windowStart + index * duration
+    const coffeeEnd = coffeeStart + duration
+    if (coffeeEnd > windowEnd) return
+    result.set(schedule.employee_id, {
+      start: minToTime(coffeeStart),
+      end: minToTime(coffeeEnd),
+    })
+  })
+
+  return result
 }
 
 const postTypeLabel: Record<OperationalPostType, string> = {
@@ -210,6 +253,7 @@ export function AllocationPage() {
   const cashMovements = useCashMovements()
   const [date, setDate] = useState(todayISO())
   const schedules = useSchedules(date, null)
+  const coffeeSettings = useOperationalSettings(null)
 
   const createPost = useCreateOperationalPost()
   const updatePost = useUpdateOperationalPost()
@@ -317,6 +361,11 @@ export function AllocationPage() {
     () => new Set(activeAllocations.map((allocationItem) => allocationItem.employee_id)),
     [activeAllocations]
   )
+  const coffeeTimes = useMemo(
+    () => calcCoffeeTimes(schedules.data ?? [], coffeeSettings.data),
+    [schedules.data, coffeeSettings.data]
+  )
+
   const scheduleById = useMemo(() => {
     const map = new Map<string, ScheduleWithRelations>()
     for (const s of schedules.data ?? []) map.set(s.id, s)
@@ -691,6 +740,9 @@ export function AllocationPage() {
                           : null
                         const cashierSchedule =
                           allocation && post.type === "cashier" ? employeeSchedule : null
+                        const coffeeSlot = allocation
+                          ? (coffeeTimes.get(allocation.employee_id) ?? null)
+                          : null
                         const isAtendimentoFiscal =
                           post.type === "service_desk" &&
                           (post.sectors?.name ?? "").toLowerCase().includes("fiscal")
@@ -727,6 +779,12 @@ export function AllocationPage() {
                                   </div>
                                   {cashierSchedule ? (
                                     <CashierScheduleInfo schedule={cashierSchedule} />
+                                  ) : null}
+                                  {coffeeSlot ? (
+                                    <div className="mt-2 flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-700">
+                                      <Coffee className="size-3 shrink-0" />
+                                      Cafe: {coffeeSlot.start} — {coffeeSlot.end}
+                                    </div>
                                   ) : null}
                                 </div>
                                 <div className="flex flex-wrap gap-2">

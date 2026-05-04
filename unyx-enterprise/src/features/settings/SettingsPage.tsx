@@ -130,6 +130,14 @@ function buildOperationalSettingsForm(
     require_responsible_presence:
       settings?.require_responsible_presence ??
       defaults.require_responsible_presence,
+    coffee_break_enabled:
+      settings?.coffee_break_enabled ?? defaults.coffee_break_enabled,
+    coffee_break_duration_minutes:
+      settings?.coffee_break_duration_minutes ?? defaults.coffee_break_duration_minutes,
+    coffee_window_start:
+      settings?.coffee_window_start ?? defaults.coffee_window_start,
+    coffee_window_end:
+      settings?.coffee_window_end ?? defaults.coffee_window_end,
   }
 }
 
@@ -408,6 +416,74 @@ function OperationalSettingsEditor({
             {label}
           </label>
         ))}
+      </div>
+
+      <div className="space-y-3 border-t pt-4">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+          Pausa / Cafe
+        </p>
+        <label className="flex items-center gap-2 rounded-lg border bg-slate-50 p-3 text-sm">
+          <input
+            disabled={disabled}
+            type="checkbox"
+            checked={form.coffee_break_enabled}
+            onChange={(event) =>
+              setForm((current) => ({
+                ...current,
+                coffee_break_enabled: event.target.checked,
+              }))
+            }
+          />
+          Habilitar controle de cafe
+        </label>
+        {form.coffee_break_enabled ? (
+          <div className="grid gap-3 sm:grid-cols-3">
+            <label className="space-y-1 text-sm">
+              <span className="font-medium">Duracao (min)</span>
+              <Input
+                disabled={disabled}
+                type="number"
+                min={5}
+                max={60}
+                value={form.coffee_break_duration_minutes}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    coffee_break_duration_minutes: Number(event.target.value),
+                  }))
+                }
+              />
+            </label>
+            <label className="space-y-1 text-sm">
+              <span className="font-medium">Janela inicio</span>
+              <Input
+                disabled={disabled}
+                type="time"
+                value={form.coffee_window_start}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    coffee_window_start: event.target.value,
+                  }))
+                }
+              />
+            </label>
+            <label className="space-y-1 text-sm">
+              <span className="font-medium">Janela fim</span>
+              <Input
+                disabled={disabled}
+                type="time"
+                value={form.coffee_window_end}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    coffee_window_end: event.target.value,
+                  }))
+                }
+              />
+            </label>
+          </div>
+        ) : null}
       </div>
 
       {isLoading ? (

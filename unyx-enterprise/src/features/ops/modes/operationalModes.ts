@@ -9,6 +9,10 @@ export interface OperationalModeDefaults {
   require_coverage_before_break: boolean
   block_break_on_peak_hours: boolean
   require_responsible_presence: boolean
+  coffee_break_enabled: boolean
+  coffee_break_duration_minutes: number
+  coffee_window_start: string
+  coffee_window_end: string
 }
 
 export const operationalModeNames: Record<OperationalMode, string> = {
@@ -42,6 +46,10 @@ export const operationalModeDefaults: Record<
     require_coverage_before_break: true,
     block_break_on_peak_hours: false,
     require_responsible_presence: false,
+    coffee_break_enabled: false,
+    coffee_break_duration_minutes: 10,
+    coffee_window_start: "15:00",
+    coffee_window_end: "17:30",
   },
   retail_store: {
     late_tolerance_minutes: 15,
@@ -50,6 +58,10 @@ export const operationalModeDefaults: Record<
     require_coverage_before_break: true,
     block_break_on_peak_hours: false,
     require_responsible_presence: false,
+    coffee_break_enabled: false,
+    coffee_break_duration_minutes: 10,
+    coffee_window_start: "15:00",
+    coffee_window_end: "17:30",
   },
   restaurant: {
     late_tolerance_minutes: 10,
@@ -58,6 +70,10 @@ export const operationalModeDefaults: Record<
     require_coverage_before_break: true,
     block_break_on_peak_hours: true,
     require_responsible_presence: false,
+    coffee_break_enabled: false,
+    coffee_break_duration_minutes: 10,
+    coffee_window_start: "15:00",
+    coffee_window_end: "17:30",
   },
   pharmacy: {
     late_tolerance_minutes: 10,
@@ -66,6 +82,10 @@ export const operationalModeDefaults: Record<
     require_coverage_before_break: true,
     block_break_on_peak_hours: false,
     require_responsible_presence: true,
+    coffee_break_enabled: false,
+    coffee_break_duration_minutes: 10,
+    coffee_window_start: "15:00",
+    coffee_window_end: "17:30",
   },
   other: {
     late_tolerance_minutes: 15,
@@ -74,6 +94,10 @@ export const operationalModeDefaults: Record<
     require_coverage_before_break: true,
     block_break_on_peak_hours: false,
     require_responsible_presence: false,
+    coffee_break_enabled: false,
+    coffee_break_duration_minutes: 10,
+    coffee_window_start: "15:00",
+    coffee_window_end: "17:30",
   },
 }
 

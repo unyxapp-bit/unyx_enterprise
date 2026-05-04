@@ -601,6 +601,10 @@ export interface OperationalSettingsInput {
   require_coverage_before_break: boolean
   block_break_on_peak_hours: boolean
   require_responsible_presence: boolean
+  coffee_break_enabled: boolean
+  coffee_break_duration_minutes: number
+  coffee_window_start: string | null
+  coffee_window_end: string | null
 }
 
 export async function getOperationalSettings(
