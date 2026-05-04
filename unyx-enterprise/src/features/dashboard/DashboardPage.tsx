@@ -23,8 +23,6 @@ import {
   Tooltip,
 } from "recharts"
 
-import { BentoGrid } from "@/components/bento/BentoGrid"
-import { MetricCard } from "@/components/bento/MetricCard"
 import { StatusBadge } from "@/components/bento/StatusBadge"
 import { PageHeader } from "@/components/shared/PageHeader"
 import { StateBlock } from "@/components/shared/StateBlock"
@@ -524,7 +522,7 @@ export function DashboardPage() {
           </div>
         </div>
 
-        <BentoGrid>
+        <div className="flex flex-wrap gap-2">
           {modeConfig.dashboardCards.map((key) => {
             const metric = buildMetric(key, {
               rows: filteredRows,
@@ -535,17 +533,27 @@ export function DashboardPage() {
             })
 
             return (
-              <MetricCard
+              <div
                 key={key}
-                title={metric.title}
-                value={metric.value}
-                detail={metric.detail}
-                icon={getMetricIcon(key)}
-                className={metric.danger ? "border-red-200" : undefined}
-              />
+                className={`flex min-w-[130px] flex-1 items-center gap-2.5 rounded-lg border bg-white px-3 py-2.5 shadow-sm ${
+                  metric.danger ? "border-red-200 bg-red-50" : ""
+                }`}
+              >
+                <div className="shrink-0 text-muted-foreground [&_svg]:size-4">
+                  {getMetricIcon(key)}
+                </div>
+                <div className="min-w-0">
+                  <p className="truncate text-[11px] leading-none text-muted-foreground">
+                    {metric.title}
+                  </p>
+                  <p className={`mt-1 text-lg font-bold leading-none tabular-nums ${metric.danger ? "text-red-700" : ""}`}>
+                    {metric.value}
+                  </p>
+                </div>
+              </div>
             )
           })}
-        </BentoGrid>
+        </div>
 
         {activeOperationalPosts.length > 0 ? (
           <Card
