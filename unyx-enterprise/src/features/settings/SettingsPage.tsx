@@ -138,6 +138,8 @@ function buildOperationalSettingsForm(
       settings?.coffee_window_start ?? defaults.coffee_window_start,
     coffee_window_end:
       settings?.coffee_window_end ?? defaults.coffee_window_end,
+    coffee_order:
+      (settings?.coffee_order ?? defaults.coffee_order) as "inverse" | "same" | "none",
   }
 }
 
@@ -437,50 +439,79 @@ function OperationalSettingsEditor({
           Habilitar controle de cafe
         </label>
         {form.coffee_break_enabled ? (
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <label className="space-y-1 text-sm">
+                <span className="font-medium">Duracao (min)</span>
+                <Input
+                  disabled={disabled}
+                  type="number"
+                  min={5}
+                  max={60}
+                  value={form.coffee_break_duration_minutes}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      coffee_break_duration_minutes: Number(event.target.value),
+                    }))
+                  }
+                />
+              </label>
+              <label className="space-y-1 text-sm">
+                <span className="font-medium">Janela inicio</span>
+                <Input
+                  disabled={disabled}
+                  type="time"
+                  value={form.coffee_window_start}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      coffee_window_start: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label className="space-y-1 text-sm">
+                <span className="font-medium">Janela fim</span>
+                <Input
+                  disabled={disabled}
+                  type="time"
+                  value={form.coffee_window_end}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      coffee_window_end: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+            </div>
             <label className="space-y-1 text-sm">
-              <span className="font-medium">Duracao (min)</span>
-              <Input
+              <span className="font-medium">Ordem de distribuicao</span>
+              <select
+                className={fieldClass}
                 disabled={disabled}
-                type="number"
-                min={5}
-                max={60}
-                value={form.coffee_break_duration_minutes}
+                value={form.coffee_order}
                 onChange={(event) =>
                   setForm((current) => ({
                     ...current,
-                    coffee_break_duration_minutes: Number(event.target.value),
+                    coffee_order: event.target.value as "inverse" | "same" | "none",
                   }))
                 }
-              />
-            </label>
-            <label className="space-y-1 text-sm">
-              <span className="font-medium">Janela inicio</span>
-              <Input
-                disabled={disabled}
-                type="time"
-                value={form.coffee_window_start}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    coffee_window_start: event.target.value,
-                  }))
-                }
-              />
-            </label>
-            <label className="space-y-1 text-sm">
-              <span className="font-medium">Janela fim</span>
-              <Input
-                disabled={disabled}
-                type="time"
-                value={form.coffee_window_end}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    coffee_window_end: event.target.value,
-                  }))
-                }
-              />
+              >
+                <option value="inverse">
+                  Inverso ao almoco — quem almoca mais tarde, toma cafe primeiro
+                </option>
+                <option value="same">
+                  Mesmo do almoco — quem almoca mais cedo, toma cafe primeiro
+                </option>
+                <option value="none">
+                  Sem ordenacao — distribui na ordem da escala
+                </option>
+              </select>
+              <p className="text-xs text-muted-foreground">
+                Define como os horarios de cafe sao distribuidos entre os colaboradores.
+              </p>
             </label>
           </div>
         ) : null}

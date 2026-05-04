@@ -111,22 +111,21 @@ function CashierScheduleInfo({ schedule }: { schedule: ScheduleWithRelations }) 
         (breakStartMin !== null && breakEndMin !== null ? breakEndMin - breakStartMin : 0)
       : null
 
-  let breakStatus: string | null = null
+  let lunchStatus: string | null = null
   if (breakStartMin !== null) {
     if (nowMin < breakStartMin) {
-      const remaining = breakStartMin - nowMin
-      breakStatus = formatMinuteDuration(remaining)
-    } else if (breakEndMin !== null && nowMin < breakEndMin) {
-      breakStatus = "Em intervalo"
+      lunchStatus = `em ${formatMinuteDuration(breakStartMin - nowMin)}`
+    } else if (breakEndMin !== null && nowMin <= breakEndMin) {
+      lunchStatus = "Em almoco"
     } else {
-      breakStatus = "Concluido"
+      lunchStatus = "Concluido"
     }
   }
 
   const items = [
     schedule.start_time ? { label: "Entrada", value: formatTime(schedule.start_time) } : null,
     shiftDuration !== null ? { label: "Jornada", value: formatMinuteDuration(shiftDuration) } : null,
-    breakStatus ? { label: "Ate intervalo", value: breakStatus } : null,
+    lunchStatus ? { label: "Almoco", value: lunchStatus } : null,
   ].filter((item): item is { label: string; value: string } => item !== null)
 
   if (items.length === 0) return null
@@ -161,17 +160,33 @@ function calcCoffeeTimes(
   const windowStart = timeToMinutes(settings.coffee_window_start)
   const windowEnd = timeToMinutes(settings.coffee_window_end)
   const duration = settings.coffee_break_duration_minutes ?? 10
+  const order = settings.coffee_order ?? "inverse"
   if (windowStart === null || windowEnd === null) return result
 
-  const active = scheduleList
-    .filter(
-      (s) =>
-        s.break_start &&
-        !["day_off", "cancelled", "absent", "finished"].includes(s.status)
-    )
-    .sort((a, b) => (timeToMinutes(a.break_start) ?? 0) - (timeToMinutes(b.break_start) ?? 0))
+  // Include everyone who is or was working today
+  // Exclude day_off / cancelled / absent — they won't take coffee
+  const eligible = scheduleList.filter(
+    (s) => !["day_off", "cancelled", "absent"].includes(s.status)
+  )
 
-  ;[...active].reverse().forEach((schedule, index) => {
+  // Sort based on configured order
+  let sorted: ScheduleWithRelations[]
+  if (order === "inverse") {
+    // Latest lunch → first coffee slot
+    sorted = [...eligible].sort(
+      (a, b) => (timeToMinutes(b.break_start) ?? 0) - (timeToMinutes(a.break_start) ?? 0)
+    )
+  } else if (order === "same") {
+    // Earliest lunch → first coffee slot
+    sorted = [...eligible].sort(
+      (a, b) => (timeToMinutes(a.break_start) ?? 0) - (timeToMinutes(b.break_start) ?? 0)
+    )
+  } else {
+    // "none" — assign in original schedule data order
+    sorted = eligible
+  }
+
+  sorted.forEach((schedule, index) => {
     const coffeeStart = windowStart + index * duration
     const coffeeEnd = coffeeStart + duration
     if (coffeeEnd > windowEnd) return
@@ -780,12 +795,30 @@ export function AllocationPage() {
                                   {cashierSchedule ? (
                                     <CashierScheduleInfo schedule={cashierSchedule} />
                                   ) : null}
-                                  {coffeeSlot ? (
-                                    <div className="mt-2 flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-700">
-                                      <Coffee className="size-3 shrink-0" />
-                                      Cafe: {coffeeSlot.start} — {coffeeSlot.end}
-                                    </div>
-                                  ) : null}
+                                  {coffeeSlot ? (() => {
+                                    const now = new Date()
+                                    const nowMin = now.getHours() * 60 + now.getMinutes()
+                                    const slotStart = timeToMinutes(coffeeSlot.start) ?? 0
+                                    const slotEnd = timeToMinutes(coffeeSlot.end) ?? 0
+                                    const active = nowMin >= slotStart && nowMin < slotEnd
+                                    const done = nowMin >= slotEnd
+                                    return (
+                                      <div className={`mt-2 flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs ${
+                                        active
+                                          ? "border-amber-400 bg-amber-100 font-medium text-amber-800"
+                                          : done
+                                            ? "border-slate-200 bg-slate-50 text-slate-400"
+                                            : "border-amber-200 bg-amber-50 text-amber-700"
+                                      }`}>
+                                        <Coffee className="size-3 shrink-0" />
+                                        {active
+                                          ? `Cafe agora — ate ${coffeeSlot.end}`
+                                          : done
+                                            ? `Cafe concluido (${coffeeSlot.start})`
+                                            : `Cafe: ${coffeeSlot.start} — ${coffeeSlot.end}`}
+                                      </div>
+                                    )
+                                  })() : null}
                                 </div>
                                 <div className="flex flex-wrap gap-2">
                                   <Button

@@ -13,6 +13,7 @@ export interface OperationalModeDefaults {
   coffee_break_duration_minutes: number
   coffee_window_start: string
   coffee_window_end: string
+  coffee_order: "inverse" | "same" | "none"
 }
 
 export const operationalModeNames: Record<OperationalMode, string> = {
@@ -50,6 +51,7 @@ export const operationalModeDefaults: Record<
     coffee_break_duration_minutes: 10,
     coffee_window_start: "15:00",
     coffee_window_end: "17:30",
+    coffee_order: "inverse",
   },
   retail_store: {
     late_tolerance_minutes: 15,
@@ -62,6 +64,7 @@ export const operationalModeDefaults: Record<
     coffee_break_duration_minutes: 10,
     coffee_window_start: "15:00",
     coffee_window_end: "17:30",
+    coffee_order: "inverse",
   },
   restaurant: {
     late_tolerance_minutes: 10,
@@ -74,6 +77,7 @@ export const operationalModeDefaults: Record<
     coffee_break_duration_minutes: 10,
     coffee_window_start: "15:00",
     coffee_window_end: "17:30",
+    coffee_order: "inverse",
   },
   pharmacy: {
     late_tolerance_minutes: 10,
@@ -86,6 +90,7 @@ export const operationalModeDefaults: Record<
     coffee_break_duration_minutes: 10,
     coffee_window_start: "15:00",
     coffee_window_end: "17:30",
+    coffee_order: "inverse",
   },
   other: {
     late_tolerance_minutes: 15,
@@ -98,6 +103,7 @@ export const operationalModeDefaults: Record<
     coffee_break_duration_minutes: 10,
     coffee_window_start: "15:00",
     coffee_window_end: "17:30",
+    coffee_order: "inverse",
   },
 }
 

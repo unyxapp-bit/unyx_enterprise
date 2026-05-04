@@ -1005,6 +1005,7 @@ export function useSaveOperationalSettings() {
       coffee_break_duration_minutes: number
       coffee_window_start: string | null
       coffee_window_end: string | null
+      coffee_order: "inverse" | "same" | "none"
     }) => saveOperationalSettings(profile, input),
     onSuccess: async (settings: OperationalSettings) => {
       await queryClient.invalidateQueries({ queryKey: ["operational-settings"] })

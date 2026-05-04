@@ -108,6 +108,7 @@ export interface OperationalSettings {
   coffee_break_duration_minutes: number
   coffee_window_start: string | null
   coffee_window_end: string | null
+  coffee_order: "inverse" | "same" | "none" | null
   created_at: string
   updated_at: string
 }

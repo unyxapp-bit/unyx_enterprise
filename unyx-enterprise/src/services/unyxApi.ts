@@ -605,6 +605,7 @@ export interface OperationalSettingsInput {
   coffee_break_duration_minutes: number
   coffee_window_start: string | null
   coffee_window_end: string | null
+  coffee_order: "inverse" | "same" | "none"
 }
 
 export async function getOperationalSettings(
