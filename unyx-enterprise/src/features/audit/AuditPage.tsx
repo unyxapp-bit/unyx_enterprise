@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react"
-import { ClipboardList, PieChart as PieChartIcon } from "lucide-react"
+import { ChevronDown, ClipboardList, PieChart as PieChartIcon } from "lucide-react"
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts"
 
 import { PageHeader } from "@/components/shared/PageHeader"
@@ -72,6 +72,7 @@ export function AuditPage() {
   const [dateFilter, setDateFilter] = useState("")
   const [actionFilter, setActionFilter] = useState("")
   const [branchFilter, setBranchFilter] = useState(selectedBranchId ?? "")
+  const [tableOpen, setTableOpen] = useState(false)
 
   const actionOptions = useMemo(() => {
     const actions = new Set((logs.data ?? []).map((l) => l.action))
@@ -212,13 +213,17 @@ export function AuditPage() {
         ) : null}
 
         <Card className="border bg-white shadow-sm">
-          <CardHeader>
+          <CardHeader
+            className="cursor-pointer select-none"
+            onClick={() => setTableOpen((v) => !v)}
+          >
             <CardTitle className="flex items-center gap-2">
               <ClipboardList className="size-5" />
-              {filteredLogs.length} registro(s)
+              <span className="flex-1">{filteredLogs.length} registro(s)</span>
+              <ChevronDown className={`size-4 text-muted-foreground transition-transform duration-200 ${tableOpen ? "rotate-180" : ""}`} />
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          {tableOpen ? <CardContent>
             {logs.isLoading ? (
               <StateBlock type="loading" title="Carregando auditoria" />
             ) : logs.isError ? (
@@ -264,7 +269,7 @@ export function AuditPage() {
                 </table>
               </div>
             )}
-          </CardContent>
+          </CardContent> : null}
         </Card>
       </div>
     </>
