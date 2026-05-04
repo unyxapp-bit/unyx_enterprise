@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react"
-import { ClipboardList } from "lucide-react"
+import { ClipboardList, PieChart as PieChartIcon } from "lucide-react"
+import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts"
 
 import { PageHeader } from "@/components/shared/PageHeader"
 import { StateBlock } from "@/components/shared/StateBlock"
@@ -13,6 +14,12 @@ import { Input } from "@/components/ui/input"
 import { useAllAuditLogs, useBranches } from "@/hooks/useUnyxData"
 import { formatDateTimeBR } from "@/lib/format"
 import { useAppStore } from "@/store/useAppStore"
+
+const AUDIT_COLORS = [
+  "#3b82f6", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6",
+  "#14b8a6", "#f97316", "#ec4899", "#0ea5e9", "#84cc16",
+  "#6366f1", "#a855f7", "#f43f5e", "#06b6d4", "#eab308",
+]
 
 const filterClass =
   "h-8 rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
@@ -81,6 +88,17 @@ export function AuditPage() {
     return list
   }, [logs.data, branchFilter, actionFilter, dateFilter])
 
+  const actionChartData = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const log of filteredLogs) {
+      const label = labelFor(actionLabels, log.action)
+      map.set(label, (map.get(label) ?? 0) + 1)
+    }
+    return Array.from(map.entries())
+      .map(([label, total]) => ({ label, total }))
+      .sort((a, b) => b.total - a.total)
+  }, [filteredLogs])
+
   return (
     <>
       <PageHeader
@@ -125,7 +143,74 @@ export function AuditPage() {
         }
       />
 
-      <div className="p-6">
+      <div className="space-y-6 p-6">
+        {actionChartData.length > 0 ? (
+          <Card className="border bg-white shadow-sm">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <PieChartIcon className="size-5" />
+                Distribuição por ação
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
+                <div className="relative mx-auto h-52 w-52 shrink-0 sm:mx-0">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={actionChartData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={62}
+                        outerRadius={96}
+                        paddingAngle={2}
+                        dataKey="total"
+                        strokeWidth={0}
+                      >
+                        {actionChartData.map((entry, index) => (
+                          <Cell
+                            key={entry.label}
+                            fill={AUDIT_COLORS[index % AUDIT_COLORS.length]}
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        formatter={(value, _name, props) => [
+                          value,
+                          (props.payload as { label?: string } | undefined)?.label ?? "",
+                        ]}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                    <span className="text-3xl font-bold leading-none">
+                      {filteredLogs.length}
+                    </span>
+                    <span className="mt-1 text-xs text-muted-foreground">registros</span>
+                  </div>
+                </div>
+                <div className="flex max-h-52 flex-1 flex-col gap-2 overflow-y-auto">
+                  {actionChartData.map((entry, index) => (
+                    <div
+                      key={entry.label}
+                      className="flex items-center justify-between gap-2"
+                    >
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span
+                          className="size-2.5 shrink-0 rounded-full"
+                          style={{ backgroundColor: AUDIT_COLORS[index % AUDIT_COLORS.length] }}
+                        />
+                        <span className="truncate text-sm text-slate-700">{entry.label}</span>
+                      </div>
+                      <span className="text-sm font-semibold tabular-nums">{entry.total}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
+
         <Card className="border bg-white shadow-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
