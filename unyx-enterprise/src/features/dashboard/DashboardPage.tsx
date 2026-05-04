@@ -392,6 +392,24 @@ export function DashboardPage() {
     total: statusSource.filter((row) => row.current_status === status).length,
   }))
 
+  const liveRows = useMemo(() => {
+    const now = new Date()
+    const nowMin = now.getHours() * 60 + now.getMinutes()
+    function toMin(t: string | null) {
+      if (!t) return null
+      const [h, m] = t.split(":").map(Number)
+      return h * 60 + m
+    }
+    return filteredRows.filter((row) => {
+      if (["folga", "finalizado"].includes(row.current_status)) return false
+      const startMin = toMin(row.start_time)
+      const endMin = toMin(row.end_time)
+      if (startMin !== null && nowMin < startMin) return false
+      if (endMin !== null && nowMin > endMin) return false
+      return true
+    })
+  }, [filteredRows])
+
   const primaryRows = filteredRows
     .filter(
       (row) =>
@@ -739,14 +757,14 @@ export function DashboardPage() {
           <CardContent>
             {dashboard.isLoading ? (
               <StateBlock type="loading" title="Carregando operacao" />
-            ) : filteredRows.length === 0 ? (
+            ) : liveRows.length === 0 ? (
               <StateBlock
-                title="Dashboard aguardando eventos"
-                description="Depois que a operacao do dia comecar, os colaboradores aparecerao aqui por prioridade."
+                title="Nenhum colaborador em turno agora"
+                description="Os colaboradores aparecem aqui durante o horario de trabalho."
               />
             ) : (
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {filteredRows.map((row) => (
+                {liveRows.map((row) => (
                   <div
                     key={row.id}
                     className="rounded-lg border bg-white p-4 shadow-sm"
@@ -755,7 +773,9 @@ export function DashboardPage() {
                       <div>
                         <div className="font-medium">{row.employee_name}</div>
                         <div className="text-sm text-muted-foreground">
-                          {row.sector_name ?? "Sem setor"} · {row.branch_name}
+                          {[row.employee_role, row.sector_name]
+                            .filter(Boolean)
+                            .join(" · ") || row.branch_name}
                         </div>
                       </div>
                       <StatusBadge status={row.current_status} />
@@ -766,16 +786,13 @@ export function DashboardPage() {
                       <span>Ret. {formatTime(row.break_end)}</span>
                       <span>Saida {formatTime(row.end_time)}</span>
                     </div>
-                    <div className="mt-3 flex flex-wrap gap-1.5">
-                      <Badge variant="outline">
-                        Prioridade {getPriority(row, mode)}
-                      </Badge>
-                      {row.delay_minutes > 0 ? (
+                    {row.delay_minutes > 0 ? (
+                      <div className="mt-3">
                         <Badge variant="destructive">
                           {minutesLabel(row.delay_minutes)} atraso
                         </Badge>
-                      ) : null}
-                    </div>
+                      </div>
+                    ) : null}
                   </div>
                 ))}
               </div>
