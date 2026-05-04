@@ -241,6 +241,7 @@ export function AllocationPage() {
   const [historyOpen, setHistoryOpen] = useState(false)
   const [cashMovOpen, setCashMovOpen] = useState(false)
   const [postsOpen, setPostsOpen] = useState(false)
+  const [activePostType, setActivePostType] = useState<OperationalPostType | null>(null)
 
   const org = useOrganization()
   const setupDefaults = useSetupSegmentDefaults()
@@ -274,6 +275,34 @@ export function AllocationPage() {
       movement.confirmed_at.slice(0, 10) === date &&
       movement.movement_type === "sangria_confirmada"
   ).length
+  const postTypeOrder: OperationalPostType[] = [
+    "cashier", "self_checkout", "counter", "service_desk",
+    "delivery", "stock", "kitchen", "reception", "other",
+  ]
+
+  const activePostsByType = useMemo(() => {
+    const map = new Map<OperationalPostType, typeof activePosts>()
+    for (const post of activePosts) {
+      if (!map.has(post.type)) map.set(post.type, [])
+      map.get(post.type)!.push(post)
+    }
+    return map
+  }, [activePosts])
+
+  const availableTabs = useMemo(
+    () => postTypeOrder.filter((type) => activePostsByType.has(type)),
+    [activePostsByType]
+  )
+
+  const effectiveTab: OperationalPostType | null =
+    availableTabs.length > 1
+      ? activePostType && availableTabs.includes(activePostType)
+        ? activePostType
+        : availableTabs[0]
+      : null
+
+  const visiblePosts = effectiveTab ? (activePostsByType.get(effectiveTab) ?? []) : activePosts
+
   const busyEmployeeIds = useMemo(
     () => new Set(activeAllocations.map((allocationItem) => allocationItem.employee_id)),
     [activeAllocations]
@@ -567,8 +596,47 @@ export function AllocationPage() {
                       description="Cadastre caixas, balcoes ou pontos de atendimento para acompanhar cobertura."
                     />
                   ) : (
+                    <>
+                      {availableTabs.length > 1 ? (
+                        <div className="mb-4 flex flex-wrap gap-1.5">
+                          {availableTabs.map((type) => {
+                            const typePosts = activePostsByType.get(type) ?? []
+                            const uncoveredCount = typePosts.filter(
+                              (p) => !allocationByPostId.has(p.id)
+                            ).length
+                            const isActive = type === effectiveTab
+                            return (
+                              <button
+                                key={type}
+                                onClick={() => setActivePostType(type)}
+                                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                                  isActive
+                                    ? "bg-slate-950 text-white"
+                                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                                }`}
+                              >
+                                {postTypeLabel[type]}
+                                <span
+                                  className={`rounded-full px-1.5 text-xs tabular-nums ${
+                                    isActive
+                                      ? "bg-white/20 text-white"
+                                      : "bg-slate-200 text-slate-500"
+                                  }`}
+                                >
+                                  {typePosts.length}
+                                </span>
+                                {uncoveredCount > 0 ? (
+                                  <span className="rounded-full bg-red-500 px-1.5 text-xs tabular-nums text-white">
+                                    {uncoveredCount}
+                                  </span>
+                                ) : null}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      ) : null}
                     <div className="grid gap-3 lg:grid-cols-2">
-                      {activePosts.map((post) => {
+                      {visiblePosts.map((post) => {
                         const allocation = allocationByPostId.get(post.id)
                         const cashierSchedule =
                           allocation && post.type === "cashier"
@@ -680,6 +748,7 @@ export function AllocationPage() {
                         )
                       })}
                     </div>
+                    </>
                   )}
                 </CardContent>
               </Card>
