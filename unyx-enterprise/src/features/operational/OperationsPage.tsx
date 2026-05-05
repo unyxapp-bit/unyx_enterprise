@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react"
 import type { FormEvent } from "react"
-import { Activity, History, MapPinned } from "lucide-react"
+import { Activity, History, MapPinned, Phone } from "lucide-react"
 
 import { StatusBadge } from "@/components/bento/StatusBadge"
 import { PageHeader } from "@/components/shared/PageHeader"
@@ -71,6 +71,26 @@ type PendingConfirm = {
 type ContextBadge = {
   label: string
   warning: boolean
+}
+
+const avatarClassByStatus: Partial<Record<OperationalStatus, string>> = {
+  aguardando_evento: "bg-slate-200 text-slate-700",
+  trabalhando: "bg-emerald-100 text-emerald-700",
+  deve_sair: "bg-amber-100 text-amber-700",
+  aguardando_sangria: "bg-orange-100 text-orange-700",
+  troca_de_caixa: "bg-sky-100 text-sky-700",
+  em_intervalo: "bg-violet-100 text-violet-700",
+  voltou: "bg-teal-100 text-teal-700",
+  folga: "bg-zinc-200 text-zinc-600",
+  finalizado: "bg-neutral-200 text-neutral-600",
+  alerta_critico: "bg-red-100 text-red-700",
+}
+
+function getInitials(name: string): string {
+  const parts = name.trim().split(" ").filter(Boolean)
+  if (parts.length === 0) return "?"
+  if (parts.length === 1) return (parts[0][0] ?? "?").toUpperCase()
+  return ((parts[0][0] ?? "") + (parts[parts.length - 1][0] ?? "")).toUpperCase()
 }
 
 // Maps each operational status to the actions that make sense from that state.
@@ -400,11 +420,10 @@ export function OperationsPage() {
                 description="Cadastre a escala do dia antes de registrar eventos."
               />
             ) : (
-              <div className="grid gap-3">
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 {orderedSchedules.map((schedule) => {
                   const status = statusByScheduleId.get(schedule.id)
                   const currentStatus = status?.current_status
-                  const priority = getSchedulePriorityByMode(mode, schedule, status)
                   const isDone =
                     currentStatus === "finalizado" || currentStatus === "folga"
                   const isCashier = isCashierContext({
@@ -431,82 +450,100 @@ export function OperationsPage() {
                   const hasOccurrence = availableActions.includes("ocorrencia_registrada")
 
                   const cardMeta = currentStatus ? statusMeta[currentStatus] : null
-                  const infoLine = [
-                    schedule.employees?.role,
-                    schedule.employees?.sectors?.name ?? "Sem setor",
-                    schedule.branches?.name ?? "Filial",
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")
+                  const avatarClass =
+                    avatarClassByStatus[currentStatus ?? "aguardando_evento"] ??
+                    "bg-slate-200 text-slate-700"
 
                   return (
                     <div
                       key={schedule.id}
-                      className={`rounded-lg border p-4 shadow-sm transition-opacity ${
+                      className={`flex flex-col rounded-lg border p-4 shadow-sm transition-opacity ${
                         cardMeta ? cardMeta.cardClassName : "border-slate-200 bg-white"
                       } ${isDone ? "opacity-60" : ""}`}
                     >
-                      {/* Header: name, info line, schedule times, badges */}
-                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                        <div className="min-w-0 flex-1">
-                          <div className="text-base font-medium">
-                            {schedule.employees?.name ?? "Colaborador"}
-                          </div>
-                          <div className="text-sm text-muted-foreground">
-                            {infoLine}
-                          </div>
-                          <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">
-                            <span>Entrada {formatTime(schedule.start_time)}</span>
-                            <span>Intervalo {formatTime(schedule.break_start)}</span>
-                            <span>Retorno {formatTime(schedule.break_end)}</span>
-                            <span>Saída {formatTime(schedule.end_time)}</span>
-                          </div>
-                          <div className="mt-2 flex flex-wrap gap-1.5">
-                            <Badge variant="outline">Prioridade {priority}</Badge>
-                            {activeAlloc?.operational_posts?.name ? (
-                              <Badge
-                                variant="outline"
-                                className="border-blue-200 bg-blue-50 text-blue-700"
-                              >
-                                <MapPinned className="mr-1 size-3" />
-                                {activeAlloc.operational_posts.name}
-                              </Badge>
-                            ) : null}
-                            {status && status.delay_minutes > 0 ? (
-                              <Badge variant="destructive">
-                                {minutesLabel(status.delay_minutes)} atraso
-                              </Badge>
-                            ) : null}
-                            {contextBadges.map((badge) => (
-                              <Badge
-                                key={badge.label}
-                                variant="outline"
-                                className={
-                                  badge.warning
-                                    ? "border-amber-300 bg-amber-50 text-amber-700"
-                                    : "border-slate-200 bg-slate-50 text-slate-600"
-                                }
-                              >
-                                {badge.label}
-                              </Badge>
-                            ))}
-                          </div>
-                          {status?.status_reason ? (
-                            <div className="mt-1.5 text-xs text-muted-foreground">
-                              {status.status_reason}
-                              {status.updated_at ? (
-                                <span className="ml-1.5 text-slate-400">
-                                  · {formatHHMM(status.updated_at)}
-                                </span>
-                              ) : null}
-                            </div>
-                          ) : null}
+                      {/* Avatar + status badge */}
+                      <div className="flex items-start justify-between gap-2">
+                        <div
+                          className={`flex size-11 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${avatarClass}`}
+                        >
+                          {getInitials(schedule.employees?.name ?? "?")}
                         </div>
                         <StatusBadge status={currentStatus ?? "aguardando_evento"} />
                       </div>
 
-                      {/* Action area */}
-                      <div className="mt-4">
+                      {/* Name + role/sector */}
+                      <div className="mt-3">
+                        <div className="text-sm font-semibold leading-tight">
+                          {schedule.employees?.name ?? "Colaborador"}
+                        </div>
+                        <div className="mt-0.5 text-xs text-muted-foreground">
+                          {[
+                            schedule.employees?.role,
+                            schedule.employees?.sectors?.name ?? "Sem setor",
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </div>
+                      </div>
+
+                      {/* Schedule times */}
+                      <div className="mt-2 text-xs text-muted-foreground">
+                        {formatTime(schedule.start_time)} → {formatTime(schedule.end_time)}
+                        {schedule.break_start ? (
+                          <span className="ml-2 text-slate-400">
+                            · intervalo {formatTime(schedule.break_start)}
+                          </span>
+                        ) : null}
+                      </div>
+
+                      {/* Extra badges */}
+                      {activeAlloc?.operational_posts?.name ||
+                      (status && status.delay_minutes > 0) ||
+                      contextBadges.length > 0 ? (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {activeAlloc?.operational_posts?.name ? (
+                            <Badge
+                              variant="outline"
+                              className="border-blue-200 bg-blue-50 text-blue-700"
+                            >
+                              <MapPinned className="mr-1 size-3" />
+                              {activeAlloc.operational_posts.name}
+                            </Badge>
+                          ) : null}
+                          {status && status.delay_minutes > 0 ? (
+                            <Badge variant="destructive">
+                              {minutesLabel(status.delay_minutes)} atraso
+                            </Badge>
+                          ) : null}
+                          {contextBadges.map((badge) => (
+                            <Badge
+                              key={badge.label}
+                              variant="outline"
+                              className={
+                                badge.warning
+                                  ? "border-amber-300 bg-amber-50 text-amber-700"
+                                  : "border-slate-200 bg-slate-50 text-slate-600"
+                              }
+                            >
+                              {badge.label}
+                            </Badge>
+                          ))}
+                        </div>
+                      ) : null}
+
+                      {status?.status_reason ? (
+                        <div className="mt-1.5 text-xs text-muted-foreground">
+                          {status.status_reason}
+                          {status.updated_at ? (
+                            <span className="ml-1.5 text-slate-400">
+                              · {formatHHMM(status.updated_at)}
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : null}
+
+                      {/* Action area — pushed to bottom */}
+                      <div className="mt-auto pt-4">
                         {isPending ? (
                           <div className="flex flex-wrap items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2">
                             <span className="text-sm text-red-800">
@@ -534,60 +571,93 @@ export function OperationsPage() {
                             </Button>
                           </div>
                         ) : (
-                          <div className="flex flex-wrap items-center gap-2">
-                            {flowActions.map((eventType) => {
-                              const action = operationalActions.find(
-                                (a) => a.eventType === eventType
-                              )
-                              if (!action) return null
-                              const label =
-                                ACTION_LABEL_OVERRIDE[eventType] ?? action.label
-                              return (
+                          <>
+                            {/* Primary row: main action + phone */}
+                            <div className="flex gap-2">
+                              {flowActions[0] ? (
                                 <Button
-                                  key={eventType}
                                   variant={
-                                    REQUIRES_CONFIRM.has(eventType)
+                                    REQUIRES_CONFIRM.has(flowActions[0])
                                       ? "destructive"
                                       : "outline"
                                   }
                                   size="sm"
+                                  className="flex-1"
                                   disabled={recordEvent.isPending}
-                                  onClick={() => handleAction(schedule, eventType)}
+                                  onClick={() => handleAction(schedule, flowActions[0])}
                                 >
-                                  {label}
+                                  {ACTION_LABEL_OVERRIDE[flowActions[0]] ??
+                                    (operationalActions.find(
+                                      (a) => a.eventType === flowActions[0]
+                                    )?.label ?? flowActions[0])}
                                 </Button>
-                              )
-                            })}
+                              ) : null}
+                              {schedule.employees?.phone ? (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="shrink-0"
+                                  asChild
+                                >
+                                  <a href={`tel:${schedule.employees.phone}`}>
+                                    <Phone className="size-4" />
+                                  </a>
+                                </Button>
+                              ) : null}
+                            </div>
 
-                            {flowActions.length > 0 && (hasExit || hasOccurrence) ? (
-                              <span className="text-slate-300">|</span>
+                            {/* Secondary actions */}
+                            {flowActions.length > 1 || hasExit || hasOccurrence ? (
+                              <div className="mt-2 flex flex-wrap gap-1.5">
+                                {flowActions.slice(1).map((eventType) => {
+                                  const action = operationalActions.find(
+                                    (a) => a.eventType === eventType
+                                  )
+                                  if (!action) return null
+                                  const label =
+                                    ACTION_LABEL_OVERRIDE[eventType] ?? action.label
+                                  return (
+                                    <Button
+                                      key={eventType}
+                                      variant={
+                                        REQUIRES_CONFIRM.has(eventType) ? "destructive" : "ghost"
+                                      }
+                                      size="sm"
+                                      className="h-7 text-xs"
+                                      disabled={recordEvent.isPending}
+                                      onClick={() => handleAction(schedule, eventType)}
+                                    >
+                                      {label}
+                                    </Button>
+                                  )
+                                })}
+                                {hasExit ? (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 text-xs text-slate-600"
+                                    disabled={recordEvent.isPending}
+                                    onClick={() =>
+                                      void fireAction(schedule, "saida_confirmada")
+                                    }
+                                  >
+                                    Confirmar saída
+                                  </Button>
+                                ) : null}
+                                {hasOccurrence ? (
+                                  <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    className="h-7 text-xs"
+                                    disabled={recordEvent.isPending}
+                                    onClick={() => setOccurrenceSchedule(schedule)}
+                                  >
+                                    Ocorrência
+                                  </Button>
+                                ) : null}
+                              </div>
                             ) : null}
-
-                            {hasExit ? (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="border-slate-300 text-slate-600 hover:bg-slate-100"
-                                disabled={recordEvent.isPending}
-                                onClick={() =>
-                                  void fireAction(schedule, "saida_confirmada")
-                                }
-                              >
-                                Confirmar saída
-                              </Button>
-                            ) : null}
-
-                            {hasOccurrence ? (
-                              <Button
-                                variant="destructive"
-                                size="sm"
-                                disabled={recordEvent.isPending}
-                                onClick={() => setOccurrenceSchedule(schedule)}
-                              >
-                                Ocorrência
-                              </Button>
-                            ) : null}
-                          </div>
+                          </>
                         )}
                       </div>
                     </div>
