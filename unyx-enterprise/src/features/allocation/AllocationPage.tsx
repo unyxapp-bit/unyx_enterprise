@@ -451,8 +451,15 @@ export function AllocationPage() {
           scheduledEmployeeIds.has(employee.id) &&
           !busyEmployeeIds.has(employee.id)
       )
-      .sort((a, b) => a.name.localeCompare(b.name))
-  }, [allocationAction, busyEmployeeIds, employees.data, schedules.data])
+      .sort((a, b) => {
+        const aStart = scheduleByEmployeeId.get(a.id)?.start_time ?? null
+        const bStart = scheduleByEmployeeId.get(b.id)?.start_time ?? null
+        if (aStart && bStart) return aStart.localeCompare(bStart)
+        if (aStart) return -1
+        if (bStart) return 1
+        return a.name.localeCompare(b.name)
+      })
+  }, [allocationAction, busyEmployeeIds, employees.data, schedules.data, scheduleByEmployeeId])
 
   const allocationSchedules = useMemo(() => {
     if (!allocationAction || !allocationForm.employee_id) return []
@@ -1448,6 +1455,9 @@ export function AllocationPage() {
                 <option value="">Selecione</option>
                 {allocationEmployees.map((employee) => {
                   const empSched = scheduleByEmployeeId.get(employee.id)
+                  const startLabel = empSched?.start_time
+                    ? formatTime(empSched.start_time)
+                    : null
                   const breakNote =
                     empSched?.status === "returned"
                       ? " ✓ retornou"
@@ -1456,7 +1466,7 @@ export function AllocationPage() {
                         : ""
                   return (
                     <option key={employee.id} value={employee.id}>
-                      {employee.name}
+                      {startLabel ? `${startLabel} — ` : ""}{employee.name}
                       {getEmployeeSubtitle(employee)
                         ? ` - ${getEmployeeSubtitle(employee)}`
                         : ""}
