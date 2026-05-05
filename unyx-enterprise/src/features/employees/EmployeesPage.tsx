@@ -1039,6 +1039,7 @@ export function EmployeesPage() {
             }
           />
         ) : (
+          <>
           <div className="grid gap-3 sm:grid-cols-2">
             {pagedEmployees.map((employee) => {
               const initials = employee.name
@@ -1170,6 +1171,7 @@ export function EmployeesPage() {
               </div>
             </div>
           ) : null}
+          </>
         )}
       </div>
     </>
