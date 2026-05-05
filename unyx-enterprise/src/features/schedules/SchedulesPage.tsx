@@ -672,160 +672,199 @@ function SchedulesImportDialog({
   )
 }
 
-const weekDayNames = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sab", "Dom"]
+const PT_MONTHS = [
+  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+]
 
-function WeekCalendarView({
+function getScheduleInitials(name: string): string {
+  const parts = name.trim().split(" ").filter(Boolean)
+  if (parts.length === 0) return "?"
+  if (parts.length === 1) return (parts[0][0] ?? "?").toUpperCase()
+  return ((parts[0][0] ?? "") + (parts[parts.length - 1][0] ?? "")).toUpperCase()
+}
+
+function MonthCalendarView({
+  calendarMonth,
+  onMonthChange,
   onDaySelect,
   schedulesByDate,
   selectedDay,
   today,
-  weekDays,
 }: {
+  calendarMonth: string
+  onMonthChange: (month: string) => void
   onDaySelect: (day: string | null) => void
   schedulesByDate: Map<string, ScheduleWithRelations[]>
   selectedDay: string | null
   today: string
-  weekDays: string[]
 }) {
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-7 gap-2">
-        {weekDays.map((day) => {
-          const daySchedules = schedulesByDate.get(day) ?? []
-          const isToday = day === today
-          const isSelected = day === selectedDay
-          const dateObj = new Date(day + "T12:00:00")
-          const dayName = weekDayNames[dateObj.getDay() === 0 ? 6 : dateObj.getDay() - 1]
-          const dateNum = dateObj.getDate()
-          const workingCount = daySchedules.filter(
-            (s) => s.status !== "day_off" && s.status !== "cancelled"
-          ).length
-          const dayOffCount = daySchedules.filter((s) => s.status === "day_off").length
+  const [yearNum, monthNum] = calendarMonth.split("-").map(Number)
 
-          return (
+  function prevMonth() {
+    const d = new Date(yearNum, monthNum - 2, 1)
+    onMonthChange(
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+    )
+    onDaySelect(null)
+  }
+
+  function nextMonth() {
+    const d = new Date(yearNum, monthNum, 1)
+    onMonthChange(
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+    )
+    onDaySelect(null)
+  }
+
+  const firstDay = new Date(yearNum, monthNum - 1, 1)
+  const daysInMonth = new Date(yearNum, monthNum, 0).getDate()
+  const startOffset = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1
+
+  const cells: (number | null)[] = []
+  for (let i = 0; i < startOffset; i++) cells.push(null)
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d)
+  while (cells.length % 7 !== 0) cells.push(null)
+
+  const selectedDaySchedules = selectedDay
+    ? (schedulesByDate.get(selectedDay) ?? [])
+    : []
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-[300px_1fr]">
+      {/* Monthly calendar */}
+      <div className="rounded-lg border bg-white p-5 shadow-sm">
+        <div className="mb-5 flex items-center justify-between">
+          <span className="text-sm font-semibold text-slate-800">
+            {PT_MONTHS[monthNum - 1]} {yearNum}
+          </span>
+          <div className="flex gap-0.5">
             <button
-              key={day}
-              onClick={() => onDaySelect(isSelected ? null : day)}
-              className={`min-h-28 rounded-lg border p-2 text-left transition-colors ${
-                isSelected
-                  ? "border-primary bg-primary/5 shadow-sm"
-                  : isToday
-                  ? "border-blue-300 bg-blue-50"
-                  : "border-slate-200 bg-white hover:bg-slate-50"
-              }`}
+              onClick={prevMonth}
+              className="rounded-md p-1 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
             >
-              <div
-                className={`text-[11px] font-semibold uppercase ${
-                  isToday ? "text-blue-600" : "text-muted-foreground"
-                }`}
-              >
-                {dayName}
-              </div>
-              <div
-                className={`text-xl font-bold leading-tight ${
-                  isToday ? "text-blue-700" : isSelected ? "text-primary" : "text-slate-900"
-                }`}
-              >
-                {dateNum}
-              </div>
-              {daySchedules.length > 0 ? (
-                <div className="mt-1.5 space-y-1">
-                  <div className="flex flex-wrap gap-1">
-                    {workingCount > 0 ? (
-                      <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
-                        {workingCount} trab.
-                      </span>
-                    ) : null}
-                    {dayOffCount > 0 ? (
-                      <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">
-                        {dayOffCount} folga
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="space-y-0.5">
-                    {daySchedules.slice(0, 4).map((s) => (
-                      <div key={s.id} className="truncate text-[11px] text-slate-600">
-                        {s.employees?.name}
-                      </div>
-                    ))}
-                    {daySchedules.length > 4 ? (
-                      <div className="text-[10px] text-muted-foreground">
-                        +{daySchedules.length - 4} mais
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              ) : (
-                <div className="mt-2 text-[11px] text-slate-300">Nenhuma escala</div>
-              )}
+              <ChevronLeft className="size-4" />
             </button>
-          )
-        })}
+            <button
+              onClick={nextMonth}
+              className="rounded-md p-1 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
+            >
+              <ChevronRight className="size-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Week day headers */}
+        <div className="mb-1 grid grid-cols-7">
+          {["S", "T", "Q", "Q", "S", "S", "D"].map((d, i) => (
+            <div
+              key={i}
+              className="flex items-center justify-center py-1 text-xs font-medium text-muted-foreground"
+            >
+              {d}
+            </div>
+          ))}
+        </div>
+
+        {/* Day cells */}
+        <div className="grid grid-cols-7 gap-y-0.5">
+          {cells.map((day, i) => {
+            if (!day) return <div key={`empty-${i}`} />
+            const dateISO = `${calendarMonth}-${String(day).padStart(2, "0")}`
+            const isToday = dateISO === today
+            const isSelected = dateISO === selectedDay
+            const hasSchedules = schedulesByDate.has(dateISO)
+
+            return (
+              <button
+                key={dateISO}
+                onClick={() => onDaySelect(isSelected ? null : dateISO)}
+                className={cn(
+                  "relative flex h-9 w-full flex-col items-center justify-center rounded-full text-sm transition-colors",
+                  isSelected
+                    ? "bg-slate-900 font-semibold text-white"
+                    : isToday
+                    ? "font-semibold text-blue-600 hover:bg-blue-50"
+                    : "text-slate-700 hover:bg-slate-100"
+                )}
+              >
+                {day}
+                {hasSchedules && !isSelected ? (
+                  <span className="absolute bottom-1 h-1 w-1 rounded-full bg-indigo-400" />
+                ) : null}
+              </button>
+            )
+          })}
+        </div>
       </div>
 
-      {selectedDay ? (
-        <div className="overflow-hidden rounded-lg border bg-white shadow-sm">
-          <div className="border-b bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
-            {formatDateBR(selectedDay)} — {schedulesByDate.get(selectedDay)?.length ?? 0} escala(s)
-          </div>
-          {(schedulesByDate.get(selectedDay) ?? []).length === 0 ? (
-            <div className="p-6 text-center text-sm text-muted-foreground">
-              Nenhuma escala neste dia.
-            </div>
-          ) : (
-            <table className="w-full text-left text-sm">
-              <thead className="border-b bg-slate-50 text-xs uppercase text-muted-foreground">
-                <tr>
-                  <th className="px-4 py-3">Colaborador</th>
-                  <th className="px-4 py-3">Setor</th>
-                  <th className="px-4 py-3">Entrada</th>
-                  <th className="px-4 py-3">Intervalo</th>
-                  <th className="px-4 py-3">Retorno</th>
-                  <th className="px-4 py-3">Saída</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3 text-right">Ações</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {(schedulesByDate.get(selectedDay) ?? []).map((schedule) => {
+      {/* Schedule list for selected day */}
+      <div className="rounded-lg border bg-white p-5 shadow-sm">
+        {selectedDay ? (
+          <>
+            <h3 className="mb-4 text-base font-semibold text-slate-800">
+              Escala de {formatDateBR(selectedDay)}
+              <span className="ml-2 text-sm font-normal text-muted-foreground">
+                {selectedDaySchedules.length} escala(s)
+              </span>
+            </h3>
+            {selectedDaySchedules.length === 0 ? (
+              <StateBlock title="Nenhuma escala neste dia" />
+            ) : (
+              <div className="space-y-2">
+                {selectedDaySchedules.map((schedule) => {
                   const incomplete = isScheduleIncomplete(schedule)
                   return (
-                    <tr key={schedule.id} className="hover:bg-slate-50">
-                      <td className="px-4 py-3 font-medium">
+                    <div
+                      key={schedule.id}
+                      className="flex items-center gap-3 rounded-lg border border-slate-100 p-3 transition-colors hover:bg-slate-50"
+                    >
+                      <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-semibold text-indigo-700">
+                        {getScheduleInitials(schedule.employees?.name ?? "?")}
+                      </div>
+                      <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          {schedule.employees?.name ?? "-"}
+                          <span className="text-sm font-medium text-indigo-600">
+                            {schedule.employees?.name ?? "-"}
+                          </span>
                           {incomplete ? (
                             <span className="inline-flex h-4 items-center rounded border border-amber-200 bg-amber-50 px-1.5 text-[10px] font-medium text-amber-700">
                               Incompleta
                             </span>
                           ) : null}
                         </div>
-                      </td>
-                      <td className="px-4 py-3">{schedule.employees?.sectors?.name ?? "-"}</td>
-                      <td className="px-4 py-3">{formatTime(schedule.start_time)}</td>
-                      <td className="px-4 py-3">{formatTime(schedule.break_start)}</td>
-                      <td className="px-4 py-3">{formatTime(schedule.break_end)}</td>
-                      <td className="px-4 py-3">{formatTime(schedule.end_time)}</td>
-                      <td className="px-4 py-3">{scheduleStatusLabel[schedule.status]}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex justify-end gap-2">
-                          <ScheduleEditDialog schedule={schedule} />
-                          <ScheduleDeleteDialog schedule={schedule} />
+                        <div className="mt-0.5 text-xs text-muted-foreground">
+                          {schedule.status === "day_off"
+                            ? "Folga"
+                            : schedule.status === "cancelled"
+                            ? "Cancelado"
+                            : `${formatTime(schedule.start_time)} – ${formatTime(schedule.end_time)}`}
+                          {schedule.employees?.sectors?.name ? (
+                            <span className="ml-2 text-slate-400">
+                              · {schedule.employees.sectors.name}
+                            </span>
+                          ) : null}
                         </div>
-                      </td>
-                    </tr>
+                      </div>
+                      <div className="flex shrink-0 gap-1.5">
+                        <ScheduleEditDialog schedule={schedule} />
+                        <ScheduleDeleteDialog schedule={schedule} />
+                      </div>
+                    </div>
                   )
                 })}
-              </tbody>
-            </table>
-          )}
-        </div>
-      ) : (
-        <div className="flex items-center justify-center gap-2 rounded-lg border border-dashed bg-slate-50 p-10 text-sm text-slate-400">
-          <CalendarDays className="size-4" />
-          Clique em um dia para ver as escalas
-        </div>
-      )}
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="flex h-full min-h-64 items-center justify-center">
+            <div className="flex flex-col items-center gap-2 text-slate-400">
+              <CalendarDays className="size-8" />
+              <span className="text-sm">Clique em um dia para ver as escalas</span>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -850,6 +889,7 @@ export function SchedulesPage() {
   const [date, setDate] = useState(todayISO())
   const [weekStart, setWeekStart] = useState(() => getWeekStart(todayISO()))
   const [selectedDay, setSelectedDay] = useState<string | null>(null)
+  const [calendarMonth, setCalendarMonth] = useState(() => todayISO().slice(0, 7))
   const [rangeFrom, setRangeFrom] = useState(() => addDays(todayISO(), -180))
   const [rangeTo, setRangeTo] = useState(() => addDays(todayISO(), 180))
   const [sectorFilter, setSectorFilter] = useState("")
@@ -870,10 +910,24 @@ export function SchedulesPage() {
   })
 
   const weekEnd = addDays(weekStart, 6)
+  const monthStart = calendarMonth + "-01"
+  const monthEnd = useMemo(() => {
+    const [yearStr, monthStr] = calendarMonth.split("-")
+    const lastDay = new Date(Number(yearStr), Number(monthStr), 0).getDate()
+    return `${calendarMonth}-${String(lastDay).padStart(2, "0")}`
+  }, [calendarMonth])
   const dayQuery = useSchedules(date)
   const weekQuery = useSchedulesRange(weekStart, weekEnd)
   const rangeQuery = useSchedulesRange(rangeFrom, rangeTo)
-  const currentQuery = viewMode === "day" ? dayQuery : viewMode === "range" ? rangeQuery : weekQuery
+  const monthQuery = useSchedulesRange(monthStart, monthEnd)
+  const currentQuery =
+    viewMode === "day"
+      ? dayQuery
+      : viewMode === "range"
+      ? rangeQuery
+      : viewMode === "calendar"
+      ? monthQuery
+      : weekQuery
   const weekDays = useMemo(
     () => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)),
     [weekStart]
@@ -1070,7 +1124,7 @@ export function SchedulesPage() {
             </div>
 
             {/* Navigation */}
-            {viewMode === "week" || viewMode === "calendar" ? (
+            {viewMode === "week" ? (
               <div className="flex items-center gap-1">
                 <Button variant="outline" size="icon" onClick={() => { setWeekStart(addDays(weekStart, -7)); setSelectedDay(null) }}>
                   <ChevronLeft className="size-4" />
@@ -1246,8 +1300,9 @@ export function SchedulesPage() {
         ) : currentQuery.isError ? (
           <StateBlock type="error" title="Erro ao carregar escalas" description={currentQuery.error.message} />
         ) : viewMode === "calendar" ? (
-          <WeekCalendarView
-            weekDays={weekDays}
+          <MonthCalendarView
+            calendarMonth={calendarMonth}
+            onMonthChange={setCalendarMonth}
             schedulesByDate={schedulesByDate}
             selectedDay={selectedDay}
             today={todayISO()}
