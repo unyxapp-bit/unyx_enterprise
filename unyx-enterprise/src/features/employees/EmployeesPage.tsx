@@ -1026,67 +1026,80 @@ export function EmployeesPage() {
             }
           />
         ) : (
-          <div className="overflow-hidden rounded-lg border bg-white shadow-sm">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b bg-slate-50 text-xs uppercase text-muted-foreground">
-                <tr>
-                  <th className="w-10 px-4 py-3">
-                    <input
-                      type="checkbox"
-                      className="size-4 rounded border-slate-300 accent-slate-950"
-                      aria-label="Selecionar todos os colaboradores filtrados"
-                      checked={allFilteredSelected}
-                      onChange={(event) => setFilteredSelection(event.target.checked)}
-                    />
-                  </th>
-                  <th className="px-4 py-3">Nome</th>
-                  <th className="px-4 py-3">Filial</th>
-                  <th className="px-4 py-3">Setor</th>
-                  <th className="px-4 py-3">Cargo</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Operacional</th>
-                  <th className="px-4 py-3 text-right">Ações</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {filteredEmployees.map((employee) => (
-                  <tr key={employee.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-3">
-                      <input
-                        type="checkbox"
-                        className="size-4 rounded border-slate-300 accent-slate-950"
-                        aria-label={`Selecionar ${employee.name}`}
-                        checked={selectedIds.has(employee.id)}
-                        onChange={(event) =>
-                          toggleEmployeeSelection(employee.id, event.target.checked)
-                        }
-                      />
-                    </td>
-                    <td className="px-4 py-3 font-medium">{employee.name}</td>
-                    <td className="px-4 py-3">{employee.branches?.name ?? "-"}</td>
-                    <td className="px-4 py-3">{employee.sectors?.name ?? "-"}</td>
-                    <td className="px-4 py-3">{employee.role ?? "-"}</td>
-                    <td className="px-4 py-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            {filteredEmployees.map((employee) => {
+              const initials = employee.name
+                .trim()
+                .split(" ")
+                .filter(Boolean)
+                .reduce<string>(
+                  (acc, w, i, arr) =>
+                    i === 0 || i === arr.length - 1 ? acc + (w[0] ?? "") : acc,
+                  ""
+                )
+                .toUpperCase()
+                .slice(0, 2)
+
+              const opStatus = statusMap.get(employee.id) as
+                | Parameters<typeof StatusBadge>[0]["status"]
+                | undefined
+
+              const subtitle = [employee.role, employee.sectors?.name]
+                .filter(Boolean)
+                .join(" · ")
+
+              return (
+                <div
+                  key={employee.id}
+                  className="flex items-center gap-4 rounded-lg border bg-white p-4 shadow-sm transition-colors hover:bg-slate-50"
+                >
+                  {/* Checkbox */}
+                  <input
+                    type="checkbox"
+                    className="size-4 shrink-0 rounded border-slate-300 accent-slate-950"
+                    aria-label={`Selecionar ${employee.name}`}
+                    checked={selectedIds.has(employee.id)}
+                    onChange={(e) => toggleEmployeeSelection(employee.id, e.target.checked)}
+                  />
+
+                  {/* Avatar */}
+                  <div
+                    className={`flex size-11 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${
+                      employee.active
+                        ? "bg-indigo-100 text-indigo-700"
+                        : "bg-zinc-100 text-zinc-500"
+                    }`}
+                  >
+                    {initials}
+                  </div>
+
+                  {/* Info */}
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-semibold text-indigo-600">
+                      {employee.name}
+                    </div>
+                    <div className="truncate text-xs text-muted-foreground">
+                      {subtitle || employee.branches?.name || "—"}
+                    </div>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                       <EmployeeStatusBadge active={employee.active} />
-                    </td>
-                    <td className="px-4 py-3">
-                      {statusMap.has(employee.id) ? (
-                        <StatusBadge status={statusMap.get(employee.id) as Parameters<typeof StatusBadge>[0]["status"]} />
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <EmployeeActionsMenu
-                        employee={employee}
-                        branches={branches}
-                        attendanceEvents={attendanceEventsQuery}
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      {opStatus ? (
+                        <StatusBadge status={opStatus} />
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="shrink-0">
+                    <EmployeeActionsMenu
+                      employee={employee}
+                      branches={branches}
+                      attendanceEvents={attendanceEventsQuery}
+                    />
+                  </div>
+                </div>
+              )
+            })}
           </div>
         )}
       </div>
