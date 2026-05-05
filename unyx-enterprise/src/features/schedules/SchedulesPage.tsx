@@ -32,7 +32,6 @@ import {
   useDeleteSchedulesBulk,
   useEmployees,
   useImportSchedules,
-  useSchedules,
   useSchedulesRange,
   useUpdateSchedule,
 } from "@/hooks/useUnyxData"
@@ -869,14 +868,6 @@ function MonthCalendarView({
   )
 }
 
-function getWeekStart(dateISO: string): string {
-  const d = new Date(dateISO + "T12:00:00")
-  const day = d.getDay()
-  const offset = day === 0 ? 6 : day - 1
-  d.setDate(d.getDate() - offset)
-  return d.toISOString().slice(0, 10)
-}
-
 function addDays(dateISO: string, n: number): string {
   const d = new Date(dateISO + "T12:00:00")
   d.setDate(d.getDate() + n)
@@ -885,9 +876,7 @@ function addDays(dateISO: string, n: number): string {
 
 export function SchedulesPage() {
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
-  const [viewMode, setViewMode] = useState<"day" | "week" | "range" | "calendar">("week")
-  const [date, setDate] = useState(todayISO())
-  const [weekStart, setWeekStart] = useState(() => getWeekStart(todayISO()))
+  const [viewMode, setViewMode] = useState<"range" | "calendar">("calendar")
   const [selectedDay, setSelectedDay] = useState<string | null>(null)
   const [calendarMonth, setCalendarMonth] = useState(() => todayISO().slice(0, 7))
   const [rangeFrom, setRangeFrom] = useState(() => addDays(todayISO(), -180))
@@ -909,25 +898,15 @@ export function SchedulesPage() {
     notes: "",
   })
 
-  const weekEnd = addDays(weekStart, 6)
   const monthStart = calendarMonth + "-01"
   const monthEnd = useMemo(() => {
     const [yearStr, monthStr] = calendarMonth.split("-")
     const lastDay = new Date(Number(yearStr), Number(monthStr), 0).getDate()
     return `${calendarMonth}-${String(lastDay).padStart(2, "0")}`
   }, [calendarMonth])
-  const dayQuery = useSchedules(date)
-  const weekQuery = useSchedulesRange(weekStart, weekEnd)
   const rangeQuery = useSchedulesRange(rangeFrom, rangeTo)
   const monthQuery = useSchedulesRange(monthStart, monthEnd)
-  const currentQuery =
-    viewMode === "day"
-      ? dayQuery
-      : viewMode === "range"
-      ? rangeQuery
-      : viewMode === "calendar"
-      ? monthQuery
-      : weekQuery
+  const currentQuery = viewMode === "range" ? rangeQuery : monthQuery
 
   const employees = useEmployees(form.branch_id || selectedBranchId)
   const allEmployees = useEmployees(null)
@@ -987,18 +966,6 @@ export function SchedulesPage() {
     })
   }
 
-  function toggleDay(dayDate: string, checked: boolean) {
-    const dayIds = (schedulesByDate.get(dayDate) ?? []).map((s) => s.id)
-    setSelectedIds((prev) => {
-      const next = new Set(prev)
-      for (const id of dayIds) {
-        if (checked) next.add(id)
-        else next.delete(id)
-      }
-      return next
-    })
-  }
-
   async function handleBulkDelete() {
     await deleteSchedulesBulk.mutateAsync(Array.from(selectedIds))
     setSelectedIds(new Set())
@@ -1029,11 +996,9 @@ export function SchedulesPage() {
       notes: s.notes ?? "",
     }))
     const filename =
-      viewMode === "week"
-        ? `escala_semana_${weekStart}.csv`
-        : viewMode === "range"
+      viewMode === "range"
         ? `escala_periodo_${rangeFrom}_${rangeTo}.csv`
-        : `escala_${date}.csv`
+        : `escala_mes_${calendarMonth}.csv`
     downloadCsv(buildCsv(rows, headers), filename)
   }
 
@@ -1055,12 +1020,9 @@ export function SchedulesPage() {
       status: form.status,
       notes: form.notes.trim() || null,
     })
-    if (viewMode === "week") setWeekStart(getWeekStart(form.work_date))
-    else setDate(form.work_date)
     setOpen(false)
   }
 
-  const weekLabel = `${formatDateBR(weekStart)} — ${formatDateBR(weekEnd)}`
   const rangeLabel = `${formatDateBR(rangeFrom)} — ${formatDateBR(rangeTo)}`
 
   return (
@@ -1068,11 +1030,9 @@ export function SchedulesPage() {
       <PageHeader
         title="Escalas"
         description={
-          viewMode === "week" || viewMode === "calendar"
-            ? `Semana de ${weekLabel}`
-            : viewMode === "range"
+          viewMode === "range"
             ? `Período: ${rangeLabel}`
-            : `Escala de ${formatDateBR(date)}`
+            : undefined
         }
         action={
           <div className="flex flex-wrap items-center gap-2">
@@ -1090,26 +1050,6 @@ export function SchedulesPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setViewMode("week")}
-                className={cn(
-                  "border-l px-3 py-1.5 text-sm font-medium transition-colors",
-                  viewMode === "week" ? "bg-slate-950 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
-                )}
-              >
-                Semana
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode("day")}
-                className={cn(
-                  "border-l px-3 py-1.5 text-sm font-medium transition-colors",
-                  viewMode === "day" ? "bg-slate-950 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
-                )}
-              >
-                Dia
-              </button>
-              <button
-                type="button"
                 onClick={() => setViewMode("range")}
                 className={cn(
                   "border-l px-3 py-1.5 text-sm font-medium transition-colors",
@@ -1121,19 +1061,7 @@ export function SchedulesPage() {
             </div>
 
             {/* Navigation */}
-            {viewMode === "week" ? (
-              <div className="flex items-center gap-1">
-                <Button variant="outline" size="icon" onClick={() => { setWeekStart(addDays(weekStart, -7)); setSelectedDay(null) }}>
-                  <ChevronLeft className="size-4" />
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => { setWeekStart(getWeekStart(todayISO())); setDate(todayISO()); setSelectedDay(null) }}>
-                  Hoje
-                </Button>
-                <Button variant="outline" size="icon" onClick={() => { setWeekStart(addDays(weekStart, 7)); setSelectedDay(null) }}>
-                  <ChevronRight className="size-4" />
-                </Button>
-              </div>
-            ) : viewMode === "range" ? (
+            {viewMode === "range" ? (
               <div className="flex items-center gap-2">
                 <Input
                   className="w-36"
@@ -1149,17 +1077,7 @@ export function SchedulesPage() {
                   onChange={(e) => setRangeTo(e.target.value)}
                 />
               </div>
-            ) : (
-              <Input
-                className="w-40"
-                type="date"
-                value={date}
-                onChange={(e) => {
-                  setDate(e.target.value)
-                  setForm((c) => ({ ...c, work_date: e.target.value }))
-                }}
-              />
-            )}
+            ) : null}
 
             {sectorOptions.length > 0 ? (
               <select className={filterClass} value={sectorFilter} onChange={(e) => setSectorFilter(e.target.value)}>
@@ -1174,13 +1092,13 @@ export function SchedulesPage() {
             </Button>
             <SchedulesImportDialog
               branches={branches.data ?? []}
-              currentDate={viewMode === "week" ? weekStart : date}
+              currentDate={todayISO()}
               employees={allEmployees.data ?? []}
               selectedBranchId={selectedBranchId}
             />
             <CopyDayDialog
               branches={branches.data ?? []}
-              currentDate={viewMode === "week" ? weekStart : date}
+              currentDate={todayISO()}
               selectedBranchId={selectedBranchId}
             />
 
@@ -1324,7 +1242,7 @@ export function SchedulesPage() {
                       aria-label="Selecionar todas as escalas"
                     />
                   </th>
-                  {viewMode === "week" && <th className="px-4 py-3">Data</th>}
+                  <th className="px-4 py-3">Data</th>
                   <th className="px-4 py-3">Colaborador</th>
                   <th className="px-4 py-3">Setor</th>
                   <th className="px-4 py-3">Entrada</th>
@@ -1336,104 +1254,46 @@ export function SchedulesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {viewMode === "week"
-                  ? Array.from(schedulesByDate.entries()).map(([dayDate, daySchedules]) => {
-                      const dayAllIds = daySchedules.map((s) => s.id)
-                      const dayAllSelected = dayAllIds.every((id) => selectedIds.has(id))
-                      return (
-                        <>
-                          <tr key={`day-${dayDate}`} className="bg-slate-50">
-                            <td className="px-4 py-2">
-                              <input
-                                type="checkbox"
-                                className="size-4 rounded border-slate-300 accent-slate-950"
-                                checked={dayAllSelected}
-                                onChange={(e) => toggleDay(dayDate, e.target.checked)}
-                                aria-label={`Selecionar ${dayDate}`}
-                              />
-                            </td>
-                            <td colSpan={9} className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                              {formatDateBR(dayDate)} — {daySchedules.length} escala(s)
-                            </td>
-                          </tr>
-                          {daySchedules.map((schedule) => {
-                            const incomplete = isScheduleIncomplete(schedule)
-                            return (
-                              <tr key={schedule.id} className="hover:bg-slate-50">
-                                <td className="px-4 py-3">
-                                  <input
-                                    type="checkbox"
-                                    className="size-4 rounded border-slate-300 accent-slate-950"
-                                    checked={selectedIds.has(schedule.id)}
-                                    onChange={(e) => toggleOne(schedule.id, e.target.checked)}
-                                  />
-                                </td>
-                                <td className="px-4 py-3 text-muted-foreground" />
-                                <td className="px-4 py-3 font-medium">
-                                  <div className="flex items-center gap-2">
-                                    {schedule.employees?.name ?? "-"}
-                                    {incomplete ? (
-                                      <span className="inline-flex h-4 items-center rounded border border-amber-200 bg-amber-50 px-1.5 text-[10px] font-medium text-amber-700">
-                                        Incompleta
-                                      </span>
-                                    ) : null}
-                                  </div>
-                                </td>
-                                <td className="px-4 py-3">{schedule.employees?.sectors?.name ?? "-"}</td>
-                                <td className="px-4 py-3">{formatTime(schedule.start_time)}</td>
-                                <td className="px-4 py-3">{formatTime(schedule.break_start)}</td>
-                                <td className="px-4 py-3">{formatTime(schedule.break_end)}</td>
-                                <td className="px-4 py-3">{formatTime(schedule.end_time)}</td>
-                                <td className="px-4 py-3">{scheduleStatusLabel[schedule.status]}</td>
-                                <td className="px-4 py-3">
-                                  <div className="flex justify-end gap-2">
-                                    <ScheduleEditDialog schedule={schedule} />
-                                    <ScheduleDeleteDialog schedule={schedule} />
-                                  </div>
-                                </td>
-                              </tr>
-                            )
-                          })}
-                        </>
-                      )
-                    })
-                  : filteredSchedules.map((schedule) => {
-                      const incomplete = isScheduleIncomplete(schedule)
-                      return (
-                        <tr key={schedule.id} className="hover:bg-slate-50">
-                          <td className="px-4 py-3">
-                            <input
-                              type="checkbox"
-                              className="size-4 rounded border-slate-300 accent-slate-950"
-                              checked={selectedIds.has(schedule.id)}
-                              onChange={(e) => toggleOne(schedule.id, e.target.checked)}
-                            />
-                          </td>
-                          <td className="px-4 py-3 font-medium">
-                            <div className="flex items-center gap-2">
-                              {schedule.employees?.name ?? "-"}
-                              {incomplete ? (
-                                <span className="inline-flex h-4 items-center rounded border border-amber-200 bg-amber-50 px-1.5 text-[10px] font-medium text-amber-700">
-                                  Incompleta
-                                </span>
-                              ) : null}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3">{schedule.employees?.sectors?.name ?? "-"}</td>
-                          <td className="px-4 py-3">{formatTime(schedule.start_time)}</td>
-                          <td className="px-4 py-3">{formatTime(schedule.break_start)}</td>
-                          <td className="px-4 py-3">{formatTime(schedule.break_end)}</td>
-                          <td className="px-4 py-3">{formatTime(schedule.end_time)}</td>
-                          <td className="px-4 py-3">{scheduleStatusLabel[schedule.status]}</td>
-                          <td className="px-4 py-3">
-                            <div className="flex justify-end gap-2">
-                              <ScheduleEditDialog schedule={schedule} />
-                              <ScheduleDeleteDialog schedule={schedule} />
-                            </div>
-                          </td>
-                        </tr>
-                      )
-                    })}
+                {filteredSchedules.map((schedule) => {
+                  const incomplete = isScheduleIncomplete(schedule)
+                  return (
+                    <tr key={schedule.id} className="hover:bg-slate-50">
+                      <td className="px-4 py-3">
+                        <input
+                          type="checkbox"
+                          className="size-4 rounded border-slate-300 accent-slate-950"
+                          checked={selectedIds.has(schedule.id)}
+                          onChange={(e) => toggleOne(schedule.id, e.target.checked)}
+                        />
+                      </td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground">
+                        {formatDateBR(schedule.work_date)}
+                      </td>
+                      <td className="px-4 py-3 font-medium">
+                        <div className="flex items-center gap-2">
+                          {schedule.employees?.name ?? "-"}
+                          {incomplete ? (
+                            <span className="inline-flex h-4 items-center rounded border border-amber-200 bg-amber-50 px-1.5 text-[10px] font-medium text-amber-700">
+                              Incompleta
+                            </span>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">{schedule.employees?.sectors?.name ?? "-"}</td>
+                      <td className="px-4 py-3">{formatTime(schedule.start_time)}</td>
+                      <td className="px-4 py-3">{formatTime(schedule.break_start)}</td>
+                      <td className="px-4 py-3">{formatTime(schedule.break_end)}</td>
+                      <td className="px-4 py-3">{formatTime(schedule.end_time)}</td>
+                      <td className="px-4 py-3">{scheduleStatusLabel[schedule.status]}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end gap-2">
+                          <ScheduleEditDialog schedule={schedule} />
+                          <ScheduleDeleteDialog schedule={schedule} />
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
