@@ -928,10 +928,7 @@ export function SchedulesPage() {
       : viewMode === "calendar"
       ? monthQuery
       : weekQuery
-  const weekDays = useMemo(
-    () => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)),
-    [weekStart]
-  )
+
   const employees = useEmployees(form.branch_id || selectedBranchId)
   const allEmployees = useEmployees(null)
   const branches = useBranches()
