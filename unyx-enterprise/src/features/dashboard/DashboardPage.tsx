@@ -379,6 +379,25 @@ export function DashboardPage() {
     ).length
   }, [attendanceEvents.data, date])
 
+  const toMin = (t: string | null) => {
+    if (!t) return null
+    const [h, m] = t.split(":").map(Number)
+    return h * 60 + m
+  }
+
+  const chartRows = useMemo(() => {
+    const now = new Date()
+    const nowMin = now.getHours() * 60 + now.getMinutes()
+    return filteredRows.filter((row) => {
+      if (["folga", "finalizado"].includes(row.current_status)) return true
+      const startMin = toMin(row.start_time)
+      const endMin = toMin(row.end_time)
+      if (startMin !== null && nowMin < startMin) return false
+      if (endMin !== null && nowMin > endMin) return false
+      return true
+    })
+  }, [filteredRows])
+
   const statusSource: StatusCount[] =
     chartRows.length > 0
       ? chartRows.map((r) => ({
@@ -403,25 +422,6 @@ export function DashboardPage() {
       total: statusSource.filter((row) => row.current_status === status).length,
     }))
     .filter((d) => d.total > 0)
-
-  const toMin = (t: string | null) => {
-    if (!t) return null
-    const [h, m] = t.split(":").map(Number)
-    return h * 60 + m
-  }
-
-  const chartRows = useMemo(() => {
-    const now = new Date()
-    const nowMin = now.getHours() * 60 + now.getMinutes()
-    return filteredRows.filter((row) => {
-      if (["folga", "finalizado"].includes(row.current_status)) return true
-      const startMin = toMin(row.start_time)
-      const endMin = toMin(row.end_time)
-      if (startMin !== null && nowMin < startMin) return false
-      if (endMin !== null && nowMin > endMin) return false
-      return true
-    })
-  }, [filteredRows])
 
   const liveRows = useMemo(() => {
     const now = new Date()
