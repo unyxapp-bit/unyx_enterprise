@@ -58,6 +58,8 @@ import { useAppStore } from "@/store/useAppStore"
 import type { EmployeeImportInput } from "@/services/unyxApi"
 import type { Branch, EmployeeWithRelations, Sector } from "@/types/domain"
 
+const PAGE_SIZE = 12
+
 const fieldClass =
   "h-8 w-full rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
 
@@ -621,6 +623,7 @@ export function EmployeesPage() {
   const [statusFilter, setStatusFilter] = useState<"" | "active" | "inactive">("active")
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
+  const [pageIndex, setPageIndex] = useState(0)
 
   const employees = useEmployees()
   const operationalStatuses = useOperationalStatuses()
@@ -661,6 +664,12 @@ export function EmployeesPage() {
     return list
   }, [employees.data, search, sectorFilter, statusFilter])
 
+  const pageCount = Math.ceil(filteredEmployees.length / PAGE_SIZE)
+  const pagedEmployees = useMemo(
+    () => filteredEmployees.slice(pageIndex * PAGE_SIZE, (pageIndex + 1) * PAGE_SIZE),
+    [filteredEmployees, pageIndex]
+  )
+
   const filteredEmployeeIds = useMemo(
     () => filteredEmployees.map((employee) => employee.id),
     [filteredEmployees]
@@ -674,6 +683,10 @@ export function EmployeesPage() {
   const allFilteredSelected =
     filteredEmployeeIds.length > 0 &&
     selectedFilteredCount === filteredEmployeeIds.length
+
+  useEffect(() => {
+    setPageIndex(0)
+  }, [search, sectorFilter, statusFilter])
 
   useEffect(() => {
     const currentEmployeeIds = new Set((employees.data ?? []).map((employee) => employee.id))
@@ -1027,7 +1040,7 @@ export function EmployeesPage() {
           />
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
-            {filteredEmployees.map((employee) => {
+            {pagedEmployees.map((employee) => {
               const initials = employee.name
                 .trim()
                 .split(" ")
@@ -1105,6 +1118,58 @@ export function EmployeesPage() {
               )
             })}
           </div>
+
+          {pageCount > 1 ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-2 text-sm text-slate-600">
+              <span>
+                {pageIndex * PAGE_SIZE + 1}–{Math.min((pageIndex + 1) * PAGE_SIZE, filteredEmployees.length)} de {filteredEmployees.length} colaboradores
+              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  className="rounded-md border bg-white px-3 py-1.5 text-sm transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  onClick={() => setPageIndex((p) => p - 1)}
+                  disabled={pageIndex === 0}
+                >
+                  Anterior
+                </button>
+                {Array.from({ length: pageCount }, (_, i) => {
+                  const show =
+                    pageCount <= 7 ||
+                    i === 0 ||
+                    i === pageCount - 1 ||
+                    Math.abs(i - pageIndex) <= 1
+                  const showEllipsisBefore = i === pageIndex - 2 && pageIndex - 2 > 1
+                  const showEllipsisAfter = i === pageIndex + 2 && pageIndex + 2 < pageCount - 2
+                  if (showEllipsisBefore || showEllipsisAfter) {
+                    return (
+                      <span key={i} className="px-1 text-slate-400">…</span>
+                    )
+                  }
+                  if (!show) return null
+                  return (
+                    <button
+                      key={i}
+                      className={`min-w-[32px] rounded-md border px-2 py-1.5 text-sm transition-colors ${
+                        i === pageIndex
+                          ? "border-indigo-600 bg-indigo-600 font-semibold text-white"
+                          : "bg-white hover:bg-slate-50"
+                      }`}
+                      onClick={() => setPageIndex(i)}
+                    >
+                      {i + 1}
+                    </button>
+                  )
+                })}
+                <button
+                  className="rounded-md border bg-white px-3 py-1.5 text-sm transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  onClick={() => setPageIndex((p) => p + 1)}
+                  disabled={pageIndex === pageCount - 1}
+                >
+                  Próximo
+                </button>
+              </div>
+            </div>
+          ) : null}
         )}
       </div>
     </>
