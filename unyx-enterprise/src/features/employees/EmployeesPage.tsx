@@ -1051,12 +1051,16 @@ export function EmployeesPage() {
               return (
                 <div
                   key={employee.id}
-                  className="flex items-center gap-4 rounded-lg border bg-white p-4 shadow-sm transition-colors hover:bg-slate-50"
+                  className="group flex items-center gap-4 rounded-lg border bg-white p-4 shadow-sm transition-colors hover:bg-slate-50"
                 >
-                  {/* Checkbox */}
+                  {/* Checkbox — visível no hover ou quando selecionado */}
                   <input
                     type="checkbox"
-                    className="size-4 shrink-0 rounded border-slate-300 accent-slate-950"
+                    className={`size-4 shrink-0 rounded border-slate-300 accent-slate-950 transition-opacity ${
+                      selectedIds.has(employee.id)
+                        ? "opacity-100"
+                        : "opacity-0 group-hover:opacity-100"
+                    }`}
                     aria-label={`Selecionar ${employee.name}`}
                     checked={selectedIds.has(employee.id)}
                     onChange={(e) => toggleEmployeeSelection(employee.id, e.target.checked)}
