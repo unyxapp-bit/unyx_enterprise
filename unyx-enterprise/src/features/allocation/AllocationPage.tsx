@@ -415,11 +415,14 @@ export function AllocationPage() {
     const nowMin = now.getHours() * 60 + now.getMinutes()
     return activeAllocations.filter((allocation) => {
       if (allocation.ended_at) return false
-      const schedule = allocation.schedule_id
-        ? scheduleById.get(allocation.schedule_id)
-        : scheduleByEmployeeId.get(allocation.employee_id)
-      if (!schedule?.end_time) return false
-      const endMin = timeToMinutes(schedule.end_time)
+      const endTime =
+        allocation.schedules?.end_time ??
+        (allocation.schedule_id
+          ? scheduleById.get(allocation.schedule_id)?.end_time
+          : scheduleByEmployeeId.get(allocation.employee_id)?.end_time) ??
+        null
+      if (!endTime) return false
+      const endMin = timeToMinutes(endTime)
       return endMin !== null && nowMin > endMin
     })
   }, [activeAllocations, scheduleById, scheduleByEmployeeId])
