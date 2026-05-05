@@ -9,6 +9,7 @@ import {
   Coffee,
   ClipboardList,
   GraduationCap,
+  ChevronDown,
   GripVertical,
   LayoutDashboard,
   LogOut,
@@ -107,6 +108,7 @@ const navGroups = [
 ]
 
 const NAV_ORDER_KEY = "unyx_nav_group_order"
+const NAV_COLLAPSED_KEY = "unyx_nav_collapsed_groups"
 
 function loadGroupOrder(): string[] {
   try {
@@ -114,6 +116,14 @@ function loadGroupOrder(): string[] {
     if (raw) return JSON.parse(raw) as string[]
   } catch {}
   return navGroups.map((g) => g.label)
+}
+
+function loadCollapsedGroups(): Set<string> {
+  try {
+    const raw = localStorage.getItem(NAV_COLLAPSED_KEY)
+    if (raw) return new Set(JSON.parse(raw) as string[])
+  } catch {}
+  return new Set()
 }
 
 export function AppLayout() {
@@ -127,6 +137,7 @@ export function AppLayout() {
   ).length
 
   const [groupOrder, setGroupOrder] = useState<string[]>(loadGroupOrder)
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(loadCollapsedGroups)
   const [dragLabel, setDragLabel] = useState<string | null>(null)
   const [dragOverLabel, setDragOverLabel] = useState<string | null>(null)
 
@@ -136,6 +147,16 @@ export function AppLayout() {
     const missing = navGroups.filter((g) => !groupOrder.includes(g.label))
     return [...ordered, ...missing]
   }, [groupOrder])
+
+  function toggleCollapse(label: string) {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev)
+      if (next.has(label)) next.delete(label)
+      else next.add(label)
+      localStorage.setItem(NAV_COLLAPSED_KEY, JSON.stringify([...next]))
+      return next
+    })
+  }
 
   function reorderGroups(fromLabel: string, toLabel: string) {
     const next = [...groupOrder]
@@ -219,18 +240,30 @@ export function AppLayout() {
                   dragLabel === group.label ? "opacity-50" : ""
                 )}
               >
-                <div className="group flex cursor-grab items-start gap-1 px-1 pb-1 active:cursor-grabbing">
+                <button
+                  type="button"
+                  onClick={() => toggleCollapse(group.label)}
+                  className="group flex w-full cursor-grab items-start gap-1 px-1 pb-1 active:cursor-grabbing"
+                >
                   <GripVertical className="mt-0.5 size-3.5 shrink-0 text-slate-300 transition-colors group-hover:text-slate-400" />
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1 text-left">
                     <div className="text-[0.68rem] font-semibold uppercase tracking-wide text-slate-400">
                       {group.label}
                     </div>
-                    <div className="text-[0.7rem] text-muted-foreground">
-                      {group.summary}
-                    </div>
+                    {!collapsedGroups.has(group.label) ? (
+                      <div className="text-[0.7rem] text-muted-foreground">
+                        {group.summary}
+                      </div>
+                    ) : null}
                   </div>
-                </div>
-                {visibleItems.map((item) => (
+                  <ChevronDown
+                    className={cn(
+                      "mt-0.5 size-3.5 shrink-0 text-slate-300 transition-transform duration-200 group-hover:text-slate-400",
+                      collapsedGroups.has(group.label) ? "-rotate-90" : ""
+                    )}
+                  />
+                </button>
+                {!collapsedGroups.has(group.label) && visibleItems.map((item) => (
                   <NavLink
                     key={item.to}
                     to={item.to}
