@@ -1,3 +1,5 @@
+import { useMemo, useState } from "react"
+
 import {
   Activity,
   BarChart2,
@@ -7,6 +9,7 @@ import {
   Coffee,
   ClipboardList,
   GraduationCap,
+  GripVertical,
   LayoutDashboard,
   LogOut,
   MapPinned,
@@ -103,6 +106,16 @@ const navGroups = [
   },
 ]
 
+const NAV_ORDER_KEY = "unyx_nav_group_order"
+
+function loadGroupOrder(): string[] {
+  try {
+    const raw = localStorage.getItem(NAV_ORDER_KEY)
+    if (raw) return JSON.parse(raw) as string[]
+  } catch {}
+  return navGroups.map((g) => g.label)
+}
+
 export function AppLayout() {
   const { profile, profileLoading, signOut } = useAuth()
   const { data: organization } = useOrganization()
@@ -112,6 +125,27 @@ export function AppLayout() {
   const criticalCount = (opStatuses ?? []).filter(
     (s) => s.current_status === "alerta_critico"
   ).length
+
+  const [groupOrder, setGroupOrder] = useState<string[]>(loadGroupOrder)
+  const [dragLabel, setDragLabel] = useState<string | null>(null)
+  const [dragOverLabel, setDragOverLabel] = useState<string | null>(null)
+
+  const orderedGroups = useMemo(() => {
+    const byLabel = Object.fromEntries(navGroups.map((g) => [g.label, g]))
+    const ordered = groupOrder.flatMap((label) => (byLabel[label] ? [byLabel[label]] : []))
+    const missing = navGroups.filter((g) => !groupOrder.includes(g.label))
+    return [...ordered, ...missing]
+  }, [groupOrder])
+
+  function reorderGroups(fromLabel: string, toLabel: string) {
+    const next = [...groupOrder]
+    const from = next.indexOf(fromLabel)
+    const to = next.indexOf(toLabel)
+    if (from === -1 || to === -1 || from === to) return
+    next.splice(to, 0, next.splice(from, 1)[0])
+    setGroupOrder(next)
+    localStorage.setItem(NAV_ORDER_KEY, JSON.stringify(next))
+  }
 
   if (profileLoading) {
     return (
@@ -150,19 +184,50 @@ export function AppLayout() {
           </div>
         </div>
         <nav className="flex-1 space-y-5 overflow-y-auto overscroll-contain px-3 py-4 pb-6">
-          {navGroups.map((group) => {
+          {orderedGroups.map((group) => {
             const visibleItems = group.items.filter((item) =>
               canAccessUser(profile, item.perm)
             )
             if (visibleItems.length === 0) return null
+            const isOver = dragOverLabel === group.label && dragLabel !== group.label
             return (
-              <div key={group.label} className="space-y-1">
-                <div className="px-3 pb-1">
-                  <div className="text-[0.68rem] font-semibold uppercase tracking-wide text-slate-400">
-                    {group.label}
-                  </div>
-                  <div className="text-[0.7rem] text-muted-foreground">
-                    {group.summary}
+              <div
+                key={group.label}
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.effectAllowed = "move"
+                  setDragLabel(group.label)
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault()
+                  e.dataTransfer.dropEffect = "move"
+                  setDragOverLabel(group.label)
+                }}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  if (dragLabel) reorderGroups(dragLabel, group.label)
+                  setDragLabel(null)
+                  setDragOverLabel(null)
+                }}
+                onDragEnd={() => {
+                  setDragLabel(null)
+                  setDragOverLabel(null)
+                }}
+                className={cn(
+                  "space-y-1 rounded-lg transition-colors",
+                  isOver ? "bg-slate-100" : "",
+                  dragLabel === group.label ? "opacity-50" : ""
+                )}
+              >
+                <div className="group flex cursor-grab items-start gap-1 px-1 pb-1 active:cursor-grabbing">
+                  <GripVertical className="mt-0.5 size-3.5 shrink-0 text-slate-300 transition-colors group-hover:text-slate-400" />
+                  <div className="min-w-0">
+                    <div className="text-[0.68rem] font-semibold uppercase tracking-wide text-slate-400">
+                      {group.label}
+                    </div>
+                    <div className="text-[0.7rem] text-muted-foreground">
+                      {group.summary}
+                    </div>
                   </div>
                 </div>
                 {visibleItems.map((item) => (
