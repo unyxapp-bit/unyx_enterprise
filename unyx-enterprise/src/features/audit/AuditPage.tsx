@@ -25,39 +25,94 @@ const filterClass =
   "h-8 rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
 
 const actionLabels: Record<string, string> = {
-  bootstrap_first_access: "Primeiro acesso (bootstrap)",
+  // Onboarding
+  bootstrap_first_access: "Primeiro acesso",
+  complete_onboarding: "Configuracao inicial",
+  // Colaboradores
   create_employee: "Cadastro de colaborador",
   update_employee: "Edicao de colaborador",
   deactivate_employee: "Desativacao de colaborador",
   activate_employee: "Reativacao de colaborador",
+  delete_employee: "Exclusao de colaborador",
+  import_employees: "Importacao de colaboradores",
+  // Escalas
   create_schedule: "Criacao de escala",
   update_schedule: "Edicao de escala",
   delete_schedule: "Exclusao de escala",
+  delete_schedules_bulk: "Exclusao em lote de escalas",
   import_schedules: "Importacao de escalas",
   copy_schedules: "Copia de escalas",
+  // Eventos operacionais
   record_event: "Registro de evento operacional",
+  entrada_confirmada: "Entrada confirmada",
+  atraso_detectado: "Atraso detectado",
+  falta_detectada: "Falta detectada",
+  intervalo_solicitado: "Intervalo solicitado",
+  intervalo_iniciado: "Intervalo iniciado",
+  retorno_confirmado: "Retorno confirmado",
+  saida_confirmada: "Saida confirmada",
+  ocorrencia_registrada: "Ocorrencia registrada",
+  // Alocacao
+  operational_post_created: "Criacao de posto operacional",
+  operational_post_updated: "Atualizacao de posto operacional",
+  post_allocated: "Alocacao de posto",
+  post_allocation_transferred: "Transferencia de alocacao",
+  post_allocation_finalized: "Finalizacao de alocacao",
+  // Caixa / sangria
+  sangria_confirmada: "Sangria confirmada",
+  abertura_caixa: "Abertura de caixa",
+  fechamento_caixa: "Fechamento de caixa",
+  troco_reforco: "Reforco de troco",
+  troca_caixa_confirmada: "Troca de caixa confirmada",
+  // Filiais e setores
   create_branch: "Criacao de filial",
   update_branch: "Edicao de filial",
+  toggle_branch: "Ativacao / desativacao de filial",
   create_sector: "Criacao de setor",
   update_sector: "Edicao de setor",
+  toggle_sector: "Ativacao / desativacao de setor",
+  // Configuracoes
   update_settings: "Atualizacao de configuracoes",
+  update_organization: "Atualizacao da empresa",
+  organization_plan_updated: "Atualizacao de plano",
+  // Comunicados
   create_post: "Publicacao de comunicado",
   update_post: "Edicao de comunicado",
   delete_post: "Exclusao de comunicado",
+  // Usuarios
   invite_user: "Convite de usuario",
-  update_user_role: "Alteracao de perfil de usuario",
+  cancel_invitation: "Cancelamento de convite",
+  update_user_role: "Alteracao de permissao",
+  current_user_profile_updated: "Atualizacao de perfil",
+  set_user_active: "Ativacao / desativacao de usuario",
+  set_user_branch: "Alteracao de filial do usuario",
+  remove_user: "Remocao de usuario",
 }
 
 const entityLabels: Record<string, string> = {
   employee: "Colaborador",
+  employees: "Colaborador",
   schedule: "Escala",
+  schedules: "Escala",
   branch: "Filial",
+  branches: "Filial",
   sector: "Setor",
+  sectors: "Setor",
   attendance_event: "Evento de presenca",
+  attendance_events: "Evento de presenca",
   operational_setting: "Configuracao operacional",
+  operational_settings: "Configuracao operacional",
+  operational_posts: "Posto operacional",
+  post_allocations: "Alocacao de posto",
+  cash_movements: "Movimento de caixa",
   comms_post: "Comunicado",
+  comms_posts: "Comunicado",
   user: "Usuario",
-  organization: "Organizacao",
+  user_profiles: "Perfil de usuario",
+  organization: "Empresa",
+  organizations: "Empresa",
+  invitation: "Convite",
+  invitations: "Convite",
 }
 
 function labelFor(map: Record<string, string>, key: string) {
