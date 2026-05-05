@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import type { FormEvent } from "react"
 import { Activity, History, MapPinned, Phone } from "lucide-react"
 
@@ -59,6 +59,8 @@ function addNoteMarker(current: string | null, marker: string): string {
   if (current.includes(marker)) return current
   return `${current},${marker}`
 }
+
+const PAGE_SIZE = 12
 
 const fieldClass =
   "h-8 rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
@@ -205,6 +207,7 @@ function formatHHMM(isoString: string) {
 export function OperationsPage() {
   const [date, setDate] = useState(todayISO())
   const [sectorFilter, setSectorFilter] = useState("")
+  const [pageIndex, setPageIndex] = useState(0)
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null)
   const [occurrenceSchedule, setOccurrenceSchedule] =
     useState<ScheduleWithRelations | null>(null)
@@ -264,6 +267,16 @@ export function OperationsPage() {
       )
     })
   }, [mode, schedules.data, sectorFilter, statusByScheduleId])
+
+  useEffect(() => {
+    setPageIndex(0)
+  }, [date, sectorFilter])
+
+  const pageCount = Math.ceil(orderedSchedules.length / PAGE_SIZE)
+  const pagedSchedules = useMemo(
+    () => orderedSchedules.slice(pageIndex * PAGE_SIZE, (pageIndex + 1) * PAGE_SIZE),
+    [orderedSchedules, pageIndex]
+  )
 
   async function fireAction(
     schedule: ScheduleWithRelations,
@@ -420,8 +433,9 @@ export function OperationsPage() {
                 description="Cadastre a escala do dia antes de registrar eventos."
               />
             ) : (
+              <>
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                {orderedSchedules.map((schedule) => {
+                {pagedSchedules.map((schedule) => {
                   const status = statusByScheduleId.get(schedule.id)
                   const currentStatus = status?.current_status
                   const isDone =
@@ -664,6 +678,57 @@ export function OperationsPage() {
                   )
                 })}
               </div>
+
+              {pageCount > 1 ? (
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-4 text-sm text-slate-600">
+                  <span>
+                    {pageIndex * PAGE_SIZE + 1}–{Math.min((pageIndex + 1) * PAGE_SIZE, orderedSchedules.length)} de {orderedSchedules.length} colaboradores
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      className="rounded-md border bg-white px-3 py-1.5 text-sm transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                      onClick={() => setPageIndex((p) => p - 1)}
+                      disabled={pageIndex === 0}
+                    >
+                      Anterior
+                    </button>
+                    {Array.from({ length: pageCount }, (_, i) => {
+                      const show =
+                        pageCount <= 7 ||
+                        i === 0 ||
+                        i === pageCount - 1 ||
+                        Math.abs(i - pageIndex) <= 1
+                      const showEllipsisBefore = i === pageIndex - 2 && pageIndex - 2 > 1
+                      const showEllipsisAfter = i === pageIndex + 2 && pageIndex + 2 < pageCount - 2
+                      if (showEllipsisBefore || showEllipsisAfter) {
+                        return <span key={i} className="px-1 text-slate-400">…</span>
+                      }
+                      if (!show) return null
+                      return (
+                        <button
+                          key={i}
+                          className={`min-w-[32px] rounded-md border px-2 py-1.5 text-sm transition-colors ${
+                            i === pageIndex
+                              ? "border-indigo-600 bg-indigo-600 font-semibold text-white"
+                              : "bg-white hover:bg-slate-50"
+                          }`}
+                          onClick={() => setPageIndex(i)}
+                        >
+                          {i + 1}
+                        </button>
+                      )
+                    })}
+                    <button
+                      className="rounded-md border bg-white px-3 py-1.5 text-sm transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                      onClick={() => setPageIndex((p) => p + 1)}
+                      disabled={pageIndex === pageCount - 1}
+                    >
+                      Próximo
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+              </>
             )}
           </CardContent>
         </Card>
