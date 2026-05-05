@@ -385,44 +385,6 @@ export function DashboardPage() {
     return h * 60 + m
   }
 
-  const chartRows = useMemo(() => {
-    const now = new Date()
-    const nowMin = now.getHours() * 60 + now.getMinutes()
-    return filteredRows.filter((row) => {
-      if (["folga", "finalizado"].includes(row.current_status)) return true
-      const startMin = toMin(row.start_time)
-      const endMin = toMin(row.end_time)
-      if (startMin !== null && nowMin < startMin) return false
-      if (endMin !== null && nowMin > endMin) return false
-      return true
-    })
-  }, [filteredRows])
-
-  const statusSource: StatusCount[] =
-    chartRows.length > 0
-      ? chartRows.map((r) => ({
-          current_status: r.current_status,
-          delay_minutes: r.delay_minutes,
-          role: r.employee_role,
-          sectorName: r.sector_name,
-          reason: r.status_reason,
-        }))
-      : liveStatuses.map((s: OperationalStatusRecord) => ({
-          current_status: s.current_status,
-          delay_minutes: s.delay_minutes,
-          role: s.employees?.role,
-          sectorName: s.employees?.sectors?.name,
-          reason: s.status_reason,
-        }))
-
-  const statusChartData = operationalStatuses
-    .map((status) => ({
-      status,
-      label: statusMeta[status].label,
-      total: statusSource.filter((row) => row.current_status === status).length,
-    }))
-    .filter((d) => d.total > 0)
-
   const liveRows = useMemo(() => {
     const now = new Date()
     const nowMin = now.getHours() * 60 + now.getMinutes()
@@ -435,6 +397,46 @@ export function DashboardPage() {
       return true
     })
   }, [filteredRows])
+
+  const statusSource = useMemo((): StatusCount[] => {
+    const active = liveRows.map((r) => ({
+      current_status: r.current_status,
+      delay_minutes: r.delay_minutes,
+      role: r.employee_role,
+      sectorName: r.sector_name,
+      reason: r.status_reason,
+    }))
+    const off = filteredRows
+      .filter((r) => ["folga", "finalizado"].includes(r.current_status))
+      .map((r) => ({
+        current_status: r.current_status,
+        delay_minutes: r.delay_minutes,
+        role: r.employee_role,
+        sectorName: r.sector_name,
+        reason: r.status_reason,
+      }))
+    const combined = [...active, ...off]
+    if (combined.length > 0) return combined
+    // Fallback: operational_status table filtered to today's schedules
+    const today = todayISO()
+    return liveStatuses
+      .filter((s) => s.schedules?.work_date === today)
+      .map((s: OperationalStatusRecord) => ({
+        current_status: s.current_status,
+        delay_minutes: s.delay_minutes,
+        role: s.employees?.role,
+        sectorName: s.employees?.sectors?.name,
+        reason: s.status_reason,
+      }))
+  }, [liveRows, filteredRows, liveStatuses])
+
+  const statusChartData = operationalStatuses
+    .map((status) => ({
+      status,
+      label: statusMeta[status].label,
+      total: statusSource.filter((row) => row.current_status === status).length,
+    }))
+    .filter((d) => d.total > 0)
 
   const primaryRows = filteredRows
     .filter(
