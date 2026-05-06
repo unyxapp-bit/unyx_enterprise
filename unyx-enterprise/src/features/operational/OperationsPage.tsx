@@ -1198,6 +1198,10 @@ export function OperationsPage() {
                         currentStatus,
                         isCashier,
                         operationalSettings.data?.require_cashier_cash_count ?? false
+                      ).filter((et) =>
+                        // Interval for allocated employees is handled by the coverage panel
+                        // (which also frees the post). Hide it from the employee card.
+                        et !== "intervalo_iniciado" || !activeAlloc
                       )
                       const contextBadges = getContextBadges(
                         schedule,
