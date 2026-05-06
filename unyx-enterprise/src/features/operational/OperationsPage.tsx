@@ -184,7 +184,7 @@ export function OperationsPage() {
       sortedSchedules
         .filter((s) => {
           const status = statusByScheduleId.get(s.id)?.current_status
-          return !status || status === "aguardando_evento" || status === "folga"
+          return !status || status === "aguardando_evento"
         })
         .sort((a, b) => (a.start_time ?? "").localeCompare(b.start_time ?? "")),
     [sortedSchedules, statusByScheduleId]
