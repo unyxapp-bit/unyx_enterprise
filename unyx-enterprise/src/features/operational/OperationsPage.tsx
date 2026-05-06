@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import type { FormEvent } from "react"
-import { Activity, History, Phone } from "lucide-react"
+import { Activity, ChevronDown, Coffee, History, LogIn, Timer } from "lucide-react"
 
 import { StatusBadge } from "@/components/bento/StatusBadge"
 import { PageHeader } from "@/components/shared/PageHeader"
@@ -26,11 +26,7 @@ import {
   getOperationalMode,
   operationalModeNames,
 } from "@/features/ops/modes/operationalModes"
-import {
-  getSchedulePriorityByMode,
-  isCashierContext,
-  isResponsibleContext,
-} from "@/features/ops/modes/priorityRules"
+import { getSchedulePriorityByMode } from "@/features/ops/modes/priorityRules"
 import {
   useAttendanceEvents,
   useOperationalSettings,
@@ -42,29 +38,53 @@ import {
   useUpdateSchedule,
 } from "@/hooks/useUnyxData"
 import { formatDateTimeBR, formatTime, minutesLabel, todayISO } from "@/lib/format"
-import { eventLabel, operationalActions, statusMeta } from "@/lib/status"
+import { eventLabel, statusMeta } from "@/lib/status"
 import type {
   AttendanceEventType,
-  OperationalSettings,
   OperationalStatus,
   OperationalStatusRecord,
   ScheduleWithRelations,
 } from "@/types/domain"
 
+// ─── helpers ─────────────────────────────────────────────────────────────────
+
+function timeToMinutes(time: string | null | undefined): number | null {
+  if (!time) return null
+  const [h, m] = time.split(":").map(Number)
+  return (h ?? 0) * 60 + (m ?? 0)
+}
+
+function formatDuration(minutes: number): string {
+  if (minutes < 60) return `${minutes}min`
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  return m === 0 ? `${h}h` : `${h}h ${m}min`
+}
+
+function nowMinutes(): number {
+  const now = new Date()
+  return now.getHours() * 60 + now.getMinutes()
+}
+
+function addNoteMarker(current: string | null, marker: string): string {
+  if (!current) return marker
+  if (current.includes(marker)) return current
+  return `${current},${marker}`
+}
+
+function getInitials(name: string): string {
+  const parts = name.trim().split(" ").filter(Boolean)
+  if (parts.length === 0) return "?"
+  if (parts.length === 1) return (parts[0][0] ?? "?").toUpperCase()
+  return ((parts[0][0] ?? "") + (parts[parts.length - 1][0] ?? "")).toUpperCase()
+}
+
+// ─── constants ───────────────────────────────────────────────────────────────
+
 const PAGE_SIZE = 12
 
 const fieldClass =
   "h-8 rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
-
-type PendingConfirm = {
-  scheduleId: string
-  eventType: AttendanceEventType
-}
-
-type ContextBadge = {
-  label: string
-  warning: boolean
-}
 
 const avatarClassByStatus: Partial<Record<OperationalStatus, string>> = {
   aguardando_evento: "bg-slate-200 text-slate-700",
@@ -79,122 +99,28 @@ const avatarClassByStatus: Partial<Record<OperationalStatus, string>> = {
   alerta_critico: "bg-red-100 text-red-700",
 }
 
-function getInitials(name: string): string {
-  const parts = name.trim().split(" ").filter(Boolean)
-  if (parts.length === 0) return "?"
-  if (parts.length === 1) return (parts[0][0] ?? "?").toUpperCase()
-  return ((parts[0][0] ?? "") + (parts[parts.length - 1][0] ?? "")).toUpperCase()
-}
-
-function getAvailableActions(
-  status: OperationalStatus | undefined,
-  isCashier: boolean,
-  requireCashierCashCount: boolean
-): AttendanceEventType[] {
-  const sangriaFlow = isCashier && requireCashierCashCount
-
-  switch (status) {
-    case undefined:
-    case "aguardando_evento":
-      return ["entrada_confirmada", "atraso_detectado", "falta_detectada"]
-    case "trabalhando":
-    case "voltou":
-      return [
-        sangriaFlow ? "intervalo_solicitado" : "intervalo_iniciado",
-        "atraso_detectado",
-        "ocorrencia_registrada",
-        "saida_confirmada",
-      ]
-    case "aguardando_sangria":
-      return ["sangria_confirmada", "ocorrencia_registrada"]
-    case "troca_de_caixa":
-      return ["troca_caixa_confirmada", "ocorrencia_registrada"]
-    case "deve_sair":
-      return ["intervalo_iniciado", "saida_confirmada", "ocorrencia_registrada"]
-    case "em_intervalo":
-      return ["retorno_confirmado", "ocorrencia_registrada"]
-    case "alerta_critico":
-      return ["entrada_confirmada", "saida_confirmada", "ocorrencia_registrada"]
-    case "finalizado":
-    case "folga":
-      return ["ocorrencia_registrada"]
-    default:
-      return ["ocorrencia_registrada"]
-  }
-}
-
-function getContextBadges(
-  schedule: ScheduleWithRelations,
-  status: OperationalStatusRecord | undefined,
-  settings: OperationalSettings | null | undefined
-): ContextBadge[] {
-  if (!settings) return []
-
-  const badges: ContextBadge[] = []
-  const isCashier = isCashierContext({
-    role: schedule.employees?.role,
-    sectorName: schedule.employees?.sectors?.name,
-  })
-  const isResponsible = isResponsibleContext({
-    role: schedule.employees?.role,
-    sectorName: schedule.employees?.sectors?.name,
-  })
-  const currentStatus = status?.current_status
-
-  if (settings.require_cashier_cash_count && isCashier) {
-    const waitingSangria = currentStatus === "aguardando_sangria"
-    badges.push({
-      label: waitingSangria ? "Sangria pendente" : "Sangria obrigatória",
-      warning: waitingSangria,
-    })
-  }
-
-  if (settings.block_break_on_peak_hours) {
-    const onBreak =
-      currentStatus === "em_intervalo" || currentStatus === "aguardando_sangria"
-    badges.push({ label: "Pico protege intervalo", warning: onBreak })
-  }
-
-  if (settings.require_responsible_presence && isResponsible) {
-    const present =
-      currentStatus === "trabalhando" || currentStatus === "voltou"
-    badges.push({
-      label: present ? "Responsável presente" : "Responsável ausente",
-      warning: !present,
-    })
-  }
-
-  return badges
-}
-
-const REQUIRES_CONFIRM = new Set<AttendanceEventType>([
-  "atraso_detectado",
-  "falta_detectada",
+// Statuses that mean the employee has already entered
+const ENTERED_STATUSES = new Set<OperationalStatus>([
+  "trabalhando",
+  "voltou",
+  "em_intervalo",
+  "aguardando_sangria",
+  "troca_de_caixa",
+  "deve_sair",
+  "alerta_critico",
+  "finalizado",
 ])
 
-const ACTION_LABEL_OVERRIDE: Partial<Record<AttendanceEventType, string>> = {
-  intervalo_iniciado: "Iniciar intervalo",
-  troca_caixa_confirmada: "Troca de caixa",
-}
+type Tab = "em_turno" | "a_chegar"
 
-function formatHHMM(isoString: string) {
-  return new Date(isoString).toLocaleTimeString("pt-BR", {
-    hour: "2-digit",
-    minute: "2-digit",
-  })
-}
-
-function addNoteMarker(current: string | null, marker: string): string {
-  if (!current) return marker
-  if (current.includes(marker)) return current
-  return `${current},${marker}`
-}
+// ─── page ────────────────────────────────────────────────────────────────────
 
 export function OperationsPage() {
   const [date, setDate] = useState(todayISO())
   const [sectorFilter, setSectorFilter] = useState("")
   const [pageIndex, setPageIndex] = useState(0)
-  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null)
+  const [activeTab, setActiveTab] = useState<Tab>("em_turno")
+  const [timelineOpen, setTimelineOpen] = useState(true)
   const [occurrenceSchedule, setOccurrenceSchedule] =
     useState<ScheduleWithRelations | null>(null)
   const [occurrenceNote, setOccurrenceNote] = useState("")
@@ -216,43 +142,68 @@ export function OperationsPage() {
 
   const statusByScheduleId = useMemo(() => {
     const map = new Map<string, OperationalStatusRecord>()
-    for (const status of statuses.data ?? []) {
-      if (status.schedule_id) map.set(status.schedule_id, status)
+    for (const s of statuses.data ?? []) {
+      if (s.schedule_id) map.set(s.schedule_id, s)
     }
     return map
   }, [statuses.data])
 
-  const orderedSchedules = useMemo(() => {
+  // Base list sorted by operational priority
+  const sortedSchedules = useMemo(() => {
     const all = schedules.data ?? []
     const filtered = sectorFilter
       ? all.filter(
-          (schedule) =>
-            schedule.employees?.sectors?.name === sectorFilter ||
-            (sectorFilter === "__none__" && !schedule.employees?.sectors)
+          (s) =>
+            s.employees?.sectors?.name === sectorFilter ||
+            (sectorFilter === "__none__" && !s.employees?.sectors)
         )
       : all
 
     return filtered.slice().sort((a, b) => {
-      const statusA = statusByScheduleId.get(a.id)
-      const statusB = statusByScheduleId.get(b.id)
-
+      const sA = statusByScheduleId.get(a.id)
+      const sB = statusByScheduleId.get(b.id)
       return (
-        getSchedulePriorityByMode(mode, b, statusB) -
-          getSchedulePriorityByMode(mode, a, statusA) ||
+        getSchedulePriorityByMode(mode, b, sB) -
+          getSchedulePriorityByMode(mode, a, sA) ||
         (a.employees?.name ?? "").localeCompare(b.employees?.name ?? "")
       )
     })
   }, [mode, schedules.data, sectorFilter, statusByScheduleId])
 
+  // Tab split
+  const emTurno = useMemo(
+    () =>
+      sortedSchedules.filter((s) => {
+        const status = statusByScheduleId.get(s.id)?.current_status
+        return status && ENTERED_STATUSES.has(status)
+      }),
+    [sortedSchedules, statusByScheduleId]
+  )
+
+  const aChegar = useMemo(
+    () =>
+      sortedSchedules
+        .filter((s) => {
+          const status = statusByScheduleId.get(s.id)?.current_status
+          return !status || status === "aguardando_evento" || status === "folga"
+        })
+        .sort((a, b) => (a.start_time ?? "").localeCompare(b.start_time ?? "")),
+    [sortedSchedules, statusByScheduleId]
+  )
+
+  const activeList = activeTab === "em_turno" ? emTurno : aChegar
+
   useEffect(() => {
     setPageIndex(0)
-  }, [date, sectorFilter])
+  }, [date, sectorFilter, activeTab])
 
-  const pageCount = Math.ceil(orderedSchedules.length / PAGE_SIZE)
+  const pageCount = Math.ceil(activeList.length / PAGE_SIZE)
   const pagedSchedules = useMemo(
-    () => orderedSchedules.slice(pageIndex * PAGE_SIZE, (pageIndex + 1) * PAGE_SIZE),
-    [orderedSchedules, pageIndex]
+    () => activeList.slice(pageIndex * PAGE_SIZE, (pageIndex + 1) * PAGE_SIZE),
+    [activeList, pageIndex]
   )
+
+  // ── actions ──
 
   async function fireAction(
     schedule: ScheduleWithRelations,
@@ -293,27 +244,6 @@ export function OperationsPage() {
     }
   }
 
-  function handleAction(
-    schedule: ScheduleWithRelations,
-    eventType: AttendanceEventType
-  ) {
-    if (REQUIRES_CONFIRM.has(eventType)) {
-      setPendingConfirm({ scheduleId: schedule.id, eventType })
-      return
-    }
-    void fireAction(schedule, eventType)
-  }
-
-  async function handleConfirm(schedule: ScheduleWithRelations) {
-    if (!pendingConfirm) return
-    try {
-      await fireAction(schedule, pendingConfirm.eventType)
-      setPendingConfirm(null)
-    } catch {
-      // keep confirm visible
-    }
-  }
-
   async function handleOccurrenceSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setOccurrenceError(null)
@@ -333,6 +263,8 @@ export function OperationsPage() {
     setOccurrenceSchedule(null)
   }
 
+  // ─── render ──────────────────────────────────────────────────────────────
+
   return (
     <>
       <PageHeader
@@ -345,7 +277,7 @@ export function OperationsPage() {
               className="w-40"
               type="date"
               value={date}
-              onChange={(event) => setDate(event.target.value)}
+              onChange={(e) => setDate(e.target.value)}
             />
             {(sectors.data ?? []).length > 0 ? (
               <select
@@ -366,6 +298,8 @@ export function OperationsPage() {
       />
 
       <div className="grid gap-4 p-6 xl:grid-cols-[1.35fr_0.65fr]">
+
+        {/* ── Painel operacional ── */}
         <Card className="border bg-white shadow-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -374,10 +308,47 @@ export function OperationsPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="mb-4 flex flex-wrap gap-1.5">
-              {modeConfig.ruleHighlights.map((rule) => (
-                <Badge key={rule} variant="outline">{rule}</Badge>
-              ))}
+
+            {/* Tabs */}
+            <div className="mb-4 flex gap-1 rounded-lg border bg-slate-50 p-1">
+              <button
+                onClick={() => setActiveTab("em_turno")}
+                className={`flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  activeTab === "em_turno"
+                    ? "bg-white shadow-sm text-slate-900"
+                    : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                Em turno
+                <span
+                  className={`rounded-full px-1.5 py-0.5 text-xs tabular-nums ${
+                    activeTab === "em_turno"
+                      ? "bg-emerald-100 text-emerald-700"
+                      : "bg-slate-200 text-slate-500"
+                  }`}
+                >
+                  {emTurno.length}
+                </span>
+              </button>
+              <button
+                onClick={() => setActiveTab("a_chegar")}
+                className={`flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  activeTab === "a_chegar"
+                    ? "bg-white shadow-sm text-slate-900"
+                    : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                A chegar
+                <span
+                  className={`rounded-full px-1.5 py-0.5 text-xs tabular-nums ${
+                    activeTab === "a_chegar"
+                      ? "bg-slate-800 text-white"
+                      : "bg-slate-200 text-slate-500"
+                  }`}
+                >
+                  {aChegar.length}
+                </span>
+              </button>
             </div>
 
             {schedules.isLoading || statuses.isLoading ? (
@@ -388,45 +359,68 @@ export function OperationsPage() {
                 title="Erro ao carregar operação"
                 description={schedules.error.message}
               />
-            ) : orderedSchedules.length === 0 ? (
+            ) : activeList.length === 0 ? (
               <StateBlock
-                title="Sem escala para operar"
-                description="Cadastre a escala do dia antes de registrar eventos."
+                title={
+                  activeTab === "em_turno"
+                    ? "Nenhum colaborador em turno"
+                    : "Todos os colaboradores já entraram"
+                }
+                description={
+                  activeTab === "em_turno"
+                    ? "Confirme entradas para ver colaboradores aqui."
+                    : "Sem previsão de novos colaboradores para hoje."
+                }
               />
             ) : (
               <>
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                   {pagedSchedules.map((schedule) => {
-                    const status = statusByScheduleId.get(schedule.id)
-                    const currentStatus = status?.current_status
+                    const statusRecord = statusByScheduleId.get(schedule.id)
+                    const currentStatus = statusRecord?.current_status
                     const isDone =
                       currentStatus === "finalizado" || currentStatus === "folga"
-                    const isCashier = isCashierContext({
-                      role: schedule.employees?.role,
-                      sectorName: schedule.employees?.sectors?.name,
-                    })
-                    const availableActions = getAvailableActions(
-                      currentStatus,
-                      isCashier,
-                      operationalSettings.data?.require_cashier_cash_count ?? false
-                    )
-                    const contextBadges = getContextBadges(
-                      schedule,
-                      status,
-                      operationalSettings.data
-                    )
-                    const isPending = pendingConfirm?.scheduleId === schedule.id
 
-                    const flowActions = availableActions.filter(
-                      (et) => et !== "ocorrencia_registrada" && et !== "saida_confirmada"
-                    )
-                    const hasExit = availableActions.includes("saida_confirmada")
-                    const hasOccurrence = availableActions.includes("ocorrencia_registrada")
+                    const nowMin = nowMinutes()
+                    const startMin = timeToMinutes(schedule.start_time)
+                    const breakStartMin = timeToMinutes(schedule.break_start)
+                    const breakEndMin = timeToMinutes(schedule.break_end)
+
+                    // Time worked since shift start (only if entered)
+                    const timeWorked =
+                      currentStatus &&
+                      ENTERED_STATUSES.has(currentStatus) &&
+                      currentStatus !== "finalizado" &&
+                      startMin !== null &&
+                      nowMin > startMin
+                        ? formatDuration(nowMin - startMin)
+                        : null
+
+                    // Time until break (only if break not yet done)
+                    const breakDone =
+                      schedule.notes?.includes("lunch_done") ||
+                      currentStatus === "voltou" ||
+                      currentStatus === "em_intervalo" ||
+                      (breakEndMin !== null && nowMin > breakEndMin)
+                    const timeUntilBreak =
+                      !breakDone &&
+                      breakStartMin !== null &&
+                      nowMin < breakStartMin
+                        ? formatDuration(breakStartMin - nowMin)
+                        : null
 
                     const cardMeta = currentStatus ? statusMeta[currentStatus] : null
                     const avatarClass =
                       avatarClassByStatus[currentStatus ?? "aguardando_evento"] ??
                       "bg-slate-200 text-slate-700"
+
+                    // Button states
+                    const canEntrada =
+                      !currentStatus || currentStatus === "aguardando_evento"
+                    const canIntervalo =
+                      currentStatus === "trabalhando" ||
+                      currentStatus === "voltou" ||
+                      currentStatus === "deve_sair"
 
                     return (
                       <div
@@ -435,6 +429,7 @@ export function OperationsPage() {
                           cardMeta ? cardMeta.cardClassName : "border-slate-200 bg-white"
                         } ${isDone ? "opacity-60" : ""}`}
                       >
+                        {/* Header: avatar + status */}
                         <div className="flex items-start justify-between gap-2">
                           <div
                             className={`flex size-11 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${avatarClass}`}
@@ -444,6 +439,7 @@ export function OperationsPage() {
                           <StatusBadge status={currentStatus ?? "aguardando_evento"} />
                         </div>
 
+                        {/* Name + role/sector */}
                         <div className="mt-3">
                           <div className="text-sm font-semibold leading-tight">
                             {schedule.employees?.name ?? "Colaborador"}
@@ -458,165 +454,83 @@ export function OperationsPage() {
                           </div>
                         </div>
 
+                        {/* Schedule times */}
                         <div className="mt-2 text-xs text-muted-foreground">
                           {formatTime(schedule.start_time)} → {formatTime(schedule.end_time)}
                           {schedule.break_start ? (
                             <span className="ml-2 text-slate-400">
-                              · intervalo {formatTime(schedule.break_start)}
+                              · int. {formatTime(schedule.break_start)}
                             </span>
                           ) : null}
                         </div>
 
-                        {(status && status.delay_minutes > 0) || contextBadges.length > 0 ? (
-                          <div className="mt-2 flex flex-wrap gap-1">
-                            {status && status.delay_minutes > 0 ? (
-                              <Badge variant="destructive">
-                                {minutesLabel(status.delay_minutes)} atraso
-                              </Badge>
+                        {/* Time worked + time until break */}
+                        {(timeWorked || timeUntilBreak) ? (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {timeWorked ? (
+                              <span className="flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">
+                                <Timer className="size-3" />
+                                {timeWorked} trabalhando
+                              </span>
                             ) : null}
-                            {contextBadges.map((badge) => (
-                              <Badge
-                                key={badge.label}
-                                variant="outline"
-                                className={
-                                  badge.warning
-                                    ? "border-amber-300 bg-amber-50 text-amber-700"
-                                    : "border-slate-200 bg-slate-50 text-slate-600"
-                                }
-                              >
-                                {badge.label}
-                              </Badge>
-                            ))}
+                            {timeUntilBreak ? (
+                              <span className="flex items-center gap-1 rounded-md bg-violet-50 px-2 py-0.5 text-xs text-violet-700">
+                                <Coffee className="size-3" />
+                                int. em {timeUntilBreak}
+                              </span>
+                            ) : null}
                           </div>
                         ) : null}
 
-                        {status?.status_reason ? (
+                        {/* Delay badge */}
+                        {statusRecord && statusRecord.delay_minutes > 0 ? (
+                          <div className="mt-2">
+                            <Badge variant="destructive">
+                              {minutesLabel(statusRecord.delay_minutes)} atraso
+                            </Badge>
+                          </div>
+                        ) : null}
+
+                        {/* Last event reason */}
+                        {statusRecord?.status_reason ? (
                           <div className="mt-1.5 text-xs text-muted-foreground">
-                            {status.status_reason}
-                            {status.updated_at ? (
-                              <span className="ml-1.5 text-slate-400">
-                                · {formatHHMM(status.updated_at)}
-                              </span>
-                            ) : null}
+                            {statusRecord.status_reason}
                           </div>
                         ) : null}
 
+                        {/* Action buttons */}
                         <div className="mt-auto pt-4">
-                          {isPending ? (
-                            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2">
-                              <span className="text-sm text-red-800">
-                                Confirmar{" "}
-                                <span className="font-medium">
-                                  {eventLabel[pendingConfirm.eventType].toLowerCase()}
-                                </span>
-                                ?
-                              </span>
-                              <Button
-                                variant="destructive"
-                                size="sm"
-                                disabled={recordEvent.isPending}
-                                onClick={() => void handleConfirm(schedule)}
-                              >
-                                {recordEvent.isPending ? "Registrando..." : "Confirmar"}
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                disabled={recordEvent.isPending}
-                                onClick={() => setPendingConfirm(null)}
-                              >
-                                Cancelar
-                              </Button>
-                            </div>
-                          ) : (
-                            <>
-                              <div className="flex gap-2">
-                                {flowActions[0] ? (
-                                  <Button
-                                    variant={
-                                      REQUIRES_CONFIRM.has(flowActions[0])
-                                        ? "destructive"
-                                        : "outline"
-                                    }
-                                    size="sm"
-                                    className="flex-1"
-                                    disabled={recordEvent.isPending}
-                                    onClick={() => handleAction(schedule, flowActions[0])}
-                                  >
-                                    {ACTION_LABEL_OVERRIDE[flowActions[0]] ??
-                                      (operationalActions.find(
-                                        (a) => a.eventType === flowActions[0]
-                                      )?.label ?? flowActions[0])}
-                                  </Button>
-                                ) : null}
-                                {schedule.employees?.phone ? (
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="shrink-0"
-                                    asChild
-                                  >
-                                    <a href={`tel:${schedule.employees.phone}`}>
-                                      <Phone className="size-4" />
-                                    </a>
-                                  </Button>
-                                ) : null}
-                              </div>
-
-                              {flowActions.length > 1 || hasExit || hasOccurrence ? (
-                                <div className="mt-2 flex flex-wrap gap-1.5">
-                                  {flowActions.slice(1).map((eventType) => {
-                                    const action = operationalActions.find(
-                                      (a) => a.eventType === eventType
-                                    )
-                                    if (!action) return null
-                                    const label =
-                                      ACTION_LABEL_OVERRIDE[eventType] ?? action.label
-                                    return (
-                                      <Button
-                                        key={eventType}
-                                        variant={
-                                          REQUIRES_CONFIRM.has(eventType)
-                                            ? "destructive"
-                                            : "ghost"
-                                        }
-                                        size="sm"
-                                        className="h-7 text-xs"
-                                        disabled={recordEvent.isPending}
-                                        onClick={() => handleAction(schedule, eventType)}
-                                      >
-                                        {label}
-                                      </Button>
-                                    )
-                                  })}
-                                  {hasExit ? (
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="h-7 text-xs text-slate-600"
-                                      disabled={recordEvent.isPending}
-                                      onClick={() =>
-                                        void fireAction(schedule, "saida_confirmada")
-                                      }
-                                    >
-                                      Confirmar saída
-                                    </Button>
-                                  ) : null}
-                                  {hasOccurrence ? (
-                                    <Button
-                                      variant="destructive"
-                                      size="sm"
-                                      className="h-7 text-xs"
-                                      disabled={recordEvent.isPending}
-                                      onClick={() => setOccurrenceSchedule(schedule)}
-                                    >
-                                      Ocorrência
-                                    </Button>
-                                  ) : null}
-                                </div>
-                              ) : null}
-                            </>
-                          )}
+                          <div className="grid grid-cols-3 gap-1.5">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="flex flex-col gap-0.5 h-auto py-2 text-xs"
+                              disabled={!canEntrada || recordEvent.isPending}
+                              onClick={() => void fireAction(schedule, "entrada_confirmada")}
+                            >
+                              <LogIn className="size-3.5" />
+                              Entrada
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="flex flex-col gap-0.5 h-auto py-2 text-xs"
+                              disabled={!canIntervalo || recordEvent.isPending}
+                              onClick={() => void fireAction(schedule, "intervalo_iniciado")}
+                            >
+                              <Timer className="size-3.5" />
+                              Intervalo
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="flex flex-col gap-0.5 h-auto py-2 text-xs"
+                              disabled
+                            >
+                              <Coffee className="size-3.5" />
+                              Café
+                            </Button>
+                          </div>
                         </div>
                       </div>
                     )
@@ -626,7 +540,7 @@ export function OperationsPage() {
                 {pageCount > 1 ? (
                   <div className="flex flex-wrap items-center justify-between gap-3 pt-4 text-sm text-slate-600">
                     <span>
-                      {pageIndex * PAGE_SIZE + 1}–{Math.min((pageIndex + 1) * PAGE_SIZE, orderedSchedules.length)} de {orderedSchedules.length} colaboradores
+                      {pageIndex * PAGE_SIZE + 1}–{Math.min((pageIndex + 1) * PAGE_SIZE, activeList.length)} de {activeList.length} colaboradores
                     </span>
                     <div className="flex items-center gap-1">
                       <button
@@ -678,48 +592,60 @@ export function OperationsPage() {
           </CardContent>
         </Card>
 
+        {/* ── Timeline (collapsible) ── */}
         <Card className="border bg-white shadow-sm">
-          <CardHeader>
+          <CardHeader
+            className="cursor-pointer select-none"
+            onClick={() => setTimelineOpen((v) => !v)}
+          >
             <CardTitle className="flex items-center gap-2">
               <History className="size-5" />
-              Timeline
+              <span className="flex-1">Timeline</span>
+              <ChevronDown
+                className={`size-4 text-muted-foreground transition-transform duration-200 ${
+                  timelineOpen ? "rotate-180" : ""
+                }`}
+              />
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            {events.isLoading ? (
-              <StateBlock type="loading" title="Carregando eventos" />
-            ) : events.isError ? (
-              <StateBlock
-                type="error"
-                title="Erro ao carregar eventos"
-                description={events.error.message}
-              />
-            ) : (events.data ?? []).length === 0 ? (
-              <StateBlock title="Nenhum evento registrado" />
-            ) : (
-              <div className="space-y-3">
-                {(events.data ?? []).slice(0, 12).map((event) => (
-                  <div key={event.id} className="rounded-lg border bg-slate-50 p-3">
-                    <div className="text-sm font-medium">
-                      {eventLabel[event.event_type]}
-                    </div>
-                    <div className="mt-1 text-sm text-muted-foreground">
-                      {event.employees?.name ?? "Colaborador"} ·{" "}
-                      {formatDateTimeBR(event.event_time)}
-                    </div>
-                    {event.notes ? (
-                      <div className="mt-2 text-sm text-muted-foreground">
-                        {event.notes}
+          {timelineOpen ? (
+            <CardContent>
+              {events.isLoading ? (
+                <StateBlock type="loading" title="Carregando eventos" />
+              ) : events.isError ? (
+                <StateBlock
+                  type="error"
+                  title="Erro ao carregar eventos"
+                  description={events.error.message}
+                />
+              ) : (events.data ?? []).length === 0 ? (
+                <StateBlock title="Nenhum evento registrado" />
+              ) : (
+                <div className="space-y-3">
+                  {(events.data ?? []).slice(0, 12).map((event) => (
+                    <div key={event.id} className="rounded-lg border bg-slate-50 p-3">
+                      <div className="text-sm font-medium">
+                        {eventLabel[event.event_type]}
                       </div>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
+                      <div className="mt-1 text-sm text-muted-foreground">
+                        {event.employees?.name ?? "Colaborador"} ·{" "}
+                        {formatDateTimeBR(event.event_time)}
+                      </div>
+                      {event.notes ? (
+                        <div className="mt-2 text-sm text-muted-foreground">
+                          {event.notes}
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          ) : null}
         </Card>
       </div>
 
+      {/* ── Occurrence dialog ── */}
       <Dialog
         open={Boolean(occurrenceSchedule)}
         onOpenChange={(open) => {
@@ -744,23 +670,20 @@ export function OperationsPage() {
                 {occurrenceSchedule?.branches?.name ?? "Filial"}
               </div>
             </div>
-
             <label className="space-y-1 text-sm">
               <span className="font-medium">Descrição da ocorrência</span>
               <textarea
                 className="min-h-28 w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
                 value={occurrenceNote}
-                onChange={(event) => setOccurrenceNote(event.target.value)}
+                onChange={(e) => setOccurrenceNote(e.target.value)}
                 placeholder="Ex.: colaborador precisou cobrir outro setor por falta inesperada."
               />
             </label>
-
             {occurrenceError || recordEvent.error ? (
               <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                 {occurrenceError ?? recordEvent.error?.message}
               </div>
             ) : null}
-
             <DialogFooter>
               <Button type="submit" disabled={recordEvent.isPending}>
                 {recordEvent.isPending ? "Registrando..." : "Registrar"}
