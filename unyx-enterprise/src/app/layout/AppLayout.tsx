@@ -12,7 +12,6 @@ import {
   ChevronDown,
   LayoutDashboard,
   LogOut,
-  MapPinned,
   Menu,
   MessageSquareText,
   Package,
