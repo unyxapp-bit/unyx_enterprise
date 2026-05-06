@@ -5,7 +5,6 @@ import {
   Coffee,
   DoorOpen,
   Gauge,
-  MapPinned,
   RefreshCw,
   ShieldAlert,
   ShieldCheck,
@@ -50,10 +49,8 @@ import {
   useAttendanceEvents,
   useDashboardRows,
   useOperationalSettings,
-  useOperationalPosts,
   useOperationalStatuses,
   useOrganization,
-  usePostAllocations,
   useSchedules,
 } from "@/hooks/useUnyxData"
 import { formatTime, minutesLabel, todayISO } from "@/lib/format"
@@ -336,9 +333,6 @@ export function DashboardPage() {
   const statuses = useOperationalStatuses()
   const organization = useOrganization()
   const operationalSettings = useOperationalSettings()
-  const operationalPosts = useOperationalPosts()
-  const postAllocations = usePostAllocations()
-
   const attendanceEvents = useAttendanceEvents()
 
   const mode = getOperationalMode(
@@ -354,24 +348,6 @@ export function DashboardPage() {
     () => schedules.data ?? [],
     [schedules.data]
   )
-  const activeOperationalPosts = useMemo(
-    () => (operationalPosts.data ?? []).filter((post) => post.active),
-    [operationalPosts.data]
-  )
-  const coveredPostIds = useMemo(
-    () =>
-      new Set(
-        (postAllocations.data ?? [])
-          .filter((allocation) => !allocation.ended_at)
-          .map((allocation) => allocation.post_id)
-      ),
-    [postAllocations.data]
-  )
-  const uncoveredOperationalPosts = useMemo(
-    () => activeOperationalPosts.filter((post) => !coveredPostIds.has(post.id)),
-    [activeOperationalPosts, coveredPostIds]
-  )
-
   const sectorOptions = useMemo(() => {
     const names = new Set(rows.map((r) => r.sector_name).filter(Boolean) as string[])
     return Array.from(names).sort()
@@ -544,8 +520,8 @@ export function DashboardPage() {
 
       <div className="space-y-5 p-6">
 
-        {/* Row 1: Hero gauge + status breakdown + posts coverage */}
-        <div className="grid gap-4 xl:grid-cols-[1.5fr_1fr_0.65fr]">
+        {/* Row 1: Hero gauge + status breakdown */}
+        <div className="grid gap-4 xl:grid-cols-[1.5fr_1fr]">
 
           {/* Hero: half-donut gauge + KPI sub-cards */}
           <Card className="border bg-white shadow-sm">
@@ -662,72 +638,6 @@ export function DashboardPage() {
             </CardContent>
           </Card>
 
-          {/* Posts coverage donut */}
-          <Card className="border bg-white shadow-sm">
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <MapPinned className="size-4" />
-                Postos
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {activeOperationalPosts.length === 0 ? (
-                <StateBlock title="Sem postos" description="Cadastre postos em Alocacao." />
-              ) : (
-                <>
-                  <div className="relative mx-auto h-32 w-32">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={[
-                            { value: activeOperationalPosts.length - uncoveredOperationalPosts.length },
-                            { value: uncoveredOperationalPosts.length },
-                          ]}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius="65%"
-                          outerRadius="90%"
-                          startAngle={90}
-                          endAngle={-270}
-                          dataKey="value"
-                          strokeWidth={0}
-                        >
-                          <Cell fill="#6366f1" />
-                          <Cell fill="#e2e8f0" />
-                        </Pie>
-                      </PieChart>
-                    </ResponsiveContainer>
-                    <div className="absolute inset-0 flex flex-col items-center justify-center">
-                      <p className="text-xl font-bold tabular-nums text-slate-900">
-                        {activeOperationalPosts.length - uncoveredOperationalPosts.length}
-                      </p>
-                      <p className="text-[10px] text-slate-400">
-                        de {activeOperationalPosts.length}
-                      </p>
-                    </div>
-                  </div>
-                  <p className="mt-1 text-center text-xs text-slate-500">Postos cobertos</p>
-                  {uncoveredOperationalPosts.length > 0 ? (
-                    <div className="mt-3 space-y-1">
-                      {uncoveredOperationalPosts.slice(0, 3).map((post) => (
-                        <div key={post.id} className="flex items-center gap-1.5 rounded-lg bg-red-50 px-2 py-1">
-                          <span className="size-1.5 rounded-full bg-red-400" />
-                          <span className="truncate text-xs text-red-700">{post.name}</span>
-                        </div>
-                      ))}
-                      {uncoveredOperationalPosts.length > 3 ? (
-                        <p className="text-center text-[10px] text-slate-400">
-                          +{uncoveredOperationalPosts.length - 3} sem cobertura
-                        </p>
-                      ) : null}
-                    </div>
-                  ) : (
-                    <p className="mt-2 text-center text-xs text-emerald-600">Todos cobertos ✓</p>
-                  )}
-                </>
-              )}
-            </CardContent>
-          </Card>
         </div>
 
         {/* Row 2: KPI cards grid */}
