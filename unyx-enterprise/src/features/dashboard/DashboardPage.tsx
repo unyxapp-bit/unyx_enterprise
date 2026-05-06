@@ -82,6 +82,26 @@ const STATUS_COLORS: Record<string, string> = {
   folga:             "#a1a1aa",
 }
 
+function getInitials(name: string): string {
+  const parts = (name ?? "").trim().split(" ").filter(Boolean)
+  if (parts.length === 0) return "?"
+  if (parts.length === 1) return (parts[0][0] ?? "?").toUpperCase()
+  return ((parts[0][0] ?? "") + (parts[parts.length - 1][0] ?? "")).toUpperCase()
+}
+
+const avatarColorByStatus: Partial<Record<OperationalStatus, string>> = {
+  aguardando_evento:  "bg-slate-100 text-slate-600",
+  trabalhando:        "bg-emerald-100 text-emerald-700",
+  deve_sair:          "bg-amber-100 text-amber-700",
+  aguardando_sangria: "bg-orange-100 text-orange-700",
+  troca_de_caixa:     "bg-sky-100 text-sky-700",
+  em_intervalo:       "bg-violet-100 text-violet-700",
+  voltou:             "bg-teal-100 text-teal-700",
+  folga:              "bg-zinc-100 text-zinc-600",
+  finalizado:         "bg-neutral-100 text-neutral-600",
+  alerta_critico:     "bg-red-100 text-red-700",
+}
+
 type StatusCount = {
   current_status: OperationalStatus
   delay_minutes: number
@@ -462,6 +482,13 @@ export function DashboardPage() {
       }).format(new Date(dashboard.dataUpdatedAt))
     : null
 
+  const workingCount = statusSource.filter((r) =>
+    ["trabalhando", "voltou"].includes(r.current_status)
+  ).length
+  const scheduledCount = filteredSchedules.length || filteredRows.length
+  const presencePct =
+    scheduledCount > 0 ? Math.round((workingCount / scheduledCount) * 100) : 0
+
   if (dashboard.isError) {
     return (
       <>
@@ -499,9 +526,7 @@ export function DashboardPage() {
               >
                 <option value="">Todos os setores</option>
                 {sectorOptions.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
+                  <option key={s} value={s}>{s}</option>
                 ))}
               </select>
             ) : null}
@@ -512,33 +537,202 @@ export function DashboardPage() {
               disabled={dashboard.isFetching}
               aria-label="Atualizar"
             >
-              <RefreshCw
-                className={`size-4 ${dashboard.isFetching ? "animate-spin" : ""}`}
-              />
+              <RefreshCw className={`size-4 ${dashboard.isFetching ? "animate-spin" : ""}`} />
             </Button>
           </div>
         }
       />
 
-      <div className="space-y-6 p-6">
-        <div className="flex flex-col gap-2 rounded-lg border bg-white p-3 text-sm text-slate-700 shadow-sm lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <span className="font-medium">Modo ativo:</span>{" "}
-            {operationalModeNames[mode]}
-            {lastUpdated ? (
-              <span className="text-muted-foreground"> · atualizado as {lastUpdated}</span>
-            ) : null}
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {modeConfig.ruleHighlights.map((rule) => (
-              <Badge key={rule} variant="outline">
-                {rule}
-              </Badge>
-            ))}
-          </div>
+      <div className="space-y-5 p-6">
+
+        {/* Row 1: Hero gauge + status breakdown + posts coverage */}
+        <div className="grid gap-4 xl:grid-cols-[1.5fr_1fr_0.65fr]">
+
+          {/* Hero: half-donut gauge + KPI sub-cards */}
+          <Card className="border bg-white shadow-sm">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Equipe hoje</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {dashboard.isLoading ? (
+                <StateBlock type="loading" title="Carregando" />
+              ) : (
+                <>
+                  <div className="relative mx-auto h-44 w-full max-w-[260px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={[
+                            { value: presencePct },
+                            { value: Math.max(0, 100 - presencePct) },
+                          ]}
+                          cx="50%"
+                          cy="85%"
+                          startAngle={210}
+                          endAngle={-30}
+                          innerRadius="58%"
+                          outerRadius="88%"
+                          dataKey="value"
+                          strokeWidth={0}
+                          cornerRadius={6}
+                        >
+                          <Cell fill="#6366f1" />
+                          <Cell fill="#e2e8f0" />
+                        </Pie>
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="absolute bottom-0 left-1/2 -translate-x-1/2 text-center">
+                      <p className="text-4xl font-bold tracking-tight tabular-nums text-slate-900">
+                        {presencePct}%
+                      </p>
+                      <p className="text-xs text-slate-400">Equipe ativa</p>
+                    </div>
+                  </div>
+                  <div className="mt-5 grid grid-cols-2 gap-3">
+                    <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                      <p className="text-[11px] font-medium text-slate-400">Escalados</p>
+                      <p className="mt-1 text-2xl font-bold tabular-nums text-slate-800">
+                        {scheduledCount}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3">
+                      <p className="text-[11px] font-medium text-emerald-500">Trabalhando</p>
+                      <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-800">
+                        {workingCount}
+                      </p>
+                    </div>
+                  </div>
+                  {lastUpdated ? (
+                    <p className="mt-3 text-center text-[10px] text-slate-400">
+                      atualizado às {lastUpdated}
+                    </p>
+                  ) : null}
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Status breakdown with progress bars */}
+          <Card className="border bg-white shadow-sm">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Status operacional</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {dashboard.isLoading || statuses.isLoading ? (
+                <StateBlock type="loading" title="Carregando" />
+              ) : statusChartData.length === 0 ? (
+                <StateBlock
+                  title="Sem status"
+                  description="Registre eventos para visualizar."
+                />
+              ) : (
+                <div className="space-y-3.5">
+                  {statusChartData.map((entry) => {
+                    const pct =
+                      statusSource.length > 0
+                        ? Math.round((entry.total / statusSource.length) * 100)
+                        : 0
+                    return (
+                      <div key={entry.status}>
+                        <div className="mb-1 flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <span
+                              className="size-2 shrink-0 rounded-full"
+                              style={{ backgroundColor: STATUS_COLORS[entry.status] ?? "#94a3b8" }}
+                            />
+                            <span className="text-xs text-slate-600">{entry.label}</span>
+                          </div>
+                          <span className="text-xs font-semibold tabular-nums text-slate-700">
+                            {entry.total}
+                          </span>
+                        </div>
+                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                          <div
+                            className="h-full rounded-full transition-all"
+                            style={{
+                              width: `${pct}%`,
+                              backgroundColor: STATUS_COLORS[entry.status] ?? "#94a3b8",
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Posts coverage donut */}
+          <Card className="border bg-white shadow-sm">
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <MapPinned className="size-4" />
+                Postos
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {activeOperationalPosts.length === 0 ? (
+                <StateBlock title="Sem postos" description="Cadastre postos em Alocacao." />
+              ) : (
+                <>
+                  <div className="relative mx-auto h-32 w-32">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={[
+                            { value: activeOperationalPosts.length - uncoveredOperationalPosts.length },
+                            { value: uncoveredOperationalPosts.length },
+                          ]}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius="65%"
+                          outerRadius="90%"
+                          startAngle={90}
+                          endAngle={-270}
+                          dataKey="value"
+                          strokeWidth={0}
+                        >
+                          <Cell fill="#6366f1" />
+                          <Cell fill="#e2e8f0" />
+                        </Pie>
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center">
+                      <p className="text-xl font-bold tabular-nums text-slate-900">
+                        {activeOperationalPosts.length - uncoveredOperationalPosts.length}
+                      </p>
+                      <p className="text-[10px] text-slate-400">
+                        de {activeOperationalPosts.length}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="mt-1 text-center text-xs text-slate-500">Postos cobertos</p>
+                  {uncoveredOperationalPosts.length > 0 ? (
+                    <div className="mt-3 space-y-1">
+                      {uncoveredOperationalPosts.slice(0, 3).map((post) => (
+                        <div key={post.id} className="flex items-center gap-1.5 rounded-lg bg-red-50 px-2 py-1">
+                          <span className="size-1.5 rounded-full bg-red-400" />
+                          <span className="truncate text-xs text-red-700">{post.name}</span>
+                        </div>
+                      ))}
+                      {uncoveredOperationalPosts.length > 3 ? (
+                        <p className="text-center text-[10px] text-slate-400">
+                          +{uncoveredOperationalPosts.length - 3} sem cobertura
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-center text-xs text-emerald-600">Todos cobertos ✓</p>
+                  )}
+                </>
+              )}
+            </CardContent>
+          </Card>
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        {/* Row 2: KPI cards grid */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
           {modeConfig.dashboardCards.map((key) => {
             const metric = buildMetric(key, {
               rows: filteredRows,
@@ -547,253 +741,208 @@ export function DashboardPage() {
               occurrencesCount,
               minimumTeamSize: modeConfig.minimumTeamSize,
             })
-
             return (
               <div
                 key={key}
-                className={`flex min-w-[130px] flex-1 items-center gap-2.5 rounded-lg border bg-white px-3 py-2.5 shadow-sm ${
-                  metric.danger ? "border-red-200 bg-red-50" : ""
+                className={`rounded-xl border bg-white p-4 shadow-sm ${
+                  metric.danger ? "border-red-200 bg-red-50" : "border-slate-200"
                 }`}
               >
-                <div className="shrink-0 text-muted-foreground [&_svg]:size-4">
-                  {getMetricIcon(key)}
-                </div>
-                <div className="min-w-0">
-                  <p className="truncate text-[11px] leading-none text-muted-foreground">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-[11px] font-medium leading-tight text-slate-500">
                     {metric.title}
                   </p>
-                  <p className={`mt-1 text-lg font-bold leading-none tabular-nums ${metric.danger ? "text-red-700" : ""}`}>
-                    {metric.value}
-                  </p>
+                  <div className={`shrink-0 rounded-lg p-1.5 ${metric.danger ? "bg-red-100" : "bg-slate-100"}`}>
+                    <div className={`[&_svg]:size-3.5 ${metric.danger ? "text-red-600" : "text-slate-500"}`}>
+                      {getMetricIcon(key)}
+                    </div>
+                  </div>
                 </div>
+                <p className={`mt-2.5 text-2xl font-bold tracking-tight tabular-nums ${
+                  metric.danger ? "text-red-700" : "text-slate-900"
+                }`}>
+                  {metric.value}
+                </p>
+                <p className="mt-0.5 text-[10px] leading-tight text-slate-400">
+                  {metric.detail}
+                </p>
               </div>
             )
           })}
         </div>
 
-        {activeOperationalPosts.length > 0 ? (
-          <Card
-            className={`border bg-white shadow-sm ${
-              uncoveredOperationalPosts.length > 0 ? "border-red-200" : ""
-            }`}
-          >
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <MapPinned className="size-5" />
-                Cobertura de postos
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-lg border bg-slate-50 p-3">
-                  <div className="text-sm text-muted-foreground">Postos ativos</div>
-                  <div className="mt-1 text-2xl font-semibold">
-                    {activeOperationalPosts.length}
-                  </div>
-                </div>
-                <div className="rounded-lg border bg-emerald-50 p-3">
-                  <div className="text-sm text-emerald-700">Cobertos</div>
-                  <div className="mt-1 text-2xl font-semibold text-emerald-900">
-                    {activeOperationalPosts.length - uncoveredOperationalPosts.length}
-                  </div>
-                </div>
-                <div className="rounded-lg border bg-red-50 p-3">
-                  <div className="text-sm text-red-700">Sem cobertura</div>
-                  <div className="mt-1 text-2xl font-semibold text-red-900">
-                    {uncoveredOperationalPosts.length}
-                  </div>
-                </div>
-              </div>
-
-              {uncoveredOperationalPosts.length > 0 ? (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {uncoveredOperationalPosts.slice(0, 8).map((post) => (
-                    <Badge key={post.id} variant="destructive">
-                      {post.name}
-                    </Badge>
-                  ))}
-                </div>
-              ) : (
-                <div className="mt-3 text-sm text-muted-foreground">
-                  Todos os postos ativos estao cobertos.
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        ) : null}
-
-        <div className="grid gap-4 xl:grid-cols-[1.4fr_0.8fr]">
+        {/* Row 3: High priority + secondary */}
+        <div className="grid gap-4 xl:grid-cols-2">
           <Card className="border bg-white shadow-sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Gauge className="size-5" />
-                Status por categoria
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <AlertTriangle className="size-4 text-red-500" />
+                {modeConfig.highPriorityTitle}
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              {dashboard.isLoading || statuses.isLoading ? (
-                <StateBlock type="loading" title="Carregando status" />
-              ) : statusChartData.length === 0 ? (
+            <CardContent className="space-y-2">
+              {primaryRows.length === 0 ? (
                 <StateBlock
-                  title="Sem status operacional"
-                  description="Cadastre escalas e registre eventos para alimentar o painel."
+                  title="Nenhuma prioridade alta"
+                  description="A operacao nao possui registros criticos no momento."
                 />
               ) : (
-                <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
-                  <div className="relative mx-auto h-52 w-52 shrink-0 sm:mx-0">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={statusChartData}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={62}
-                          outerRadius={96}
-                          paddingAngle={2}
-                          dataKey="total"
-                          strokeWidth={0}
-                        >
-                          {statusChartData.map((entry) => (
-                            <Cell
-                              key={entry.status}
-                              fill={STATUS_COLORS[entry.status] ?? "#94a3b8"}
-                            />
-                          ))}
-                        </Pie>
-                        <Tooltip
-                          formatter={(value, _name, props) => [
-                            value,
-                            props.payload?.label ?? "",
-                          ]}
-                        />
-                      </PieChart>
-                    </ResponsiveContainer>
-                    <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-                      <span className="text-3xl font-bold leading-none">
-                        {statusSource.length}
-                      </span>
-                      <span className="mt-1 text-xs text-muted-foreground">
-                        {statusSource.length === 1 ? "colaborador" : "colaboradores"}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-1 flex-col gap-2">
-                    {statusChartData.map((entry) => (
-                      <div
-                        key={entry.status}
-                        className="flex items-center justify-between gap-2"
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span
-                            className="size-2.5 shrink-0 rounded-full"
-                            style={{ backgroundColor: STATUS_COLORS[entry.status] ?? "#94a3b8" }}
-                          />
-                          <span className="truncate text-sm text-slate-700">
-                            {entry.label}
-                          </span>
-                        </div>
-                        <span className="text-sm font-semibold tabular-nums">
-                          {entry.total}
-                        </span>
+                primaryRows.map((row) => {
+                  const initials = getInitials(row.employee_name)
+                  return (
+                    <div key={row.id} className="flex items-center gap-3 rounded-xl border border-red-100 bg-red-50/70 p-3">
+                      <div className="w-1 self-stretch shrink-0 rounded-full bg-red-400" />
+                      <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-red-100 text-xs font-bold text-red-700">
+                        {initials}
                       </div>
-                    ))}
-                  </div>
-                </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-slate-800">{row.employee_name}</p>
+                        <p className="truncate text-xs text-red-600">
+                          {row.status_reason ?? "Prioridade operacional alta"}
+                        </p>
+                      </div>
+                      <StatusBadge status={row.current_status} />
+                    </div>
+                  )
+                })
               )}
             </CardContent>
           </Card>
 
-          <div className="space-y-4">
-            <Card className="border bg-white shadow-sm">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <AlertTriangle className="size-5 text-red-500" />
-                  {modeConfig.highPriorityTitle}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {primaryRows.length === 0 ? (
-                  <StateBlock
-                    title="Nenhuma prioridade alta"
-                    description="A operacao nao possui registros criticos no momento."
-                  />
-                ) : (
-                  primaryRows.map((row) => (
-                    <div
-                      key={row.id}
-                      className="rounded-lg border border-red-100 bg-red-50 p-3"
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="font-medium">{row.employee_name}</div>
-                        <StatusBadge status={row.current_status} />
+          <Card className="border bg-white shadow-sm">
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <DoorOpen className="size-4 text-amber-500" />
+                {modeConfig.secondaryTitle}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {secondaryRows.length === 0 ? (
+                <StateBlock
+                  title="Sem pendencias operacionais"
+                  description="Intervalos, saidas e etapas estao regularizadas."
+                />
+              ) : (
+                secondaryRows.map((row) => {
+                  const initials = getInitials(row.employee_name)
+                  return (
+                    <div key={row.id} className="flex items-center gap-3 rounded-xl border border-amber-100 bg-amber-50/70 p-3">
+                      <div className="w-1 self-stretch shrink-0 rounded-full bg-amber-400" />
+                      <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-xs font-bold text-amber-700">
+                        {initials}
                       </div>
-                      <div className="mt-1 text-sm text-red-700">
-                        {row.status_reason ?? "Prioridade operacional alta"}
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-slate-800">{row.employee_name}</p>
+                        <p className="truncate text-xs text-amber-600">
+                          {row.sector_name ?? "Sem setor"} · {row.branch_name}
+                        </p>
                       </div>
+                      <StatusBadge status={row.current_status} />
                     </div>
-                  ))
-                )}
-              </CardContent>
-            </Card>
-
-            <Card className="border bg-white shadow-sm">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <DoorOpen className="size-5 text-amber-500" />
-                  {modeConfig.secondaryTitle}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {secondaryRows.length === 0 ? (
-                  <StateBlock
-                    title="Sem pendencias operacionais"
-                    description="Intervalos, saidas e etapas obrigatorias estao regularizadas."
-                  />
-                ) : (
-                  secondaryRows.map((row) => (
-                    <div
-                      key={row.id}
-                      className="rounded-lg border border-amber-100 bg-amber-50 p-3"
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="font-medium">{row.employee_name}</div>
-                        <StatusBadge status={row.current_status} />
-                      </div>
-                      <div className="mt-1 text-sm text-amber-700">
-                        {row.sector_name ?? "Sem setor"} · {row.branch_name}
-                      </div>
-                    </div>
-                  ))
-                )}
-              </CardContent>
-            </Card>
-
-            {(() => {
-              const coverageRisk = filteredRows.filter(
-                (row) =>
-                  row.current_status === "alerta_critico" ||
-                  row.current_status === "deve_sair" ||
-                  row.current_status === "em_intervalo"
-              ).length
-              const total = filteredRows.length
-              if (total === 0) return null
-              const pct = Math.round((coverageRisk / total) * 100)
-              if (pct < 30) return null
-              return (
-                <div className="flex items-start gap-3 rounded-lg border border-orange-200 bg-orange-50 p-3">
-                  <ShieldAlert className="mt-0.5 size-4 shrink-0 text-orange-600" />
-                  <div className="text-sm text-orange-800">
-                    <span className="font-medium">Risco de cobertura:</span>{" "}
-                    {coverageRisk} de {total} colaboradores ({pct}%) estao em
-                    situacao que pode impactar a operacao.
-                  </div>
-                </div>
-              )
-            })()}
-          </div>
+                  )
+                })
+              )}
+            </CardContent>
+          </Card>
         </div>
 
+        {/* Coverage risk banner */}
+        {(() => {
+          const coverageRisk = filteredRows.filter(
+            (row) =>
+              row.current_status === "alerta_critico" ||
+              row.current_status === "deve_sair" ||
+              row.current_status === "em_intervalo"
+          ).length
+          const total = filteredRows.length
+          if (total === 0) return null
+          const pct = Math.round((coverageRisk / total) * 100)
+          if (pct < 30) return null
+          return (
+            <div className="flex items-start gap-3 rounded-xl border border-orange-200 bg-orange-50 p-4">
+              <ShieldAlert className="mt-0.5 size-4 shrink-0 text-orange-600" />
+              <div className="text-sm text-orange-800">
+                <span className="font-medium">Risco de cobertura:</span>{" "}
+                {coverageRisk} de {total} colaboradores ({pct}%) estao em
+                situacao que pode impactar a operacao.
+              </div>
+            </div>
+          )
+        })()}
+
+        {/* Row 4: Live team */}
+        <Card className="border bg-white shadow-sm">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">{modeConfig.liveTitle}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {dashboard.isLoading ? (
+              <StateBlock type="loading" title="Carregando operacao" />
+            ) : liveRows.length === 0 ? (
+              <StateBlock
+                title="Nenhum colaborador em turno agora"
+                description="Os colaboradores aparecem aqui durante o horario de trabalho."
+              />
+            ) : (
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {liveRows.map((row) => {
+                  const initials = getInitials(row.employee_name)
+                  const avatarClass =
+                    avatarColorByStatus[row.current_status] ?? "bg-slate-100 text-slate-600"
+                  return (
+                    <div key={row.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="flex items-center gap-3">
+                        <div className={`flex size-10 shrink-0 items-center justify-center rounded-full text-sm font-bold ${avatarClass}`}>
+                          {initials}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-slate-800">
+                            {row.employee_name}
+                          </p>
+                          <p className="truncate text-xs text-slate-400">
+                            {[row.employee_role, row.sector_name].filter(Boolean).join(" · ") || row.branch_name}
+                          </p>
+                        </div>
+                        <StatusBadge status={row.current_status} />
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        {row.start_time ? (
+                          <span className="rounded-md bg-slate-100 px-2 py-1 text-[11px] text-slate-500">
+                            {formatTime(row.start_time)}
+                          </span>
+                        ) : null}
+                        {row.break_start ? (
+                          <span className="rounded-md bg-violet-50 px-2 py-1 text-[11px] text-violet-600">
+                            int. {formatTime(row.break_start)}
+                          </span>
+                        ) : null}
+                        {row.break_end ? (
+                          <span className="rounded-md bg-teal-50 px-2 py-1 text-[11px] text-teal-600">
+                            ret. {formatTime(row.break_end)}
+                          </span>
+                        ) : null}
+                        {row.end_time ? (
+                          <span className="rounded-md bg-slate-100 px-2 py-1 text-[11px] text-slate-500">
+                            → {formatTime(row.end_time)}
+                          </span>
+                        ) : null}
+                      </div>
+                      {row.delay_minutes > 0 ? (
+                        <div className="mt-2">
+                          <Badge variant="destructive" className="text-[10px]">
+                            {minutesLabel(row.delay_minutes)} atraso
+                          </Badge>
+                        </div>
+                      ) : null}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Row 5: Branch summary (multi-branch only) */}
         {(() => {
           const branchMap = new Map<string, { name: string; working: number; critical: number; total: number }>()
           for (const row of rows) {
@@ -809,9 +958,9 @@ export function DashboardPage() {
           if (branchMap.size <= 1) return null
           return (
             <Card className="border bg-white shadow-sm">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Building2 className="size-5" />
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Building2 className="size-4" />
                   Resumo por filial
                 </CardTitle>
               </CardHeader>
@@ -820,14 +969,20 @@ export function DashboardPage() {
                   {Array.from(branchMap.values()).map((branch) => (
                     <div
                       key={branch.name}
-                      className={`rounded-lg border p-3 ${branch.critical > 0 ? "border-red-200 bg-red-50" : "border-slate-200 bg-slate-50"}`}
+                      className={`rounded-xl border p-3 ${
+                        branch.critical > 0
+                          ? "border-red-200 bg-red-50"
+                          : "border-slate-200 bg-slate-50"
+                      }`}
                     >
-                      <div className="font-medium">{branch.name}</div>
+                      <p className="font-semibold text-slate-800">{branch.name}</p>
                       <div className="mt-1.5 flex gap-3 text-sm text-muted-foreground">
                         <span>{branch.working} trabalhando</span>
                         <span>{branch.total} total</span>
                         {branch.critical > 0 ? (
-                          <span className="font-medium text-red-600">{branch.critical} critico{branch.critical > 1 ? "s" : ""}</span>
+                          <span className="font-medium text-red-600">
+                            {branch.critical} critico{branch.critical > 1 ? "s" : ""}
+                          </span>
                         ) : null}
                       </div>
                     </div>
@@ -838,55 +993,6 @@ export function DashboardPage() {
           )
         })()}
 
-        <Card className="border bg-white shadow-sm">
-          <CardHeader>
-            <CardTitle>{modeConfig.liveTitle}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {dashboard.isLoading ? (
-              <StateBlock type="loading" title="Carregando operacao" />
-            ) : liveRows.length === 0 ? (
-              <StateBlock
-                title="Nenhum colaborador em turno agora"
-                description="Os colaboradores aparecem aqui durante o horario de trabalho."
-              />
-            ) : (
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {liveRows.map((row) => (
-                  <div
-                    key={row.id}
-                    className="rounded-lg border bg-white p-4 shadow-sm"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="font-medium">{row.employee_name}</div>
-                        <div className="text-sm text-muted-foreground">
-                          {[row.employee_role, row.sector_name]
-                            .filter(Boolean)
-                            .join(" · ") || row.branch_name}
-                        </div>
-                      </div>
-                      <StatusBadge status={row.current_status} />
-                    </div>
-                    <div className="mt-4 grid grid-cols-4 gap-2 text-xs text-muted-foreground">
-                      <span>Entrada {formatTime(row.start_time)}</span>
-                      <span>Int. {formatTime(row.break_start)}</span>
-                      <span>Ret. {formatTime(row.break_end)}</span>
-                      <span>Saida {formatTime(row.end_time)}</span>
-                    </div>
-                    {row.delay_minutes > 0 ? (
-                      <div className="mt-3">
-                        <Badge variant="destructive">
-                          {minutesLabel(row.delay_minutes)} atraso
-                        </Badge>
-                      </div>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
       </div>
     </>
   )
