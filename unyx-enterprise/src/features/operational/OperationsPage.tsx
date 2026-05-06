@@ -76,6 +76,15 @@ function addNoteMarker(current: string | null, marker: string): string {
   return `${current},${marker}`
 }
 
+function removeNoteMarker(current: string | null, marker: string): string | null {
+  if (!current) return null
+  const cleaned = current
+    .split(",")
+    .filter((m) => m.trim() !== marker)
+    .join(",")
+  return cleaned || null
+}
+
 function getInitials(name: string): string {
   const parts = name.trim().split(" ").filter(Boolean)
   if (parts.length === 0) return "?"
@@ -406,35 +415,87 @@ export function OperationsPage() {
     setBreakLateTime("")
   }
 
-  // Handles the return-check prompt answer
+  // Starts a 10-minute café break — no dialog, single click
+  async function handleCafeStart(schedule: ScheduleWithRelations) {
+    const n = new Date()
+    const pad = (v: number) => String(v).padStart(2, "0")
+    const nowStr = `${pad(n.getHours())}:${pad(n.getMinutes())}`
+    const endMin = n.getHours() * 60 + n.getMinutes() + 10
+    const endStr = `${pad(Math.floor(endMin / 60) % 24)}:${pad(endMin % 60)}`
+
+    await recordEvent.mutateAsync({
+      branch_id:   schedule.branch_id,
+      employee_id: schedule.employee_id,
+      schedule_id: schedule.id,
+      event_type:  "intervalo_iniciado",
+      notes:       "Café (10min)",
+    })
+    updateSchedule.mutate({
+      scheduleId: schedule.id,
+      values: {
+        status:      "on_break",
+        break_start: nowStr,
+        break_end:   endStr,
+        notes:       addNoteMarker(schedule.notes, "cafe_active"),
+      },
+    })
+    // Reset any dismissed return prompt so the auto-check fires for this café
+    setDismissedReturnIds((prev) => {
+      const next = new Set(prev)
+      next.delete(schedule.id)
+      return next
+    })
+  }
+
+  // Handles the return-check prompt answer (works for both regular interval and café)
   async function handleReturnAnswer(
     schedule: ScheduleWithRelations,
     returned: boolean
   ) {
+    const isCafe = schedule.notes?.includes("cafe_active") ?? false
     const n = new Date()
     const pad = (v: number) => String(v).padStart(2, "0")
     const nowTime = `${pad(n.getHours())}:${pad(n.getMinutes())}`
 
     if (returned) {
-      const notes = addNoteMarker(schedule.notes, "lunch_done")
-      await recordEvent.mutateAsync({
-        branch_id: schedule.branch_id,
-        employee_id: schedule.employee_id,
-        schedule_id: schedule.id,
-        event_type: "retorno_confirmado",
-        notes: eventLabel["retorno_confirmado"],
-      })
-      updateSchedule.mutate({
-        scheduleId: schedule.id,
-        values: { status: "returned", break_end: nowTime, notes },
-      })
+      if (isCafe) {
+        // Café return: go back to trabalhando, clean café note
+        const notes = removeNoteMarker(schedule.notes, "cafe_active")
+        await recordEvent.mutateAsync({
+          branch_id:   schedule.branch_id,
+          employee_id: schedule.employee_id,
+          schedule_id: schedule.id,
+          event_type:  "entrada_confirmada",
+          notes:       "Retorno do café",
+        })
+        updateSchedule.mutate({
+          scheduleId: schedule.id,
+          values: { status: "working", notes },
+        })
+      } else {
+        // Regular interval return: voltou
+        const notes = addNoteMarker(schedule.notes, "lunch_done")
+        await recordEvent.mutateAsync({
+          branch_id:   schedule.branch_id,
+          employee_id: schedule.employee_id,
+          schedule_id: schedule.id,
+          event_type:  "retorno_confirmado",
+          notes:       eventLabel["retorno_confirmado"],
+        })
+        updateSchedule.mutate({
+          scheduleId: schedule.id,
+          values: { status: "returned", break_end: nowTime, notes },
+        })
+      }
     } else {
       await recordEvent.mutateAsync({
-        branch_id: schedule.branch_id,
+        branch_id:   schedule.branch_id,
         employee_id: schedule.employee_id,
         schedule_id: schedule.id,
-        event_type: "atraso_detectado",
-        notes: "Não retornou do intervalo no prazo",
+        event_type:  "atraso_detectado",
+        notes:       isCafe
+          ? "Não retornou do café no prazo"
+          : "Não retornou do intervalo no prazo",
       })
     }
     setDismissedReturnIds((prev) => new Set([...prev, schedule.id]))
@@ -621,6 +682,7 @@ export function OperationsPage() {
 
                     // Break progress (for em_intervalo cards)
                     const isOnBreak = currentStatus === "em_intervalo"
+                    const isCafeBreak = isOnBreak && (schedule.notes?.includes("cafe_active") ?? false)
                     const breakActualStartMin = isOnBreak
                       ? timeToMinutes(schedule.break_start)
                       : null
@@ -651,6 +713,9 @@ export function OperationsPage() {
                       currentStatus === "voltou" ||
                       currentStatus === "deve_sair"
                     const canRetorno = isOnBreak
+                    const canCafe =
+                      (currentStatus === "voltou" || currentStatus === "trabalhando") &&
+                      !isOnBreak
                     const canSaida =
                       !!currentStatus && ENTERED_STATUSES.has(currentStatus) && !isOnBreak
 
@@ -720,7 +785,9 @@ export function OperationsPage() {
                           <div className="mt-3">
                             <div className="mb-1 flex items-center justify-between text-xs">
                               <span className="text-violet-700">
-                                {formatDuration(breakElapsed)} de intervalo
+                                {isCafeBreak
+                                  ? `☕ Café — ${formatDuration(breakElapsed)}`
+                                  : `${formatDuration(breakElapsed)} de intervalo`}
                               </span>
                               <span
                                 className={
@@ -814,9 +881,7 @@ export function OperationsPage() {
                                   variant="outline"
                                   className="flex flex-col gap-0.5 h-auto py-2 text-xs border-violet-300 text-violet-700 hover:bg-violet-50"
                                   disabled={recordEvent.isPending}
-                                  onClick={() =>
-                                    void handleReturnAnswer(schedule, true)
-                                  }
+                                  onClick={() => void handleReturnAnswer(schedule, true)}
                                 >
                                   <LogIn className="size-3.5" />
                                   Retorno
@@ -837,7 +902,8 @@ export function OperationsPage() {
                                 size="sm"
                                 variant="outline"
                                 className="flex flex-col gap-0.5 h-auto py-2 text-xs"
-                                disabled
+                                disabled={!canCafe || recordEvent.isPending}
+                                onClick={() => void handleCafeStart(schedule)}
                               >
                                 <Coffee className="size-3.5" />
                                 Café
@@ -1271,47 +1337,49 @@ export function OperationsPage() {
         }}
       >
         <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Intervalo encerrado</DialogTitle>
-          </DialogHeader>
           {returnPromptSchedule ? (() => {
             const s = returnPromptSchedule
+            const isCafe = s.notes?.includes("cafe_active") ?? false
             const endMin = timeToMinutes(s.break_end)
             const overtime = endMin !== null ? Math.max(0, now - endMin) : 0
             return (
-              <div className="space-y-4">
-                <div className="rounded-lg border bg-slate-50 p-3 text-sm">
-                  <div className="font-semibold">{s.employees?.name ?? "Colaborador"}</div>
-                  <div className="mt-0.5 text-muted-foreground">
-                    {[s.employees?.role, s.employees?.sectors?.name].filter(Boolean).join(" · ")}
-                  </div>
+              <>
+                <DialogHeader>
+                  <DialogTitle>{isCafe ? "☕ Café encerrado" : "Intervalo encerrado"}</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <EmployeeInfoBlock s={s} />
+                  {overtime > 0 ? (
+                    <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-800">
+                      Está há{" "}
+                      <span className="font-semibold">{formatDuration(overtime)}</span>{" "}
+                      além do {isCafe ? "café" : "intervalo"} previsto.
+                    </div>
+                  ) : (
+                    <p className="text-sm text-slate-600">
+                      {isCafe
+                        ? "O café de 10min encerrou. O colaborador já retornou ao posto?"
+                        : "O intervalo encerrou agora. O colaborador já retornou ao posto?"}
+                    </p>
+                  )}
+                  <DialogFooter className="gap-2">
+                    <Button
+                      variant="outline"
+                      className="border-red-200 text-red-700 hover:bg-red-50"
+                      disabled={recordEvent.isPending}
+                      onClick={() => void handleReturnAnswer(s, false)}
+                    >
+                      Não retornou — marcar atraso
+                    </Button>
+                    <Button
+                      disabled={recordEvent.isPending}
+                      onClick={() => void handleReturnAnswer(s, true)}
+                    >
+                      Sim, retornou
+                    </Button>
+                  </DialogFooter>
                 </div>
-                {overtime > 0 ? (
-                  <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-800">
-                    Está há <span className="font-semibold">{formatDuration(overtime)}</span> além do intervalo previsto.
-                  </div>
-                ) : (
-                  <p className="text-sm text-slate-600">
-                    O intervalo encerrou agora. O colaborador já retornou ao posto?
-                  </p>
-                )}
-                <DialogFooter className="gap-2">
-                  <Button
-                    variant="outline"
-                    className="border-red-200 text-red-700 hover:bg-red-50"
-                    disabled={recordEvent.isPending}
-                    onClick={() => void handleReturnAnswer(s, false)}
-                  >
-                    Não retornou — marcar atraso
-                  </Button>
-                  <Button
-                    disabled={recordEvent.isPending}
-                    onClick={() => void handleReturnAnswer(s, true)}
-                  >
-                    Sim, retornou
-                  </Button>
-                </DialogFooter>
-              </div>
+              </>
             )
           })() : null}
         </DialogContent>
