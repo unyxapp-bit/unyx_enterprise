@@ -126,6 +126,17 @@ const ENTERED_STATUSES = new Set<OperationalStatus>([
 
 type Tab = "em_turno" | "a_chegar"
 
+function EmployeeInfoBlock({ s }: { s: ScheduleWithRelations }) {
+  return (
+    <div className="rounded-lg border bg-slate-50 p-3 text-sm">
+      <div className="font-semibold">{s.employees?.name ?? "Colaborador"}</div>
+      <div className="mt-0.5 text-muted-foreground">
+        {[s.employees?.role, s.employees?.sectors?.name].filter(Boolean).join(" · ")}
+      </div>
+    </div>
+  )
+}
+
 // ─── page ────────────────────────────────────────────────────────────────────
 
 export function OperationsPage() {
@@ -148,6 +159,9 @@ export function OperationsPage() {
   // Break confirmation dialog
   const [breakConfirmSchedule, setBreakConfirmSchedule] =
     useState<ScheduleWithRelations | null>(null)
+  // "question" = ask if on-time or late  |  "late_input" = user entering actual departure
+  const [breakDialogMode, setBreakDialogMode] = useState<"question" | "late_input">("question")
+  const [breakLateTime, setBreakLateTime] = useState("")
   // Return-check prompt (auto-shown when break expires)
   const [returnPromptSchedule, setReturnPromptSchedule] =
     useState<ScheduleWithRelations | null>(null)
@@ -354,36 +368,42 @@ export function OperationsPage() {
     setSelectedPostId(null)
   }
 
-  // Confirms break start: calculates actual duration, updates break_start + break_end
-  async function handleBreakConfirm() {
+  // Confirms break start.
+  // actualStartStr = the time the employee actually left (scheduled or user-entered).
+  // break_end is always the SCHEDULED return time from the escala — never recalculated.
+  async function handleBreakConfirm(actualStartStr: string) {
     if (!breakConfirmSchedule) return
     const s = breakConfirmSchedule
+    const pad = (v: number) => String(v).padStart(2, "0")
+
+    // Scheduled return time stays fixed regardless of when they actually left
+    const breakEndToUse = s.break_end ?? (() => {
+      const startMin = timeToMinutes(actualStartStr) ?? nowMinutes()
+      const endMin = startMin + 60
+      return `${pad(Math.floor(endMin / 60) % 24)}:${pad(endMin % 60)}`
+    })()
+
     const plannedStart = timeToMinutes(s.break_start)
-    const plannedEnd = timeToMinutes(s.break_end)
-    const duration =
+    const plannedEnd   = timeToMinutes(s.break_end)
+    const duration     =
       plannedStart !== null && plannedEnd !== null && plannedEnd > plannedStart
         ? plannedEnd - plannedStart
         : 60
 
-    const n = new Date()
-    const nowMin = n.getHours() * 60 + n.getMinutes()
-    const pad = (v: number) => String(v).padStart(2, "0")
-    const actualStart = `${pad(n.getHours())}:${pad(n.getMinutes())}`
-    const endMin = nowMin + duration
-    const actualEnd = `${pad(Math.floor(endMin / 60) % 24)}:${pad(endMin % 60)}`
-
     await recordEvent.mutateAsync({
-      branch_id: s.branch_id,
+      branch_id:   s.branch_id,
       employee_id: s.employee_id,
       schedule_id: s.id,
-      event_type: "intervalo_iniciado",
-      notes: `Intervalo de ${duration}min iniciado`,
+      event_type:  "intervalo_iniciado",
+      notes:       `Intervalo de ${duration}min — saída ${actualStartStr}, retorno ${breakEndToUse}`,
     })
     updateSchedule.mutate({
       scheduleId: s.id,
-      values: { status: "on_break", break_start: actualStart, break_end: actualEnd },
+      values: { status: "on_break", break_start: actualStartStr, break_end: breakEndToUse },
     })
     setBreakConfirmSchedule(null)
+    setBreakDialogMode("question")
+    setBreakLateTime("")
   }
 
   // Handles the return-check prompt answer
@@ -1062,7 +1082,13 @@ export function OperationsPage() {
       {/* ── Break confirmation dialog ── */}
       <Dialog
         open={Boolean(breakConfirmSchedule)}
-        onOpenChange={(open) => { if (!open) setBreakConfirmSchedule(null) }}
+        onOpenChange={(open) => {
+          if (!open) {
+            setBreakConfirmSchedule(null)
+            setBreakDialogMode("question")
+            setBreakLateTime("")
+          }
+        }}
       >
         <DialogContent>
           <DialogHeader>
@@ -1070,47 +1096,160 @@ export function OperationsPage() {
           </DialogHeader>
           {breakConfirmSchedule ? (() => {
             const s = breakConfirmSchedule
-            const ps = timeToMinutes(s.break_start)
-            const pe = timeToMinutes(s.break_end)
-            const duration =
-              ps !== null && pe !== null && pe > ps ? pe - ps : 60
+            const pad = (v: number) => String(v).padStart(2, "0")
             const n = new Date()
             const nowMin = n.getHours() * 60 + n.getMinutes()
-            const pad = (v: number) => String(v).padStart(2, "0")
-            const retMin = nowMin + duration
-            const retStr = `${pad(Math.floor(retMin / 60) % 24)}:${pad(retMin % 60)}`
+            const nowStr = `${pad(n.getHours())}:${pad(n.getMinutes())}`
+
+            const scheduledStartMin = timeToMinutes(s.break_start)
+            const scheduledEndStr   = s.break_end ?? ""
+            const plannedDuration   =
+              scheduledStartMin !== null && timeToMinutes(s.break_end) !== null
+                ? (timeToMinutes(s.break_end)! - scheduledStartMin)
+                : 60
+
+            // More than 2 min past scheduled start → show late warning
+            const isLate =
+              scheduledStartMin !== null && nowMin > scheduledStartMin + 2
+
+            // Effective duration for the "late_input" summary
+            const lateStartMin   = timeToMinutes(breakLateTime)
+            const schedEndMin    = timeToMinutes(s.break_end)
+            const effectiveDuration =
+              lateStartMin !== null && schedEndMin !== null
+                ? Math.max(0, schedEndMin - lateStartMin)
+                : plannedDuration
+
+            const durationLabel = (min: number) =>
+              min >= 60
+                ? `${Math.floor(min / 60)}h${min % 60 > 0 ? ` ${min % 60}min` : ""}`
+                : `${min}min`
+
+            // ── no scheduled break times → simple confirm with current time ──
+            if (!s.break_start) {
+              return (
+                <div className="space-y-4">
+                  <EmployeeInfoBlock s={s} />
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                    Sem horário de intervalo definido na escala. O intervalo será registrado a partir de agora ({nowStr}).
+                  </div>
+                  <DialogFooter className="gap-2">
+                    <Button variant="outline" onClick={() => setBreakConfirmSchedule(null)}>Cancelar</Button>
+                    <Button disabled={recordEvent.isPending} onClick={() => void handleBreakConfirm(nowStr)}>
+                      {recordEvent.isPending ? "Liberando..." : "Confirmar intervalo"}
+                    </Button>
+                  </DialogFooter>
+                </div>
+              )
+            }
+
+            // ── late: ask if left on time or entered actual time ──
+            if (isLate) {
+              if (breakDialogMode === "question") {
+                return (
+                  <div className="space-y-4">
+                    <EmployeeInfoBlock s={s} />
+                    <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2.5 text-sm text-orange-800">
+                      Este colaborador deveria ter saído para intervalo às{" "}
+                      <span className="font-semibold">{s.break_start}</span>.
+                      Ele saiu no horário?
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button
+                        variant="outline"
+                        className="h-auto flex-col gap-1 py-3"
+                        disabled={recordEvent.isPending}
+                        onClick={() => void handleBreakConfirm(s.break_start!)}
+                      >
+                        <span className="text-sm font-semibold">Sim</span>
+                        <span className="text-xs text-slate-500">Saiu às {s.break_start}</span>
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="h-auto flex-col gap-1 py-3"
+                        onClick={() => {
+                          setBreakDialogMode("late_input")
+                          setBreakLateTime(nowStr)
+                        }}
+                      >
+                        <span className="text-sm font-semibold">Não</span>
+                        <span className="text-xs text-slate-500">Saiu depois</span>
+                      </Button>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="ghost" onClick={() => setBreakConfirmSchedule(null)}>Cancelar</Button>
+                    </DialogFooter>
+                  </div>
+                )
+              }
+
+              // late_input mode
+              return (
+                <div className="space-y-4">
+                  <EmployeeInfoBlock s={s} />
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                      Horário que o colaborador saiu
+                    </label>
+                    <Input
+                      type="time"
+                      value={breakLateTime}
+                      onChange={(e) => setBreakLateTime(e.target.value)}
+                      className="w-full"
+                    />
+                  </div>
+                  {breakLateTime ? (
+                    <div className="grid grid-cols-3 gap-2 text-sm">
+                      <div className="rounded-lg border bg-slate-50 p-2 text-center">
+                        <p className="text-[10px] text-slate-400">Saída</p>
+                        <p className="font-bold text-slate-800">{breakLateTime}</p>
+                      </div>
+                      <div className="rounded-lg border bg-violet-50 p-2 text-center">
+                        <p className="text-[10px] text-violet-400">Duração efetiva</p>
+                        <p className="font-bold text-violet-800">{durationLabel(effectiveDuration)}</p>
+                      </div>
+                      <div className="rounded-lg border bg-emerald-50 p-2 text-center">
+                        <p className="text-[10px] text-emerald-400">Retorno</p>
+                        <p className="font-bold text-emerald-800">{scheduledEndStr || "—"}</p>
+                      </div>
+                    </div>
+                  ) : null}
+                  <DialogFooter className="gap-2">
+                    <Button variant="outline" onClick={() => setBreakDialogMode("question")}>Voltar</Button>
+                    <Button
+                      disabled={!breakLateTime || recordEvent.isPending}
+                      onClick={() => void handleBreakConfirm(breakLateTime)}
+                    >
+                      {recordEvent.isPending ? "Liberando..." : "Confirmar intervalo"}
+                    </Button>
+                  </DialogFooter>
+                </div>
+              )
+            }
+
+            // ── on time or early ──
             return (
               <div className="space-y-4">
-                <div className="rounded-lg border bg-slate-50 p-3 text-sm">
-                  <div className="font-semibold">{s.employees?.name ?? "Colaborador"}</div>
-                  <div className="mt-0.5 text-muted-foreground">
-                    {[s.employees?.role, s.employees?.sectors?.name].filter(Boolean).join(" · ")}
+                <EmployeeInfoBlock s={s} />
+                <div className="grid grid-cols-3 gap-2 text-sm">
+                  <div className="rounded-lg border bg-slate-50 p-2 text-center">
+                    <p className="text-[10px] text-slate-400">Saída</p>
+                    <p className="font-bold text-slate-800">{s.break_start}</p>
                   </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div className="rounded-lg border bg-violet-50 p-3">
-                    <p className="text-[11px] text-violet-500">Duração</p>
-                    <p className="mt-1 text-xl font-bold text-violet-800">
-                      {duration >= 60
-                        ? `${Math.floor(duration / 60)}h${duration % 60 > 0 ? ` ${duration % 60}min` : ""}`
-                        : `${duration}min`}
-                    </p>
+                  <div className="rounded-lg border bg-violet-50 p-2 text-center">
+                    <p className="text-[10px] text-violet-400">Duração</p>
+                    <p className="font-bold text-violet-800">{durationLabel(plannedDuration)}</p>
                   </div>
-                  <div className="rounded-lg border bg-slate-50 p-3">
-                    <p className="text-[11px] text-slate-500">Retorno previsto</p>
-                    <p className="mt-1 text-xl font-bold text-slate-800">{retStr}</p>
+                  <div className="rounded-lg border bg-emerald-50 p-2 text-center">
+                    <p className="text-[10px] text-emerald-400">Retorno</p>
+                    <p className="font-bold text-emerald-800">{scheduledEndStr || "—"}</p>
                   </div>
                 </div>
                 <DialogFooter className="gap-2">
-                  <Button
-                    variant="outline"
-                    onClick={() => setBreakConfirmSchedule(null)}
-                  >
-                    Cancelar
-                  </Button>
+                  <Button variant="outline" onClick={() => setBreakConfirmSchedule(null)}>Cancelar</Button>
                   <Button
                     disabled={recordEvent.isPending}
-                    onClick={() => void handleBreakConfirm()}
+                    onClick={() => void handleBreakConfirm(s.break_start ?? nowStr)}
                   >
                     {recordEvent.isPending ? "Liberando..." : "Confirmar intervalo"}
                   </Button>
