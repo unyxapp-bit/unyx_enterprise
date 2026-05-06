@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import type { FormEvent } from "react"
-import { Activity, ChevronDown, Coffee, History, LogIn, LogOut, Timer } from "lucide-react"
+import { Activity, ChevronDown, Coffee, History, LogIn, LogOut, RefreshCw, Timer } from "lucide-react"
 
 import { StatusBadge } from "@/components/bento/StatusBadge"
 import { PageHeader } from "@/components/shared/PageHeader"
@@ -186,7 +186,13 @@ export function OperationsPage() {
           const status = statusByScheduleId.get(s.id)?.current_status
           return !status || status === "aguardando_evento"
         })
-        .sort((a, b) => (a.start_time ?? "").localeCompare(b.start_time ?? "")),
+        .sort((a, b) => {
+          const ta = a.start_time ?? ""
+          const tb = b.start_time ?? ""
+          if (!ta && tb) return 1
+          if (ta && !tb) return -1
+          return ta.localeCompare(tb)
+        }),
     [sortedSchedules, statusByScheduleId]
   )
 
@@ -303,7 +309,15 @@ export function OperationsPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Activity className="size-5" />
-              Painel operacional
+              <span className="flex-1">Painel operacional</span>
+              <button
+                className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-slate-100 hover:text-slate-900"
+                onClick={() => { void schedules.refetch(); void statuses.refetch() }}
+                disabled={schedules.isFetching || statuses.isFetching}
+                aria-label="Atualizar"
+              >
+                <RefreshCw className={`size-4 ${schedules.isFetching || statuses.isFetching ? "animate-spin" : ""}`} />
+              </button>
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -423,12 +437,24 @@ export function OperationsPage() {
                     const canSaida =
                       !!currentStatus && ENTERED_STATUSES.has(currentStatus)
 
+                    // Late indicator (only in A chegar tab)
+                    const isLate =
+                      activeTab === "a_chegar" &&
+                      startMin !== null &&
+                      nowMin > startMin &&
+                      (!currentStatus || currentStatus === "aguardando_evento")
+                    const lateMinutes = isLate ? nowMin - (startMin ?? 0) : 0
+
+                    const cardBorderClass = isLate
+                      ? "border-orange-300 bg-orange-50/40"
+                      : cardMeta
+                        ? cardMeta.cardClassName
+                        : "border-slate-200 bg-white"
+
                     return (
                       <div
                         key={schedule.id}
-                        className={`flex flex-col rounded-lg border p-4 shadow-sm transition-opacity ${
-                          cardMeta ? cardMeta.cardClassName : "border-slate-200 bg-white"
-                        } ${isDone ? "opacity-60" : ""}`}
+                        className={`flex flex-col rounded-lg border p-4 shadow-sm transition-opacity ${cardBorderClass} ${isDone ? "opacity-60" : ""}`}
                       >
                         {/* Header: avatar + status */}
                         <div className="flex items-start justify-between gap-2">
@@ -437,7 +463,14 @@ export function OperationsPage() {
                           >
                             {getInitials(schedule.employees?.name ?? "?")}
                           </div>
-                          <StatusBadge status={currentStatus ?? "aguardando_evento"} />
+                          <div className="flex flex-col items-end gap-1">
+                            <StatusBadge status={currentStatus ?? "aguardando_evento"} />
+                            {isLate ? (
+                              <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-semibold text-orange-700">
+                                {formatDuration(lateMinutes)} atrasado
+                              </span>
+                            ) : null}
+                          </div>
                         </div>
 
                         {/* Name + role/sector */}
@@ -465,8 +498,8 @@ export function OperationsPage() {
                           ) : null}
                         </div>
 
-                        {/* Time worked + time until break */}
-                        {(timeWorked || timeUntilBreak) ? (
+                        {/* Time worked + time until break (Em turno only) */}
+                        {activeTab === "em_turno" && (timeWorked || timeUntilBreak) ? (
                           <div className="mt-2 flex flex-wrap gap-2">
                             {timeWorked ? (
                               <span className="flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">
@@ -501,47 +534,60 @@ export function OperationsPage() {
 
                         {/* Action buttons */}
                         <div className="mt-auto pt-4">
-                          <div className="grid grid-cols-2 gap-1.5">
+                          {activeTab === "a_chegar" ? (
                             <Button
                               size="sm"
                               variant="outline"
-                              className="flex flex-col gap-0.5 h-auto py-2 text-xs"
+                              className="flex w-full items-center justify-center gap-1.5 text-xs"
                               disabled={!canEntrada || recordEvent.isPending}
                               onClick={() => void fireAction(schedule, "entrada_confirmada")}
                             >
                               <LogIn className="size-3.5" />
-                              Entrada
+                              Confirmar entrada
                             </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="flex flex-col gap-0.5 h-auto py-2 text-xs"
-                              disabled={!canIntervalo || recordEvent.isPending}
-                              onClick={() => void fireAction(schedule, "intervalo_iniciado")}
-                            >
-                              <Timer className="size-3.5" />
-                              Intervalo
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="flex flex-col gap-0.5 h-auto py-2 text-xs"
-                              disabled
-                            >
-                              <Coffee className="size-3.5" />
-                              Café
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="flex flex-col gap-0.5 h-auto py-2 text-xs"
-                              disabled={!canSaida || recordEvent.isPending}
-                              onClick={() => void fireAction(schedule, "saida_confirmada")}
-                            >
-                              <LogOut className="size-3.5" />
-                              Saída
-                            </Button>
-                          </div>
+                          ) : (
+                            <div className="grid grid-cols-2 gap-1.5">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="flex flex-col gap-0.5 h-auto py-2 text-xs"
+                                disabled={!canEntrada || recordEvent.isPending}
+                                onClick={() => void fireAction(schedule, "entrada_confirmada")}
+                              >
+                                <LogIn className="size-3.5" />
+                                Entrada
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="flex flex-col gap-0.5 h-auto py-2 text-xs"
+                                disabled={!canIntervalo || recordEvent.isPending}
+                                onClick={() => void fireAction(schedule, "intervalo_iniciado")}
+                              >
+                                <Timer className="size-3.5" />
+                                Intervalo
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="flex flex-col gap-0.5 h-auto py-2 text-xs"
+                                disabled
+                              >
+                                <Coffee className="size-3.5" />
+                                Café
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="flex flex-col gap-0.5 h-auto py-2 text-xs"
+                                disabled={!canSaida || recordEvent.isPending}
+                                onClick={() => void fireAction(schedule, "saida_confirmada")}
+                              >
+                                <LogOut className="size-3.5" />
+                                Saída
+                              </Button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     )
