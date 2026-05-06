@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import type { FormEvent } from "react"
-import { Activity, ChevronDown, Coffee, History, LogIn, LogOut, RefreshCw, Timer } from "lucide-react"
+import { Activity, ChevronDown, Coffee, History, LogIn, LogOut, MapPin, RefreshCw, Timer } from "lucide-react"
 
 import { StatusBadge } from "@/components/bento/StatusBadge"
 import { PageHeader } from "@/components/shared/PageHeader"
@@ -28,10 +28,13 @@ import {
 } from "@/features/ops/modes/operationalModes"
 import { getSchedulePriorityByMode } from "@/features/ops/modes/priorityRules"
 import {
+  useAllocatePost,
   useAttendanceEvents,
+  useOperationalPosts,
   useOperationalSettings,
   useOperationalStatuses,
   useOrganization,
+  usePostAllocations,
   useRecordOperationalEvent,
   useSchedules,
   useSectors,
@@ -41,6 +44,7 @@ import { formatDateTimeBR, formatTime, minutesLabel, todayISO } from "@/lib/form
 import { eventLabel, statusMeta } from "@/lib/status"
 import type {
   AttendanceEventType,
+  OperationalPost,
   OperationalStatus,
   OperationalStatusRecord,
   ScheduleWithRelations,
@@ -80,6 +84,16 @@ function getInitials(name: string): string {
 }
 
 // ─── constants ───────────────────────────────────────────────────────────────
+
+const postTypeLabel: Record<string, string> = {
+  cashier:       "Caixa",
+  self_checkout: "Autoatendimento",
+  counter:       "Balcão",
+  service_desk:  "Atendimento",
+  delivery:      "Delivery",
+  stock:         "Estoque",
+  kitchen:       "Cozinha",
+}
 
 const PAGE_SIZE = 12
 
@@ -127,6 +141,10 @@ export function OperationsPage() {
 
   // Clock tick — drives progress bars and overdue checks
   const [now, setNow] = useState(nowMinutes)
+  // Entry dialog
+  const [entrySchedule, setEntrySchedule] =
+    useState<ScheduleWithRelations | null>(null)
+  const [selectedPostId, setSelectedPostId] = useState<string | null>(null)
   // Break confirmation dialog
   const [breakConfirmSchedule, setBreakConfirmSchedule] =
     useState<ScheduleWithRelations | null>(null)
@@ -142,9 +160,12 @@ export function OperationsPage() {
   const events = useAttendanceEvents()
   const recordEvent = useRecordOperationalEvent()
   const updateSchedule = useUpdateSchedule()
+  const allocatePost = useAllocatePost()
   const sectors = useSectors()
   const organization = useOrganization()
   const operationalSettings = useOperationalSettings()
+  const operationalPosts = useOperationalPosts()
+  const postAllocations = usePostAllocations(null, true)
 
   const mode = getOperationalMode(
     operationalSettings.data?.mode ?? organization.data?.segment
@@ -238,6 +259,51 @@ export function OperationsPage() {
     [activeList, pageIndex]
   )
 
+  // Active posts grouped by sector for the entry dialog
+  const activePosts = useMemo(
+    () => (operationalPosts.data ?? []).filter((p) => p.active),
+    [operationalPosts.data]
+  )
+
+  // Set of post IDs currently occupied
+  const occupiedPostIds = useMemo(
+    () =>
+      new Set(
+        (postAllocations.data ?? [])
+          .filter((a) => !a.ended_at)
+          .map((a) => a.post_id)
+      ),
+    [postAllocations.data]
+  )
+
+  // Employee name lookup from today's schedules (for "occupied by" display)
+  const employeeByAllocation = useMemo(() => {
+    const byEmpId = new Map<string, string>()
+    for (const s of schedules.data ?? []) {
+      if (s.employee_id && s.employees?.name)
+        byEmpId.set(s.employee_id, s.employees.name)
+    }
+    const byPostId = new Map<string, string>()
+    for (const a of postAllocations.data ?? []) {
+      if (!a.ended_at) {
+        const name = byEmpId.get(a.employee_id)
+        if (name) byPostId.set(a.post_id, name)
+      }
+    }
+    return byPostId
+  }, [postAllocations.data, schedules.data])
+
+  // Posts grouped by sector name for the entry dialog
+  const postsBySector = useMemo(() => {
+    const map = new Map<string, OperationalPost[]>()
+    for (const p of activePosts) {
+      const key = p.sectors?.name ?? "Sem setor"
+      if (!map.has(key)) map.set(key, [])
+      map.get(key)!.push(p)
+    }
+    return map
+  }, [activePosts])
+
   // ── actions ──
 
   async function fireAction(
@@ -270,6 +336,22 @@ export function OperationsPage() {
     if (eventType === "saida_confirmada") {
       updateSchedule.mutate({ scheduleId: schedule.id, values: { status: "finished" } })
     }
+  }
+
+  // Confirms entry: fires entrada_confirmada and optionally allocates a post
+  async function handleEntryConfirm() {
+    if (!entrySchedule) return
+    const s = entrySchedule
+    await fireAction(s, "entrada_confirmada")
+    if (selectedPostId) {
+      allocatePost.mutate({
+        post_id: selectedPostId,
+        employee_id: s.employee_id,
+        schedule_id: s.id,
+      })
+    }
+    setEntrySchedule(null)
+    setSelectedPostId(null)
   }
 
   // Confirms break start: calculates actual duration, updates break_start + break_end
@@ -689,7 +771,7 @@ export function OperationsPage() {
                               variant="outline"
                               className="flex w-full items-center justify-center gap-1.5 text-xs"
                               disabled={!canEntrada || recordEvent.isPending}
-                              onClick={() => void fireAction(schedule, "entrada_confirmada")}
+                              onClick={() => { setEntrySchedule(schedule); setSelectedPostId(null) }}
                             >
                               <LogIn className="size-3.5" />
                               Confirmar entrada
@@ -701,7 +783,7 @@ export function OperationsPage() {
                                 variant="outline"
                                 className="flex flex-col gap-0.5 h-auto py-2 text-xs"
                                 disabled={!canEntrada || recordEvent.isPending}
-                                onClick={() => void fireAction(schedule, "entrada_confirmada")}
+                                onClick={() => { setEntrySchedule(schedule); setSelectedPostId(null) }}
                               >
                                 <LogIn className="size-3.5" />
                                 Entrada
@@ -865,6 +947,117 @@ export function OperationsPage() {
           ) : null}
         </Card>
       </div>
+
+      {/* ── Entry dialog — post selection ── */}
+      <Dialog
+        open={Boolean(entrySchedule)}
+        onOpenChange={(open) => {
+          if (!open) { setEntrySchedule(null); setSelectedPostId(null) }
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Confirmar entrada</DialogTitle>
+          </DialogHeader>
+          {entrySchedule ? (
+            <div className="space-y-4">
+              {/* Employee info */}
+              <div className="rounded-lg border bg-slate-50 p-3 text-sm">
+                <div className="font-semibold">{entrySchedule.employees?.name ?? "Colaborador"}</div>
+                <div className="mt-0.5 text-muted-foreground">
+                  {[entrySchedule.employees?.role, entrySchedule.employees?.sectors?.name]
+                    .filter(Boolean)
+                    .join(" · ")}
+                  {" · "}
+                  {formatTime(entrySchedule.start_time)} → {formatTime(entrySchedule.end_time)}
+                </div>
+              </div>
+
+              {/* Post selection */}
+              <div>
+                <p className="mb-2 text-sm font-medium text-slate-700">
+                  Selecionar posto de trabalho
+                </p>
+                {activePosts.length === 0 ? (
+                  <div className="rounded-lg border border-dashed bg-slate-50 px-4 py-6 text-center text-sm text-slate-400">
+                    Nenhum posto cadastrado. O colaborador será marcado como trabalhando sem posto.
+                  </div>
+                ) : (
+                  <div className="max-h-64 space-y-3 overflow-y-auto pr-1">
+                    {Array.from(postsBySector.entries()).map(([sector, posts]) => (
+                      <div key={sector}>
+                        <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                          {sector}
+                        </p>
+                        <div className="space-y-1">
+                          {posts.map((post) => {
+                            const isOccupied = occupiedPostIds.has(post.id)
+                            const occupiedBy = employeeByAllocation.get(post.id)
+                            const isSelected = selectedPostId === post.id
+                            return (
+                              <button
+                                key={post.id}
+                                onClick={() =>
+                                  setSelectedPostId(isSelected ? null : post.id)
+                                }
+                                className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left text-sm transition-colors ${
+                                  isSelected
+                                    ? "border-indigo-400 bg-indigo-50 text-indigo-900"
+                                    : "border-slate-200 bg-white hover:bg-slate-50"
+                                }`}
+                              >
+                                <MapPin
+                                  className={`size-4 shrink-0 ${isSelected ? "text-indigo-500" : "text-slate-400"}`}
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <span className="font-medium">{post.name}</span>
+                                  <span className="ml-2 text-xs text-slate-400">
+                                    {postTypeLabel[post.type] ?? post.type}
+                                  </span>
+                                </div>
+                                {isOccupied ? (
+                                  <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+                                    {occupiedBy ? occupiedBy.split(" ")[0] : "Ocupado"}
+                                  </span>
+                                ) : (
+                                  <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                                    Livre
+                                  </span>
+                                )}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <DialogFooter className="gap-2">
+                <Button
+                  variant="ghost"
+                  className="text-slate-500"
+                  onClick={() => void handleEntryConfirm()}
+                  disabled={recordEvent.isPending}
+                >
+                  Entrar sem posto
+                </Button>
+                <Button
+                  disabled={recordEvent.isPending || (!selectedPostId && activePosts.length > 0 && false)}
+                  onClick={() => void handleEntryConfirm()}
+                >
+                  {recordEvent.isPending
+                    ? "Confirmando..."
+                    : selectedPostId
+                      ? "Confirmar com posto"
+                      : "Confirmar entrada"}
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
       {/* ── Break confirmation dialog ── */}
       <Dialog
