@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import type { FormEvent } from "react"
-import { Activity, ChevronDown, Coffee, History, LogIn, Timer } from "lucide-react"
+import { Activity, ChevronDown, Coffee, History, LogIn, LogOut, Timer } from "lucide-react"
 
 import { StatusBadge } from "@/components/bento/StatusBadge"
 import { PageHeader } from "@/components/shared/PageHeader"
@@ -99,7 +99,7 @@ const avatarClassByStatus: Partial<Record<OperationalStatus, string>> = {
   alerta_critico: "bg-red-100 text-red-700",
 }
 
-// Statuses that mean the employee has already entered
+// Statuses that mean the employee has already entered (excludes finalizado — they've left)
 const ENTERED_STATUSES = new Set<OperationalStatus>([
   "trabalhando",
   "voltou",
@@ -108,7 +108,6 @@ const ENTERED_STATUSES = new Set<OperationalStatus>([
   "troca_de_caixa",
   "deve_sair",
   "alerta_critico",
-  "finalizado",
 ])
 
 type Tab = "em_turno" | "a_chegar"
@@ -421,6 +420,8 @@ export function OperationsPage() {
                       currentStatus === "trabalhando" ||
                       currentStatus === "voltou" ||
                       currentStatus === "deve_sair"
+                    const canSaida =
+                      !!currentStatus && ENTERED_STATUSES.has(currentStatus)
 
                     return (
                       <div
@@ -500,7 +501,7 @@ export function OperationsPage() {
 
                         {/* Action buttons */}
                         <div className="mt-auto pt-4">
-                          <div className="grid grid-cols-3 gap-1.5">
+                          <div className="grid grid-cols-2 gap-1.5">
                             <Button
                               size="sm"
                               variant="outline"
@@ -529,6 +530,16 @@ export function OperationsPage() {
                             >
                               <Coffee className="size-3.5" />
                               Café
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="flex flex-col gap-0.5 h-auto py-2 text-xs"
+                              disabled={!canSaida || recordEvent.isPending}
+                              onClick={() => void fireAction(schedule, "saida_confirmada")}
+                            >
+                              <LogOut className="size-3.5" />
+                              Saída
                             </Button>
                           </div>
                         </div>
@@ -593,7 +604,7 @@ export function OperationsPage() {
         </Card>
 
         {/* ── Timeline (collapsible) ── */}
-        <Card className="border bg-white shadow-sm">
+        <Card className="self-start border bg-white shadow-sm">
           <CardHeader
             className="cursor-pointer select-none"
             onClick={() => setTimelineOpen((v) => !v)}
