@@ -74,7 +74,6 @@ const navGroups = [
   {
     label: "Unyx Allocation",
     items: [
-      { to: "/app/allocation", label: "Alocacao",        icon: MapPinned, perm: "allocation" as PermissionKey },
       { to: "/app/intervals",  label: "Intervalo / Cafe", icon: Coffee,    perm: "intervals"  as PermissionKey },
     ],
   },
