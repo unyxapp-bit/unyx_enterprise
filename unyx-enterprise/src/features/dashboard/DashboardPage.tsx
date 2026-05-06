@@ -20,7 +20,6 @@ import {
   Pie,
   PieChart,
   ResponsiveContainer,
-  Tooltip,
 } from "recharts"
 
 import { StatusBadge } from "@/components/bento/StatusBadge"
