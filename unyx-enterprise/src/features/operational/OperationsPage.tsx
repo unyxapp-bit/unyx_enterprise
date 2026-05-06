@@ -125,6 +125,18 @@ export function OperationsPage() {
   const [occurrenceNote, setOccurrenceNote] = useState("")
   const [occurrenceError, setOccurrenceError] = useState<string | null>(null)
 
+  // Clock tick — drives progress bars and overdue checks
+  const [now, setNow] = useState(nowMinutes)
+  // Break confirmation dialog
+  const [breakConfirmSchedule, setBreakConfirmSchedule] =
+    useState<ScheduleWithRelations | null>(null)
+  // Return-check prompt (auto-shown when break expires)
+  const [returnPromptSchedule, setReturnPromptSchedule] =
+    useState<ScheduleWithRelations | null>(null)
+  const [dismissedReturnIds, setDismissedReturnIds] = useState(
+    new Set<string>()
+  )
+
   const schedules = useSchedules(date)
   const statuses = useOperationalStatuses()
   const events = useAttendanceEvents()
@@ -202,6 +214,24 @@ export function OperationsPage() {
     setPageIndex(0)
   }, [date, sectorFilter, activeTab])
 
+  // Clock — updates every 30 s so progress bars and overdue checks stay current
+  useEffect(() => {
+    const id = setInterval(() => setNow(nowMinutes()), 30_000)
+    return () => clearInterval(id)
+  }, [])
+
+  // Auto-prompt when a break expires and wasn't manually dismissed
+  useEffect(() => {
+    if (returnPromptSchedule) return
+    const overdue = emTurno.find((s) => {
+      const st = statusByScheduleId.get(s.id)?.current_status
+      if (st !== "em_intervalo") return false
+      const endMin = timeToMinutes(s.break_end)
+      return endMin !== null && now >= endMin && !dismissedReturnIds.has(s.id)
+    })
+    if (overdue) setReturnPromptSchedule(overdue)
+  }, [now, emTurno, statusByScheduleId, dismissedReturnIds, returnPromptSchedule])
+
   const pageCount = Math.ceil(activeList.length / PAGE_SIZE)
   const pagedSchedules = useMemo(
     () => activeList.slice(pageIndex * PAGE_SIZE, (pageIndex + 1) * PAGE_SIZE),
@@ -229,13 +259,6 @@ export function OperationsPage() {
       updateSchedule.mutate({ scheduleId: schedule.id, values: { status: "working" } })
     }
 
-    if (eventType === "intervalo_iniciado") {
-      updateSchedule.mutate({
-        scheduleId: schedule.id,
-        values: { status: "on_break", break_start: nowTime },
-      })
-    }
-
     if (eventType === "retorno_confirmado") {
       const notes = addNoteMarker(schedule.notes, "lunch_done")
       updateSchedule.mutate({
@@ -247,6 +270,73 @@ export function OperationsPage() {
     if (eventType === "saida_confirmada") {
       updateSchedule.mutate({ scheduleId: schedule.id, values: { status: "finished" } })
     }
+  }
+
+  // Confirms break start: calculates actual duration, updates break_start + break_end
+  async function handleBreakConfirm() {
+    if (!breakConfirmSchedule) return
+    const s = breakConfirmSchedule
+    const plannedStart = timeToMinutes(s.break_start)
+    const plannedEnd = timeToMinutes(s.break_end)
+    const duration =
+      plannedStart !== null && plannedEnd !== null && plannedEnd > plannedStart
+        ? plannedEnd - plannedStart
+        : 60
+
+    const n = new Date()
+    const nowMin = n.getHours() * 60 + n.getMinutes()
+    const pad = (v: number) => String(v).padStart(2, "0")
+    const actualStart = `${pad(n.getHours())}:${pad(n.getMinutes())}`
+    const endMin = nowMin + duration
+    const actualEnd = `${pad(Math.floor(endMin / 60) % 24)}:${pad(endMin % 60)}`
+
+    await recordEvent.mutateAsync({
+      branch_id: s.branch_id,
+      employee_id: s.employee_id,
+      schedule_id: s.id,
+      event_type: "intervalo_iniciado",
+      notes: `Intervalo de ${duration}min iniciado`,
+    })
+    updateSchedule.mutate({
+      scheduleId: s.id,
+      values: { status: "on_break", break_start: actualStart, break_end: actualEnd },
+    })
+    setBreakConfirmSchedule(null)
+  }
+
+  // Handles the return-check prompt answer
+  async function handleReturnAnswer(
+    schedule: ScheduleWithRelations,
+    returned: boolean
+  ) {
+    const n = new Date()
+    const pad = (v: number) => String(v).padStart(2, "0")
+    const nowTime = `${pad(n.getHours())}:${pad(n.getMinutes())}`
+
+    if (returned) {
+      const notes = addNoteMarker(schedule.notes, "lunch_done")
+      await recordEvent.mutateAsync({
+        branch_id: schedule.branch_id,
+        employee_id: schedule.employee_id,
+        schedule_id: schedule.id,
+        event_type: "retorno_confirmado",
+        notes: eventLabel["retorno_confirmado"],
+      })
+      updateSchedule.mutate({
+        scheduleId: schedule.id,
+        values: { status: "returned", break_end: nowTime, notes },
+      })
+    } else {
+      await recordEvent.mutateAsync({
+        branch_id: schedule.branch_id,
+        employee_id: schedule.employee_id,
+        schedule_id: schedule.id,
+        event_type: "atraso_detectado",
+        notes: "Não retornou do intervalo no prazo",
+      })
+    }
+    setDismissedReturnIds((prev) => new Set([...prev, schedule.id]))
+    setReturnPromptSchedule(null)
   }
 
   async function handleOccurrenceSubmit(event: FormEvent<HTMLFormElement>) {
@@ -427,6 +517,30 @@ export function OperationsPage() {
                       avatarClassByStatus[currentStatus ?? "aguardando_evento"] ??
                       "bg-slate-200 text-slate-700"
 
+                    // Break progress (for em_intervalo cards)
+                    const isOnBreak = currentStatus === "em_intervalo"
+                    const breakActualStartMin = isOnBreak
+                      ? timeToMinutes(schedule.break_start)
+                      : null
+                    const breakActualEndMin = isOnBreak
+                      ? timeToMinutes(schedule.break_end)
+                      : null
+                    const breakDurationMin =
+                      breakActualStartMin !== null && breakActualEndMin !== null
+                        ? breakActualEndMin - breakActualStartMin
+                        : 60
+                    const breakElapsed =
+                      breakActualStartMin !== null
+                        ? Math.max(0, now - breakActualStartMin)
+                        : 0
+                    const breakPct = isOnBreak
+                      ? Math.min(100, Math.round((breakElapsed / breakDurationMin) * 100))
+                      : 0
+                    const breakOverdue =
+                      isOnBreak &&
+                      breakActualEndMin !== null &&
+                      now > breakActualEndMin
+
                     // Button states
                     const canEntrada =
                       !currentStatus || currentStatus === "aguardando_evento"
@@ -434,8 +548,9 @@ export function OperationsPage() {
                       currentStatus === "trabalhando" ||
                       currentStatus === "voltou" ||
                       currentStatus === "deve_sair"
+                    const canRetorno = isOnBreak
                     const canSaida =
-                      !!currentStatus && ENTERED_STATUSES.has(currentStatus)
+                      !!currentStatus && ENTERED_STATUSES.has(currentStatus) && !isOnBreak
 
                     // Late indicator (only in A chegar tab)
                     const isLate =
@@ -498,8 +613,42 @@ export function OperationsPage() {
                           ) : null}
                         </div>
 
-                        {/* Time worked + time until break (Em turno only) */}
-                        {activeTab === "em_turno" && (timeWorked || timeUntilBreak) ? (
+                        {/* Break progress bar (em_intervalo) */}
+                        {isOnBreak ? (
+                          <div className="mt-3">
+                            <div className="mb-1 flex items-center justify-between text-xs">
+                              <span className="text-violet-700">
+                                {formatDuration(breakElapsed)} de intervalo
+                              </span>
+                              <span
+                                className={
+                                  breakOverdue
+                                    ? "font-semibold text-red-600"
+                                    : "text-slate-400"
+                                }
+                              >
+                                {breakOverdue
+                                  ? `+${formatDuration(breakElapsed - breakDurationMin)} além`
+                                  : `${formatDuration(breakDurationMin)} total`}
+                              </span>
+                            </div>
+                            <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                              <div
+                                className={`h-full rounded-full transition-all duration-500 ${
+                                  breakPct >= 100
+                                    ? "bg-red-500"
+                                    : breakPct >= 80
+                                      ? "bg-orange-400"
+                                      : "bg-violet-500"
+                                }`}
+                                style={{ width: `${breakPct}%` }}
+                              />
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {/* Time worked + time until break (Em turno, não em intervalo) */}
+                        {activeTab === "em_turno" && !isOnBreak && (timeWorked || timeUntilBreak) ? (
                           <div className="mt-2 flex flex-wrap gap-2">
                             {timeWorked ? (
                               <span className="flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">
@@ -557,16 +706,31 @@ export function OperationsPage() {
                                 <LogIn className="size-3.5" />
                                 Entrada
                               </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="flex flex-col gap-0.5 h-auto py-2 text-xs"
-                                disabled={!canIntervalo || recordEvent.isPending}
-                                onClick={() => void fireAction(schedule, "intervalo_iniciado")}
-                              >
-                                <Timer className="size-3.5" />
-                                Intervalo
-                              </Button>
+                              {canRetorno ? (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="flex flex-col gap-0.5 h-auto py-2 text-xs border-violet-300 text-violet-700 hover:bg-violet-50"
+                                  disabled={recordEvent.isPending}
+                                  onClick={() =>
+                                    void handleReturnAnswer(schedule, true)
+                                  }
+                                >
+                                  <LogIn className="size-3.5" />
+                                  Retorno
+                                </Button>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="flex flex-col gap-0.5 h-auto py-2 text-xs"
+                                  disabled={!canIntervalo || recordEvent.isPending}
+                                  onClick={() => setBreakConfirmSchedule(schedule)}
+                                >
+                                  <Timer className="size-3.5" />
+                                  Intervalo
+                                </Button>
+                              )}
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -701,6 +865,125 @@ export function OperationsPage() {
           ) : null}
         </Card>
       </div>
+
+      {/* ── Break confirmation dialog ── */}
+      <Dialog
+        open={Boolean(breakConfirmSchedule)}
+        onOpenChange={(open) => { if (!open) setBreakConfirmSchedule(null) }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Liberar para intervalo</DialogTitle>
+          </DialogHeader>
+          {breakConfirmSchedule ? (() => {
+            const s = breakConfirmSchedule
+            const ps = timeToMinutes(s.break_start)
+            const pe = timeToMinutes(s.break_end)
+            const duration =
+              ps !== null && pe !== null && pe > ps ? pe - ps : 60
+            const n = new Date()
+            const nowMin = n.getHours() * 60 + n.getMinutes()
+            const pad = (v: number) => String(v).padStart(2, "0")
+            const retMin = nowMin + duration
+            const retStr = `${pad(Math.floor(retMin / 60) % 24)}:${pad(retMin % 60)}`
+            return (
+              <div className="space-y-4">
+                <div className="rounded-lg border bg-slate-50 p-3 text-sm">
+                  <div className="font-semibold">{s.employees?.name ?? "Colaborador"}</div>
+                  <div className="mt-0.5 text-muted-foreground">
+                    {[s.employees?.role, s.employees?.sectors?.name].filter(Boolean).join(" · ")}
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div className="rounded-lg border bg-violet-50 p-3">
+                    <p className="text-[11px] text-violet-500">Duração</p>
+                    <p className="mt-1 text-xl font-bold text-violet-800">
+                      {duration >= 60
+                        ? `${Math.floor(duration / 60)}h${duration % 60 > 0 ? ` ${duration % 60}min` : ""}`
+                        : `${duration}min`}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border bg-slate-50 p-3">
+                    <p className="text-[11px] text-slate-500">Retorno previsto</p>
+                    <p className="mt-1 text-xl font-bold text-slate-800">{retStr}</p>
+                  </div>
+                </div>
+                <DialogFooter className="gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setBreakConfirmSchedule(null)}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    disabled={recordEvent.isPending}
+                    onClick={() => void handleBreakConfirm()}
+                  >
+                    {recordEvent.isPending ? "Liberando..." : "Confirmar intervalo"}
+                  </Button>
+                </DialogFooter>
+              </div>
+            )
+          })() : null}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Return check dialog (auto-shown when break expires) ── */}
+      <Dialog
+        open={Boolean(returnPromptSchedule)}
+        onOpenChange={(open) => {
+          if (!open && returnPromptSchedule) {
+            setDismissedReturnIds((prev) => new Set([...prev, returnPromptSchedule.id]))
+            setReturnPromptSchedule(null)
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Intervalo encerrado</DialogTitle>
+          </DialogHeader>
+          {returnPromptSchedule ? (() => {
+            const s = returnPromptSchedule
+            const endMin = timeToMinutes(s.break_end)
+            const overtime = endMin !== null ? Math.max(0, now - endMin) : 0
+            return (
+              <div className="space-y-4">
+                <div className="rounded-lg border bg-slate-50 p-3 text-sm">
+                  <div className="font-semibold">{s.employees?.name ?? "Colaborador"}</div>
+                  <div className="mt-0.5 text-muted-foreground">
+                    {[s.employees?.role, s.employees?.sectors?.name].filter(Boolean).join(" · ")}
+                  </div>
+                </div>
+                {overtime > 0 ? (
+                  <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-800">
+                    Está há <span className="font-semibold">{formatDuration(overtime)}</span> além do intervalo previsto.
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-600">
+                    O intervalo encerrou agora. O colaborador já retornou ao posto?
+                  </p>
+                )}
+                <DialogFooter className="gap-2">
+                  <Button
+                    variant="outline"
+                    className="border-red-200 text-red-700 hover:bg-red-50"
+                    disabled={recordEvent.isPending}
+                    onClick={() => void handleReturnAnswer(s, false)}
+                  >
+                    Não retornou — marcar atraso
+                  </Button>
+                  <Button
+                    disabled={recordEvent.isPending}
+                    onClick={() => void handleReturnAnswer(s, true)}
+                  >
+                    Sim, retornou
+                  </Button>
+                </DialogFooter>
+              </div>
+            )
+          })() : null}
+        </DialogContent>
+      </Dialog>
 
       {/* ── Occurrence dialog ── */}
       <Dialog
