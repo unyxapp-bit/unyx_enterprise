@@ -6,7 +6,6 @@ import {
   BellRing,
   Building2,
   CalendarDays,
-  Coffee,
   ClipboardList,
   GraduationCap,
   ChevronDown,
@@ -68,12 +67,6 @@ const navGroups = [
       { to: "/app/employees", label: "Colaboradores", icon: Users,     perm: "employees" as PermissionKey },
       { to: "/app/users",     label: "Usuarios",      icon: UserCog,   perm: "users"     as PermissionKey },
       { to: "/app/settings",  label: "Configuracoes", icon: Settings,  perm: "settings"  as PermissionKey },
-    ],
-  },
-  {
-    label: "Unyx Allocation",
-    items: [
-      { to: "/app/intervals",  label: "Intervalo / Cafe", icon: Coffee,    perm: "intervals"  as PermissionKey },
     ],
   },
   {
