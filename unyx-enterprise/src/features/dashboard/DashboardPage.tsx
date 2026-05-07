@@ -78,6 +78,23 @@ const STATUS_COLORS: Record<string, string> = {
   folga:             "#a1a1aa",
 }
 
+const ACTIVE_STATUSES: OperationalStatus[] = ["trabalhando", "voltou"]
+
+const RISK_STATUSES: OperationalStatus[] = [
+  "alerta_critico",
+  "deve_sair",
+  "em_intervalo",
+  "aguardando_sangria",
+  "troca_de_caixa",
+]
+
+const SECONDARY_STATUSES: OperationalStatus[] = [
+  "deve_sair",
+  "aguardando_sangria",
+  "troca_de_caixa",
+  "em_intervalo",
+]
+
 function getInitials(name: string): string {
   const parts = (name ?? "").trim().split(" ").filter(Boolean)
   if (parts.length === 0) return "?"
@@ -119,6 +136,53 @@ function normalize(value?: string | null) {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
+}
+
+function rowMatchesSearch(row: DashboardRow, searchText: string) {
+  const query = normalize(searchText)
+  if (!query) return true
+
+  return [
+    row.employee_name,
+    row.employee_role,
+    row.sector_name,
+    row.branch_name,
+    row.status_reason,
+  ].some((value) => normalize(value).includes(query))
+}
+
+function rowMatchesStatusFilter(row: DashboardRow, statusFilter: string) {
+  if (!statusFilter) return true
+  if (statusFilter === "active") {
+    return ACTIVE_STATUSES.includes(row.current_status)
+  }
+  if (statusFilter === "risk") {
+    return RISK_STATUSES.includes(row.current_status)
+  }
+  if (statusFilter === "delayed") {
+    return row.delay_minutes > 0
+  }
+  if (statusFilter === "absences") {
+    return normalize(row.status_reason).includes("falta")
+  }
+  return row.current_status === statusFilter
+}
+
+function getMetricStatusFilter(key: DashboardMetricKey) {
+  const filters: Partial<Record<DashboardMetricKey, string>> = {
+    working: "active",
+    present: "active",
+    serviceCoverage: "active",
+    critical: "alerta_critico",
+    sectorAlerts: "alerta_critico",
+    criticalFunctions: "alerta_critico",
+    breaks: "em_intervalo",
+    delay: "delayed",
+    cashierCoverage: "risk",
+    absences: "absences",
+  }
+
+  return filters[key] ?? ""
 }
 
 function currentShiftLabel() {
@@ -328,6 +392,11 @@ function getPriority(row: DashboardRow, mode: ReturnType<typeof getOperationalMo
 export function DashboardPage() {
   const [date, setDate] = useState(todayISO())
   const [sectorFilter, setSectorFilter] = useState("")
+  const [searchText, setSearchText] = useState("")
+  const [statusFilter, setStatusFilter] = useState("")
+  const [showAllPrimary, setShowAllPrimary] = useState(false)
+  const [showAllSecondary, setShowAllSecondary] = useState(false)
+  const [showAllLive, setShowAllLive] = useState(false)
   const dashboard = useDashboardRows(date)
   const schedules = useSchedules(date)
   const statuses = useOperationalStatuses()
@@ -354,19 +423,37 @@ export function DashboardPage() {
   }, [rows])
 
   const filteredRows = useMemo(() => {
-    const list = sectorFilter
+    let list = sectorFilter
       ? rows.filter((r) => r.sector_name === sectorFilter)
       : rows
 
+    list = list.filter((row) => rowMatchesSearch(row, searchText))
+    list = list.filter((row) => rowMatchesStatusFilter(row, statusFilter))
+
     return sortDashboardRowsByMode(mode, list)
-  }, [mode, rows, sectorFilter])
+  }, [mode, rows, searchText, sectorFilter, statusFilter])
 
   const filteredSchedules = useMemo(() => {
-    if (!sectorFilter) return scheduledToday
-    return scheduledToday.filter(
-      (schedule) => schedule.employees?.sectors?.name === sectorFilter
-    )
-  }, [scheduledToday, sectorFilter])
+    return scheduledToday.filter((schedule) => {
+      if (
+        sectorFilter &&
+        schedule.employees?.sectors?.name !== sectorFilter
+      ) {
+        return false
+      }
+
+      const query = normalize(searchText)
+      if (!query) return true
+
+      return [
+        schedule.employees?.name,
+        schedule.employees?.role,
+        schedule.employees?.sectors?.name,
+        schedule.branches?.name,
+        schedule.notes,
+      ].some((value) => normalize(value).includes(query))
+    })
+  }, [scheduledToday, searchText, sectorFilter])
 
   const occurrencesCount = useMemo(() => {
     return (attendanceEvents.data ?? []).filter(
@@ -412,10 +499,9 @@ export function DashboardPage() {
       }))
     const combined = [...active, ...off]
     if (combined.length > 0) return combined
-    // Fallback: operational_status table filtered to today's schedules
-    const today = todayISO()
+    // Fallback: operational_status table filtered to the selected date.
     return liveStatuses
-      .filter((s) => s.schedules?.work_date === today)
+      .filter((s) => s.schedules?.work_date === date)
       .map((s: OperationalStatusRecord) => ({
         current_status: s.current_status,
         delay_minutes: s.delay_minutes,
@@ -423,7 +509,7 @@ export function DashboardPage() {
         sectorName: s.employees?.sectors?.name,
         reason: s.status_reason,
       }))
-  }, [liveRows, filteredRows, liveStatuses])
+  }, [date, liveRows, filteredRows, liveStatuses])
 
   const statusChartData = operationalStatuses
     .map((status) => ({
@@ -439,15 +525,23 @@ export function DashboardPage() {
         row.current_status === "alerta_critico" ||
         getPriority(row, mode) >= 70
     )
-    .slice(0, 5)
 
   const secondaryRows = filteredRows
-    .filter((row) =>
-      ["deve_sair", "aguardando_sangria", "troca_de_caixa", "em_intervalo"].includes(
-        row.current_status
-      )
-    )
-    .slice(0, 5)
+    .filter((row) => SECONDARY_STATUSES.includes(row.current_status))
+
+  const visiblePrimaryRows = showAllPrimary ? primaryRows : primaryRows.slice(0, 5)
+  const visibleSecondaryRows = showAllSecondary
+    ? secondaryRows
+    : secondaryRows.slice(0, 5)
+  const visibleLiveRows = showAllLive ? liveRows : liveRows.slice(0, 12)
+
+  const coverageRisk = filteredRows.filter((row) =>
+    RISK_STATUSES.includes(row.current_status)
+  ).length
+  const coverageTotal = filteredRows.length
+  const coverageRiskPct =
+    coverageTotal > 0 ? Math.round((coverageRisk / coverageTotal) * 100) : 0
+  const shouldShowCoverageRisk = coverageTotal > 0 && coverageRiskPct >= 30
 
   const lastUpdated = dashboard.dataUpdatedAt
     ? new Intl.DateTimeFormat("pt-BR", {
@@ -493,6 +587,21 @@ export function DashboardPage() {
               value={date}
               onChange={(e) => setDate(e.target.value)}
             />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setDate(todayISO())}
+            >
+              Hoje
+            </Button>
+            <Input
+              className="w-52"
+              type="search"
+              placeholder="Buscar colaborador..."
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              aria-label="Buscar colaborador"
+            />
             {sectorOptions.length > 0 ? (
               <select
                 className={fieldClass}
@@ -504,6 +613,36 @@ export function DashboardPage() {
                   <option key={s} value={s}>{s}</option>
                 ))}
               </select>
+            ) : null}
+            <select
+              className={fieldClass}
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              aria-label="Filtrar por status"
+            >
+              <option value="">Todos os status</option>
+              <option value="active">Ativos agora</option>
+              <option value="risk">Em risco</option>
+              <option value="delayed">Com atraso</option>
+              <option value="absences">Faltas</option>
+              {operationalStatuses.map((status) => (
+                <option key={status} value={status}>
+                  {statusMeta[status].label}
+                </option>
+              ))}
+            </select>
+            {searchText || sectorFilter || statusFilter ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setSearchText("")
+                  setSectorFilter("")
+                  setStatusFilter("")
+                }}
+              >
+                Limpar
+              </Button>
             ) : null}
             <Button
               variant="outline"
@@ -611,7 +750,10 @@ export function DashboardPage() {
           {/* Status breakdown with progress bars */}
           <Card className="border bg-white shadow-sm">
             <CardHeader className="pb-2">
-              <CardTitle className="text-base">Status operacional</CardTitle>
+              <CardTitle className="flex items-center justify-between gap-3 text-base">
+                <span>Status operacional</span>
+                <Badge variant="outline">{statusSource.length} registros</Badge>
+              </CardTitle>
             </CardHeader>
             <CardContent>
               {dashboard.isLoading || statuses.isLoading ? (
@@ -622,15 +764,61 @@ export function DashboardPage() {
                   description="Registre eventos para visualizar."
                 />
               ) : (
-                <div className="space-y-3.5">
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <div className="flex items-end justify-between gap-3">
+                      <div>
+                        <p className="text-3xl font-bold tracking-tight tabular-nums text-slate-900">
+                          {statusSource.length}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          colaboradores no recorte atual
+                        </p>
+                      </div>
+                      {statusFilter ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setStatusFilter("")}
+                        >
+                          Ver todos
+                        </Button>
+                      ) : null}
+                    </div>
+
+                    <div className="flex h-3 overflow-hidden rounded-full bg-slate-100">
+                      {statusChartData.map((entry) => {
+                        const pct =
+                          statusSource.length > 0
+                            ? (entry.total / statusSource.length) * 100
+                            : 0
+                        return (
+                          <div
+                            key={entry.status}
+                            className="h-full transition-all"
+                            style={{
+                              width: `${pct}%`,
+                              backgroundColor:
+                                STATUS_COLORS[entry.status] ?? "#94a3b8",
+                            }}
+                            title={`${entry.label}: ${entry.total}`}
+                          />
+                        )
+                      })}
+                    </div>
+                  </div>
+
                   {statusChartData.map((entry) => {
                     const pct =
                       statusSource.length > 0
                         ? Math.round((entry.total / statusSource.length) * 100)
                         : 0
                     return (
-                      <div key={entry.status}>
-                        <div className="mb-1 flex items-center justify-between">
+                      <div
+                        key={entry.status}
+                        className="rounded-lg border border-slate-100 bg-slate-50 p-2.5"
+                      >
+                        <div className="flex items-center justify-between gap-3">
                           <div className="flex items-center gap-1.5">
                             <span
                               className="size-2 shrink-0 rounded-full"
@@ -639,17 +827,8 @@ export function DashboardPage() {
                             <span className="text-xs text-slate-600">{entry.label}</span>
                           </div>
                           <span className="text-xs font-semibold tabular-nums text-slate-700">
-                            {entry.total}
+                            {entry.total} - {pct}%
                           </span>
-                        </div>
-                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-                          <div
-                            className="h-full rounded-full transition-all"
-                            style={{
-                              width: `${pct}%`,
-                              backgroundColor: STATUS_COLORS[entry.status] ?? "#94a3b8",
-                            }}
-                          />
                         </div>
                       </div>
                     )
@@ -671,12 +850,26 @@ export function DashboardPage() {
               occurrencesCount,
               minimumTeamSize: modeConfig.minimumTeamSize,
             })
+            const metricFilter = getMetricStatusFilter(key)
+            const isMetricFilterActive =
+              metricFilter.length > 0 && statusFilter === metricFilter
             return (
-              <div
+              <button
+                type="button"
                 key={key}
-                className={`rounded-xl border bg-white p-4 shadow-sm ${
+                className={`rounded-xl border bg-white p-4 text-left shadow-sm transition ${
                   metric.danger ? "border-red-200 bg-red-50" : "border-slate-200"
-                }`}
+                } ${
+                  metricFilter
+                    ? "hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md"
+                    : "cursor-default"
+                } ${isMetricFilterActive ? "ring-2 ring-indigo-200" : ""}`}
+                onClick={() => {
+                  if (!metricFilter) return
+                  setStatusFilter((current) =>
+                    current === metricFilter ? "" : metricFilter
+                  )
+                }}
               >
                 <div className="flex items-start justify-between gap-2">
                   <p className="text-[11px] font-medium leading-tight text-slate-500">
@@ -696,19 +889,37 @@ export function DashboardPage() {
                 <p className="mt-0.5 text-[10px] leading-tight text-slate-400">
                   {metric.detail}
                 </p>
-              </div>
+              </button>
             )
           })}
         </div>
+
+        {shouldShowCoverageRisk ? (
+          <div className="flex items-start gap-3 rounded-xl border border-orange-200 bg-orange-50 p-4">
+            <ShieldAlert className="mt-0.5 size-4 shrink-0 text-orange-600" />
+            <div className="text-sm text-orange-800">
+              <span className="font-medium">Risco de cobertura:</span>{" "}
+              {coverageRisk} de {coverageTotal} colaboradores ({coverageRiskPct}%)
+              estao em situacao que pode impactar a operacao.
+            </div>
+          </div>
+        ) : null}
 
         {/* Row 3: High priority + secondary */}
         <div className="grid gap-4 xl:grid-cols-2">
           <Card className="border bg-white shadow-sm">
             <CardHeader className="pb-2">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <AlertTriangle className="size-4 text-red-500" />
-                {modeConfig.highPriorityTitle}
-              </CardTitle>
+              <div className="flex items-center justify-between gap-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <AlertTriangle className="size-4 text-red-500" />
+                  {modeConfig.highPriorityTitle}
+                </CardTitle>
+                {primaryRows.length > 0 ? (
+                  <Badge variant="outline">
+                    {visiblePrimaryRows.length} de {primaryRows.length}
+                  </Badge>
+                ) : null}
+              </div>
             </CardHeader>
             <CardContent className="space-y-2">
               {primaryRows.length === 0 ? (
@@ -717,34 +928,56 @@ export function DashboardPage() {
                   description="A operacao nao possui registros criticos no momento."
                 />
               ) : (
-                primaryRows.map((row) => {
-                  const initials = getInitials(row.employee_name)
-                  return (
-                    <div key={row.id} className="flex items-center gap-3 rounded-xl border border-red-100 bg-red-50/70 p-3">
-                      <div className="w-1 self-stretch shrink-0 rounded-full bg-red-400" />
-                      <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-red-100 text-xs font-bold text-red-700">
-                        {initials}
+                <>
+                  {visiblePrimaryRows.map((row) => {
+                    const initials = getInitials(row.employee_name)
+                    return (
+                      <div key={row.id} className="flex items-center gap-3 rounded-xl border border-red-100 bg-red-50/70 p-3">
+                        <div className="w-1 self-stretch shrink-0 rounded-full bg-red-400" />
+                        <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-red-100 text-xs font-bold text-red-700">
+                          {initials}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-slate-800">{row.employee_name}</p>
+                          <p className="truncate text-xs text-red-600">
+                            {row.status_reason ?? "Prioridade operacional alta"}
+                          </p>
+                          <p className="mt-0.5 truncate text-[11px] text-red-500">
+                            {[row.sector_name, row.branch_name].filter(Boolean).join(" - ")}
+                          </p>
+                        </div>
+                        <StatusBadge status={row.current_status} />
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold text-slate-800">{row.employee_name}</p>
-                        <p className="truncate text-xs text-red-600">
-                          {row.status_reason ?? "Prioridade operacional alta"}
-                        </p>
-                      </div>
-                      <StatusBadge status={row.current_status} />
-                    </div>
-                  )
-                })
+                    )
+                  })}
+                  {primaryRows.length > 5 ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full"
+                      onClick={() => setShowAllPrimary((value) => !value)}
+                    >
+                      {showAllPrimary ? "Recolher" : `Ver todos (${primaryRows.length})`}
+                    </Button>
+                  ) : null}
+                </>
               )}
             </CardContent>
           </Card>
 
           <Card className="border bg-white shadow-sm">
             <CardHeader className="pb-2">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <DoorOpen className="size-4 text-amber-500" />
-                {modeConfig.secondaryTitle}
-              </CardTitle>
+              <div className="flex items-center justify-between gap-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <DoorOpen className="size-4 text-amber-500" />
+                  {modeConfig.secondaryTitle}
+                </CardTitle>
+                {secondaryRows.length > 0 ? (
+                  <Badge variant="outline">
+                    {visibleSecondaryRows.length} de {secondaryRows.length}
+                  </Badge>
+                ) : null}
+              </div>
             </CardHeader>
             <CardContent className="space-y-2">
               {secondaryRows.length === 0 ? (
@@ -753,7 +986,8 @@ export function DashboardPage() {
                   description="Intervalos, saidas e etapas estao regularizadas."
                 />
               ) : (
-                secondaryRows.map((row) => {
+                <>
+                  {visibleSecondaryRows.map((row) => {
                   const initials = getInitials(row.employee_name)
                   return (
                     <div key={row.id} className="flex items-center gap-3 rounded-xl border border-amber-100 bg-amber-50/70 p-3">
@@ -770,40 +1004,36 @@ export function DashboardPage() {
                       <StatusBadge status={row.current_status} />
                     </div>
                   )
-                })
+                  })}
+                  {secondaryRows.length > 5 ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full"
+                      onClick={() => setShowAllSecondary((value) => !value)}
+                    >
+                      {showAllSecondary
+                        ? "Recolher"
+                        : `Ver todos (${secondaryRows.length})`}
+                    </Button>
+                  ) : null}
+                </>
               )}
             </CardContent>
           </Card>
         </div>
 
-        {/* Coverage risk banner */}
-        {(() => {
-          const coverageRisk = filteredRows.filter(
-            (row) =>
-              row.current_status === "alerta_critico" ||
-              row.current_status === "deve_sair" ||
-              row.current_status === "em_intervalo"
-          ).length
-          const total = filteredRows.length
-          if (total === 0) return null
-          const pct = Math.round((coverageRisk / total) * 100)
-          if (pct < 30) return null
-          return (
-            <div className="flex items-start gap-3 rounded-xl border border-orange-200 bg-orange-50 p-4">
-              <ShieldAlert className="mt-0.5 size-4 shrink-0 text-orange-600" />
-              <div className="text-sm text-orange-800">
-                <span className="font-medium">Risco de cobertura:</span>{" "}
-                {coverageRisk} de {total} colaboradores ({pct}%) estao em
-                situacao que pode impactar a operacao.
-              </div>
-            </div>
-          )
-        })()}
-
         {/* Row 4: Live team */}
         <Card className="border bg-white shadow-sm">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">{modeConfig.liveTitle}</CardTitle>
+            <div className="flex items-center justify-between gap-3">
+              <CardTitle className="text-base">{modeConfig.liveTitle}</CardTitle>
+              {liveRows.length > 0 ? (
+                <Badge variant="outline">
+                  {visibleLiveRows.length} de {liveRows.length}
+                </Badge>
+              ) : null}
+            </div>
           </CardHeader>
           <CardContent>
             {dashboard.isLoading ? (
@@ -814,8 +1044,9 @@ export function DashboardPage() {
                 description="Os colaboradores aparecem aqui durante o horario de trabalho."
               />
             ) : (
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {liveRows.map((row) => {
+              <>
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {visibleLiveRows.map((row) => {
                   const initials = getInitials(row.employee_name)
                   const avatarClass =
                     avatarColorByStatus[row.current_status] ?? "bg-slate-100 text-slate-600"
@@ -867,7 +1098,18 @@ export function DashboardPage() {
                     </div>
                   )
                 })}
-              </div>
+                </div>
+                {liveRows.length > 12 ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-3 w-full"
+                    onClick={() => setShowAllLive((value) => !value)}
+                  >
+                    {showAllLive ? "Recolher" : `Ver todos (${liveRows.length})`}
+                  </Button>
+                ) : null}
+              </>
             )}
           </CardContent>
         </Card>
