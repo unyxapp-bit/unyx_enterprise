@@ -36,9 +36,6 @@ export const OperationalAlerts = React.memo(
   }: OperationalAlertsProps) => {
     const alerts = useMemo((): Alert[] => {
       const list: Alert[] = []
-      const sectorMap = new Map(
-        (sectors ?? []).map((s) => [s.id, s.name])
-      )
 
       // Check for critical delays (> 1h)
       const criticalDelays = schedules.filter((s) => {

@@ -10,7 +10,6 @@ import {
   useUpdateSchedule,
 } from "@/hooks/useUnyxData"
 import { eventLabel } from "@/lib/status"
-import { minutesToTime, nowMinutes } from "../utils/operationalCalculations"
 import { addNoteMarker, removeNoteMarker } from "../utils/operationalCalculations"
 
 export function useOperationalActions() {

@@ -11,7 +11,6 @@
 import { useEffect } from "react"
 import { Activity, RefreshCw } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { PageHeader } from "@/components/shared/PageHeader"
@@ -42,7 +41,6 @@ import {
 } from "./utils"
 
 import type { ScheduleWithRelations } from "@/types/domain"
-import { eventLabel } from "@/lib/status"
 
 const fieldClass =
   "h-8 rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
@@ -75,14 +73,12 @@ export function OperationsPage() {
     sectors,
     mode,
     statusByScheduleId,
-    sortedSchedules,
     emTurno,
     aChegar,
     activeList,
     activePosts,
     occupiedPostIds,
     employeeByAllocation,
-    postsBySector,
     refetch,
   } = useOperationalData(date, sectorFilter, searchText, sortBy, activeTab)
 
@@ -134,7 +130,7 @@ export function OperationsPage() {
 
   // ── Handlers ──
 
-  const handleOpenEntryDialog = (schedule) => {
+  const handleOpenEntryDialog = (schedule: ScheduleWithRelations) => {
     dialogs.openEntryDialog(schedule)
   }
 
@@ -160,7 +156,7 @@ export function OperationsPage() {
     }
   }
 
-  const handleCafeClick = async (schedule) => {
+  const handleCafeClick = async (schedule: ScheduleWithRelations) => {
     try {
       await handleCafeStart(schedule)
     } catch (error) {
@@ -168,7 +164,10 @@ export function OperationsPage() {
     }
   }
 
-  const handleReturnClick = async (schedule, returned: boolean) => {
+  const handleReturnClick = async (
+    schedule: ScheduleWithRelations,
+    returned: boolean
+  ) => {
     const isCafe = isCafeBreak(schedule.notes)
     try {
       await handleReturnAnswer(schedule, returned, isCafe)

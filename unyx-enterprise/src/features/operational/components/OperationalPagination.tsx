@@ -15,7 +15,6 @@ interface OperationalPaginationProps {
 
 export const OperationalPagination = React.memo(
   ({
-    currentPage,
     totalPages,
     totalItems,
     itemsPerPage,

@@ -58,7 +58,7 @@ export function canReturnFromBreak(status: OperationalStatus | null | undefined)
 }
 
 export function canStartCafe(status: OperationalStatus | null | undefined): boolean {
-  return (status === "voltou" || status === "trabalhando") && status !== "em_intervalo"
+  return status === "voltou" || status === "trabalhando"
 }
 
 export function canStartExit(status: OperationalStatus | null | undefined): boolean {

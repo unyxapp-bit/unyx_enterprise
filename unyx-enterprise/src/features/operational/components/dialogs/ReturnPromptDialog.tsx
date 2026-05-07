@@ -12,7 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import type { ScheduleWithRelations } from "@/types/domain"
-import { formatDuration, isCafeBreak, timeToMinutes } from "../utils"
+import { formatDuration, isCafeBreak, timeToMinutes } from "../../utils"
 
 interface ReturnPromptDialogProps {
   isOpen: boolean

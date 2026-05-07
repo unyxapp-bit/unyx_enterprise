@@ -13,7 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import type { OperationalPost } from "@/types/domain"
-import { postTypeLabel } from "../utils"
+import { postTypeLabel } from "../../utils"
 
 interface EntryDialogProps {
   isOpen: boolean

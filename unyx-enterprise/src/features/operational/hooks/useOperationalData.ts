@@ -3,7 +3,7 @@
  */
 
 import { useMemo } from "react"
-import type { OperationalStatusRecord, ScheduleWithRelations } from "@/types/domain"
+import type { OperationalStatusRecord } from "@/types/domain"
 import {
   useAttendanceEvents,
   useOperationalPosts,

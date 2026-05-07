@@ -2,7 +2,7 @@
  * BreakDialog - Diálogo para liberar intervalo (com lógica de atraso)
  */
 
-import React, { useMemo } from "react"
+import React from "react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import type { ScheduleWithRelations } from "@/types/domain"
-import { formatDuration, isLateForBreak, timeToMinutes } from "../utils"
+import { isLateForBreak, timeToMinutes } from "../../utils"
 
 interface BreakDialogProps {
   isOpen: boolean
