@@ -21,6 +21,7 @@ import {
   useToggleOperationalPost,
   useUpdateOperationalPost,
 } from "@/hooks/useUnyxData"
+import { cn } from "@/lib/utils"
 import { useAppStore } from "@/store/useAppStore"
 import type { OperationalPost, OperationalPostType, Sector } from "@/types/domain"
 import { postTypeLabel } from "../utils"
@@ -31,6 +32,8 @@ interface OperationalPostsManagerCardProps {
   isLoading: boolean
   isError: boolean
   error?: Error | null
+  defaultOpen?: boolean
+  embedded?: boolean
 }
 
 type PostFormState = {
@@ -71,13 +74,15 @@ export const OperationalPostsManagerCard = React.memo(
     isLoading,
     isError,
     error,
+    defaultOpen = false,
+    embedded = false,
   }: OperationalPostsManagerCardProps) => {
     const selectedBranchId = useAppStore((state) => state.selectedBranchId)
     const createPost = useCreateOperationalPost()
     const updatePost = useUpdateOperationalPost()
     const togglePost = useToggleOperationalPost()
 
-    const [isOpen, setIsOpen] = useState(false)
+    const [isOpen, setIsOpen] = useState(defaultOpen)
     const [dialogOpen, setDialogOpen] = useState(false)
     const [editingPost, setEditingPost] = useState<OperationalPost | null>(null)
     const [form, setForm] = useState<PostFormState>(() => emptyForm())
@@ -92,10 +97,12 @@ export const OperationalPostsManagerCard = React.memo(
       setEditingPost(null)
       setForm(emptyForm())
       setFormError(null)
+      setIsOpen(true)
       setDialogOpen(true)
     }
 
     function openEditPost(post: OperationalPost) {
+      setIsOpen(true)
       setEditingPost(post)
       setForm({
         name: post.name,
@@ -151,11 +158,104 @@ export const OperationalPostsManagerCard = React.memo(
       }
     }
 
+    const formTitle = editingPost ? "Editar posto" : "Criar posto"
+    const submitLabel = editingPost ? "Salvar posto" : "Criar posto"
+    const isSubmitting = createPost.isPending || updatePost.isPending
+
+    const formFields = (
+      <>
+        <label className="space-y-1 text-sm">
+          <span className="font-medium">Nome</span>
+          <Input
+            required
+            value={form.name}
+            onChange={(event) =>
+              setForm((current) => ({
+                ...current,
+                name: event.target.value,
+              }))
+            }
+          />
+        </label>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="space-y-1 text-sm">
+            <span className="font-medium">Setor</span>
+            <select
+              className={fieldClass}
+              value={form.sector_id}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  sector_id: event.target.value,
+                }))
+              }
+            >
+              <option value="">Sem setor</option>
+              {sectors.map((sector) => (
+                <option key={sector.id} value={sector.id}>
+                  {sector.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="space-y-1 text-sm">
+            <span className="font-medium">Tipo</span>
+            <select
+              className={fieldClass}
+              value={form.type}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  type: event.target.value as OperationalPostType,
+                }))
+              }
+            >
+              {postTypes.map((type) => (
+                <option key={type} value={type}>
+                  {postTypeLabel[type] ?? type}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <label className="space-y-1 text-sm">
+          <span className="font-medium">Status</span>
+          <select
+            className={fieldClass}
+            value={form.active ? "active" : "inactive"}
+            onChange={(event) =>
+              setForm((current) => ({
+                ...current,
+                active: event.target.value === "active",
+              }))
+            }
+          >
+            <option value="active">Ativo</option>
+            <option value="inactive">Inativo</option>
+          </select>
+        </label>
+
+        {formError ? (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {formError}
+          </div>
+        ) : null}
+      </>
+    )
+
     return (
       <>
-        <Card className="border bg-white shadow-sm">
+        <Card
+          className={cn(
+            "border bg-white shadow-sm",
+            embedded && "border-0 shadow-none"
+          )}
+        >
           <CardHeader
-            className="cursor-pointer select-none"
+            className={cn("cursor-pointer select-none", embedded && "p-3")}
             onClick={() => setIsOpen((value) => !value)}
             role="button"
             tabIndex={0}
@@ -192,7 +292,7 @@ export const OperationalPostsManagerCard = React.memo(
             </CardTitle>
           </CardHeader>
           {isOpen ? (
-            <CardContent>
+            <CardContent className={cn(embedded && "px-3 pb-3")}>
               {!selectedBranchId ? (
                 <StateBlock
                   title="Selecione uma filial"
@@ -212,10 +312,34 @@ export const OperationalPostsManagerCard = React.memo(
                   description={error?.message}
                   className="min-h-32"
                 />
-              ) : posts.length === 0 ? (
+              ) : posts.length === 0 && !(embedded && dialogOpen) ? (
                 <StateBlock title="Nenhum posto cadastrado" className="min-h-32" />
               ) : (
                 <div className="space-y-2">
+                  {embedded && dialogOpen ? (
+                    <form
+                      className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3"
+                      onSubmit={handleSubmit}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-sm font-semibold">{formTitle}</div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setDialogOpen(false)}
+                        >
+                          Cancelar
+                        </Button>
+                      </div>
+                      {formFields}
+                      <div className="flex justify-end">
+                        <Button type="submit" size="sm" disabled={isSubmitting}>
+                          {submitLabel}
+                        </Button>
+                      </div>
+                    </form>
+                  ) : null}
                   {posts.map((post) => (
                     <div
                       key={post.id}
@@ -271,105 +395,24 @@ export const OperationalPostsManagerCard = React.memo(
           ) : null}
         </Card>
 
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>
-                {editingPost ? "Editar posto" : "Criar posto"}
-              </DialogTitle>
-            </DialogHeader>
-            <form className="space-y-4" onSubmit={handleSubmit}>
-              <label className="space-y-1 text-sm">
-                <span className="font-medium">Nome</span>
-                <Input
-                  required
-                  value={form.name}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      name: event.target.value,
-                    }))
-                  }
-                />
-              </label>
+        {!embedded ? (
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{formTitle}</DialogTitle>
+              </DialogHeader>
+              <form className="space-y-4" onSubmit={handleSubmit}>
+                {formFields}
 
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="space-y-1 text-sm">
-                  <span className="font-medium">Setor</span>
-                  <select
-                    className={fieldClass}
-                    value={form.sector_id}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        sector_id: event.target.value,
-                      }))
-                    }
-                  >
-                    <option value="">Sem setor</option>
-                    {sectors.map((sector) => (
-                      <option key={sector.id} value={sector.id}>
-                        {sector.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="space-y-1 text-sm">
-                  <span className="font-medium">Tipo</span>
-                  <select
-                    className={fieldClass}
-                    value={form.type}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        type: event.target.value as OperationalPostType,
-                      }))
-                    }
-                  >
-                    {postTypes.map((type) => (
-                      <option key={type} value={type}>
-                        {postTypeLabel[type] ?? type}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-
-              <label className="space-y-1 text-sm">
-                <span className="font-medium">Status</span>
-                <select
-                  className={fieldClass}
-                  value={form.active ? "active" : "inactive"}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      active: event.target.value === "active",
-                    }))
-                  }
-                >
-                  <option value="active">Ativo</option>
-                  <option value="inactive">Inativo</option>
-                </select>
-              </label>
-
-              {formError ? (
-                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                  {formError}
-                </div>
-              ) : null}
-
-              <DialogFooter>
-                <Button
-                  type="submit"
-                  disabled={createPost.isPending || updatePost.isPending}
-                >
-                  {editingPost ? "Salvar posto" : "Criar posto"}
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
+                <DialogFooter>
+                  <Button type="submit" disabled={isSubmitting}>
+                    {submitLabel}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        ) : null}
       </>
     )
   }

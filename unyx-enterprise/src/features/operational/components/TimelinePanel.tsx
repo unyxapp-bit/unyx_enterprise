@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { StateBlock } from "@/components/shared/StateBlock"
 import { eventLabel } from "@/lib/status"
 import { formatDateTimeBR } from "@/lib/format"
+import { cn } from "@/lib/utils"
 import type { AttendanceEvent } from "@/types/domain"
 
 interface TimelinePanelProps {
@@ -17,14 +18,28 @@ interface TimelinePanelProps {
   isLoading: boolean
   isError: boolean
   error?: Error | null
+  embedded?: boolean
 }
 
 export const TimelinePanel = React.memo(
-  ({ isOpen, onToggle, events, isLoading, isError, error }: TimelinePanelProps) => {
+  ({
+    isOpen,
+    onToggle,
+    events,
+    isLoading,
+    isError,
+    error,
+    embedded = false,
+  }: TimelinePanelProps) => {
     return (
-      <Card className="self-start border bg-white shadow-sm">
+      <Card
+        className={cn(
+          "self-start border bg-white shadow-sm",
+          embedded && "border-0 shadow-none"
+        )}
+      >
         <CardHeader
-          className="cursor-pointer select-none"
+          className={cn("cursor-pointer select-none", embedded && "p-3")}
           onClick={onToggle}
           role="button"
           tabIndex={0}
@@ -47,7 +62,7 @@ export const TimelinePanel = React.memo(
           </CardTitle>
         </CardHeader>
         {isOpen ? (
-          <CardContent>
+          <CardContent className={cn(embedded && "px-3 pb-3")}>
             {isLoading ? (
               <StateBlock type="loading" title="Carregando eventos" />
             ) : isError ? (

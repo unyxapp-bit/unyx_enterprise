@@ -9,9 +9,22 @@
  */
 
 import { useEffect, useState } from "react"
-import { Activity, RefreshCw } from "lucide-react"
+import {
+  Activity,
+  ChevronDown,
+  History,
+  MapPinned,
+  RefreshCw,
+  Store,
+} from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { PageHeader } from "@/components/shared/PageHeader"
 import { modeUiConfig } from "@/features/ops/modes/modeUiConfig"
@@ -227,6 +240,95 @@ export function OperationsPage() {
         description={modeConfig.mainFocus}
         action={
           <div className="flex flex-wrap items-center gap-2">
+            <DropdownMenu modal={false}>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="outline" size="sm">
+                  <Store className="size-3.5" />
+                  Gerenciar postos
+                  <Badge variant="outline" className="ml-1 h-5 px-1.5">
+                    {allPosts.filter((post) => post.active).length}/{allPosts.length}
+                  </Badge>
+                  <ChevronDown className="size-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                className="w-[min(92vw,28rem)] p-0"
+                onCloseAutoFocus={(event) => event.preventDefault()}
+              >
+                <div className="max-h-[70vh] overflow-y-auto">
+                  <OperationalPostsManagerCard
+                    posts={allPosts}
+                    sectors={sectors.data ?? []}
+                    isLoading={operationalPosts.isLoading}
+                    isError={operationalPosts.isError}
+                    error={operationalPosts.error}
+                    defaultOpen
+                    embedded
+                  />
+                </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <DropdownMenu modal={false}>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="outline" size="sm">
+                  <MapPinned className="size-3.5" />
+                  Postos ocupados
+                  <Badge variant="outline" className="ml-1 h-5 px-1.5">
+                    {occupiedPostAllocations.length}
+                  </Badge>
+                  <ChevronDown className="size-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                className="w-[min(92vw,26rem)] p-0"
+                onCloseAutoFocus={(event) => event.preventDefault()}
+              >
+                <div className="max-h-[70vh] overflow-y-auto">
+                  <OccupiedPostsCard
+                    allocations={occupiedPostAllocations}
+                    isLoading={postAllocations.isLoading}
+                    isError={postAllocations.isError}
+                    error={postAllocations.error}
+                    isReleasePending={finalizePostAllocation.isPending}
+                    releasingAllocationId={releasingAllocationId}
+                    onReleasePost={(allocation) => void handleReleasePost(allocation)}
+                    defaultOpen
+                    embedded
+                  />
+                </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <DropdownMenu modal={false}>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="outline" size="sm">
+                  <History className="size-3.5" />
+                  Timeline
+                  <ChevronDown className="size-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                className="w-[min(92vw,26rem)] p-0"
+                onCloseAutoFocus={(event) => event.preventDefault()}
+              >
+                <div className="max-h-[70vh] overflow-y-auto">
+                  <TimelinePanel
+                    isOpen={timelineOpen}
+                    onToggle={() => setTimelineOpen(!timelineOpen)}
+                    events={events.data}
+                    isLoading={events.isLoading}
+                    isError={events.isError}
+                    error={events.error}
+                    embedded
+                  />
+                </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
             <Badge variant="outline">{operationalModeNames[mode]}</Badge>
             <Input
               className="w-40"
@@ -274,7 +376,7 @@ export function OperationsPage() {
         }
       />
 
-      <div className="grid gap-4 p-6 xl:grid-cols-[1.35fr_0.65fr]">
+      <div className="grid gap-4 p-6">
         {/* ── Main Panel ── */}
         <Card className="border bg-white shadow-sm">
           <CardHeader>
@@ -328,36 +430,6 @@ export function OperationsPage() {
             />
           </CardContent>
         </Card>
-
-        {/* ── Timeline ── */}
-        <div className="space-y-4">
-          <OperationalPostsManagerCard
-            posts={allPosts}
-            sectors={sectors.data ?? []}
-            isLoading={operationalPosts.isLoading}
-            isError={operationalPosts.isError}
-            error={operationalPosts.error}
-          />
-
-          <OccupiedPostsCard
-            allocations={occupiedPostAllocations}
-            isLoading={postAllocations.isLoading}
-            isError={postAllocations.isError}
-            error={postAllocations.error}
-            isReleasePending={finalizePostAllocation.isPending}
-            releasingAllocationId={releasingAllocationId}
-            onReleasePost={(allocation) => void handleReleasePost(allocation)}
-          />
-
-          <TimelinePanel
-            isOpen={timelineOpen}
-            onToggle={() => setTimelineOpen(!timelineOpen)}
-            events={events.data}
-            isLoading={events.isLoading}
-            isError={events.isError}
-            error={events.error}
-          />
-        </div>
       </div>
 
       {/* ── Dialogs ── */}

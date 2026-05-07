@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { StateBlock } from "@/components/shared/StateBlock"
 import { formatDateTimeBR } from "@/lib/format"
+import { cn } from "@/lib/utils"
 import type { PostAllocation } from "@/types/domain"
 import { postTypeLabel } from "../utils"
 
@@ -20,6 +21,8 @@ interface OccupiedPostsCardProps {
   isReleasePending: boolean
   releasingAllocationId: string | null
   onReleasePost: (allocation: PostAllocation) => void
+  defaultOpen?: boolean
+  embedded?: boolean
 }
 
 const allocationStatusLabel: Record<PostAllocation["status"], string> = {
@@ -39,13 +42,20 @@ export const OccupiedPostsCard = React.memo(
     isReleasePending,
     releasingAllocationId,
     onReleasePost,
+    defaultOpen = true,
+    embedded = false,
   }: OccupiedPostsCardProps) => {
-    const [isOpen, setIsOpen] = React.useState(true)
+    const [isOpen, setIsOpen] = React.useState(defaultOpen)
 
     return (
-      <Card className="border bg-white shadow-sm">
+      <Card
+        className={cn(
+          "border bg-white shadow-sm",
+          embedded && "border-0 shadow-none"
+        )}
+      >
         <CardHeader
-          className="cursor-pointer select-none"
+          className={cn("cursor-pointer select-none", embedded && "p-3")}
           onClick={() => setIsOpen((value) => !value)}
           role="button"
           tabIndex={0}
@@ -69,87 +79,87 @@ export const OccupiedPostsCard = React.memo(
           </CardTitle>
         </CardHeader>
         {isOpen ? (
-          <CardContent>
-          {isLoading ? (
-            <StateBlock
-              type="loading"
-              title="Carregando postos"
-              className="min-h-32"
-            />
-          ) : isError ? (
-            <StateBlock
-              type="error"
-              title="Erro ao carregar postos"
-              description={error?.message}
-              className="min-h-32"
-            />
-          ) : allocations.length === 0 ? (
-            <StateBlock title="Nenhum posto ocupado" className="min-h-32" />
-          ) : (
-            <div className="space-y-2">
-              {allocations.map((allocation) => {
-                const post = allocation.operational_posts
-                const postType = post?.type
-                  ? postTypeLabel[post.type] ?? post.type
-                  : null
-                const details = [post?.sectors?.name ?? "Sem setor", postType]
-                  .filter(Boolean)
-                  .join(" - ")
+          <CardContent className={cn(embedded && "px-3 pb-3")}>
+            {isLoading ? (
+              <StateBlock
+                type="loading"
+                title="Carregando postos"
+                className="min-h-32"
+              />
+            ) : isError ? (
+              <StateBlock
+                type="error"
+                title="Erro ao carregar postos"
+                description={error?.message}
+                className="min-h-32"
+              />
+            ) : allocations.length === 0 ? (
+              <StateBlock title="Nenhum posto ocupado" className="min-h-32" />
+            ) : (
+              <div className="space-y-2">
+                {allocations.map((allocation) => {
+                  const post = allocation.operational_posts
+                  const postType = post?.type
+                    ? postTypeLabel[post.type] ?? post.type
+                    : null
+                  const details = [post?.sectors?.name ?? "Sem setor", postType]
+                    .filter(Boolean)
+                    .join(" - ")
 
-                return (
-                  <div
-                    key={allocation.id}
-                    className="rounded-lg border border-slate-200 bg-slate-50 p-3"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-semibold text-slate-900">
-                          {post?.name ?? "Posto"}
-                        </div>
-                        <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                          {details}
-                        </div>
-                      </div>
-                      <Badge
-                        variant="outline"
-                        className="border-emerald-200 bg-emerald-50 text-emerald-700"
-                      >
-                        {allocationStatusLabel[allocation.status]}
-                      </Badge>
-                    </div>
-
-                    <div className="mt-3 space-y-1.5 text-xs text-muted-foreground">
-                      <div className="flex min-w-0 items-center gap-1.5">
-                        <UserRound className="size-3.5 shrink-0" />
-                        <span className="truncate">
-                          {allocation.employees?.name ?? "Colaborador"}
-                        </span>
-                      </div>
-                      <div className="flex min-w-0 items-center gap-1.5">
-                        <Clock3 className="size-3.5 shrink-0" />
-                        <span className="truncate">
-                          Desde {formatDateTimeBR(allocation.started_at)}
-                        </span>
-                      </div>
-                    </div>
-
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="mt-3 flex w-full items-center justify-center gap-1.5 border-slate-300 text-xs"
-                      disabled={isReleasePending}
-                      onClick={() => onReleasePost(allocation)}
+                  return (
+                    <div
+                      key={allocation.id}
+                      className="rounded-lg border border-slate-200 bg-slate-50 p-3"
                     >
-                      <Unlock className="size-3.5" />
-                      {releasingAllocationId === allocation.id
-                        ? "Liberando..."
-                        : "Liberar posto"}
-                    </Button>
-                  </div>
-                )
-              })}
-            </div>
-          )}
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold text-slate-900">
+                            {post?.name ?? "Posto"}
+                          </div>
+                          <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                            {details}
+                          </div>
+                        </div>
+                        <Badge
+                          variant="outline"
+                          className="border-emerald-200 bg-emerald-50 text-emerald-700"
+                        >
+                          {allocationStatusLabel[allocation.status]}
+                        </Badge>
+                      </div>
+
+                      <div className="mt-3 space-y-1.5 text-xs text-muted-foreground">
+                        <div className="flex min-w-0 items-center gap-1.5">
+                          <UserRound className="size-3.5 shrink-0" />
+                          <span className="truncate">
+                            {allocation.employees?.name ?? "Colaborador"}
+                          </span>
+                        </div>
+                        <div className="flex min-w-0 items-center gap-1.5">
+                          <Clock3 className="size-3.5 shrink-0" />
+                          <span className="truncate">
+                            Desde {formatDateTimeBR(allocation.started_at)}
+                          </span>
+                        </div>
+                      </div>
+
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="mt-3 flex w-full items-center justify-center gap-1.5 border-slate-300 text-xs"
+                        disabled={isReleasePending}
+                        onClick={() => onReleasePost(allocation)}
+                      >
+                        <Unlock className="size-3.5" />
+                        {releasingAllocationId === allocation.id
+                          ? "Liberando..."
+                          : "Liberar posto"}
+                      </Button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </CardContent>
         ) : null}
       </Card>
