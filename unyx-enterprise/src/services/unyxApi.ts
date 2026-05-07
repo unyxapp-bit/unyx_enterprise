@@ -11,6 +11,9 @@ import type {
   CashMovementType,
   CashSession,
   CashSessionStatus,
+  ChecklistProcedure,
+  ChecklistProcedureFrequency,
+  ChecklistRun,
   CommsPost,
   CommsPostComment,
   DashboardRow,
@@ -126,6 +129,30 @@ function allocationFeatureMessage() {
   return "Os recursos de postos operacionais ainda nao apareceram na API do Supabase. Rode o supabase/onboarding_first_access.sql atualizado no SQL Editor, aguarde alguns segundos e recarregue o app."
 }
 
+function isMissingChecklistFeature(error: { code?: string; message: string } | null) {
+  if (!error) return false
+  const message = error.message.toLowerCase()
+  const mentionsChecklist =
+    message.includes("checklist_procedures") ||
+    message.includes("checklist_runs")
+
+  return (
+    mentionsChecklist &&
+    (
+      error.code === "42P01" ||
+      error.code === "PGRST204" ||
+      error.code === "PGRST205" ||
+      message.includes("schema cache") ||
+      message.includes("does not exist") ||
+      message.includes("could not find")
+    )
+  )
+}
+
+function checklistFeatureMessage() {
+  return "Modulo de checklists e procedimentos ainda nao instalado. Rode supabase/checklists_procedures.sql no SQL Editor do Supabase e recarregue o app."
+}
+
 function isMissingProfileRpc(error: { code?: string; message: string } | null) {
   if (!error) return false
   return (
@@ -211,6 +238,16 @@ function normalizeText(value: string | null | undefined) {
 
 function cleanDocument(value: string | null | undefined) {
   return (value ?? "").replace(/\D/g, "")
+}
+
+function normalizeChecklistItems(items: string[]) {
+  return Array.from(
+    new Set(
+      items
+        .map((item) => item.trim())
+        .filter(Boolean)
+    )
+  )
 }
 
 function timeToMinutes(value: string | null | undefined) {
@@ -1660,6 +1697,173 @@ export async function setTrainingProgress(
 
   raise(error)
   return data as TrainingProgress
+}
+
+export interface ChecklistProcedureInput {
+  branch_id: string | null
+  sector_id: string | null
+  title: string
+  category: string | null
+  frequency: ChecklistProcedureFrequency
+  estimated_minutes: number | null
+  owner_role: string | null
+  instructions: string | null
+  checklist_items: string[]
+}
+
+export async function listChecklistProcedures(branchId?: string | null) {
+  let query = supabase
+    .from("checklist_procedures")
+    .select("*, branches(name), sectors(name), user_profiles!created_by(name)")
+    .eq("active", true)
+    .order("created_at", { ascending: false })
+
+  if (branchId) query = query.or(`branch_id.is.null,branch_id.eq.${branchId}`)
+
+  const { data, error } = await query
+  if (isMissingChecklistFeature(error)) throw new Error(checklistFeatureMessage())
+  raise(error)
+
+  return (data ?? []) as ChecklistProcedure[]
+}
+
+export async function createChecklistProcedure(
+  profile: UserProfile,
+  input: ChecklistProcedureInput
+) {
+  const title = input.title.trim()
+  const checklistItems = normalizeChecklistItems(input.checklist_items)
+
+  if (!title) throw new Error("Informe o titulo do procedimento.")
+  if (checklistItems.length === 0) {
+    throw new Error("Adicione pelo menos um item no checklist.")
+  }
+  if (input.sector_id && !input.branch_id) {
+    throw new Error("Selecione uma filial antes de escolher o setor.")
+  }
+
+  if (input.branch_id) {
+    await validateBranchAndSector(profile, input.branch_id, input.sector_id)
+  }
+
+  const { data, error } = await supabase
+    .from("checklist_procedures")
+    .insert({
+      ...input,
+      title,
+      category: input.category?.trim() || null,
+      owner_role: input.owner_role?.trim() || null,
+      instructions: input.instructions?.trim() || null,
+      checklist_items: checklistItems,
+      organization_id: profile.organization_id,
+      created_by: profile.id,
+    })
+    .select("*, branches(name), sectors(name), user_profiles!created_by(name)")
+    .single()
+
+  if (isMissingChecklistFeature(error)) throw new Error(checklistFeatureMessage())
+  raise(error)
+
+  await createAuditLog(profile, {
+    branch_id: input.branch_id,
+    action: "checklist_procedure_created",
+    entity_type: "checklist_procedures",
+    entity_id: data.id,
+    old_value: null,
+    new_value: data,
+  })
+
+  return data as ChecklistProcedure
+}
+
+export async function listChecklistRuns(
+  branchId?: string | null,
+  since?: string | null
+) {
+  let query = supabase
+    .from("checklist_runs")
+    .select("*, checklist_procedures(title, category), branches(name), user_profiles!user_id(name)")
+    .order("created_at", { ascending: false })
+    .limit(120)
+
+  if (branchId) query = query.or(`branch_id.is.null,branch_id.eq.${branchId}`)
+  if (since) query = query.gte("created_at", since)
+
+  const { data, error } = await query
+  if (isMissingChecklistFeature(error)) throw new Error(checklistFeatureMessage())
+  raise(error)
+
+  return (data ?? []) as ChecklistRun[]
+}
+
+export async function completeChecklistRun(
+  profile: UserProfile,
+  input: {
+    procedure_id: string
+    branch_id: string | null
+    checked_items: string[]
+    notes: string | null
+  }
+) {
+  const { data: procedure, error: procedureError } = await supabase
+    .from("checklist_procedures")
+    .select("id, organization_id, branch_id, active, checklist_items")
+    .eq("id", input.procedure_id)
+    .maybeSingle()
+
+  if (isMissingChecklistFeature(procedureError)) {
+    throw new Error(checklistFeatureMessage())
+  }
+  raise(procedureError)
+
+  if (
+    !procedure ||
+    procedure.organization_id !== profile.organization_id ||
+    !procedure.active
+  ) {
+    throw new Error("Procedimento invalido ou inativo.")
+  }
+
+  const requiredItems = normalizeChecklistItems(procedure.checklist_items ?? [])
+  const checkedItems = normalizeChecklistItems(input.checked_items)
+  const missingItems = requiredItems.filter((item) => !checkedItems.includes(item))
+
+  if (missingItems.length > 0) {
+    throw new Error("Conclua todos os itens antes de finalizar o checklist.")
+  }
+
+  const branchId = procedure.branch_id ?? input.branch_id ?? profile.branch_id ?? null
+  const completedAt = new Date().toISOString()
+
+  const { data, error } = await supabase
+    .from("checklist_runs")
+    .insert({
+      organization_id: profile.organization_id,
+      procedure_id: input.procedure_id,
+      branch_id: branchId,
+      user_id: profile.id,
+      status: "completed",
+      checked_items: checkedItems,
+      notes: input.notes?.trim() || null,
+      started_at: completedAt,
+      completed_at: completedAt,
+    })
+    .select("*, checklist_procedures(title, category), branches(name), user_profiles!user_id(name)")
+    .single()
+
+  if (isMissingChecklistFeature(error)) throw new Error(checklistFeatureMessage())
+  raise(error)
+
+  await createAuditLog(profile, {
+    branch_id: branchId,
+    action: "checklist_run_completed",
+    entity_type: "checklist_runs",
+    entity_id: data.id,
+    old_value: null,
+    new_value: data,
+  })
+
+  return data as ChecklistRun
 }
 
 export async function recordOperationalEvent(

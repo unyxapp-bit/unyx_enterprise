@@ -371,6 +371,53 @@ export interface TrainingProgress {
   completed_at: string | null
 }
 
+export type ChecklistProcedureFrequency =
+  | "daily"
+  | "weekly"
+  | "monthly"
+  | "on_demand"
+
+export type ChecklistRunStatus = "in_progress" | "completed"
+
+export interface ChecklistProcedure {
+  id: string
+  organization_id: string
+  branch_id: string | null
+  sector_id: string | null
+  created_by: string | null
+  title: string
+  category: string | null
+  frequency: ChecklistProcedureFrequency
+  estimated_minutes: number | null
+  owner_role: string | null
+  instructions: string | null
+  checklist_items: string[]
+  active: boolean
+  created_at: string
+  updated_at: string
+  branches?: Pick<Branch, "name"> | null
+  sectors?: Pick<Sector, "name"> | null
+  user_profiles?: Pick<UserProfile, "name"> | null
+}
+
+export interface ChecklistRun {
+  id: string
+  organization_id: string
+  procedure_id: string
+  branch_id: string | null
+  user_id: string | null
+  status: ChecklistRunStatus
+  checked_items: string[]
+  notes: string | null
+  started_at: string
+  completed_at: string | null
+  created_at: string
+  updated_at: string
+  checklist_procedures?: Pick<ChecklistProcedure, "title" | "category"> | null
+  branches?: Pick<Branch, "name"> | null
+  user_profiles?: Pick<UserProfile, "name"> | null
+}
+
 export interface AuditLog {
   id: string
   organization_id: string

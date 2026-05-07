@@ -443,6 +443,7 @@ values
   ('unyx_insight', 'Unyx Insight', 'Relatorios, auditoria visual e visao gerencial.', true),
   ('unyx_comms', 'Unyx Comms', 'Comunicacao interna, avisos, feed corporativo e leitura confirmada.', true),
   ('unyx_game', 'Unyx Game', 'Gamificacao operacional, ranking, pontos, metas e engajamento.', true),
+  ('unyx_checklists', 'Unyx Checklists', 'Procedimentos operacionais, checklists executaveis, evidencias e historico de conclusao.', true),
   ('unyx_academy', 'Unyx Academy', 'Treinamentos, onboarding, trilhas e progresso de capacitacao.', true),
   ('unyx_ai', 'Unyx AI', 'Insights automaticos, previsao de risco e sugestoes operacionais.', true)
 on conflict (key) do update
@@ -600,6 +601,71 @@ create table public.training_progress (
 );
 
 create index idx_training_progress_user on public.training_progress(user_id);
+
+-- =========================================================
+-- UNYX CHECKLISTS
+-- =========================================================
+
+create table public.checklist_procedures (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  branch_id uuid references public.branches(id) on delete set null,
+  sector_id uuid references public.sectors(id) on delete set null,
+  created_by uuid references public.user_profiles(id) on delete set null,
+  title text not null,
+  category text,
+  frequency text not null default 'daily'
+    check (frequency in ('daily', 'weekly', 'monthly', 'on_demand')),
+  estimated_minutes integer check (estimated_minutes is null or estimated_minutes > 0),
+  owner_role text,
+  instructions text,
+  checklist_items text[] not null default array[]::text[],
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index idx_checklist_procedures_organization
+on public.checklist_procedures(organization_id, active, created_at desc);
+
+create index idx_checklist_procedures_branch on public.checklist_procedures(branch_id);
+create index idx_checklist_procedures_sector on public.checklist_procedures(sector_id);
+
+create trigger trg_checklist_procedures_updated_at
+before update on public.checklist_procedures
+for each row execute function public.set_updated_at();
+
+create table public.checklist_runs (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  procedure_id uuid not null references public.checklist_procedures(id) on delete cascade,
+  branch_id uuid references public.branches(id) on delete set null,
+  user_id uuid references public.user_profiles(id) on delete set null,
+  status text not null default 'completed'
+    check (status in ('in_progress', 'completed')),
+  checked_items text[] not null default array[]::text[],
+  notes text,
+  started_at timestamptz not null default now(),
+  completed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index idx_checklist_runs_organization_time
+on public.checklist_runs(organization_id, created_at desc);
+
+create index idx_checklist_runs_procedure_time
+on public.checklist_runs(procedure_id, created_at desc);
+
+create index idx_checklist_runs_branch_time
+on public.checklist_runs(branch_id, created_at desc);
+
+create index idx_checklist_runs_user_time
+on public.checklist_runs(user_id, created_at desc);
+
+create trigger trg_checklist_runs_updated_at
+before update on public.checklist_runs
+for each row execute function public.set_updated_at();
 
 -- =========================================================
 -- FUNÇÕES DE SEGURANÇA MULTI-TENANT
@@ -1985,6 +2051,8 @@ alter table public.comms_post_reads enable row level security;
 alter table public.comms_post_comments enable row level security;
 alter table public.training_items enable row level security;
 alter table public.training_progress enable row level security;
+alter table public.checklist_procedures enable row level security;
+alter table public.checklist_runs enable row level security;
 
 -- ORGANIZATIONS
 create policy "Users can view own organization"
@@ -2299,6 +2367,63 @@ with check (
 
 create policy "Users can update own training progress"
 on public.training_progress
+for update
+using (user_id = public.current_user_profile_id())
+with check (user_id = public.current_user_profile_id());
+
+-- UNYX CHECKLISTS
+create policy "Users can view checklist procedures from own organization"
+on public.checklist_procedures
+for select
+using (organization_id = public.current_organization_id() and active = true);
+
+create policy "Managers can manage checklist procedures"
+on public.checklist_procedures
+for all
+using (
+  organization_id = public.current_organization_id()
+  and (
+    public.is_org_admin()
+    or created_by = public.current_user_profile_id()
+    or (branch_id is not null and public.can_manage_branch(branch_id))
+  )
+)
+with check (
+  organization_id = public.current_organization_id()
+  and created_by = public.current_user_profile_id()
+  and (
+    public.is_org_admin()
+    or (branch_id is not null and public.can_manage_branch(branch_id))
+  )
+);
+
+create policy "Users can view checklist runs from own organization"
+on public.checklist_runs
+for select
+using (organization_id = public.current_organization_id());
+
+create policy "Users can create checklist runs"
+on public.checklist_runs
+for insert
+with check (
+  organization_id = public.current_organization_id()
+  and user_id = public.current_user_profile_id()
+  and (
+    branch_id is null
+    or branch_id = public.current_branch_id()
+    or public.can_manage_branch(branch_id)
+  )
+  and exists (
+    select 1
+    from public.checklist_procedures procedures
+    where procedures.id = procedure_id
+      and procedures.organization_id = public.current_organization_id()
+      and procedures.active = true
+  )
+);
+
+create policy "Users can update own checklist runs"
+on public.checklist_runs
 for update
 using (user_id = public.current_user_profile_id())
 with check (user_id = public.current_user_profile_id());

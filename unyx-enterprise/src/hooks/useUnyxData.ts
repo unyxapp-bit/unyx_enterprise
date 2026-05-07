@@ -5,6 +5,7 @@ import { useAuth } from "@/app/providers/auth-context"
 import { useAppStore } from "@/store/useAppStore"
 import {
   closeCashSession,
+  completeChecklistRun,
   completeSale,
   copySchedulesFromDate,
   createPosCashMovement,
@@ -12,6 +13,7 @@ import {
   allocatePost,
   confirmCashMovement,
   createBranch,
+  createChecklistProcedure,
   createCommsPost,
   createCommsPostComment,
   createEmployee,
@@ -49,6 +51,8 @@ import {
   listDashboardRows,
   listEmployees,
   listCashMovements,
+  listChecklistProcedures,
+  listChecklistRuns,
   listCommsPosts,
   listCommsPostComments,
   listModules,
@@ -88,6 +92,7 @@ import {
 } from "@/services/unyxApi"
 import type {
   BulkImportResult,
+  ChecklistProcedureInput,
   CompleteSaleInput,
   EmployeeImportInput,
   ProductInput,
@@ -357,6 +362,28 @@ export function useTrainingProgress() {
   })
 }
 
+export function useChecklistProcedures() {
+  const { profile } = useAuth()
+  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
+
+  return useQuery({
+    queryKey: ["checklist-procedures", profile?.organization_id, selectedBranchId],
+    queryFn: () => listChecklistProcedures(selectedBranchId),
+    enabled: Boolean(profile),
+  })
+}
+
+export function useChecklistRuns(since?: string | null) {
+  const { profile } = useAuth()
+  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
+
+  return useQuery({
+    queryKey: ["checklist-runs", profile?.organization_id, selectedBranchId, since],
+    queryFn: () => listChecklistRuns(selectedBranchId, since),
+    enabled: Boolean(profile),
+  })
+}
+
 export function useAuditLogs() {
   const { profile } = useAuth()
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
@@ -484,6 +511,48 @@ export function useSetTrainingProgress() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["training-progress"] })
       toast.success("Progresso atualizado.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useCreateChecklistProcedure() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: ChecklistProcedureInput) =>
+      createChecklistProcedure(profile, input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["checklist-procedures"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success("Procedimento cadastrado.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useCompleteChecklistRun() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: {
+      procedure_id: string
+      branch_id: string | null
+      checked_items: string[]
+      notes: string | null
+    }) => completeChecklistRun(profile, input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["checklist-runs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success("Checklist concluido.")
     },
     onError: (error) => {
       toast.error(error.message)

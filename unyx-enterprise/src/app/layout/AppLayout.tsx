@@ -10,6 +10,7 @@ import {
   GraduationCap,
   ChevronDown,
   LayoutDashboard,
+  ListChecks,
   LogOut,
   Menu,
   MessageSquareText,
@@ -58,6 +59,7 @@ const navGroups = [
       { to: "/app/operations", label: "Operacao",  icon: Activity,        perm: "operations" as PermissionKey },
       { to: "/app/alerts",     label: "Alertas",   icon: BellRing,        perm: "alerts"     as PermissionKey },
       { to: "/app/schedules",  label: "Escalas",   icon: CalendarDays,    perm: "schedules"  as PermissionKey },
+      { to: "/app/checklists", label: "Checklists", icon: ListChecks,      perm: "checklists" as PermissionKey },
     ],
   },
   {

@@ -7,6 +7,7 @@ export type CoreModuleKey =
 export type ExpansionModuleKey =
   | "unyx_comms"
   | "unyx_game"
+  | "unyx_checklists"
   | "unyx_academy"
   | "unyx_ai"
 export type ProductModuleKey = CoreModuleKey | ExpansionModuleKey
@@ -69,6 +70,18 @@ export const expansionModules = [
     tagline: "Engaja a operacao",
     description:
       "Ranking por comportamento operacional, pontos, niveis e metas de engajamento.",
+    planAccess: {
+      starter: "Indisponivel",
+      growth: "Opcional",
+      enterprise: "Completo",
+    },
+  },
+  {
+    key: "unyx_checklists",
+    name: "Unyx Checklists",
+    tagline: "Padroniza procedimentos",
+    description:
+      "Procedimentos operacionais, checklists executaveis, evidencias e historico de conclusao.",
     planAccess: {
       starter: "Indisponivel",
       growth: "Opcional",

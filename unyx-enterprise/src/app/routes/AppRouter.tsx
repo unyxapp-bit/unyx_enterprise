@@ -9,6 +9,7 @@ import { AcademyPage } from "@/features/academy/AcademyPage"
 import { AiPage } from "@/features/ai/AiPage"
 import { AuditPage } from "@/features/audit/AuditPage"
 import { BranchesPage } from "@/features/branches/BranchesPage"
+import { ChecklistsPage } from "@/features/checklists/ChecklistsPage"
 import { CommsPage } from "@/features/comms/CommsPage"
 import { DashboardPage } from "@/features/dashboard/DashboardPage"
 import { EmployeesPage } from "@/features/employees/EmployeesPage"
@@ -72,6 +73,9 @@ export function AppRouter() {
             </Route>
             <Route element={<RequirePermission perm="schedules" />}>
               <Route path="schedules" element={<SchedulesPage />} />
+            </Route>
+            <Route element={<RequirePermission perm="checklists" />}>
+              <Route path="checklists" element={<ChecklistsPage />} />
             </Route>
 
             <Route element={<RequirePermission perm="branches" />}>
