@@ -1,203 +1,391 @@
-import { useEffect, useMemo, useState } from "react"
-import type { FormEvent } from "react"
-import { Activity, ChevronDown, Coffee, History, LogIn, LogOut, MapPin, RefreshCw, Timer } from "lucide-react"
+/**
+ * OperationsPage - Painel Operacional (Refatorado)
+ * 
+ * Componente principal que orquestra:
+ * - Filtros e paginação
+ * - Estado centralizado de diálogos
+ * - Ações de colaboradores
+ * - Renderização da interface
+ */
 
-import { StatusBadge } from "@/components/bento/StatusBadge"
-import { PageHeader } from "@/components/shared/PageHeader"
-import { StateBlock } from "@/components/shared/StateBlock"
+import { useEffect } from "react"
+import { Activity, RefreshCw } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { PageHeader } from "@/components/shared/PageHeader"
 import { modeUiConfig } from "@/features/ops/modes/modeUiConfig"
+import { operationalModeNames } from "@/features/ops/modes/operationalModes"
+
 import {
-  getOperationalMode,
-  operationalModeNames,
-} from "@/features/ops/modes/operationalModes"
-import { getSchedulePriorityByMode } from "@/features/ops/modes/priorityRules"
+  BreakDialog,
+  EntryDialog,
+  OperationalGrid,
+  OperationalTabs,
+  OccurrenceDialog,
+  ReturnPromptDialog,
+  TimelinePanel,
+} from "./components"
+
 import {
-  useAllocatePost,
-  useAttendanceEvents,
-  useOperationalPosts,
-  useOperationalSettings,
-  useOperationalStatuses,
-  useOrganization,
-  usePostAllocations,
-  useRecordOperationalEvent,
-  useSchedules,
-  useSectors,
-  useUpdateSchedule,
-} from "@/hooks/useUnyxData"
-import { formatDateTimeBR, formatTime, minutesLabel, todayISO } from "@/lib/format"
-import { eventLabel, statusMeta } from "@/lib/status"
-import type {
-  AttendanceEventType,
-  OperationalPost,
-  OperationalStatus,
-  OperationalStatusRecord,
-  ScheduleWithRelations,
-} from "@/types/domain"
+  useClock,
+  useOperationalActions,
+  useOperationalDialogs,
+  useOperationalData,
+  useOperationalFilters,
+} from "./hooks"
 
-// ─── helpers ─────────────────────────────────────────────────────────────────
+import {
+  isCafeBreak,
+  timeToMinutes,
+} from "./utils"
 
-function timeToMinutes(time: string | null | undefined): number | null {
-  if (!time) return null
-  const [h, m] = time.split(":").map(Number)
-  return (h ?? 0) * 60 + (m ?? 0)
-}
-
-function formatDuration(minutes: number): string {
-  if (minutes < 60) return `${minutes}min`
-  const h = Math.floor(minutes / 60)
-  const m = minutes % 60
-  return m === 0 ? `${h}h` : `${h}h ${m}min`
-}
-
-function nowMinutes(): number {
-  const now = new Date()
-  return now.getHours() * 60 + now.getMinutes()
-}
-
-function addNoteMarker(current: string | null, marker: string): string {
-  if (!current) return marker
-  if (current.includes(marker)) return current
-  return `${current},${marker}`
-}
-
-function removeNoteMarker(current: string | null, marker: string): string | null {
-  if (!current) return null
-  const cleaned = current
-    .split(",")
-    .filter((m) => m.trim() !== marker)
-    .join(",")
-  return cleaned || null
-}
-
-function getInitials(name: string): string {
-  const parts = name.trim().split(" ").filter(Boolean)
-  if (parts.length === 0) return "?"
-  if (parts.length === 1) return (parts[0][0] ?? "?").toUpperCase()
-  return ((parts[0][0] ?? "") + (parts[parts.length - 1][0] ?? "")).toUpperCase()
-}
-
-// ─── constants ───────────────────────────────────────────────────────────────
-
-const postTypeLabel: Record<string, string> = {
-  cashier:       "Caixa",
-  self_checkout: "Autoatendimento",
-  counter:       "Balcão",
-  service_desk:  "Atendimento",
-  delivery:      "Delivery",
-  stock:         "Estoque",
-  kitchen:       "Cozinha",
-}
-
-const PAGE_SIZE = 12
+import type { ScheduleWithRelations } from "@/types/domain"
 
 const fieldClass =
   "h-8 rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
 
-const avatarClassByStatus: Partial<Record<OperationalStatus, string>> = {
-  aguardando_evento: "bg-slate-200 text-slate-700",
-  trabalhando: "bg-emerald-100 text-emerald-700",
-  deve_sair: "bg-amber-100 text-amber-700",
-  aguardando_sangria: "bg-orange-100 text-orange-700",
-  troca_de_caixa: "bg-sky-100 text-sky-700",
-  em_intervalo: "bg-violet-100 text-violet-700",
-  voltou: "bg-teal-100 text-teal-700",
-  folga: "bg-zinc-200 text-zinc-600",
-  finalizado: "bg-neutral-200 text-neutral-600",
-  alerta_critico: "bg-red-100 text-red-700",
-}
-
-// Statuses that mean the employee has already entered (excludes finalizado — they've left)
-const ENTERED_STATUSES = new Set<OperationalStatus>([
-  "trabalhando",
-  "voltou",
-  "em_intervalo",
-  "aguardando_sangria",
-  "troca_de_caixa",
-  "deve_sair",
-  "alerta_critico",
-])
-
-type Tab = "em_turno" | "a_chegar"
-
-function EmployeeInfoBlock({ s }: { s: ScheduleWithRelations }) {
-  return (
-    <div className="rounded-lg border bg-slate-50 p-3 text-sm">
-      <div className="font-semibold">{s.employees?.name ?? "Colaborador"}</div>
-      <div className="mt-0.5 text-muted-foreground">
-        {[s.employees?.role, s.employees?.sectors?.name].filter(Boolean).join(" · ")}
-      </div>
-    </div>
-  )
-}
-
-// ─── page ────────────────────────────────────────────────────────────────────
-
 export function OperationsPage() {
-  const [date, setDate] = useState(todayISO())
-  const [sectorFilter, setSectorFilter] = useState("")
-  const [pageIndex, setPageIndex] = useState(0)
-  const [activeTab, setActiveTab] = useState<Tab>("em_turno")
-  const [timelineOpen, setTimelineOpen] = useState(true)
-  const [occurrenceSchedule, setOccurrenceSchedule] =
-    useState<ScheduleWithRelations | null>(null)
-  const [occurrenceNote, setOccurrenceNote] = useState("")
-  const [occurrenceError, setOccurrenceError] = useState<string | null>(null)
+  // ── Filters & Pagination ──
+  const {
+    date,
+    setDate,
+    activeTab,
+    setActiveTab,
+    sectorFilter,
+    setSectorFilter,
+    searchText,
+    setSearchText,
+    sortBy,
+    setSortBy,
+    pageIndex,
+    setPageIndex,
+    resetPagination,
+    timelineOpen,
+    setTimelineOpen,
+  } = useOperationalFilters()
 
-  // Clock tick — drives progress bars and overdue checks
-  const [now, setNow] = useState(nowMinutes)
-  // Entry dialog
-  const [entrySchedule, setEntrySchedule] =
-    useState<ScheduleWithRelations | null>(null)
-  const [selectedPostId, setSelectedPostId] = useState<string | null>(null)
-  // Break confirmation dialog
-  const [breakConfirmSchedule, setBreakConfirmSchedule] =
-    useState<ScheduleWithRelations | null>(null)
-  // "question" = ask if on-time or late  |  "late_input" = user entering actual departure
-  const [breakDialogMode, setBreakDialogMode] = useState<"question" | "late_input">("question")
-  const [breakLateTime, setBreakLateTime] = useState("")
-  // Return-check prompt (auto-shown when break expires)
-  const [returnPromptSchedule, setReturnPromptSchedule] =
-    useState<ScheduleWithRelations | null>(null)
-  const [dismissedReturnIds, setDismissedReturnIds] = useState(
-    new Set<string>()
-  )
+  // ── Data ──
+  const {
+    schedules,
+    statuses,
+    events,
+    sectors,
+    mode,
+    statusByScheduleId,
+    emTurno,
+    aChegar,
+    activeList,
+    activePosts,
+    occupiedPostIds,
+    employeeByAllocation,
+    refetch,
+  } = useOperationalData(date, sectorFilter, searchText, sortBy, activeTab)
 
-  const schedules = useSchedules(date)
-  const statuses = useOperationalStatuses()
-  const events = useAttendanceEvents()
-  const recordEvent = useRecordOperationalEvent()
-  const updateSchedule = useUpdateSchedule()
-  const allocatePost = useAllocatePost()
-  const sectors = useSectors()
-  const organization = useOrganization()
-  const operationalSettings = useOperationalSettings()
-  const operationalPosts = useOperationalPosts()
-  const postAllocations = usePostAllocations(null, true)
+  // ── Clock (updates every 30s) ──
+  const now = useClock()
 
-  const mode = getOperationalMode(
-    operationalSettings.data?.mode ?? organization.data?.segment
-  )
+  // Reset pagination when tab/filter changes
+  useEffect(() => {
+    resetPagination()
+  }, [date, sectorFilter, searchText, activeTab, resetPagination])
+
+  // Auto-show return prompt when break expires
+  const {
+    returnPrompt,
+    openReturnPrompt,
+    dismissReturnPrompt,
+  } = useOperationalDialogs()
+
+  useEffect(() => {
+    if (returnPrompt.schedule) return
+    const overdue = emTurno.find((s) => {
+      const st = statusByScheduleId.get(s.id)?.current_status
+      if (st !== "em_intervalo") return false
+      const endMin = timeToMinutes(s.break_end)
+      return (
+        endMin !== null &&
+        now >= endMin &&
+        !returnPrompt.dismissedIds.has(s.id)
+      )
+    })
+    if (overdue) openReturnPrompt(overdue)
+  }, [now, emTurno, statusByScheduleId, returnPrompt, openReturnPrompt])
+
+  // ── Dialogs ──
+  const dialogs = useOperationalDialogs()
+
+  // ── Actions ──
+  const {
+    handleEntryConfirm,
+    handleBreakConfirm,
+    handleCafeStart,
+    handleReturnAnswer,
+    handleOccurrenceSubmit,
+    fireAction,
+    isPending,
+  } = useOperationalActions()
+
   const modeConfig = modeUiConfig[mode]
 
-  const statusByScheduleId = useMemo(() => {
-    const map = new Map<string, OperationalStatusRecord>()
-    for (const s of statuses.data ?? []) {
+  // ── Handlers ──
+
+  const handleOpenEntryDialog = (schedule: ScheduleWithRelations) => {
+    dialogs.openEntryDialog(schedule)
+  }
+
+  const handleEntryDialogConfirm = async (withPost: boolean) => {
+    const { schedule, selectedPostId } = dialogs.entry
+    if (!schedule) return
+    try {
+      await handleEntryConfirm(schedule, withPost ? selectedPostId : null)
+      dialogs.closeEntryDialog()
+    } catch (error) {
+      console.error("Erro ao confirmar entrada:", error)
+    }
+  }
+
+  const handleBreakDialogConfirm = async (actualStartStr: string) => {
+    const { schedule } = dialogs.breakDialog
+    if (!schedule) return
+    try {
+      await handleBreakConfirm(schedule, actualStartStr)
+      dialogs.closeBreakDialog()
+    } catch (error) {
+      console.error("Erro ao confirmar intervalo:", error)
+    }
+  }
+
+  const handleCafeClick = async (schedule: ScheduleWithRelations) => {
+    try {
+      await handleCafeStart(schedule)
+    } catch (error) {
+      console.error("Erro ao iniciar café:", error)
+    }
+  }
+
+  const handleReturnClick = async (
+    schedule: ScheduleWithRelations,
+    returned: boolean
+  ) => {
+    const isCafe = isCafeBreak(schedule.notes)
+    try {
+      await handleReturnAnswer(schedule, returned, isCafe)
+      if (returned || !isCafe) {
+        dismissReturnPrompt(schedule.id)
+      }
+    } catch (error) {
+      console.error("Erro ao confirmar retorno:", error)
+    }
+  }
+
+  const handleOccurrenceDialogSubmit = async (
+    event: React.FormEvent<HTMLFormElement>
+  ) => {
+    event.preventDefault()
+    const { schedule, note } = dialogs.occurrence
+    if (!schedule) return
+    try {
+      await handleOccurrenceSubmit(schedule, note)
+      dialogs.closeOccurrenceDialog()
+      dialogs.setOccurrenceError(null)
+    } catch (error) {
+      dialogs.setOccurrenceError(
+        error instanceof Error ? error.message : "Erro ao registrar ocorrência"
+      )
+    }
+  }
+
+  // ── Render ──
+
+  return (
+    <>
+      <PageHeader
+        title={modeConfig.liveTitle}
+        description={modeConfig.mainFocus}
+        action={
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline">{operationalModeNames[mode]}</Badge>
+            <Input
+              className="w-40"
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              aria-label="Data da operação"
+            />
+            <Input
+              className="w-40"
+              type="search"
+              placeholder="Buscar colaborador..."
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              aria-label="Buscar por nome"
+            />
+            {(sectors.data ?? []).length > 0 ? (
+              <select
+                className={fieldClass}
+                value={sectorFilter}
+                onChange={(e) => setSectorFilter(e.target.value)}
+                aria-label="Filtrar por setor"
+              >
+                <option value="">Todos os setores</option>
+                {(sectors.data ?? []).map((sector) => (
+                  <option key={sector.id} value={sector.name}>
+                    {sector.name}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+            <select
+              className={fieldClass}
+              value={sortBy}
+              onChange={(e) =>
+                setSortBy(e.target.value as "priority" | "name" | "time")
+              }
+              aria-label="Ordenar por"
+            >
+              <option value="priority">Por prioridade</option>
+              <option value="name">Por nome</option>
+              <option value="time">Por horário</option>
+            </select>
+          </div>
+        }
+      />
+
+      <div className="grid gap-4 p-6 xl:grid-cols-[1.35fr_0.65fr]">
+        {/* ── Main Panel ── */}
+        <Card className="border bg-white shadow-sm">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Activity className="size-5" />
+              <span className="flex-1">Painel operacional</span>
+              <button
+                className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-slate-100 hover:text-slate-900"
+                onClick={() => refetch()}
+                disabled={schedules.isFetching || statuses.isFetching}
+                aria-label="Atualizar"
+              >
+                <RefreshCw
+                  className={`size-4 ${
+                    schedules.isFetching || statuses.isFetching
+                      ? "animate-spin"
+                      : ""
+                  }`}
+                />
+              </button>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {/* Tabs */}
+            <OperationalTabs
+              activeTab={activeTab}
+              emTurnoCount={emTurno.length}
+              aChEgarCount={aChegar.length}
+              onTabChange={setActiveTab}
+            />
+
+            {/* Grid */}
+            <OperationalGrid
+              schedules={activeList}
+              statusByScheduleId={statusByScheduleId}
+              currentMinutes={now}
+              activeTab={activeTab}
+              pageIndex={pageIndex}
+              onPageChange={setPageIndex}
+              isLoading={schedules.isLoading || statuses.isLoading}
+              isError={schedules.isError || statuses.isError}
+              error={schedules.error || statuses.error}
+              isPending={isPending}
+              onEntry={handleOpenEntryDialog}
+              onBreak={(s) => dialogs.openBreakDialog(s)}
+              onReturn={(s) => handleReturnClick(s, true)}
+              onCafe={handleCafeClick}
+              onExit={(s) => {
+                fireAction(s, "saida_confirmada")
+              }}
+            />
+          </CardContent>
+        </Card>
+
+        {/* ── Timeline ── */}
+        <TimelinePanel
+          isOpen={timelineOpen}
+          onToggle={() => setTimelineOpen(!timelineOpen)}
+          events={events.data}
+          isLoading={events.isLoading}
+          isError={events.isError}
+          error={events.error}
+        />
+      </div>
+
+      {/* ── Dialogs ── */}
+
+      <EntryDialog
+        isOpen={!!dialogs.entry.schedule}
+        onOpenChange={(open) => {
+          if (!open) dialogs.closeEntryDialog()
+        }}
+        employeeName={dialogs.entry.schedule?.employees?.name ?? ""}
+        employeeRole={dialogs.entry.schedule?.employees?.role}
+        employeeSector={dialogs.entry.schedule?.employees?.sectors?.name}
+        startTime={dialogs.entry.schedule?.start_time}
+        endTime={dialogs.entry.schedule?.end_time}
+        availablePosts={activePosts}
+        occupiedPostIds={occupiedPostIds}
+        employeeByAllocation={employeeByAllocation}
+        selectedPostId={dialogs.entry.selectedPostId}
+        onSelectedPostIdChange={(postId) => dialogs.setSelectedPost(postId)}
+        isPending={isPending}
+        onConfirm={handleEntryDialogConfirm}
+      />
+
+      <BreakDialog
+        isOpen={!!dialogs.breakDialog.schedule}
+        onOpenChange={(open) => {
+          if (!open) dialogs.closeBreakDialog()
+        }}
+        schedule={dialogs.breakDialog.schedule}
+        breakDialogMode={dialogs.breakDialog.mode}
+        onModeChange={(mode) => dialogs.setBreakMode(mode)}
+        breakLateTime={dialogs.breakDialog.lateTime}
+        onLateTimeChange={(time) => dialogs.setBreakLateTime(time)}
+        currentMinutes={now}
+        isPending={isPending}
+        onConfirm={handleBreakDialogConfirm}
+      />
+
+      <ReturnPromptDialog
+        isOpen={!!returnPrompt.schedule}
+        onOpenChange={(open) => {
+          if (!open && returnPrompt.schedule) {
+            dismissReturnPrompt(returnPrompt.schedule.id)
+          }
+        }}
+        schedule={returnPrompt.schedule}
+        currentMinutes={now}
+        isPending={isPending}
+        onReturnYes={() =>
+          returnPrompt.schedule && handleReturnClick(returnPrompt.schedule, true)
+        }
+        onReturnNo={() =>
+          returnPrompt.schedule && handleReturnClick(returnPrompt.schedule, false)
+        }
+      />
+
+      <OccurrenceDialog
+        isOpen={!!dialogs.occurrence.schedule}
+        onOpenChange={(open) => {
+          if (!open) dialogs.closeOccurrenceDialog()
+        }}
+        schedule={dialogs.occurrence.schedule}
+        note={dialogs.occurrence.note}
+        onNoteChange={(note) => dialogs.setOccurrenceNote(note)}
+        error={dialogs.occurrence.error}
+        isPending={isPending}
+        onSubmit={handleOccurrenceDialogSubmit}
+      />
+    </>
+  )
       if (s.schedule_id) map.set(s.schedule_id, s)
     }
     return map
