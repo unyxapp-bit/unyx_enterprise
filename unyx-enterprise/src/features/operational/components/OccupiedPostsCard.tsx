@@ -3,8 +3,9 @@
  */
 
 import React from "react"
-import { Clock3, MapPinned, UserRound } from "lucide-react"
+import { ChevronDown, Clock3, MapPinned, Unlock, UserRound } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { StateBlock } from "@/components/shared/StateBlock"
 import { formatDateTimeBR } from "@/lib/format"
@@ -16,6 +17,9 @@ interface OccupiedPostsCardProps {
   isLoading: boolean
   isError: boolean
   error?: Error | null
+  isReleasePending: boolean
+  releasingAllocationId: string | null
+  onReleasePost: (allocation: PostAllocation) => void
 }
 
 const allocationStatusLabel: Record<PostAllocation["status"], string> = {
@@ -27,17 +31,45 @@ const allocationStatusLabel: Record<PostAllocation["status"], string> = {
 }
 
 export const OccupiedPostsCard = React.memo(
-  ({ allocations, isLoading, isError, error }: OccupiedPostsCardProps) => {
+  ({
+    allocations,
+    isLoading,
+    isError,
+    error,
+    isReleasePending,
+    releasingAllocationId,
+    onReleasePost,
+  }: OccupiedPostsCardProps) => {
+    const [isOpen, setIsOpen] = React.useState(true)
+
     return (
       <Card className="border bg-white shadow-sm">
-        <CardHeader>
+        <CardHeader
+          className="cursor-pointer select-none"
+          onClick={() => setIsOpen((value) => !value)}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault()
+              setIsOpen((value) => !value)
+            }
+          }}
+          aria-expanded={isOpen}
+        >
           <CardTitle className="flex items-center gap-2">
             <MapPinned className="size-5" />
             <span className="flex-1">Postos ocupados</span>
             <Badge variant="outline">{allocations.length}</Badge>
+            <ChevronDown
+              className={`size-4 text-muted-foreground transition-transform duration-200 ${
+                isOpen ? "rotate-180" : ""
+              }`}
+            />
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        {isOpen ? (
+          <CardContent>
           {isLoading ? (
             <StateBlock
               type="loading"
@@ -100,12 +132,26 @@ export const OccupiedPostsCard = React.memo(
                         </span>
                       </div>
                     </div>
+
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="mt-3 flex w-full items-center justify-center gap-1.5 border-slate-300 text-xs"
+                      disabled={isReleasePending}
+                      onClick={() => onReleasePost(allocation)}
+                    >
+                      <Unlock className="size-3.5" />
+                      {releasingAllocationId === allocation.id
+                        ? "Liberando..."
+                        : "Liberar posto"}
+                    </Button>
                   </div>
                 )
               })}
             </div>
           )}
-        </CardContent>
+          </CardContent>
+        ) : null}
       </Card>
     )
   }

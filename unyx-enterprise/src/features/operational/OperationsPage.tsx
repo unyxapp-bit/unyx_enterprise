@@ -8,7 +8,7 @@
  * - Renderização da interface
  */
 
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import { Activity, RefreshCw } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input"
 import { PageHeader } from "@/components/shared/PageHeader"
 import { modeUiConfig } from "@/features/ops/modes/modeUiConfig"
 import { operationalModeNames } from "@/features/ops/modes/operationalModes"
+import { useFinalizePostAllocation } from "@/hooks/useUnyxData"
 
 import {
   BreakDialog,
@@ -41,7 +42,7 @@ import {
   timeToMinutes,
 } from "./utils"
 
-import type { ScheduleWithRelations } from "@/types/domain"
+import type { PostAllocation, ScheduleWithRelations } from "@/types/domain"
 
 const fieldClass =
   "h-8 rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
@@ -87,6 +88,10 @@ export function OperationsPage() {
 
   // ── Clock (updates every 30s) ──
   const now = useClock()
+  const finalizePostAllocation = useFinalizePostAllocation()
+  const [releasingAllocationId, setReleasingAllocationId] = useState<string | null>(
+    null
+  )
 
   // Reset pagination when tab/filter changes
   useEffect(() => {
@@ -179,6 +184,18 @@ export function OperationsPage() {
       }
     } catch (error) {
       console.error("Erro ao confirmar retorno:", error)
+    }
+  }
+
+  const handleReleasePost = async (allocation: PostAllocation) => {
+    setReleasingAllocationId(allocation.id)
+    try {
+      await finalizePostAllocation.mutateAsync({
+        allocation_id: allocation.id,
+        notes: "Liberado pela frente de caixa em tempo real",
+      })
+    } finally {
+      setReleasingAllocationId(null)
     }
   }
 
@@ -317,6 +334,9 @@ export function OperationsPage() {
             isLoading={postAllocations.isLoading}
             isError={postAllocations.isError}
             error={postAllocations.error}
+            isReleasePending={finalizePostAllocation.isPending}
+            releasingAllocationId={releasingAllocationId}
+            onReleasePost={(allocation) => void handleReleasePost(allocation)}
           />
 
           <TimelinePanel
