@@ -25,7 +25,6 @@ interface EntryDialogProps {
   endTime: string | null | undefined
   availablePosts: OperationalPost[]
   occupiedPostIds: Set<string>
-  employeeByAllocation: Map<string, string>
   selectedPostId: string | null
   onSelectedPostIdChange: (postId: string | null) => void
   isPending: boolean
@@ -43,21 +42,34 @@ export const EntryDialog = React.memo(
     endTime,
     availablePosts,
     occupiedPostIds,
-    employeeByAllocation,
     selectedPostId,
     onSelectedPostIdChange,
     isPending,
     onConfirm,
   }: EntryDialogProps) => {
+    const freePosts = useMemo(
+      () => availablePosts.filter((post) => !occupiedPostIds.has(post.id)),
+      [availablePosts, occupiedPostIds]
+    )
+
+    React.useEffect(() => {
+      if (
+        selectedPostId &&
+        !freePosts.some((post) => post.id === selectedPostId)
+      ) {
+        onSelectedPostIdChange(null)
+      }
+    }, [freePosts, onSelectedPostIdChange, selectedPostId])
+
     const postsBySector = useMemo(() => {
       const map = new Map<string, OperationalPost[]>()
-      for (const p of availablePosts) {
+      for (const p of freePosts) {
         const key = p.sectors?.name ?? "Sem setor"
         if (!map.has(key)) map.set(key, [])
         map.get(key)!.push(p)
       }
       return map
-    }, [availablePosts])
+    }, [freePosts])
 
     return (
       <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -83,9 +95,9 @@ export const EntryDialog = React.memo(
             <p className="mb-2 text-sm font-medium text-slate-700">
               Selecionar posto de trabalho
             </p>
-            {availablePosts.length === 0 ? (
+            {freePosts.length === 0 ? (
               <div className="rounded-lg border border-dashed bg-slate-50 px-4 py-6 text-center text-sm text-slate-400">
-                Nenhum posto cadastrado. O colaborador será marcado como trabalhando sem posto.
+                Nenhum posto livre. Libere um posto ou confirme a entrada sem posto.
               </div>
             ) : (
               <div className="max-h-64 space-y-3 overflow-y-auto pr-1">
@@ -96,8 +108,6 @@ export const EntryDialog = React.memo(
                     </p>
                     <div className="space-y-1">
                       {posts.map((post) => {
-                        const isOccupied = occupiedPostIds.has(post.id)
-                        const occupiedBy = employeeByAllocation.get(post.id)
                         const isSelected = selectedPostId === post.id
                         return (
                           <button
@@ -124,17 +134,9 @@ export const EntryDialog = React.memo(
                                 {postTypeLabel[post.type] ?? post.type}
                               </span>
                             </div>
-                            {isOccupied ? (
-                              <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">
-                                {occupiedBy
-                                  ? occupiedBy.split(" ")[0]
-                                  : "Ocupado"}
-                              </span>
-                            ) : (
-                              <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
-                                Livre
-                              </span>
-                            )}
+                            <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                              Livre
+                            </span>
                           </button>
                         )
                       })}

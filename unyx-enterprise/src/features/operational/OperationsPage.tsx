@@ -81,7 +81,6 @@ export function OperationsPage() {
     activeList,
     activePosts,
     occupiedPostIds,
-    employeeByAllocation,
     occupiedPostAllocations,
     refetch,
   } = useOperationalData(date, sectorFilter, searchText, sortBy, activeTab)
@@ -364,7 +363,6 @@ export function OperationsPage() {
         endTime={dialogs.entry.schedule?.end_time}
         availablePosts={activePosts}
         occupiedPostIds={occupiedPostIds}
-        employeeByAllocation={employeeByAllocation}
         selectedPostId={dialogs.entry.selectedPostId}
         onSelectedPostIdChange={(postId) => dialogs.setSelectedPost(postId)}
         isPending={isPending}
