@@ -129,6 +129,18 @@ export function useOperationalData(
     [operationalPosts.data]
   )
 
+  const allPosts = useMemo(
+    () =>
+      (operationalPosts.data ?? [])
+        .slice()
+        .sort((a, b) => {
+          const sectorA = a.sectors?.name ?? ""
+          const sectorB = b.sectors?.name ?? ""
+          return sectorA.localeCompare(sectorB) || a.name.localeCompare(b.name)
+        }),
+    [operationalPosts.data]
+  )
+
   const occupiedPostIds = useMemo(
     () =>
       new Set(
@@ -191,6 +203,7 @@ export function useOperationalData(
     sectors,
     organization,
     operationalSettings,
+    operationalPosts,
     postAllocations,
 
     // Derived
@@ -200,6 +213,7 @@ export function useOperationalData(
     emTurno,
     aChegar,
     activeList,
+    allPosts,
     activePosts,
     occupiedPostIds,
     employeeByAllocation,

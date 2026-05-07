@@ -22,6 +22,7 @@ import {
   BreakDialog,
   EntryDialog,
   OperationalGrid,
+  OperationalPostsManagerCard,
   OperationalTabs,
   OccupiedPostsCard,
   OccurrenceDialog,
@@ -73,12 +74,14 @@ export function OperationsPage() {
     statuses,
     events,
     sectors,
+    operationalPosts,
     postAllocations,
     mode,
     statusByScheduleId,
     emTurno,
     aChegar,
     activeList,
+    allPosts,
     activePosts,
     occupiedPostIds,
     occupiedPostAllocations,
@@ -328,6 +331,14 @@ export function OperationsPage() {
 
         {/* ── Timeline ── */}
         <div className="space-y-4">
+          <OperationalPostsManagerCard
+            posts={allPosts}
+            sectors={sectors.data ?? []}
+            isLoading={operationalPosts.isLoading}
+            isError={operationalPosts.isError}
+            error={operationalPosts.error}
+          />
+
           <OccupiedPostsCard
             allocations={occupiedPostAllocations}
             isLoading={postAllocations.isLoading}

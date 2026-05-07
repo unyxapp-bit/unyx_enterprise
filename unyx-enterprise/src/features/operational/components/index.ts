@@ -11,6 +11,7 @@ export { OperationalGrid } from "./OperationalGrid"
 export { OperationalMetrics } from "./OperationalMetrics"
 export { OperationalAlerts } from "./OperationalAlerts"
 export { OccupiedPostsCard } from "./OccupiedPostsCard"
+export { OperationalPostsManagerCard } from "./OperationalPostsManagerCard"
 
 // Diálogos
 export { EntryDialog } from "./dialogs/EntryDialog"
