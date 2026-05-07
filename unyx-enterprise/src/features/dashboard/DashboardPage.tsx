@@ -532,8 +532,8 @@ export function DashboardPage() {
               {dashboard.isLoading ? (
                 <StateBlock type="loading" title="Carregando" />
               ) : (
-                <>
-                  <div className="relative mx-auto h-44 w-full max-w-[260px]">
+                <div className="grid gap-5 lg:grid-cols-[minmax(18rem,1.15fr)_minmax(14rem,0.85fr)] lg:items-center">
+                  <div className="relative h-56 w-full sm:h-60 lg:h-64">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie
@@ -542,47 +542,68 @@ export function DashboardPage() {
                             { value: Math.max(0, 100 - presencePct) },
                           ]}
                           cx="50%"
-                          cy="85%"
+                          cy="82%"
                           startAngle={210}
                           endAngle={-30}
-                          innerRadius="58%"
-                          outerRadius="88%"
+                          innerRadius="57%"
+                          outerRadius="90%"
                           dataKey="value"
                           strokeWidth={0}
-                          cornerRadius={6}
+                          cornerRadius={8}
                         >
                           <Cell fill="#6366f1" />
                           <Cell fill="#e2e8f0" />
                         </Pie>
                       </PieChart>
                     </ResponsiveContainer>
-                    <div className="absolute bottom-0 left-1/2 -translate-x-1/2 text-center">
-                      <p className="text-4xl font-bold tracking-tight tabular-nums text-slate-900">
+                    <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-center">
+                      <p className="text-5xl font-bold tracking-tight tabular-nums text-slate-900">
                         {presencePct}%
                       </p>
-                      <p className="text-xs text-slate-400">Equipe ativa</p>
-                    </div>
-                  </div>
-                  <div className="mt-5 grid grid-cols-2 gap-3">
-                    <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
-                      <p className="text-[11px] font-medium text-slate-400">Escalados</p>
-                      <p className="mt-1 text-2xl font-bold tabular-nums text-slate-800">
-                        {scheduledCount}
-                      </p>
-                    </div>
-                    <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3">
-                      <p className="text-[11px] font-medium text-emerald-500">Trabalhando</p>
-                      <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-800">
-                        {workingCount}
+                      <p className="text-xs font-medium text-slate-400">
+                        Equipe ativa
                       </p>
                     </div>
                   </div>
-                  {lastUpdated ? (
-                    <p className="mt-3 text-center text-[10px] text-slate-400">
-                      atualizado às {lastUpdated}
-                    </p>
-                  ) : null}
-                </>
+                  <div className="grid gap-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+                        <p className="text-[11px] font-medium text-slate-400">
+                          Escalados
+                        </p>
+                        <p className="mt-1 text-2xl font-bold tabular-nums text-slate-800">
+                          {scheduledCount}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-3">
+                        <p className="text-[11px] font-medium text-emerald-500">
+                          Trabalhando
+                        </p>
+                        <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-800">
+                          {workingCount}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-indigo-100 bg-indigo-50 p-3">
+                      <p className="text-[11px] font-medium text-indigo-500">
+                        Nao ativos agora
+                      </p>
+                      <p className="mt-1 text-2xl font-bold tabular-nums text-indigo-900">
+                        {Math.max(0, scheduledCount - workingCount)}
+                      </p>
+                      <p className="mt-1 text-xs text-indigo-600">
+                        Escalados que ainda nao aparecem como equipe ativa.
+                      </p>
+                    </div>
+
+                    {lastUpdated ? (
+                      <p className="text-right text-[10px] text-slate-400">
+                        atualizado as {lastUpdated}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
               )}
             </CardContent>
           </Card>
