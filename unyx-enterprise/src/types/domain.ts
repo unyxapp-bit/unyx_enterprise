@@ -551,6 +551,61 @@ export interface SalePayment {
   created_at: string
 }
 
+export type DeliverySource = "manual" | "pos"
+export type DeliveryStatus =
+  | "pending"
+  | "preparing"
+  | "ready_for_dispatch"
+  | "out_for_delivery"
+  | "delivered"
+  | "failed"
+  | "cancelled"
+export type DeliveryPriority = "normal" | "urgent"
+export type DeliveryPaymentStatus = "pending" | "paid" | "collect_on_delivery"
+
+export interface DeliveryItem {
+  name: string
+  quantity: number
+  notes?: string | null
+}
+
+export interface DeliveryOrder {
+  id: string
+  organization_id: string
+  branch_id: string
+  sale_id: string | null
+  created_by: string | null
+  assigned_employee_id: string | null
+  source: DeliverySource
+  status: DeliveryStatus
+  priority: DeliveryPriority
+  customer_name: string
+  customer_phone: string | null
+  address_line: string
+  neighborhood: string | null
+  city: string | null
+  state: string | null
+  reference: string | null
+  courier_name: string | null
+  delivery_fee: number
+  order_amount: number
+  total_amount: number
+  payment_status: DeliveryPaymentStatus
+  scheduled_for: string | null
+  estimated_delivery_at: string | null
+  dispatched_at: string | null
+  delivered_at: string | null
+  cancelled_at: string | null
+  notes: string | null
+  items: DeliveryItem[]
+  created_at: string
+  updated_at: string
+  branches?: Pick<Branch, "name"> | null
+  sales?: Pick<Sale, "id" | "customer_name" | "total_amount" | "sold_at"> | null
+  employees?: Pick<Employee, "name"> | null
+  user_profiles?: Pick<UserProfile, "name"> | null
+}
+
 export interface PosCashMovement {
   id: string
   organization_id: string

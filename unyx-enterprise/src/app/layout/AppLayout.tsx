@@ -20,6 +20,7 @@ import {
   ShoppingCart,
   Sparkles,
   Trophy,
+  Truck,
   UserCog,
   Users,
   Wallet,
@@ -78,6 +79,7 @@ const navGroups = [
       { to: "/app/pos/cash",     label: "Caixa",       icon: Wallet,       perm: "pos_cash"     as PermissionKey },
       { to: "/app/pos/products", label: "Produtos",    icon: Package,      perm: "pos_products" as PermissionKey },
       { to: "/app/pos/sales",    label: "Historico",   icon: ReceiptText,  perm: "pos_sales"    as PermissionKey },
+      { to: "/app/deliveries",    label: "Entregas",    icon: Truck,        perm: "deliveries"   as PermissionKey },
     ],
   },
   {

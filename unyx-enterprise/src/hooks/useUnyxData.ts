@@ -15,6 +15,7 @@ import {
   createBranch,
   createChecklistProcedure,
   createCommsPost,
+  createDeliveryOrder,
   createCommsPostComment,
   createEmployee,
   createOperationalPost,
@@ -23,6 +24,7 @@ import {
   createTrainingItem,
   deactivateEmployees,
   deleteEmployees,
+  deleteDeliveryOrder,
   deleteSchedulesBulk,
   listSchedulesRange,
   deleteSchedule,
@@ -55,6 +57,7 @@ import {
   listChecklistRuns,
   listCommsPosts,
   listCommsPostComments,
+  listDeliveryOrders,
   listModules,
   listOperationalPosts,
   listOperationalStatuses,
@@ -80,6 +83,7 @@ import {
   toggleSectorActive,
   transferPostAllocation,
   updateBranch,
+  updateDeliveryOrder,
   updateEmployee,
   updateCurrentUserPassword,
   updateCurrentUserProfile,
@@ -94,6 +98,7 @@ import type {
   BulkImportResult,
   ChecklistProcedureInput,
   CompleteSaleInput,
+  DeliveryOrderInput,
   EmployeeImportInput,
   ProductInput,
   ScheduleImportInput,
@@ -1467,6 +1472,18 @@ export function useSalePayments(saleId: string | null | undefined) {
   })
 }
 
+export function useDeliveryOrders(branchId?: string | null) {
+  const { profile } = useAuth()
+  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
+  const effectiveBranchId = arguments.length > 0 ? branchId ?? null : selectedBranchId
+  return useQuery({
+    queryKey: ["delivery-orders", profile?.organization_id, effectiveBranchId],
+    queryFn: () => listDeliveryOrders(effectiveBranchId),
+    enabled: Boolean(profile),
+    refetchInterval: 45_000,
+  })
+}
+
 export function useCreateProduct() {
   const queryClient = useQueryClient()
   const profile = useRequiredProfile()
@@ -1489,6 +1506,60 @@ export function useUpdateProduct() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["pos-products"] })
       toast.success("Produto atualizado.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useCreateDeliveryOrder() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+  return useMutation({
+    mutationFn: (input: DeliveryOrderInput) => createDeliveryOrder(profile, input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["delivery-orders"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success("Entrega cadastrada.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useUpdateDeliveryOrder() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+  return useMutation({
+    mutationFn: (input: {
+      deliveryId: string
+      values: Partial<DeliveryOrderInput>
+    }) => updateDeliveryOrder(profile, input.deliveryId, input.values),
+    onSuccess: async (_data, variables) => {
+      await queryClient.invalidateQueries({ queryKey: ["delivery-orders"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      if (variables.values.status === "delivered") {
+        toast.success("Entrega concluida.")
+      } else if (variables.values.status === "cancelled") {
+        toast.success("Entrega cancelada.")
+      } else {
+        toast.success("Entrega atualizada.")
+      }
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useDeleteDeliveryOrder() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+  return useMutation({
+    mutationFn: (deliveryId: string) => deleteDeliveryOrder(profile, deliveryId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["delivery-orders"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success("Entrega excluida.")
     },
     onError: (error) => { toast.error(error.message) },
   })

@@ -2,6 +2,7 @@ import { useMemo, useState } from "react"
 import type { FormEvent } from "react"
 import {
   CreditCard,
+  MapPin,
   Minus,
   Plus,
   Search,
@@ -25,6 +26,7 @@ import {
 import { Input } from "@/components/ui/input"
 import {
   useCompleteSale,
+  useCreateDeliveryOrder,
   useCurrentCashSession,
   useProducts,
 } from "@/hooks/useUnyxData"
@@ -91,6 +93,7 @@ export function PosSellPage() {
   const currentSession = useCurrentCashSession()
   const products = useProducts()
   const completeSale = useCompleteSale()
+  const createDelivery = useCreateDeliveryOrder()
 
   const session = currentSession.data ?? null
   const allProducts = (products.data ?? []).filter((p) => p.active)
@@ -103,6 +106,19 @@ export function PosSellPage() {
   const [payments, setPayments] = useState<PaymentEntry[]>([
     { method: "cash", amount: "" },
   ])
+  const [deliveryEnabled, setDeliveryEnabled] = useState(false)
+  const [deliveryForm, setDeliveryForm] = useState({
+    customer_phone: "",
+    address_line: "",
+    neighborhood: "",
+    city: "",
+    state: "",
+    reference: "",
+    courier_name: "",
+    delivery_fee: "",
+    estimated_delivery_at: "",
+    notes: "",
+  })
   const [saleError, setSaleError] = useState<string | null>(null)
 
   const filteredProducts = useMemo(() => {
@@ -170,7 +186,8 @@ export function PosSellPage() {
   }
 
   const extraDiscount = Number(cartDiscount_) || 0
-  const finalTotal = Math.max(0, cartTotal(cart) - extraDiscount)
+  const deliveryFee = deliveryEnabled ? Number(deliveryForm.delivery_fee) || 0 : 0
+  const finalTotal = Math.max(0, cartTotal(cart) - extraDiscount + deliveryFee)
   const totalPaid = paymentTotal(payments)
   const change = cashChange(payments, finalTotal)
   const remaining = Math.max(0, finalTotal - totalPaid)
@@ -218,23 +235,41 @@ export function PosSellPage() {
       return
     }
 
+    if (deliveryEnabled && !deliveryForm.address_line.trim()) {
+      setSaleError("Informe o endereco da entrega.")
+      return
+    }
+
     try {
       const branchId = selectedBranchId ?? session.branch_id
-      await completeSale.mutateAsync({
+      const saleItems = cart.map((item) => ({
+        product_id: item.product.id,
+        product_name: item.product.name,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        discount_amount: item.discount,
+        total_amount: cartItemTotal(item),
+      }))
+      const saleId = await completeSale.mutateAsync({
         branch_id: branchId,
         session_id: session.id,
         post_id: session.post_id ?? null,
         customer_name: customerName.trim() || null,
         discount_amount: cartDiscount(cart) + extraDiscount,
         notes: null,
-        items: cart.map((item) => ({
-          product_id: item.product.id,
-          product_name: item.product.name,
-          quantity: item.quantity,
-          unit_price: item.unit_price,
-          discount_amount: item.discount,
-          total_amount: cartItemTotal(item),
-        })),
+        items: deliveryFee > 0
+          ? [
+              ...saleItems,
+              {
+                product_id: null,
+                product_name: "Taxa de entrega",
+                quantity: 1,
+                unit_price: deliveryFee,
+                discount_amount: 0,
+                total_amount: deliveryFee,
+              },
+            ]
+          : saleItems,
         payments: payments
           .filter((p) => Number(p.amount) > 0)
           .map((p) => ({
@@ -243,9 +278,50 @@ export function PosSellPage() {
             change_amount: p.method === "cash" ? change : 0,
           })),
       })
+      if (deliveryEnabled) {
+        await createDelivery.mutateAsync({
+          branch_id: branchId,
+          sale_id: saleId,
+          assigned_employee_id: null,
+          source: "pos",
+          status: "pending",
+          priority: "normal",
+          customer_name: customerName.trim() || "Cliente PDV",
+          customer_phone: deliveryForm.customer_phone.trim() || null,
+          address_line: deliveryForm.address_line.trim(),
+          neighborhood: deliveryForm.neighborhood.trim() || null,
+          city: deliveryForm.city.trim() || null,
+          state: deliveryForm.state.trim() || null,
+          reference: deliveryForm.reference.trim() || null,
+          courier_name: deliveryForm.courier_name.trim() || null,
+          delivery_fee: deliveryFee,
+          order_amount: Math.max(0, cartTotal(cart) - extraDiscount),
+          payment_status: "paid",
+          scheduled_for: null,
+          estimated_delivery_at: deliveryForm.estimated_delivery_at || null,
+          notes: deliveryForm.notes.trim() || null,
+          items: cart.map((item) => ({
+            name: item.product.name,
+            quantity: item.quantity,
+          })),
+        })
+      }
       setCart([])
       setCustomerName("")
       setCartDiscount_("")
+      setDeliveryEnabled(false)
+      setDeliveryForm({
+        customer_phone: "",
+        address_line: "",
+        neighborhood: "",
+        city: "",
+        state: "",
+        reference: "",
+        courier_name: "",
+        delivery_fee: "",
+        estimated_delivery_at: "",
+        notes: "",
+      })
       setPayDialogOpen(false)
     } catch (error) {
       setSaleError(error instanceof Error ? error.message : "Nao foi possivel finalizar a venda.")
@@ -455,6 +531,12 @@ export function PosSellPage() {
                           <span>- {formatCurrency(cartDiscount(cart) + extraDiscount)}</span>
                         </div>
                       )}
+                      {deliveryFee > 0 && (
+                        <div className="flex justify-between text-muted-foreground">
+                          <span>Taxa de entrega</span>
+                          <span>{formatCurrency(deliveryFee)}</span>
+                        </div>
+                      )}
                       <div className="flex justify-between font-semibold text-base border-t pt-1">
                         <span>Total</span>
                         <span>{formatCurrency(finalTotal)}</span>
@@ -502,6 +584,143 @@ export function PosSellPage() {
                 <span>Total a pagar</span>
                 <span>{formatCurrency(finalTotal)}</span>
               </div>
+            </div>
+
+            <div className="space-y-3 rounded-lg border p-3">
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <input
+                  type="checkbox"
+                  checked={deliveryEnabled}
+                  onChange={(e) => setDeliveryEnabled(e.target.checked)}
+                />
+                <MapPin className="size-4" />
+                Gerar entrega a partir desta venda
+              </label>
+              {deliveryEnabled ? (
+                <div className="space-y-3 border-t pt-3">
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <label className="space-y-1 text-sm">
+                      <span className="font-medium">Telefone</span>
+                      <Input
+                        value={deliveryForm.customer_phone}
+                        onChange={(e) =>
+                          setDeliveryForm((current) => ({
+                            ...current,
+                            customer_phone: e.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="space-y-1 text-sm">
+                      <span className="font-medium">Taxa de entrega</span>
+                      <Input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={deliveryForm.delivery_fee}
+                        onChange={(e) =>
+                          setDeliveryForm((current) => ({
+                            ...current,
+                            delivery_fee: e.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                  </div>
+                  <label className="space-y-1 text-sm">
+                    <span className="font-medium">Endereco</span>
+                    <Input
+                      required={deliveryEnabled}
+                      value={deliveryForm.address_line}
+                      onChange={(e) =>
+                        setDeliveryForm((current) => ({
+                          ...current,
+                          address_line: e.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <div className="grid gap-2 sm:grid-cols-4">
+                    <label className="space-y-1 text-sm sm:col-span-2">
+                      <span className="font-medium">Bairro</span>
+                      <Input
+                        value={deliveryForm.neighborhood}
+                        onChange={(e) =>
+                          setDeliveryForm((current) => ({
+                            ...current,
+                            neighborhood: e.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="space-y-1 text-sm">
+                      <span className="font-medium">Cidade</span>
+                      <Input
+                        value={deliveryForm.city}
+                        onChange={(e) =>
+                          setDeliveryForm((current) => ({
+                            ...current,
+                            city: e.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="space-y-1 text-sm">
+                      <span className="font-medium">UF</span>
+                      <Input
+                        maxLength={2}
+                        value={deliveryForm.state}
+                        onChange={(e) =>
+                          setDeliveryForm((current) => ({
+                            ...current,
+                            state: e.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <label className="space-y-1 text-sm">
+                      <span className="font-medium">Referencia</span>
+                      <Input
+                        value={deliveryForm.reference}
+                        onChange={(e) =>
+                          setDeliveryForm((current) => ({
+                            ...current,
+                            reference: e.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="space-y-1 text-sm">
+                      <span className="font-medium">Previsao</span>
+                      <Input
+                        type="datetime-local"
+                        value={deliveryForm.estimated_delivery_at}
+                        onChange={(e) =>
+                          setDeliveryForm((current) => ({
+                            ...current,
+                            estimated_delivery_at: e.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                  </div>
+                  <label className="space-y-1 text-sm">
+                    <span className="font-medium">Observacoes da entrega</span>
+                    <textarea
+                      className="min-h-16 w-full rounded-lg border bg-white px-2.5 py-2 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
+                      value={deliveryForm.notes}
+                      onChange={(e) =>
+                        setDeliveryForm((current) => ({
+                          ...current,
+                          notes: e.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                </div>
+              ) : null}
             </div>
 
             <div className="space-y-2">
@@ -583,7 +802,11 @@ export function PosSellPage() {
             <DialogFooter>
               <Button
                 type="submit"
-                disabled={completeSale.isPending || totalPaid < finalTotal - 0.005}
+                disabled={
+                  completeSale.isPending ||
+                  createDelivery.isPending ||
+                  totalPaid < finalTotal - 0.005
+                }
               >
                 Confirmar venda
               </Button>

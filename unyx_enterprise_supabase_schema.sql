@@ -443,6 +443,7 @@ values
   ('unyx_insight', 'Unyx Insight', 'Relatorios, auditoria visual e visao gerencial.', true),
   ('unyx_comms', 'Unyx Comms', 'Comunicacao interna, avisos, feed corporativo e leitura confirmada.', true),
   ('unyx_game', 'Unyx Game', 'Gamificacao operacional, ranking, pontos, metas e engajamento.', true),
+  ('unyx_deliveries', 'Unyx Deliveries', 'Entregas integradas ao PDV, pedidos manuais, rotas, status, taxas e historico operacional.', true),
   ('unyx_checklists', 'Unyx Checklists', 'Procedimentos operacionais, checklists executaveis, evidencias e historico de conclusao.', true),
   ('unyx_academy', 'Unyx Academy', 'Treinamentos, onboarding, trilhas e progresso de capacitacao.', true),
   ('unyx_ai', 'Unyx AI', 'Insights automaticos, previsao de risco e sugestoes operacionais.', true)
@@ -670,6 +671,71 @@ for each row execute function public.set_updated_at();
 -- =========================================================
 -- FUNÇÕES DE SEGURANÇA MULTI-TENANT
 -- =========================================================
+
+-- =========================================================
+-- UNYX DELIVERIES
+-- =========================================================
+
+create table public.delivery_orders (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  branch_id uuid not null references public.branches(id) on delete cascade,
+  sale_id uuid,
+  created_by uuid references public.user_profiles(id) on delete set null,
+  assigned_employee_id uuid references public.employees(id) on delete set null,
+  source text not null default 'manual' check (source in ('manual', 'pos')),
+  status text not null default 'pending'
+    check (status in (
+      'pending',
+      'preparing',
+      'ready_for_dispatch',
+      'out_for_delivery',
+      'delivered',
+      'failed',
+      'cancelled'
+    )),
+  priority text not null default 'normal' check (priority in ('normal', 'urgent')),
+  customer_name text not null,
+  customer_phone text,
+  address_line text not null,
+  neighborhood text,
+  city text,
+  state text,
+  reference text,
+  courier_name text,
+  delivery_fee numeric(12,2) not null default 0,
+  order_amount numeric(12,2) not null default 0,
+  total_amount numeric(12,2) not null default 0,
+  payment_status text not null default 'pending'
+    check (payment_status in ('pending', 'paid', 'collect_on_delivery')),
+  scheduled_for timestamptz,
+  estimated_delivery_at timestamptz,
+  dispatched_at timestamptz,
+  delivered_at timestamptz,
+  cancelled_at timestamptz,
+  notes text,
+  items jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index idx_delivery_orders_organization_time
+on public.delivery_orders(organization_id, created_at desc);
+
+create index idx_delivery_orders_branch_status
+on public.delivery_orders(branch_id, status, created_at desc);
+
+create index idx_delivery_orders_sale
+on public.delivery_orders(sale_id)
+where sale_id is not null;
+
+create index idx_delivery_orders_assigned_employee
+on public.delivery_orders(assigned_employee_id)
+where assigned_employee_id is not null;
+
+create trigger trg_delivery_orders_updated_at
+before update on public.delivery_orders
+for each row execute function public.set_updated_at();
 
 create or replace function public.current_user_profile_id()
 returns uuid
@@ -2053,6 +2119,7 @@ alter table public.training_items enable row level security;
 alter table public.training_progress enable row level security;
 alter table public.checklist_procedures enable row level security;
 alter table public.checklist_runs enable row level security;
+alter table public.delivery_orders enable row level security;
 
 -- ORGANIZATIONS
 create policy "Users can view own organization"
@@ -2427,6 +2494,73 @@ on public.checklist_runs
 for update
 using (user_id = public.current_user_profile_id())
 with check (user_id = public.current_user_profile_id());
+
+-- UNYX DELIVERIES
+create policy "Users can view delivery orders from own organization"
+on public.delivery_orders
+for select
+using (organization_id = public.current_organization_id());
+
+create policy "Users can create delivery orders"
+on public.delivery_orders
+for insert
+with check (
+  organization_id = public.current_organization_id()
+  and created_by = public.current_user_profile_id()
+  and public.current_user_role() in (
+    'owner',
+    'admin',
+    'branch_manager',
+    'supervisor',
+    'operator'
+  )
+  and (
+    public.is_org_admin()
+    or branch_id = public.current_branch_id()
+    or public.can_manage_branch(branch_id)
+  )
+);
+
+create policy "Users can update delivery orders"
+on public.delivery_orders
+for update
+using (
+  organization_id = public.current_organization_id()
+  and public.current_user_role() in (
+    'owner',
+    'admin',
+    'branch_manager',
+    'supervisor',
+    'operator',
+    'employee'
+  )
+  and (
+    public.is_org_admin()
+    or branch_id = public.current_branch_id()
+    or public.can_manage_branch(branch_id)
+  )
+)
+with check (
+  organization_id = public.current_organization_id()
+  and (
+    public.is_org_admin()
+    or branch_id = public.current_branch_id()
+    or public.can_manage_branch(branch_id)
+  )
+);
+
+create policy "Managers can delete delivery orders"
+on public.delivery_orders
+for delete
+using (
+  organization_id = public.current_organization_id()
+  and public.current_user_role() in ('owner', 'admin', 'branch_manager', 'supervisor')
+  and (
+    public.is_org_admin()
+    or branch_id = public.current_branch_id()
+    or public.can_manage_branch(branch_id)
+  )
+);
 
 -- SUBSCRIPTIONS
 create policy "Org admins can view own subscription"

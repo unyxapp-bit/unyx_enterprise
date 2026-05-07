@@ -17,6 +17,12 @@ import type {
   CommsPost,
   CommsPostComment,
   DashboardRow,
+  DeliveryItem,
+  DeliveryOrder,
+  DeliveryPaymentStatus,
+  DeliveryPriority,
+  DeliverySource,
+  DeliveryStatus,
   Employee,
   EmployeeWithRelations,
   Invitation,
@@ -2215,6 +2221,30 @@ function posFeatureMessage() {
   return "Unyx POS ainda não instalado. Rode supabase/pos_setup.sql no SQL Editor e recarregue."
 }
 
+function isMissingDeliveryFeature(error: { code?: string; message: string } | null) {
+  if (!error) return false
+  const message = error.message.toLowerCase()
+  const mentionsDelivery =
+    message.includes("delivery_orders") ||
+    message.includes("delivery")
+
+  return (
+    mentionsDelivery &&
+    (
+      error.code === "42P01" ||
+      error.code === "PGRST204" ||
+      error.code === "PGRST205" ||
+      message.includes("schema cache") ||
+      message.includes("does not exist") ||
+      message.includes("could not find")
+    )
+  )
+}
+
+function deliveryFeatureMessage() {
+  return "Modulo de entregas ainda nao instalado. Rode supabase/deliveries_setup.sql no SQL Editor do Supabase e recarregue o app."
+}
+
 export interface ProductInput {
   branch_id: string | null
   name: string
@@ -2225,6 +2255,90 @@ export interface ProductInput {
   price: number
   cost_price: number | null
   stock_quantity: number
+}
+
+export interface DeliveryOrderInput {
+  branch_id: string
+  sale_id: string | null
+  assigned_employee_id: string | null
+  source: DeliverySource
+  status: DeliveryStatus
+  priority: DeliveryPriority
+  customer_name: string
+  customer_phone: string | null
+  address_line: string
+  neighborhood: string | null
+  city: string | null
+  state: string | null
+  reference: string | null
+  courier_name: string | null
+  delivery_fee: number
+  order_amount: number
+  payment_status: DeliveryPaymentStatus
+  scheduled_for: string | null
+  estimated_delivery_at: string | null
+  notes: string | null
+  items: DeliveryItem[]
+}
+
+function normalizeDeliveryItems(items: DeliveryItem[]) {
+  return items
+    .map((item) => ({
+      name: item.name.trim(),
+      quantity: Math.max(1, Number(item.quantity) || 1),
+      notes: item.notes?.trim() || null,
+    }))
+    .filter((item) => item.name)
+}
+
+function normalizeDeliveryPayload(input: DeliveryOrderInput) {
+  const customerName = input.customer_name.trim()
+  const addressLine = input.address_line.trim()
+  const orderAmount = Math.max(0, Number(input.order_amount) || 0)
+  const deliveryFee = Math.max(0, Number(input.delivery_fee) || 0)
+
+  if (!input.branch_id) throw new Error("Selecione a filial da entrega.")
+  if (!customerName) throw new Error("Informe o cliente da entrega.")
+  if (!addressLine) throw new Error("Informe o endereco da entrega.")
+
+  return {
+    ...input,
+    customer_name: customerName,
+    customer_phone: input.customer_phone?.trim() || null,
+    address_line: addressLine,
+    neighborhood: input.neighborhood?.trim() || null,
+    city: input.city?.trim() || null,
+    state: input.state?.trim() || null,
+    reference: input.reference?.trim() || null,
+    courier_name: input.courier_name?.trim() || null,
+    delivery_fee: deliveryFee,
+    order_amount: orderAmount,
+    total_amount: orderAmount + deliveryFee,
+    notes: input.notes?.trim() || null,
+    items: normalizeDeliveryItems(input.items),
+  }
+}
+
+function deliveryStatusTimestampPatch(
+  status: DeliveryStatus,
+  previous?: DeliveryOrder | null
+) {
+  const now = new Date().toISOString()
+
+  if (status === "out_for_delivery" && !previous?.dispatched_at) {
+    return { dispatched_at: now, delivered_at: null, cancelled_at: null }
+  }
+  if (status === "delivered") {
+    return {
+      dispatched_at: previous?.dispatched_at ?? now,
+      delivered_at: now,
+      cancelled_at: null,
+    }
+  }
+  if (status === "cancelled" || status === "failed") {
+    return { cancelled_at: now }
+  }
+  return { delivered_at: null, cancelled_at: null }
 }
 
 export async function listProducts(branchId?: string | null) {
@@ -2432,6 +2546,212 @@ export async function listSalePayments(saleId: string) {
   if (isMissingPosFeature(error)) return []
   raise(error)
   return (data ?? []) as SalePayment[]
+}
+
+export async function listDeliveryOrders(branchId?: string | null) {
+  let query = supabase
+    .from("delivery_orders")
+    .select("*, branches(name), employees!assigned_employee_id(name), user_profiles!created_by(name)")
+    .order("created_at", { ascending: false })
+    .limit(300)
+
+  if (branchId) query = query.eq("branch_id", branchId)
+
+  const { data, error } = await query
+  if (isMissingDeliveryFeature(error)) throw new Error(deliveryFeatureMessage())
+  raise(error)
+
+  return (data ?? []) as DeliveryOrder[]
+}
+
+async function validateDeliveryReferences(
+  profile: UserProfile,
+  input: Pick<DeliveryOrderInput, "branch_id" | "sale_id" | "assigned_employee_id">
+) {
+  await validateBranchAndSector(profile, input.branch_id)
+
+  if (input.sale_id) {
+    const { data: sale, error: saleError } = await supabase
+      .from("sales")
+      .select("id, organization_id, branch_id")
+      .eq("id", input.sale_id)
+      .maybeSingle()
+
+    if (isMissingPosFeature(saleError)) throw new Error(posFeatureMessage())
+    raise(saleError)
+
+    if (
+      !sale ||
+      sale.organization_id !== profile.organization_id ||
+      sale.branch_id !== input.branch_id
+    ) {
+      throw new Error("A venda selecionada nao pertence a filial da entrega.")
+    }
+  }
+
+  if (input.assigned_employee_id) {
+    const { data: employee, error: employeeError } = await supabase
+      .from("employees")
+      .select("id, organization_id, branch_id, active")
+      .eq("id", input.assigned_employee_id)
+      .maybeSingle()
+
+    raise(employeeError)
+
+    if (
+      !employee ||
+      employee.organization_id !== profile.organization_id ||
+      employee.branch_id !== input.branch_id ||
+      !employee.active
+    ) {
+      throw new Error("Entregador invalido para esta filial.")
+    }
+  }
+}
+
+export async function createDeliveryOrder(
+  profile: UserProfile,
+  input: DeliveryOrderInput
+) {
+  const payload = normalizeDeliveryPayload(input)
+  await validateDeliveryReferences(profile, payload)
+
+  const { data, error } = await supabase
+    .from("delivery_orders")
+    .insert({
+      ...payload,
+      organization_id: profile.organization_id,
+      created_by: profile.id,
+      ...deliveryStatusTimestampPatch(payload.status),
+    })
+    .select("*, branches(name), employees!assigned_employee_id(name), user_profiles!created_by(name)")
+    .single()
+
+  if (isMissingDeliveryFeature(error)) throw new Error(deliveryFeatureMessage())
+  raise(error)
+
+  await createAuditLog(profile, {
+    branch_id: payload.branch_id,
+    action: payload.source === "pos" ? "delivery_created_from_pos" : "delivery_created",
+    entity_type: "delivery_orders",
+    entity_id: data.id,
+    old_value: null,
+    new_value: data,
+  })
+
+  return data as DeliveryOrder
+}
+
+export async function updateDeliveryOrder(
+  profile: UserProfile,
+  deliveryId: string,
+  values: Partial<DeliveryOrderInput>
+) {
+  const { data: previous, error: previousError } = await supabase
+    .from("delivery_orders")
+    .select("*")
+    .eq("id", deliveryId)
+    .eq("organization_id", profile.organization_id)
+    .maybeSingle()
+
+  if (isMissingDeliveryFeature(previousError)) throw new Error(deliveryFeatureMessage())
+  raise(previousError)
+
+  if (!previous) throw new Error("Entrega nao encontrada.")
+
+  const merged = normalizeDeliveryPayload({
+    branch_id: values.branch_id ?? previous.branch_id,
+    sale_id: values.sale_id === undefined ? previous.sale_id : values.sale_id,
+    assigned_employee_id:
+      values.assigned_employee_id === undefined
+        ? previous.assigned_employee_id
+        : values.assigned_employee_id,
+    source: values.source ?? previous.source,
+    status: values.status ?? previous.status,
+    priority: values.priority ?? previous.priority,
+    customer_name: values.customer_name ?? previous.customer_name,
+    customer_phone:
+      values.customer_phone === undefined ? previous.customer_phone : values.customer_phone,
+    address_line: values.address_line ?? previous.address_line,
+    neighborhood:
+      values.neighborhood === undefined ? previous.neighborhood : values.neighborhood,
+    city: values.city === undefined ? previous.city : values.city,
+    state: values.state === undefined ? previous.state : values.state,
+    reference:
+      values.reference === undefined ? previous.reference : values.reference,
+    courier_name:
+      values.courier_name === undefined ? previous.courier_name : values.courier_name,
+    delivery_fee: values.delivery_fee ?? previous.delivery_fee,
+    order_amount: values.order_amount ?? previous.order_amount,
+    payment_status: values.payment_status ?? previous.payment_status,
+    scheduled_for:
+      values.scheduled_for === undefined ? previous.scheduled_for : values.scheduled_for,
+    estimated_delivery_at:
+      values.estimated_delivery_at === undefined
+        ? previous.estimated_delivery_at
+        : values.estimated_delivery_at,
+    notes: values.notes === undefined ? previous.notes : values.notes,
+    items: values.items ?? previous.items ?? [],
+  })
+
+  await validateDeliveryReferences(profile, merged)
+
+  const { data, error } = await supabase
+    .from("delivery_orders")
+    .update({
+      ...merged,
+      ...deliveryStatusTimestampPatch(merged.status, previous as DeliveryOrder),
+    })
+    .eq("id", deliveryId)
+    .eq("organization_id", profile.organization_id)
+    .select("*, branches(name), employees!assigned_employee_id(name), user_profiles!created_by(name)")
+    .single()
+
+  if (isMissingDeliveryFeature(error)) throw new Error(deliveryFeatureMessage())
+  raise(error)
+
+  await createAuditLog(profile, {
+    branch_id: data.branch_id,
+    action: "delivery_updated",
+    entity_type: "delivery_orders",
+    entity_id: data.id,
+    old_value: previous,
+    new_value: data,
+  })
+
+  return data as DeliveryOrder
+}
+
+export async function deleteDeliveryOrder(profile: UserProfile, deliveryId: string) {
+  const { data: previous, error: previousError } = await supabase
+    .from("delivery_orders")
+    .select("*")
+    .eq("id", deliveryId)
+    .eq("organization_id", profile.organization_id)
+    .maybeSingle()
+
+  if (isMissingDeliveryFeature(previousError)) throw new Error(deliveryFeatureMessage())
+  raise(previousError)
+
+  if (!previous) throw new Error("Entrega nao encontrada.")
+
+  const { error } = await supabase
+    .from("delivery_orders")
+    .delete()
+    .eq("id", deliveryId)
+    .eq("organization_id", profile.organization_id)
+
+  if (isMissingDeliveryFeature(error)) throw new Error(deliveryFeatureMessage())
+  raise(error)
+
+  await createAuditLog(profile, {
+    branch_id: previous.branch_id,
+    action: "delivery_deleted",
+    entity_type: "delivery_orders",
+    entity_id: previous.id,
+    old_value: previous,
+    new_value: null,
+  })
 }
 
 export async function copySchedulesFromDate(

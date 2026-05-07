@@ -12,6 +12,7 @@ import { BranchesPage } from "@/features/branches/BranchesPage"
 import { ChecklistsPage } from "@/features/checklists/ChecklistsPage"
 import { CommsPage } from "@/features/comms/CommsPage"
 import { DashboardPage } from "@/features/dashboard/DashboardPage"
+import { DeliveriesPage } from "@/features/deliveries/DeliveriesPage"
 import { EmployeesPage } from "@/features/employees/EmployeesPage"
 import { GamePage } from "@/features/game/GamePage"
 import { LoginPage } from "@/features/auth/LoginPage"
@@ -102,6 +103,9 @@ export function AppRouter() {
             </Route>
             <Route element={<RequirePermission perm="pos_sales" />}>
               <Route path="pos/sales" element={<PosSalesPage />} />
+            </Route>
+            <Route element={<RequirePermission perm="deliveries" />}>
+              <Route path="deliveries" element={<DeliveriesPage />} />
             </Route>
 
             <Route element={<RequirePermission perm="reports" />}>
