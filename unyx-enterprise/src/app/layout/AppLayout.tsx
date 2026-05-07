@@ -7,14 +7,12 @@ import {
   Building2,
   CalendarDays,
   ClipboardList,
-  Coffee,
   GraduationCap,
   ChevronDown,
   LayoutDashboard,
   LogOut,
   Menu,
   MessageSquareText,
-  MapPinned,
   Package,
   ReceiptText,
   Settings,
@@ -69,13 +67,6 @@ const navGroups = [
       { to: "/app/employees", label: "Colaboradores", icon: Users,     perm: "employees" as PermissionKey },
       { to: "/app/users",     label: "Usuarios",      icon: UserCog,   perm: "users"     as PermissionKey },
       { to: "/app/settings",  label: "Configuracoes", icon: Settings,  perm: "settings"  as PermissionKey },
-    ],
-  },
-  {
-    label: "Unyx Allocation",
-    items: [
-      { to: "/app/allocation", label: "Alocacao",   icon: MapPinned, perm: "allocation" as PermissionKey },
-      { to: "/app/intervals",  label: "Intervalos", icon: Coffee,    perm: "intervals"  as PermissionKey },
     ],
   },
   {

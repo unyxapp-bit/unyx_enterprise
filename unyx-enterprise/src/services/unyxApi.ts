@@ -123,7 +123,7 @@ function isMissingAllocationFeature(error: { code?: string; message: string } | 
 }
 
 function allocationFeatureMessage() {
-  return "Unyx Allocation ainda nao apareceu na API do Supabase. Rode o supabase/onboarding_first_access.sql atualizado no SQL Editor, aguarde alguns segundos e recarregue o app."
+  return "Os recursos de postos operacionais ainda nao apareceram na API do Supabase. Rode o supabase/onboarding_first_access.sql atualizado no SQL Editor, aguarde alguns segundos e recarregue o app."
 }
 
 function isMissingProfileRpc(error: { code?: string; message: string } | null) {

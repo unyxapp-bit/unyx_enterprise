@@ -3,7 +3,6 @@ import type { SubscriptionPlan } from "@/types/domain"
 export type CoreModuleKey =
   | "unyx_ops"
   | "unyx_control"
-  | "unyx_allocation"
   | "unyx_insight"
 export type ExpansionModuleKey =
   | "unyx_comms"
@@ -31,18 +30,6 @@ export const coreModules = [
     tagline: "Organiza a empresa",
     description:
       "Estrutura, cadastros, filiais, setores, colaboradores, usuarios e regras.",
-    planAccess: {
-      starter: "Basico",
-      growth: "Completo",
-      enterprise: "Completo",
-    },
-  },
-  {
-    key: "unyx_allocation",
-    name: "Unyx Allocation",
-    tagline: "Cobre postos e PDVs",
-    description:
-      "Postos operacionais, alocacao em tempo real, trocas, cobertura e sangrias.",
     planAccess: {
       starter: "Basico",
       growth: "Completo",
