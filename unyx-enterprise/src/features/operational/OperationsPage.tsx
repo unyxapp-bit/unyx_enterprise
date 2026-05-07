@@ -22,6 +22,7 @@ import {
   EntryDialog,
   OperationalGrid,
   OperationalTabs,
+  OccupiedPostsCard,
   OccurrenceDialog,
   ReturnPromptDialog,
   TimelinePanel,
@@ -71,6 +72,7 @@ export function OperationsPage() {
     statuses,
     events,
     sectors,
+    postAllocations,
     mode,
     statusByScheduleId,
     emTurno,
@@ -79,6 +81,7 @@ export function OperationsPage() {
     activePosts,
     occupiedPostIds,
     employeeByAllocation,
+    occupiedPostAllocations,
     refetch,
   } = useOperationalData(date, sectorFilter, searchText, sortBy, activeTab)
 
@@ -308,14 +311,23 @@ export function OperationsPage() {
         </Card>
 
         {/* ── Timeline ── */}
-        <TimelinePanel
-          isOpen={timelineOpen}
-          onToggle={() => setTimelineOpen(!timelineOpen)}
-          events={events.data}
-          isLoading={events.isLoading}
-          isError={events.isError}
-          error={events.error}
-        />
+        <div className="space-y-4">
+          <OccupiedPostsCard
+            allocations={occupiedPostAllocations}
+            isLoading={postAllocations.isLoading}
+            isError={postAllocations.isError}
+            error={postAllocations.error}
+          />
+
+          <TimelinePanel
+            isOpen={timelineOpen}
+            onToggle={() => setTimelineOpen(!timelineOpen)}
+            events={events.data}
+            isLoading={events.isLoading}
+            isError={events.isError}
+            error={events.error}
+          />
+        </div>
       </div>
 
       {/* ── Dialogs ── */}

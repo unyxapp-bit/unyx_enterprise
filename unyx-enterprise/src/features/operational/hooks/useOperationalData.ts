@@ -155,6 +155,24 @@ export function useOperationalData(
     return byPostId
   }, [postAllocations.data, schedules.data])
 
+  const occupiedPostAllocations = useMemo(
+    () =>
+      (postAllocations.data ?? [])
+        .filter((a) => !a.ended_at)
+        .slice()
+        .sort((a, b) => {
+          const sectorA = a.operational_posts?.sectors?.name ?? ""
+          const sectorB = b.operational_posts?.sectors?.name ?? ""
+          return (
+            sectorA.localeCompare(sectorB) ||
+            (a.operational_posts?.name ?? "").localeCompare(
+              b.operational_posts?.name ?? ""
+            )
+          )
+        }),
+    [postAllocations.data]
+  )
+
   const postsBySector = useMemo(() => {
     const map = new Map<string, typeof activePosts>()
     for (const p of activePosts) {
@@ -173,6 +191,7 @@ export function useOperationalData(
     sectors,
     organization,
     operationalSettings,
+    postAllocations,
 
     // Derived
     mode,
@@ -184,6 +203,7 @@ export function useOperationalData(
     activePosts,
     occupiedPostIds,
     employeeByAllocation,
+    occupiedPostAllocations,
     postsBySector,
 
     // Refetch
