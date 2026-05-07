@@ -20,6 +20,7 @@ import {
   PieChart,
   ResponsiveContainer,
 } from "recharts"
+import { Link } from "react-router-dom"
 
 import { StatusBadge } from "@/components/bento/StatusBadge"
 import { PageHeader } from "@/components/shared/PageHeader"
@@ -51,6 +52,7 @@ import {
   useOperationalSettings,
   useOperationalStatuses,
   useOrganization,
+  usePostAllocations,
   useSchedules,
 } from "@/hooks/useUnyxData"
 import { formatTime, minutesLabel, todayISO } from "@/lib/format"
@@ -59,6 +61,7 @@ import type {
   DashboardRow,
   OperationalStatus,
   OperationalStatusRecord,
+  PostAllocation,
   ScheduleWithRelations,
 } from "@/types/domain"
 
@@ -183,6 +186,51 @@ function getMetricStatusFilter(key: DashboardMetricKey) {
   }
 
   return filters[key] ?? ""
+}
+
+function getNextAction(row: DashboardRow) {
+  if (row.current_status === "alerta_critico") {
+    return "Resolver alerta critico"
+  }
+  if (row.current_status === "aguardando_sangria") {
+    return "Confirmar sangria"
+  }
+  if (row.current_status === "troca_de_caixa") {
+    return "Concluir troca"
+  }
+  if (row.current_status === "deve_sair") {
+    return "Confirmar saida ou cobertura"
+  }
+  if (row.current_status === "em_intervalo") {
+    return "Monitorar retorno"
+  }
+  if (row.current_status === "aguardando_evento") {
+    return "Confirmar entrada"
+  }
+  if (row.delay_minutes > 0) {
+    return "Tratar atraso"
+  }
+  return "Acompanhar"
+}
+
+function getPendingGroup(status: OperationalStatus) {
+  const groups: Partial<Record<OperationalStatus, string>> = {
+    aguardando_sangria: "Sangria",
+    em_intervalo: "Intervalo",
+    troca_de_caixa: "Troca",
+    deve_sair: "Saida",
+  }
+
+  return groups[status] ?? statusMeta[status].label
+}
+
+function getAllocationDate(allocation: PostAllocation) {
+  return allocation.schedules?.work_date ?? allocation.started_at.slice(0, 10)
+}
+
+function getPostLabel(allocation?: PostAllocation) {
+  if (!allocation?.operational_posts) return "Sem posto alocado"
+  return allocation.operational_posts.name
 }
 
 function currentShiftLabel() {
@@ -403,6 +451,7 @@ export function DashboardPage() {
   const organization = useOrganization()
   const operationalSettings = useOperationalSettings()
   const attendanceEvents = useAttendanceEvents()
+  const postAllocations = usePostAllocations()
 
   const mode = getOperationalMode(
     operationalSettings.data?.mode ?? organization.data?.segment
@@ -417,6 +466,19 @@ export function DashboardPage() {
     () => schedules.data ?? [],
     [schedules.data]
   )
+  const activePostAllocations = useMemo(() => {
+    return (postAllocations.data ?? []).filter(
+      (allocation) => getAllocationDate(allocation) === date
+    )
+  }, [date, postAllocations.data])
+  const allocationByEmployeeId = useMemo(() => {
+    return new Map(
+      activePostAllocations.map((allocation) => [
+        allocation.employee_id,
+        allocation,
+      ])
+    )
+  }, [activePostAllocations])
   const sectorOptions = useMemo(() => {
     const names = new Set(rows.map((r) => r.sector_name).filter(Boolean) as string[])
     return Array.from(names).sort()
@@ -432,6 +494,12 @@ export function DashboardPage() {
 
     return sortDashboardRowsByMode(mode, list)
   }, [mode, rows, searchText, sectorFilter, statusFilter])
+  const postAllocationsInScope = useMemo(() => {
+    const employeeIds = new Set(filteredRows.map((row) => row.employee_id))
+    return activePostAllocations.filter((allocation) =>
+      employeeIds.has(allocation.employee_id)
+    )
+  }, [activePostAllocations, filteredRows])
 
   const filteredSchedules = useMemo(() => {
     return scheduledToday.filter((schedule) => {
@@ -479,6 +547,20 @@ export function DashboardPage() {
       return true
     })
   }, [filteredRows])
+
+  const liveActiveCount = liveRows.filter((row) =>
+    ACTIVE_STATUSES.includes(row.current_status)
+  ).length
+  const liveBreakCount = liveRows.filter(
+    (row) => row.current_status === "em_intervalo"
+  ).length
+  const liveRiskCount = liveRows.filter((row) =>
+    RISK_STATUSES.includes(row.current_status)
+  ).length
+  const liveDelayCount = liveRows.filter((row) => row.delay_minutes > 0).length
+  const occupiedPostCount = new Set(
+    postAllocationsInScope.map((allocation) => allocation.post_id)
+  ).size
 
   const statusSource = useMemo((): StatusCount[] => {
     const active = liveRows.map((r) => ({
@@ -528,6 +610,11 @@ export function DashboardPage() {
 
   const secondaryRows = filteredRows
     .filter((row) => SECONDARY_STATUSES.includes(row.current_status))
+  const pendingGroupStats = SECONDARY_STATUSES.map((status) => ({
+    status,
+    label: getPendingGroup(status),
+    total: secondaryRows.filter((row) => row.current_status === status).length,
+  })).filter((item) => item.total > 0)
 
   const visiblePrimaryRows = showAllPrimary ? primaryRows : primaryRows.slice(0, 5)
   const visibleSecondaryRows = showAllSecondary
@@ -552,7 +639,7 @@ export function DashboardPage() {
     : null
 
   const workingCount = statusSource.filter((r) =>
-    ["trabalhando", "voltou"].includes(r.current_status)
+    ACTIVE_STATUSES.includes(r.current_status)
   ).length
   const scheduledCount = filteredSchedules.length || filteredRows.length
   const presencePct =
@@ -931,8 +1018,11 @@ export function DashboardPage() {
                 <>
                   {visiblePrimaryRows.map((row) => {
                     const initials = getInitials(row.employee_name)
+                    const allocation = allocationByEmployeeId.get(row.employee_id)
+                    const priority = getPriority(row, mode)
                     return (
-                      <div key={row.id} className="flex items-center gap-3 rounded-xl border border-red-100 bg-red-50/70 p-3">
+                      <div key={row.id} className="rounded-xl border border-red-100 bg-red-50/70 p-3">
+                        <div className="flex items-center gap-3">
                         <div className="w-1 self-stretch shrink-0 rounded-full bg-red-400" />
                         <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-red-100 text-xs font-bold text-red-700">
                           {initials}
@@ -947,6 +1037,30 @@ export function DashboardPage() {
                           </p>
                         </div>
                         <StatusBadge status={row.current_status} />
+                        </div>
+                        <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
+                          <div className="rounded-lg bg-white/70 px-2.5 py-2">
+                            <p className="text-red-400">Acao</p>
+                            <p className="mt-0.5 font-medium text-red-800">
+                              {getNextAction(row)}
+                            </p>
+                          </div>
+                          <div className="rounded-lg bg-white/70 px-2.5 py-2">
+                            <p className="text-red-400">Prioridade</p>
+                            <p className="mt-0.5 font-medium tabular-nums text-red-800">
+                              {priority}
+                              {row.delay_minutes > 0
+                                ? ` - ${minutesLabel(row.delay_minutes)}`
+                                : ""}
+                            </p>
+                          </div>
+                          <div className="rounded-lg bg-white/70 px-2.5 py-2">
+                            <p className="text-red-400">Posto</p>
+                            <p className="mt-0.5 truncate font-medium text-red-800">
+                              {getPostLabel(allocation)}
+                            </p>
+                          </div>
+                        </div>
                       </div>
                     )
                   })}
@@ -960,6 +1074,9 @@ export function DashboardPage() {
                       {showAllPrimary ? "Recolher" : `Ver todos (${primaryRows.length})`}
                     </Button>
                   ) : null}
+                  <Button asChild variant="outline" size="sm" className="w-full">
+                    <Link to="/app/operations">Abrir frente de caixa</Link>
+                  </Button>
                 </>
               )}
             </CardContent>
@@ -987,10 +1104,29 @@ export function DashboardPage() {
                 />
               ) : (
                 <>
+                  {pendingGroupStats.length > 0 ? (
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      {pendingGroupStats.map((item) => (
+                        <div
+                          key={item.status}
+                          className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2"
+                        >
+                          <p className="text-[11px] font-medium text-amber-500">
+                            {item.label}
+                          </p>
+                          <p className="mt-0.5 text-xl font-bold tabular-nums text-amber-800">
+                            {item.total}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                   {visibleSecondaryRows.map((row) => {
                   const initials = getInitials(row.employee_name)
+                  const allocation = allocationByEmployeeId.get(row.employee_id)
                   return (
-                    <div key={row.id} className="flex items-center gap-3 rounded-xl border border-amber-100 bg-amber-50/70 p-3">
+                    <div key={row.id} className="rounded-xl border border-amber-100 bg-amber-50/70 p-3">
+                      <div className="flex items-center gap-3">
                       <div className="w-1 self-stretch shrink-0 rounded-full bg-amber-400" />
                       <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-xs font-bold text-amber-700">
                         {initials}
@@ -998,10 +1134,31 @@ export function DashboardPage() {
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-semibold text-slate-800">{row.employee_name}</p>
                         <p className="truncate text-xs text-amber-600">
-                          {row.sector_name ?? "Sem setor"} · {row.branch_name}
+                          {row.sector_name ?? "Sem setor"} - {row.branch_name}
                         </p>
                       </div>
                       <StatusBadge status={row.current_status} />
+                      </div>
+                      <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
+                        <div className="rounded-lg bg-white/70 px-2.5 py-2">
+                          <p className="text-amber-400">Tipo</p>
+                          <p className="mt-0.5 font-medium text-amber-800">
+                            {getPendingGroup(row.current_status)}
+                          </p>
+                        </div>
+                        <div className="rounded-lg bg-white/70 px-2.5 py-2">
+                          <p className="text-amber-400">Proxima acao</p>
+                          <p className="mt-0.5 font-medium text-amber-800">
+                            {getNextAction(row)}
+                          </p>
+                        </div>
+                        <div className="rounded-lg bg-white/70 px-2.5 py-2">
+                          <p className="text-amber-400">Posto</p>
+                          <p className="mt-0.5 truncate font-medium text-amber-800">
+                            {getPostLabel(allocation)}
+                          </p>
+                        </div>
+                      </div>
                     </div>
                   )
                   })}
@@ -1017,6 +1174,9 @@ export function DashboardPage() {
                         : `Ver todos (${secondaryRows.length})`}
                     </Button>
                   ) : null}
+                  <Button asChild variant="outline" size="sm" className="w-full">
+                    <Link to="/app/operations">Abrir frente de caixa</Link>
+                  </Button>
                 </>
               )}
             </CardContent>
@@ -1027,7 +1187,7 @@ export function DashboardPage() {
         <Card className="border bg-white shadow-sm">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between gap-3">
-              <CardTitle className="text-base">{modeConfig.liveTitle}</CardTitle>
+              <CardTitle className="text-base">Resumo em tempo real</CardTitle>
               {liveRows.length > 0 ? (
                 <Badge variant="outline">
                   {visibleLiveRows.length} de {liveRows.length}
@@ -1045,9 +1205,49 @@ export function DashboardPage() {
               />
             ) : (
               <>
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+                  <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+                    <p className="text-[11px] font-medium text-slate-400">Em turno</p>
+                    <p className="mt-1 text-2xl font-bold tabular-nums text-slate-800">
+                      {liveRows.length}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-3">
+                    <p className="text-[11px] font-medium text-emerald-500">Ativos</p>
+                    <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-800">
+                      {liveActiveCount}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-violet-100 bg-violet-50 p-3">
+                    <p className="text-[11px] font-medium text-violet-500">Intervalo</p>
+                    <p className="mt-1 text-2xl font-bold tabular-nums text-violet-800">
+                      {liveBreakCount}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-red-100 bg-red-50 p-3">
+                    <p className="text-[11px] font-medium text-red-500">Em risco</p>
+                    <p className="mt-1 text-2xl font-bold tabular-nums text-red-800">
+                      {liveRiskCount}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-amber-100 bg-amber-50 p-3">
+                    <p className="text-[11px] font-medium text-amber-500">Atraso</p>
+                    <p className="mt-1 text-2xl font-bold tabular-nums text-amber-800">
+                      {liveDelayCount}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-sky-100 bg-sky-50 p-3">
+                    <p className="text-[11px] font-medium text-sky-500">Postos ocupados</p>
+                    <p className="mt-1 text-2xl font-bold tabular-nums text-sky-800">
+                      {occupiedPostCount}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {visibleLiveRows.map((row) => {
                   const initials = getInitials(row.employee_name)
+                  const allocation = allocationByEmployeeId.get(row.employee_id)
                   const avatarClass =
                     avatarColorByStatus[row.current_status] ?? "bg-slate-100 text-slate-600"
                   return (
@@ -1065,6 +1265,20 @@ export function DashboardPage() {
                           </p>
                         </div>
                         <StatusBadge status={row.current_status} />
+                      </div>
+                      <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+                        <div className="rounded-lg bg-slate-50 px-2.5 py-2">
+                          <p className="text-slate-400">Posto</p>
+                          <p className="mt-0.5 truncate font-medium text-slate-700">
+                            {getPostLabel(allocation)}
+                          </p>
+                        </div>
+                        <div className="rounded-lg bg-slate-50 px-2.5 py-2">
+                          <p className="text-slate-400">Acao</p>
+                          <p className="mt-0.5 truncate font-medium text-slate-700">
+                            {getNextAction(row)}
+                          </p>
+                        </div>
                       </div>
                       <div className="mt-3 flex flex-wrap gap-1.5">
                         {row.start_time ? (
@@ -1109,6 +1323,9 @@ export function DashboardPage() {
                     {showAllLive ? "Recolher" : `Ver todos (${liveRows.length})`}
                   </Button>
                 ) : null}
+                <Button asChild variant="outline" size="sm" className="mt-3 w-full">
+                  <Link to="/app/operations">Abrir frente de caixa completa</Link>
+                </Button>
               </>
             )}
           </CardContent>
