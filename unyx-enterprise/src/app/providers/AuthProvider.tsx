@@ -8,6 +8,7 @@ import type { ReactNode } from "react"
 import type { Session } from "@supabase/supabase-js"
 
 import { AuthContext } from "@/app/providers/auth-context"
+import { clearAccessMode } from "@/lib/accessMode"
 import { supabase } from "@/lib/supabase"
 import { getCurrentProfile } from "@/services/unyxApi"
 import type { UserProfile } from "@/types/domain"
@@ -21,6 +22,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loadProfileForSession = useCallback(async (nextSession: Session | null) => {
     if (!nextSession) {
+      clearAccessMode()
       setProfile(null)
       setProfileError(null)
       return
@@ -81,6 +83,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
 
       if (error) throw error
+      clearAccessMode()
       setSession(data.session)
       await loadProfileForSession(data.session)
     },
@@ -98,11 +101,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email,
         password,
         options: {
-          emailRedirectTo: `${baseUrl}/app`,
+          emailRedirectTo: `${baseUrl}/access`,
         },
       })
 
       if (error) throw error
+      clearAccessMode()
 
       setSession(data.session)
 
@@ -118,6 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(async () => {
     const { error } = await supabase.auth.signOut()
     if (error) throw error
+    clearAccessMode()
     setSession(null)
     setProfile(null)
     setProfileError(null)

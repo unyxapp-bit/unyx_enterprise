@@ -20,7 +20,7 @@ export function LoginPage() {
   const [message, setMessage] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  if (session) return <Navigate to="/app" replace />
+  if (session) return <Navigate to="/access" replace />
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()

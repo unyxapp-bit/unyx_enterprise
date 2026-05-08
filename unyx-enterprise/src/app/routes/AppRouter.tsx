@@ -5,6 +5,7 @@ import { useAuth } from "@/app/providers/auth-context"
 import { StateBlock } from "@/components/shared/StateBlock"
 import { canAccessUser, type PermissionKey } from "@/lib/permissions"
 import { AlertsPage } from "@/features/alerts/AlertsPage"
+import { AccessChoicePage } from "@/features/auth/AccessChoicePage"
 import { AcademyPage } from "@/features/academy/AcademyPage"
 import { AiPage } from "@/features/ai/AiPage"
 import { AuditPage } from "@/features/audit/AuditPage"
@@ -64,6 +65,7 @@ export function AppRouter() {
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route element={<ProtectedRoute />}>
+          <Route path="/access" element={<AccessChoicePage />} />
           <Route path="/app" element={<AppLayout />}>
             <Route index element={<DashboardPage />} />
 

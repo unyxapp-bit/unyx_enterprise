@@ -27,7 +27,7 @@ import {
   Wallet,
   X,
 } from "lucide-react"
-import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom"
+import { NavLink, Navigate, Outlet, useLocation, useNavigate } from "react-router-dom"
 
 import { useAuth } from "@/app/providers/auth-context"
 import { BranchSelector } from "@/components/shared/BranchSelector"
@@ -36,10 +36,13 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { OnboardingPage } from "@/features/onboarding/OnboardingPage"
 import { useOperationalStatuses, useOrganization } from "@/hooks/useUnyxData"
+import { clearAccessMode, getAccessMode, type AccessMode } from "@/lib/accessMode"
 import { canAccessUser, type PermissionKey } from "@/lib/permissions"
 import { cn } from "@/lib/utils"
 import type { UserRole } from "@/types/domain"
@@ -102,6 +105,12 @@ const navGroups = [
   },
 ]
 
+const posModePathPrefixes = ["/app/pos", "/app/deliveries"]
+
+function isPosModePath(pathname: string) {
+  return posModePathPrefixes.some((prefix) => pathname.startsWith(prefix))
+}
+
 function UserAvatar({ name }: { name: string }) {
   const initials = name
     .split(" ")
@@ -120,6 +129,9 @@ export function AppLayout() {
   const { profile, profileLoading, signOut } = useAuth()
   const { data: organization } = useOrganization()
   const { data: opStatuses } = useOperationalStatuses()
+  const [accessMode, setAccessModeState] = useState<AccessMode | null>(() =>
+    getAccessMode()
+  )
   const [mobileOpen, setMobileOpen] = useState(false)
   const location = useLocation()
   const navigate = useNavigate()
@@ -140,8 +152,38 @@ export function AppLayout() {
     return <OnboardingPage />
   }
 
+  if (!accessMode) {
+    return <Navigate to="/access" replace />
+  }
+
+  if (accessMode === "pos" && !canAccessUser(profile, "pos_sell")) {
+    return <Navigate to="/access" replace />
+  }
+
+  if (accessMode === "pos" && !isPosModePath(location.pathname)) {
+    return <Navigate to="/app/pos/sell" replace />
+  }
+
   const orgDisplayName =
     organization?.trade_name ?? organization?.name ?? "Unyx Enterprise"
+  const visibleNavGroups =
+    accessMode === "pos"
+      ? navGroups.filter((group) => group.label === "Unyx POS")
+      : navGroups
+  const accessModeLabel = accessMode === "pos" ? "Modo PDV" : "Sistema completo"
+
+  function handleChangeAccessMode() {
+    clearAccessMode()
+    setAccessModeState(null)
+    setMobileOpen(false)
+    navigate("/access", { replace: true })
+  }
+
+  async function handleSignOut() {
+    clearAccessMode()
+    setAccessModeState(null)
+    await signOut()
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-950">
@@ -169,7 +211,7 @@ export function AppLayout() {
 
           {/* Desktop nav groups */}
           <nav className="hidden flex-1 items-center gap-0.5 lg:flex">
-            {navGroups.map((group) => {
+            {visibleNavGroups.map((group) => {
               const visibleItems = group.items.filter((item) =>
                 canAccessUser(profile, item.perm)
               )
@@ -256,8 +298,23 @@ export function AppLayout() {
                 align="end"
                 className="min-w-44 border-slate-700 bg-slate-800 p-1"
               >
+                <DropdownMenuLabel className="px-2 py-1.5 text-xs font-medium text-slate-500">
+                  {accessModeLabel}
+                </DropdownMenuLabel>
                 <DropdownMenuItem
-                  onClick={() => void signOut()}
+                  onClick={handleChangeAccessMode}
+                  className="cursor-pointer gap-2 text-slate-300 focus:bg-white/10 focus:text-white"
+                >
+                  {accessMode === "pos" ? (
+                    <Building2 className="size-4" />
+                  ) : (
+                    <ShoppingCart className="size-4" />
+                  )}
+                  Mudar acesso
+                </DropdownMenuItem>
+                <DropdownMenuSeparator className="my-1 bg-slate-700" />
+                <DropdownMenuItem
+                  onClick={() => void handleSignOut()}
                   className="cursor-pointer gap-2 text-slate-300 focus:bg-white/10 focus:text-white"
                 >
                   <LogOut className="size-4" />
@@ -302,7 +359,7 @@ export function AppLayout() {
             </div>
 
             <nav className="space-y-4 px-3 py-2">
-              {navGroups.map((group) => {
+              {visibleNavGroups.map((group) => {
                 const visibleItems = group.items.filter((item) =>
                   canAccessUser(profile, item.perm)
                 )
@@ -349,13 +406,25 @@ export function AppLayout() {
                   <div className="truncate text-xs text-slate-400">{roleLabel[profile.role]}</div>
                 </div>
                 <button
-                  onClick={() => void signOut()}
+                  onClick={() => void handleSignOut()}
                   aria-label="Sair"
                   className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
                 >
                   <LogOut className="size-4" />
                 </button>
               </div>
+              <button
+                type="button"
+                onClick={handleChangeAccessMode}
+                className="mt-3 flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
+              >
+                {accessMode === "pos" ? (
+                  <Building2 className="size-4" />
+                ) : (
+                  <ShoppingCart className="size-4" />
+                )}
+                Mudar acesso
+              </button>
             </div>
           </div>
         </div>
