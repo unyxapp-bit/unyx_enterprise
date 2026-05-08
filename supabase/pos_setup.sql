@@ -4,6 +4,8 @@
 -- ======================================================
 
 -- Enums
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 DO $$ BEGIN CREATE TYPE public.cash_session_status AS ENUM ('open','closed','cancelled');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
@@ -145,6 +147,18 @@ CREATE INDEX IF NOT EXISTS idx_cash_sessions_branch      ON public.cash_sessions
 CREATE INDEX IF NOT EXISTS idx_cash_sessions_status      ON public.cash_sessions(status);
 
 -- ── sales ─────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.employee_pos_credentials (
+  employee_id      uuid PRIMARY KEY REFERENCES public.employees(id) ON DELETE CASCADE,
+  organization_id  uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+  pin_hash         text NOT NULL,
+  active           boolean NOT NULL DEFAULT true,
+  updated_by       uuid REFERENCES public.user_profiles(id) ON DELETE SET NULL,
+  updated_at       timestamptz NOT NULL DEFAULT now(),
+  created_at       timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_employee_pos_credentials_org
+ON public.employee_pos_credentials(organization_id);
+
 CREATE TABLE IF NOT EXISTS public.sales (
   id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id  uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
@@ -251,6 +265,7 @@ ALTER TABLE public.sales              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sale_items         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sale_payments      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.pos_cash_movements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.employee_pos_credentials ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "pos_products_read"   ON public.products;
 DROP POLICY IF EXISTS "pos_products_write"  ON public.products;
@@ -327,6 +342,122 @@ GRANT SELECT, INSERT         ON public.sale_payments      TO authenticated;
 GRANT SELECT, INSERT         ON public.pos_cash_movements TO authenticated;
 
 -- ── RPC: pos_open_cash_session ────────────────────────
+CREATE OR REPLACE FUNCTION public.pos_set_operator_password(
+  p_employee_id uuid,
+  p_password    text,
+  p_active      boolean DEFAULT true
+)
+RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$
+DECLARE
+  v_org_id uuid;
+  v_user_id uuid;
+  v_role text;
+  v_employee record;
+BEGIN
+  v_org_id := current_organization_id();
+  v_role := current_user_role();
+  IF v_org_id IS NULL THEN RAISE EXCEPTION 'Usuario sem organizacao.'; END IF;
+  IF v_role NOT IN ('owner','admin','branch_manager','supervisor') THEN
+    RAISE EXCEPTION 'Sem permissao para definir senha do PDV.';
+  END IF;
+  IF p_password IS NULL OR length(btrim(p_password)) < 4 THEN
+    RAISE EXCEPTION 'A senha do PDV deve ter pelo menos 4 caracteres.';
+  END IF;
+
+  SELECT id INTO v_user_id FROM user_profiles
+    WHERE auth_user_id = auth.uid() AND organization_id = v_org_id;
+
+  SELECT id, organization_id, branch_id, active
+    INTO v_employee
+  FROM employees
+  WHERE id = p_employee_id AND organization_id = v_org_id;
+
+  IF NOT FOUND THEN RAISE EXCEPTION 'Colaborador nao encontrado.'; END IF;
+  IF NOT v_employee.active THEN RAISE EXCEPTION 'Colaborador inativo nao pode acessar o PDV.'; END IF;
+  IF NOT (
+    public.is_org_admin()
+    OR v_employee.branch_id = public.current_branch_id()
+    OR public.can_manage_branch(v_employee.branch_id)
+  ) THEN
+    RAISE EXCEPTION 'Sem permissao para esta filial.';
+  END IF;
+
+  INSERT INTO employee_pos_credentials (
+    employee_id, organization_id, pin_hash, active, updated_by, updated_at
+  ) VALUES (
+    p_employee_id, v_org_id, crypt(p_password, gen_salt('bf')), p_active, v_user_id, now()
+  )
+  ON CONFLICT (employee_id) DO UPDATE SET
+    pin_hash = excluded.pin_hash,
+    active = excluded.active,
+    updated_by = excluded.updated_by,
+    updated_at = now();
+
+  INSERT INTO audit_logs (organization_id, branch_id, user_id, action, entity_type, entity_id, old_value, new_value)
+  VALUES (v_org_id, v_employee.branch_id, v_user_id, 'pos_operator_password_set', 'employees', p_employee_id, NULL,
+    jsonb_build_object('employee_id', p_employee_id, 'active', p_active));
+END; $$;
+
+CREATE OR REPLACE FUNCTION public.pos_verify_operator(
+  p_session_id   uuid,
+  p_employee_id  uuid,
+  p_password     text
+)
+RETURNS TABLE(employee_id uuid, employee_name text)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$
+DECLARE
+  v_org_id uuid;
+  v_user_id uuid;
+  v_session record;
+  v_employee record;
+BEGIN
+  v_org_id := current_organization_id();
+  IF v_org_id IS NULL THEN RAISE EXCEPTION 'Usuario sem organizacao.'; END IF;
+
+  SELECT id INTO v_user_id FROM user_profiles
+    WHERE auth_user_id = auth.uid() AND organization_id = v_org_id;
+
+  SELECT id, branch_id, employee_id, status
+    INTO v_session
+  FROM cash_sessions
+  WHERE id = p_session_id AND organization_id = v_org_id;
+
+  IF NOT FOUND OR v_session.status <> 'open' THEN
+    RAISE EXCEPTION 'Caixa nao encontrado ou encerrado.';
+  END IF;
+  IF v_session.employee_id IS NULL THEN
+    RAISE EXCEPTION 'Este caixa nao possui operador vinculado.';
+  END IF;
+  IF v_session.employee_id <> p_employee_id THEN
+    RAISE EXCEPTION 'Este caixa pertence a outro operador.';
+  END IF;
+
+  SELECT e.id, e.name, e.branch_id, e.active, c.pin_hash, c.active AS credential_active
+    INTO v_employee
+  FROM employees e
+  LEFT JOIN employee_pos_credentials c ON c.employee_id = e.id
+  WHERE e.id = p_employee_id AND e.organization_id = v_org_id;
+
+  IF NOT FOUND OR NOT v_employee.active OR v_employee.branch_id <> v_session.branch_id THEN
+    RAISE EXCEPTION 'Operador invalido para este caixa.';
+  END IF;
+  IF v_employee.pin_hash IS NULL OR NOT COALESCE(v_employee.credential_active, false) THEN
+    RAISE EXCEPTION 'Operador sem senha de PDV configurada.';
+  END IF;
+  IF crypt(COALESCE(p_password, ''), v_employee.pin_hash) <> v_employee.pin_hash THEN
+    RAISE EXCEPTION 'Senha do PDV invalida.';
+  END IF;
+
+  INSERT INTO audit_logs (organization_id, branch_id, user_id, action, entity_type, entity_id, old_value, new_value)
+  VALUES (v_org_id, v_session.branch_id, v_user_id, 'pos_operator_unlocked', 'cash_sessions', p_session_id, NULL,
+    jsonb_build_object('employee_id', p_employee_id));
+
+  RETURN QUERY SELECT v_employee.id::uuid, v_employee.name::text;
+END; $$;
+
 CREATE OR REPLACE FUNCTION public.pos_open_cash_session(
   p_branch_id     uuid,
   p_post_id       uuid    DEFAULT NULL,
@@ -343,10 +474,21 @@ DECLARE
   v_session_id uuid;
 BEGIN
   v_org_id := current_organization_id();
+  IF p_employee_id IS NULL THEN RAISE EXCEPTION 'Selecione o operador do caixa.'; END IF;
   IF v_org_id IS NULL THEN RAISE EXCEPTION 'Usuário sem organização.'; END IF;
 
   SELECT id INTO v_user_id FROM user_profiles
     WHERE auth_user_id = auth.uid() AND organization_id = v_org_id;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM employees
+    WHERE id = p_employee_id
+      AND organization_id = v_org_id
+      AND branch_id = p_branch_id
+      AND active
+  ) THEN
+    RAISE EXCEPTION 'Operador invalido para esta filial.';
+  END IF;
 
   IF p_post_id IS NOT NULL AND EXISTS (
     SELECT 1 FROM cash_sessions
@@ -373,6 +515,7 @@ END; $$;
 
 -- ── RPC: pos_complete_sale ────────────────────────────
 DROP FUNCTION IF EXISTS public.pos_complete_sale(uuid, uuid, uuid, jsonb, jsonb, text, numeric, text);
+DROP FUNCTION IF EXISTS public.pos_complete_sale(uuid, uuid, uuid, jsonb, jsonb, uuid, text, public.business_segment, text, numeric, text);
 
 CREATE OR REPLACE FUNCTION public.pos_complete_sale(
   p_branch_id      uuid,
@@ -380,6 +523,8 @@ CREATE OR REPLACE FUNCTION public.pos_complete_sale(
   p_post_id        uuid    DEFAULT NULL,
   p_items          jsonb   DEFAULT '[]',
   p_payments       jsonb   DEFAULT '[]',
+  p_operator_employee_id uuid DEFAULT NULL,
+  p_operator_password text DEFAULT NULL,
   p_customer_id    uuid    DEFAULT NULL,
   p_customer_name  text    DEFAULT NULL,
   p_sale_mode      public.business_segment DEFAULT 'retail_store',
@@ -416,6 +561,9 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'Sessão de caixa não encontrada ou já encerrada.';
   END IF;
+
+  PERFORM 1
+  FROM public.pos_verify_operator(p_session_id, p_operator_employee_id, p_operator_password);
 
   FOR v_item IN SELECT * FROM jsonb_array_elements(p_items) LOOP
     v_subtotal := v_subtotal
@@ -615,6 +763,8 @@ GRANT EXECUTE ON FUNCTION public.pos_open_cash_session    TO authenticated;
 GRANT EXECUTE ON FUNCTION public.pos_complete_sale        TO authenticated;
 GRANT EXECUTE ON FUNCTION public.pos_close_cash_session   TO authenticated;
 GRANT EXECUTE ON FUNCTION public.pos_create_cash_movement TO authenticated;
+GRANT EXECUTE ON FUNCTION public.pos_set_operator_password TO authenticated;
+GRANT EXECUTE ON FUNCTION public.pos_verify_operator TO authenticated;
 
 -- Notify PostgREST to reload schema
 NOTIFY pgrst, 'reload schema';

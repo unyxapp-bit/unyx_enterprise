@@ -106,6 +106,7 @@ import {
   updateSchedule,
   updateSector,
   updateUserRole,
+  verifyPosOperator,
 } from "@/services/unyxApi"
 import type {
   BulkImportResult,
@@ -638,6 +639,7 @@ export function useUpdateEmployee() {
         phone?: string | null
         document?: string | null
         notes?: string | null
+        pos_password?: string | null
       }
     }) => updateEmployee(profile, input.employeeId, input.values),
     onSuccess: async (_, variables) => {
@@ -1286,6 +1288,7 @@ export function useCreateEmployee() {
       phone: string | null
       document: string | null
       notes: string | null
+      pos_password?: string | null
     }) => createEmployee(profile, input),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["employees"] })
@@ -1817,6 +1820,19 @@ export function useCompleteSale() {
       toast.success("Venda finalizada.")
     },
     onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useVerifyPosOperator() {
+  return useMutation({
+    mutationFn: (input: {
+      session_id: string
+      employee_id: string
+      password: string
+    }) => verifyPosOperator(input),
+    onError: (error) => {
+      toast.error(error.message)
+    },
   })
 }
 

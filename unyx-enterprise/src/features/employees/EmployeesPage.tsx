@@ -73,6 +73,7 @@ interface EmployeeFormState {
   role: string
   phone: string
   document: string
+  pos_password: string
   notes: string
 }
 
@@ -83,6 +84,7 @@ const initialForm: EmployeeFormState = {
   role: "",
   phone: "",
   document: "",
+  pos_password: "",
   notes: "",
 }
 
@@ -284,6 +286,7 @@ function EmployeeEditInlineDialog({
     role: employee.role ?? "",
     phone: employee.phone ?? "",
     document: employee.document ?? "",
+    pos_password: "",
     notes: employee.notes ?? "",
   })
   const sectors = useSectors(form.branch_id)
@@ -305,6 +308,7 @@ function EmployeeEditInlineDialog({
         role: form.role.trim() || null,
         phone: form.phone.trim() || null,
         document: form.document.trim() || null,
+        pos_password: form.pos_password.trim() || null,
         notes: form.notes.trim() || null,
       },
     })
@@ -390,6 +394,18 @@ function EmployeeEditInlineDialog({
               />
             </label>
           </div>
+
+          <label className="space-y-1 text-sm">
+            <span className="font-medium">Senha PDV</span>
+            <Input
+              type="password"
+              value={form.pos_password}
+              placeholder="Deixe vazio para manter"
+              onChange={(e) =>
+                setForm((c) => ({ ...c, pos_password: e.target.value }))
+              }
+            />
+          </label>
 
           <label className="space-y-1 text-sm">
             <span className="font-medium">Observações</span>
@@ -685,12 +701,14 @@ export function EmployeesPage() {
     selectedFilteredCount === filteredEmployeeIds.length
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPageIndex(0)
   }, [search, sectorFilter, statusFilter])
 
   useEffect(() => {
     const currentEmployeeIds = new Set((employees.data ?? []).map((employee) => employee.id))
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSelectedIds((current) => {
       let changed = false
       const next = new Set<string>()
@@ -778,6 +796,7 @@ export function EmployeesPage() {
       role: form.role.trim() || null,
       phone: form.phone.trim() || null,
       document: form.document.trim() || null,
+      pos_password: form.pos_password.trim() || null,
       notes: form.notes.trim() || null,
     })
 
@@ -885,6 +904,18 @@ export function EmployeesPage() {
                     />
                   </label>
                 </div>
+
+                <label className="space-y-1 text-sm">
+                  <span className="font-medium">Senha PDV</span>
+                  <Input
+                    type="password"
+                    value={form.pos_password}
+                    placeholder="Opcional, minimo 4 caracteres"
+                    onChange={(e) =>
+                      setForm((c) => ({ ...c, pos_password: e.target.value }))
+                    }
+                  />
+                </label>
 
                 <label className="space-y-1 text-sm">
                   <span className="font-medium">Observações</span>

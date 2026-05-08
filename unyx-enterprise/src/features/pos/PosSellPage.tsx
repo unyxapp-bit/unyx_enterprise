@@ -7,6 +7,7 @@ import {
   Clock3,
   CreditCard,
   History,
+  LockKeyhole,
   MapPin,
   Minus,
   PackageCheck,
@@ -48,6 +49,7 @@ import {
   useOrganization,
   useProductVariants,
   useProducts,
+  useVerifyPosOperator,
 } from "@/hooks/useUnyxData"
 import { formatCurrency } from "@/lib/format"
 import { formatCep, lookupCep } from "@/services/viaCep"
@@ -309,6 +311,7 @@ export function PosSellPage() {
   const createCustomer = useCreateCustomer()
   const completeSale = useCompleteSale()
   const createDelivery = useCreateDeliveryOrder()
+  const verifyOperator = useVerifyPosOperator()
 
   const searchRef = useRef<HTMLInputElement>(null)
   const session = currentSession.data ?? null
@@ -345,6 +348,10 @@ export function PosSellPage() {
   )
   const [heldSales, setHeldSales] = useState<HeldSale[]>(() => readHeldSales())
   const [saleError, setSaleError] = useState<string | null>(null)
+  const [operatorUnlocked, setOperatorUnlocked] = useState(false)
+  const [operatorSessionId, setOperatorSessionId] = useState("")
+  const [operatorPassword, setOperatorPassword] = useState("")
+  const [operatorError, setOperatorError] = useState<string | null>(null)
 
   const allProducts = useMemo(
     () => (products.data ?? []).filter((product) => product.active),
@@ -469,9 +476,36 @@ export function PosSellPage() {
   const requiresAuthorization = hasPriceOverride || discountRate > 0.1
   const requiresPrescription = cart.some(itemHasPrescriptionRule)
   const totalUnits = cart.reduce((sum, item) => sum + item.quantity, 0)
+  const operatorReady = operatorUnlocked && operatorSessionId === session?.id
 
   function focusSearch() {
     window.setTimeout(() => searchRef.current?.focus(), 0)
+  }
+
+  async function handleOperatorUnlock(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!session?.employee_id) {
+      setOperatorError("Este caixa foi aberto sem operador vinculado.")
+      return
+    }
+    if (!operatorPassword.trim()) {
+      setOperatorError("Informe a senha do operador.")
+      return
+    }
+
+    setOperatorError(null)
+    try {
+      await verifyOperator.mutateAsync({
+        session_id: session.id,
+        employee_id: session.employee_id,
+        password: operatorPassword,
+      })
+      setOperatorUnlocked(true)
+      setOperatorSessionId(session.id)
+      focusSearch()
+    } catch (error) {
+      setOperatorError(error instanceof Error ? error.message : "Nao foi possivel liberar o PDV.")
+    }
   }
 
   function setHeldSalesPersisted(next: HeldSale[]) {
@@ -657,6 +691,11 @@ export function PosSellPage() {
     setSaleError(null)
     if (cart.length === 0) {
       setSaleError("Adicione pelo menos um produto.")
+      return
+    }
+
+    if (!session?.employee_id || !operatorReady) {
+      setSaleError("Libere o PDV com a senha do operador do caixa.")
       return
     }
     setPayments([{ method: "cash", amount: String(finalTotal.toFixed(2)) }])
@@ -846,6 +885,11 @@ export function PosSellPage() {
       return
     }
 
+    if (!session.employee_id || !operatorReady) {
+      setSaleError("Libere o PDV com a senha do operador do caixa.")
+      return
+    }
+
     if (requiresAuthorization && managerAuthorization.trim().length < 3) {
       setSaleError("Informe a autorizacao para desconto ou alteracao de preco.")
       return
@@ -894,6 +938,8 @@ export function PosSellPage() {
         branch_id: branchId,
         session_id: session.id,
         post_id: session.post_id ?? null,
+        operator_employee_id: session.employee_id,
+        operator_password: operatorPassword,
         customer_id: selectedCustomerId || deliveryForm.customer_id || null,
         customer_name: customerName.trim() || null,
         sale_mode: saleMode,
@@ -1454,6 +1500,51 @@ export function PosSellPage() {
           </div>
         </div>
       </div>
+
+      <Dialog open={!operatorReady}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <LockKeyhole className="size-5" />
+              Liberar PDV
+            </DialogTitle>
+          </DialogHeader>
+          <form className="space-y-4" onSubmit={(event) => void handleOperatorUnlock(event)}>
+            <div className="rounded-lg border bg-slate-50 p-3 text-sm">
+              <div className="text-muted-foreground">Operador do caixa</div>
+              <div className="font-semibold">
+                {session.employees?.name ?? "Caixa sem operador"}
+              </div>
+            </div>
+            <label className="space-y-1 text-sm">
+              <span className="font-medium">Senha do PDV</span>
+              <Input
+                autoFocus
+                type="password"
+                value={operatorSessionId === session.id ? operatorPassword : ""}
+                onChange={(event) => {
+                  setOperatorSessionId(session.id)
+                  setOperatorUnlocked(false)
+                  setOperatorPassword(event.target.value)
+                }}
+              />
+            </label>
+            {operatorError ? (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {operatorError}
+              </div>
+            ) : null}
+            <DialogFooter>
+              <Button
+                type="submit"
+                disabled={verifyOperator.isPending || !session.employee_id}
+              >
+                Liberar venda
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={payDialogOpen} onOpenChange={setPayDialogOpen}>
         <DialogContent className="max-h-[92vh] max-w-3xl overflow-y-auto">

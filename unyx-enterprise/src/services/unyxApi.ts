@@ -73,6 +73,7 @@ export interface EmployeeImportInput {
   phone: string | null
   document: string | null
   notes: string | null
+  pos_password?: string | null
 }
 
 export interface ScheduleImportInput {
@@ -836,13 +837,14 @@ export async function createEmployee(
   profile: UserProfile,
   input: EmployeeImportInput
 ) {
+  const { pos_password, ...employeeInput } = input
   const payload = {
-    ...input,
-    name: input.name.trim(),
-    role: input.role?.trim() || null,
-    phone: input.phone?.trim() || null,
-    document: cleanDocument(input.document) || null,
-    notes: input.notes?.trim() || null,
+    ...employeeInput,
+    name: employeeInput.name.trim(),
+    role: employeeInput.role?.trim() || null,
+    phone: employeeInput.phone?.trim() || null,
+    document: cleanDocument(employeeInput.document) || null,
+    notes: employeeInput.notes?.trim() || null,
   }
 
   if (!payload.name) throw new Error("Informe o nome do colaborador.")
@@ -861,6 +863,10 @@ export async function createEmployee(
     .single()
 
   raise(error)
+
+  if (pos_password?.trim()) {
+    await setEmployeePosPassword(profile, data.id, pos_password)
+  }
 
   await createAuditLog(profile, {
     branch_id: data.branch_id,
@@ -882,8 +888,9 @@ export async function updateEmployee(
       Employee,
       "active" | "branch_id" | "sector_id" | "name" | "role" | "phone" | "document" | "notes"
     >
-  >
+  > & { pos_password?: string | null }
 ) {
+  const { pos_password, ...employeeInput } = input
   const { data: previous, error: previousError } = await supabase
     .from("employees")
     .select("*")
@@ -896,7 +903,7 @@ export async function updateEmployee(
     throw new Error("Colaborador nao encontrado.")
   }
 
-  const payload = { ...input }
+  const payload = { ...employeeInput }
 
   if (typeof payload.name === "string") {
     payload.name = payload.name.trim()
@@ -929,6 +936,10 @@ export async function updateEmployee(
     .single()
 
   raise(error)
+
+  if (pos_password?.trim()) {
+    await setEmployeePosPassword(profile, data.id, pos_password)
+  }
 
   await createAuditLog(profile, {
     branch_id: data.branch_id,
@@ -2206,6 +2217,7 @@ function isMissingPosFeature(error: { code?: string; message: string } | null) {
     message.includes("product_categories") ||
     message.includes("product_variants") ||
     message.includes("cash_sessions") ||
+    message.includes("employee_pos_credentials") ||
     message.includes("sale_items") ||
     message.includes("sale_payments") ||
     message.includes("pos_cash_movements") ||
@@ -2213,6 +2225,8 @@ function isMissingPosFeature(error: { code?: string; message: string } | null) {
     message.includes("manager_authorization") ||
     message.includes("sales_customer_id") ||
     message.includes("pos_open_cash_session") ||
+    message.includes("pos_set_operator_password") ||
+    message.includes("pos_verify_operator") ||
     message.includes("pos_complete_sale") ||
     message.includes("pos_close_cash_session") ||
     message.includes("pos_create_cash_movement")
@@ -3001,6 +3015,35 @@ export async function deleteProductVariant(profile: UserProfile, variantId: stri
   raise(error)
 }
 
+export async function setEmployeePosPassword(
+  _profile: UserProfile,
+  employeeId: string,
+  password: string
+) {
+  const { error } = await supabase.rpc("pos_set_operator_password", {
+    p_employee_id: employeeId,
+    p_password: password,
+    p_active: true,
+  })
+  if (isMissingPosFeature(error)) throw new Error(posFeatureMessage())
+  raise(error)
+}
+
+export async function verifyPosOperator(input: {
+  session_id: string
+  employee_id: string
+  password: string
+}) {
+  const { data, error } = await supabase.rpc("pos_verify_operator", {
+    p_session_id: input.session_id,
+    p_employee_id: input.employee_id,
+    p_password: input.password,
+  })
+  if (isMissingPosFeature(error)) throw new Error(posFeatureMessage())
+  raise(error)
+  return Array.isArray(data) ? data[0] ?? null : data
+}
+
 export async function getCurrentCashSession(
   branchId: string,
   status: CashSessionStatus = "open"
@@ -3068,6 +3111,8 @@ export interface CompleteSaleInput {
   branch_id: string
   session_id: string
   post_id: string | null
+  operator_employee_id: string
+  operator_password: string
   customer_id: string | null
   customer_name: string | null
   sale_mode: BusinessSegment
@@ -3095,6 +3140,8 @@ export async function completeSale(input: CompleteSaleInput) {
     p_branch_id:       input.branch_id,
     p_session_id:      input.session_id,
     p_post_id:         input.post_id,
+    p_operator_employee_id: input.operator_employee_id,
+    p_operator_password: input.operator_password,
     p_customer_id:     input.customer_id,
     p_items:           input.items,
     p_payments:        input.payments,

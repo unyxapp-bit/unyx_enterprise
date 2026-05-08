@@ -108,11 +108,15 @@ export function PosCashPage() {
       setOpenError("Selecione uma filial no topo da pagina.")
       return
     }
+    if (!openForm.employee_id) {
+      setOpenError("Selecione o operador responsavel pelo caixa.")
+      return
+    }
     try {
       await openSession.mutateAsync({
         branch_id: defaultBranchId,
         post_id: openForm.post_id || null,
-        employee_id: openForm.employee_id || null,
+        employee_id: openForm.employee_id,
         initial_amount: Number(openForm.initial_amount) || 0,
         notes: openForm.notes.trim() || null,
       })
@@ -398,7 +402,7 @@ export function PosCashPage() {
                   value={openForm.employee_id}
                   onChange={(e) => setOpenForm((p) => ({ ...p, employee_id: e.target.value }))}
                 >
-                  <option value="">Sem vincular operador</option>
+                  <option value="">Selecione o operador</option>
                   {activeEmployees.map((emp) => (
                     <option key={emp.id} value={emp.id}>
                       {emp.name}
