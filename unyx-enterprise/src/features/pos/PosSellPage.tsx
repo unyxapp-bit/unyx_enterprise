@@ -93,14 +93,6 @@ const saleModeIcon: Record<BusinessSegment, typeof Store> = {
   other: PackageCheck,
 }
 
-const saleModeOptions: BusinessSegment[] = [
-  "supermarket",
-  "restaurant",
-  "pharmacy",
-  "retail_store",
-  "other",
-]
-
 type DeliveryFormState = {
   customer_id: string
   customer_phone: string
@@ -323,11 +315,11 @@ export function PosSellPage() {
   const branchId = selectedBranchId ?? session?.branch_id ?? ""
   const organizationMode = organization.data?.segment ?? "retail_store"
 
-  const [modeOverride, setModeOverride] = useState<BusinessSegment | null>(null)
-  const saleMode = modeOverride ?? organizationMode
+  const saleMode = organizationMode
   const ModeIcon = saleModeIcon[saleMode]
 
   const [search, setSearch] = useState("")
+  const [productsExpanded, setProductsExpanded] = useState(false)
   const [categoryFilter, setCategoryFilter] = useState("all")
   const [cart, setCart] = useState<CartItem[]>([])
   const [customerName, setCustomerName] = useState("")
@@ -454,6 +446,10 @@ export function PosSellPage() {
       .slice(0, q ? 80 : 36)
   }, [categoryFilter, saleMode, search, sellableItems])
 
+  const hasProductSearch = search.trim().length > 0
+  const showProductList =
+    productsExpanded || hasProductSearch || categoryFilter !== "all"
+
   const heldSalesForBranch = useMemo(
     () => heldSales.filter((sale) => sale.branch_id === branchId),
     [branchId, heldSales]
@@ -568,6 +564,7 @@ export function PosSellPage() {
       ]
     })
     setSearch("")
+    setProductsExpanded(false)
     focusSearch()
   }
 
@@ -803,7 +800,6 @@ export function PosSellPage() {
     setCustomerName(held.customer_name)
     setSelectedCustomerId(held.selected_customer_id)
     setCartDiscount_(held.cart_discount)
-    setModeOverride(held.sale_mode)
     setDeliveryEnabled(held.delivery_enabled)
     setDeliveryForm(held.delivery_form)
     setHeldSalesPersisted(heldSales.filter((sale) => sale.id !== held.id))
@@ -1017,23 +1013,19 @@ export function PosSellPage() {
                     <Search className="size-5" />
                     Produtos
                   </CardTitle>
-                  <div className="flex flex-wrap gap-1">
-                    {saleModeOptions.map((mode) => {
-                      const Icon = saleModeIcon[mode]
-                      const active = mode === saleMode
-                      return (
-                        <Button
-                          key={mode}
-                          type="button"
-                          size="sm"
-                          variant={active ? "default" : "outline"}
-                          onClick={() => setModeOverride(mode)}
-                        >
-                          <Icon className="size-3.5" />
-                          {saleModeLabel[mode]}
-                        </Button>
-                      )
-                    })}
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="gap-1">
+                      <ModeIcon className="size-3" />
+                      {saleModeLabel[saleMode]}
+                    </Badge>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={productsExpanded ? "default" : "outline"}
+                      onClick={() => setProductsExpanded((current) => !current)}
+                    >
+                      {productsExpanded ? "Recolher" : "Mostrar"}
+                    </Button>
                   </div>
                 </div>
                 <div className="relative">
@@ -1076,7 +1068,11 @@ export function PosSellPage() {
                     {saleError}
                   </div>
                 ) : null}
-                {filteredProducts.length === 0 ? (
+                {!showProductList ? (
+                  <div className="rounded-lg border border-dashed bg-slate-50 px-3 py-6 text-center text-sm text-muted-foreground">
+                    Produtos recolhidos. Use a busca por codigo/nome ou clique em Mostrar.
+                  </div>
+                ) : filteredProducts.length === 0 ? (
                   <StateBlock title="Nenhum produto encontrado" />
                 ) : (
                   <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
