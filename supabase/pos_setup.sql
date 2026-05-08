@@ -4,7 +4,8 @@
 -- ======================================================
 
 -- Enums
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE SCHEMA IF NOT EXISTS extensions;
+CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;
 
 DO $$ BEGIN CREATE TYPE public.cash_session_status AS ENUM ('open','closed','cancelled');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
@@ -348,7 +349,7 @@ CREATE OR REPLACE FUNCTION public.pos_set_operator_password(
   p_active      boolean DEFAULT true
 )
 RETURNS void
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions
 AS $$
 DECLARE
   v_org_id uuid;
@@ -406,7 +407,7 @@ CREATE OR REPLACE FUNCTION public.pos_verify_operator(
   p_password     text
 )
 RETURNS TABLE(employee_id uuid, employee_name text)
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions
 AS $$
 DECLARE
   v_org_id uuid;
