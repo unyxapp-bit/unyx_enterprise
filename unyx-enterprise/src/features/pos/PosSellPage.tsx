@@ -46,6 +46,7 @@ import {
   useCreateDeliveryOrder,
   useCurrentCashSession,
   useCustomers,
+  useEmployees,
   useOrganization,
   useProductVariants,
   useProducts,
@@ -316,6 +317,7 @@ export function PosSellPage() {
   const searchRef = useRef<HTMLInputElement>(null)
   const session = currentSession.data ?? null
   const branchId = selectedBranchId ?? session?.branch_id ?? ""
+  const employees = useEmployees(branchId || null)
   const organizationMode = organization.data?.segment ?? "retail_store"
 
   const saleMode = organizationMode
@@ -350,6 +352,7 @@ export function PosSellPage() {
   const [saleError, setSaleError] = useState<string | null>(null)
   const [operatorUnlocked, setOperatorUnlocked] = useState(false)
   const [operatorSessionId, setOperatorSessionId] = useState("")
+  const [operatorEmployeeId, setOperatorEmployeeId] = useState("")
   const [operatorPassword, setOperatorPassword] = useState("")
   const [operatorError, setOperatorError] = useState<string | null>(null)
 
@@ -371,6 +374,30 @@ export function PosSellPage() {
       ),
     [branchId, customers.data]
   )
+
+  const operatorOptions = useMemo(() => {
+    const activeEmployees = (employees.data ?? []).filter(
+      (employee) =>
+        employee.active && (!branchId || employee.branch_id === branchId)
+    )
+
+    if (
+      session?.employee_id &&
+      !activeEmployees.some((employee) => employee.id === session.employee_id)
+    ) {
+      return [
+        ...activeEmployees,
+        {
+          id: session.employee_id,
+          name: session.employees?.name ?? "Operador do caixa",
+          branch_id: session.branch_id,
+          active: true,
+        },
+      ]
+    }
+
+    return activeEmployees
+  }, [branchId, employees.data, session])
 
   const variantsByProduct = useMemo(() => {
     const grouped = new Map<string, ProductVariant[]>()
@@ -477,6 +504,10 @@ export function PosSellPage() {
   const requiresPrescription = cart.some(itemHasPrescriptionRule)
   const totalUnits = cart.reduce((sum, item) => sum + item.quantity, 0)
   const operatorReady = operatorUnlocked && operatorSessionId === session?.id
+  const selectedOperatorEmployeeId =
+    operatorSessionId === session?.id && operatorEmployeeId
+      ? operatorEmployeeId
+      : session?.employee_id ?? ""
 
   function focusSearch() {
     window.setTimeout(() => searchRef.current?.focus(), 0)
@@ -484,8 +515,20 @@ export function PosSellPage() {
 
   async function handleOperatorUnlock(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!session?.employee_id) {
+    if (!session) {
+      setOperatorError("Abra um caixa antes de liberar o PDV.")
+      return
+    }
+    if (!session.employee_id) {
       setOperatorError("Este caixa foi aberto sem operador vinculado.")
+      return
+    }
+    if (!selectedOperatorEmployeeId) {
+      setOperatorError("Selecione o colaborador para acessar o PDV.")
+      return
+    }
+    if (selectedOperatorEmployeeId !== session.employee_id) {
+      setOperatorError("Este caixa foi aberto para outro colaborador.")
       return
     }
     if (!operatorPassword.trim()) {
@@ -497,11 +540,12 @@ export function PosSellPage() {
     try {
       await verifyOperator.mutateAsync({
         session_id: session.id,
-        employee_id: session.employee_id,
+        employee_id: selectedOperatorEmployeeId,
         password: operatorPassword,
       })
       setOperatorUnlocked(true)
       setOperatorSessionId(session.id)
+      setOperatorEmployeeId(selectedOperatorEmployeeId)
       focusSearch()
     } catch (error) {
       setOperatorError(error instanceof Error ? error.message : "Nao foi possivel liberar o PDV.")
@@ -1511,11 +1555,36 @@ export function PosSellPage() {
           </DialogHeader>
           <form className="space-y-4" onSubmit={(event) => void handleOperatorUnlock(event)}>
             <div className="rounded-lg border bg-slate-50 p-3 text-sm">
-              <div className="text-muted-foreground">Operador do caixa</div>
+              <div className="text-muted-foreground">Caixa aberto para</div>
               <div className="font-semibold">
                 {session.employees?.name ?? "Caixa sem operador"}
               </div>
             </div>
+            <label className="space-y-1 text-sm">
+              <span className="font-medium">Colaborador</span>
+              <select
+                className={fieldClass}
+                value={selectedOperatorEmployeeId}
+                onChange={(event) => {
+                  setOperatorSessionId(session.id)
+                  setOperatorUnlocked(false)
+                  setOperatorEmployeeId(event.target.value)
+                  setOperatorPassword("")
+                  setOperatorError(null)
+                }}
+                disabled={!session || employees.isLoading}
+              >
+                <option value="">Selecione o colaborador</option>
+                {operatorOptions.map((employee) => (
+                  <option key={employee.id} value={employee.id}>
+                    {employee.name}
+                  </option>
+                ))}
+              </select>
+              <span className="block text-xs text-muted-foreground">
+                Para liberar o PDV, selecione o mesmo colaborador responsavel pelo caixa.
+              </span>
+            </label>
             <label className="space-y-1 text-sm">
               <span className="font-medium">Senha do PDV</span>
               <Input
