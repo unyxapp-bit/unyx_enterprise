@@ -421,10 +421,10 @@ BEGIN
   SELECT id INTO v_user_id FROM user_profiles
     WHERE auth_user_id = auth.uid() AND organization_id = v_org_id;
 
-  SELECT id, branch_id, employee_id, status
+  SELECT cs.id, cs.branch_id, cs.employee_id, cs.status
     INTO v_session
-  FROM cash_sessions
-  WHERE id = p_session_id AND organization_id = v_org_id;
+  FROM cash_sessions cs
+  WHERE cs.id = p_session_id AND cs.organization_id = v_org_id;
 
   IF NOT FOUND OR v_session.status <> 'open' THEN
     RAISE EXCEPTION 'Caixa nao encontrado ou encerrado.';
