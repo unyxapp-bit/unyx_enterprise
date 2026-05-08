@@ -44,7 +44,7 @@ import {
   useCompleteSale,
   useCreateCustomer,
   useCreateDeliveryOrder,
-  useCurrentCashSession,
+  useCashSessions,
   useCustomers,
   useEmployees,
   useOrganization,
@@ -52,11 +52,16 @@ import {
   useProducts,
   useVerifyPosOperator,
 } from "@/hooks/useUnyxData"
-import { formatCurrency } from "@/lib/format"
+import { formatCurrency, formatDateTimeBR } from "@/lib/format"
+import {
+  getSelectedCashSessionId,
+  setSelectedCashSessionId as persistSelectedCashSessionId,
+} from "@/lib/posSession"
 import { formatCep, lookupCep } from "@/services/viaCep"
 import { useAppStore } from "@/store/useAppStore"
 import type {
   BusinessSegment,
+  CashSession,
   Customer,
   PaymentMethod,
   Product,
@@ -302,9 +307,18 @@ function formatQuantity(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(3).replace(/0+$/, "").replace(/\.$/, "")
 }
 
+function cashSessionTitle(session: CashSession) {
+  return session.operational_posts?.name ?? "Caixa sem posto"
+}
+
+function cashSessionDescription(session: CashSession) {
+  const operator = session.employees?.name ?? "Operador nao informado"
+  return `${operator} - Aberto em ${formatDateTimeBR(session.opened_at)}`
+}
+
 export function PosSellPage() {
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
-  const currentSession = useCurrentCashSession()
+  const cashSessions = useCashSessions(selectedBranchId ?? null)
   const organization = useOrganization()
   const products = useProducts()
   const productVariants = useProductVariants()
@@ -315,7 +329,41 @@ export function PosSellPage() {
   const verifyOperator = useVerifyPosOperator()
 
   const searchRef = useRef<HTMLInputElement>(null)
-  const session = currentSession.data ?? null
+  const [selectedCashSessionIdOverride, setSelectedCashSessionIdOverride] = useState("")
+  const openCashSessions = useMemo(
+    () =>
+      (cashSessions.data ?? []).filter(
+        (cashSession) =>
+          cashSession.status === "open" &&
+          (!selectedBranchId || cashSession.branch_id === selectedBranchId)
+      ),
+    [cashSessions.data, selectedBranchId]
+  )
+  const selectedCashSessionId = useMemo(() => {
+    if (
+      selectedCashSessionIdOverride &&
+      openCashSessions.some(
+        (cashSession) => cashSession.id === selectedCashSessionIdOverride
+      )
+    ) {
+      return selectedCashSessionIdOverride
+    }
+
+    const branchKey = selectedBranchId ?? openCashSessions[0]?.branch_id ?? ""
+    const storedSessionId = branchKey ? getSelectedCashSessionId(branchKey) : ""
+    if (
+      storedSessionId &&
+      openCashSessions.some((cashSession) => cashSession.id === storedSessionId)
+    ) {
+      return storedSessionId
+    }
+
+    return openCashSessions.length === 1 ? openCashSessions[0].id : ""
+  }, [openCashSessions, selectedBranchId, selectedCashSessionIdOverride])
+  const session =
+    openCashSessions.find(
+      (cashSession) => cashSession.id === selectedCashSessionId
+    ) ?? null
   const branchId = selectedBranchId ?? session?.branch_id ?? ""
   const employees = useEmployees(branchId || null)
   const organizationMode = organization.data?.segment ?? "retail_store"
@@ -333,6 +381,7 @@ export function PosSellPage() {
   const [managerAuthorization, setManagerAuthorization] = useState("")
   const [prescriptionConfirmed, setPrescriptionConfirmed] = useState(false)
   const [payDialogOpen, setPayDialogOpen] = useState(false)
+  const [cashSessionDialogOpen, setCashSessionDialogOpen] = useState(false)
   const [quickCustomerOpen, setQuickCustomerOpen] = useState(false)
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
   const [cancelReason, setCancelReason] = useState("")
@@ -511,6 +560,19 @@ export function PosSellPage() {
 
   function focusSearch() {
     window.setTimeout(() => searchRef.current?.focus(), 0)
+  }
+
+  function chooseCashSession(cashSession: CashSession) {
+    setSelectedCashSessionIdOverride(cashSession.id)
+    persistSelectedCashSessionId(cashSession.branch_id, cashSession.id)
+    setCashSessionDialogOpen(false)
+    setOperatorUnlocked(false)
+    setOperatorSessionId("")
+    setOperatorEmployeeId("")
+    setOperatorPassword("")
+    setOperatorError(null)
+    setSaleError(null)
+    focusSearch()
   }
 
   async function handleOperatorUnlock(event: FormEvent<HTMLFormElement>) {
@@ -982,7 +1044,7 @@ export function PosSellPage() {
         branch_id: branchId,
         session_id: session.id,
         post_id: session.post_id ?? null,
-        operator_employee_id: session.employee_id,
+        operator_employee_id: selectedOperatorEmployeeId,
         operator_password: operatorPassword,
         customer_id: selectedCustomerId || deliveryForm.customer_id || null,
         customer_name: customerName.trim() || null,
@@ -1054,7 +1116,7 @@ export function PosSellPage() {
     }
   }
 
-  if (currentSession.isLoading) {
+  if (cashSessions.isLoading) {
     return (
       <main className="p-6">
         <StateBlock type="loading" title="Verificando caixa" />
@@ -1062,7 +1124,7 @@ export function PosSellPage() {
     )
   }
 
-  if (!session) {
+  if (!session && openCashSessions.length === 0) {
     return (
       <>
         <PageHeader title="PDV - Venda" description="Registre vendas pelo caixa." />
@@ -1070,6 +1132,42 @@ export function PosSellPage() {
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
             Nenhum caixa aberto. Acesse <strong>Caixa</strong> para abrir um caixa antes de registrar vendas.
           </div>
+        </div>
+      </>
+    )
+  }
+
+  if (!session) {
+    return (
+      <>
+        <PageHeader title="PDV - Venda" description="Escolha o caixa para registrar vendas." />
+        <div className="p-6">
+          <Card className="border bg-white shadow-sm">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Store className="size-5" />
+                Selecionar caixa do PDV
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {openCashSessions.map((cashSession) => (
+                <button
+                  key={cashSession.id}
+                  type="button"
+                  onClick={() => chooseCashSession(cashSession)}
+                  className="flex w-full items-center justify-between rounded-lg border bg-white px-4 py-3 text-left transition-colors hover:border-slate-400 hover:bg-slate-50"
+                >
+                  <div>
+                    <div className="font-medium">{cashSessionTitle(cashSession)}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {cashSessionDescription(cashSession)}
+                    </div>
+                  </div>
+                  <Badge variant="default">Aberto</Badge>
+                </button>
+              ))}
+            </CardContent>
+          </Card>
         </div>
       </>
     )
@@ -1086,6 +1184,14 @@ export function PosSellPage() {
               <ModeIcon className="size-3" />
               {saleModeLabel[saleMode]}
             </Badge>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setCashSessionDialogOpen(true)}
+            >
+              <Store className="size-4" />
+              {cashSessionTitle(session)}
+            </Button>
             <Badge variant="default" className="text-sm">
               Caixa aberto
             </Badge>
@@ -1544,6 +1650,43 @@ export function PosSellPage() {
           </div>
         </div>
       </div>
+
+      <Dialog open={cashSessionDialogOpen} onOpenChange={setCashSessionDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Store className="size-5" />
+              Escolher caixa do PDV
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            {openCashSessions.map((cashSession) => (
+              <button
+                key={cashSession.id}
+                type="button"
+                onClick={() => chooseCashSession(cashSession)}
+                className={`flex w-full items-center justify-between rounded-lg border px-4 py-3 text-left transition-colors hover:border-slate-400 ${
+                  cashSession.id === session.id
+                    ? "border-slate-900 bg-slate-50"
+                    : "bg-white"
+                }`}
+              >
+                <div>
+                  <div className="font-medium">{cashSessionTitle(cashSession)}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {cashSessionDescription(cashSession)}
+                  </div>
+                </div>
+                {cashSession.id === session.id ? (
+                  <Badge variant="default">Selecionado</Badge>
+                ) : (
+                  <Badge variant="outline">Aberto</Badge>
+                )}
+              </button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!operatorReady}>
         <DialogContent>

@@ -574,11 +574,11 @@ BEGIN
 
   INSERT INTO sales (
     organization_id, branch_id, cash_session_id, post_id, user_profile_id,
-    customer_id, customer_name, sale_mode, subtotal, discount_amount, total_amount,
+    employee_id, customer_id, customer_name, sale_mode, subtotal, discount_amount, total_amount,
     status, sold_at, manager_authorization, notes
   ) VALUES (
     v_org_id, p_branch_id, p_session_id, p_post_id, v_user_id,
-    p_customer_id, p_customer_name, COALESCE(p_sale_mode, 'retail_store'),
+    p_operator_employee_id, p_customer_id, p_customer_name, COALESCE(p_sale_mode, 'retail_store'),
     v_subtotal, COALESCE(p_discount_amount, 0), v_total,
     'completed', now(), NULLIF(btrim(p_manager_authorization), ''), p_notes
   ) RETURNING id INTO v_sale_id;

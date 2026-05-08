@@ -1470,6 +1470,7 @@ export function useCashSessions(branchId?: string | null) {
     queryKey: ["pos-sessions", profile?.organization_id, effectiveBranchId],
     queryFn: () => listCashSessions(effectiveBranchId),
     enabled: Boolean(profile),
+    refetchInterval: 30_000,
   })
 }
 
@@ -1813,6 +1814,7 @@ export function useCompleteSale() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["pos-sales"] })
       await queryClient.invalidateQueries({ queryKey: ["pos-current-session"] })
+      await queryClient.invalidateQueries({ queryKey: ["pos-sessions"] })
       await queryClient.invalidateQueries({ queryKey: ["pos-cash-movements"] })
       await queryClient.invalidateQueries({ queryKey: ["pos-products"] })
       await queryClient.invalidateQueries({ queryKey: ["pos-product-variants"] })
@@ -1848,6 +1850,7 @@ export function useCreatePosCashMovement() {
     onSuccess: async (_data, variables) => {
       await queryClient.invalidateQueries({ queryKey: ["pos-cash-movements"] })
       await queryClient.invalidateQueries({ queryKey: ["pos-current-session"] })
+      await queryClient.invalidateQueries({ queryKey: ["pos-sessions"] })
       await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
       const labels: Record<string, string> = {
         sangria: "Sangria registrada.",

@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import type { FormEvent } from "react"
 import {
   ArrowDownCircle,
@@ -30,15 +30,19 @@ import {
   useCashSessions,
   useCloseCashSession,
   useCreatePosCashMovement,
-  useCurrentCashSession,
   useEmployees,
   useOpenCashSession,
   useOperationalPosts,
   usePosCashMovements,
 } from "@/hooks/useUnyxData"
 import { formatCurrency, formatDateTimeBR } from "@/lib/format"
+import {
+  clearSelectedCashSessionId,
+  getSelectedCashSessionId,
+  setSelectedCashSessionId as persistSelectedCashSessionId,
+} from "@/lib/posSession"
 import { useAppStore } from "@/store/useAppStore"
-import type { PosCashMovementType } from "@/types/domain"
+import type { CashSession, PosCashMovementType } from "@/types/domain"
 
 const fieldClass =
   "h-8 w-full rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
@@ -58,23 +62,65 @@ const sessionStatusLabel: Record<string, string> = {
   cancelled: "Cancelado",
 }
 
+function cashSessionTitle(session: CashSession) {
+  return session.operational_posts?.name ?? "Caixa sem posto"
+}
+
+function cashSessionDetail(session: CashSession) {
+  return session.employees?.name ?? "Operador nao informado"
+}
+
 export function PosCashPage() {
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
   const branches = useBranches()
   const employees = useEmployees(null)
   const posts = useOperationalPosts()
-  const currentSession = useCurrentCashSession()
-  const sessions = useCashSessions()
+  const defaultBranchId = selectedBranchId ?? branches.data?.[0]?.id ?? ""
+  const sessions = useCashSessions(defaultBranchId || null)
   const openSession = useOpenCashSession()
   const closeSession = useCloseCashSession()
   const createMovement = useCreatePosCashMovement()
 
-  const session = currentSession.data ?? null
-  const movements = usePosCashMovements(session?.id)
+  const [selectedCashSessionIdOverride, setSelectedCashSessionIdOverride] = useState("")
+  const openSessions = useMemo(
+    () =>
+      (sessions.data ?? []).filter(
+        (cashSession) =>
+          cashSession.status === "open" &&
+          (!defaultBranchId || cashSession.branch_id === defaultBranchId)
+      ),
+    [defaultBranchId, sessions.data]
+  )
+  const selectedCashSessionId = useMemo(() => {
+    if (
+      selectedCashSessionIdOverride &&
+      openSessions.some((cashSession) => cashSession.id === selectedCashSessionIdOverride)
+    ) {
+      return selectedCashSessionIdOverride
+    }
 
-  const defaultBranchId = selectedBranchId ?? branches.data?.[0]?.id ?? ""
+    const storedSessionId = defaultBranchId
+      ? getSelectedCashSessionId(defaultBranchId)
+      : ""
+    if (
+      storedSessionId &&
+      openSessions.some((cashSession) => cashSession.id === storedSessionId)
+    ) {
+      return storedSessionId
+    }
+
+    return openSessions[0]?.id ?? ""
+  }, [defaultBranchId, openSessions, selectedCashSessionIdOverride])
+  const session =
+    openSessions.find(
+      (cashSession) => cashSession.id === selectedCashSessionId
+    ) ?? null
+  const movements = usePosCashMovements(session?.id)
   const activePosts = (posts.data ?? []).filter(
     (p) => p.active && (defaultBranchId ? p.branch_id === defaultBranchId : true)
+  )
+  const openPostIds = new Set(
+    openSessions.map((cashSession) => cashSession.post_id).filter(Boolean)
   )
   const activeEmployees = (employees.data ?? []).filter(
     (e) => e.active && (defaultBranchId ? e.branch_id === defaultBranchId : true)
@@ -101,6 +147,16 @@ export function PosCashPage() {
   })
   const [movError, setMovError] = useState<string | null>(null)
 
+  function chooseCashSession(cashSessionId: string) {
+    const nextSession = openSessions.find(
+      (cashSession) => cashSession.id === cashSessionId
+    )
+    setSelectedCashSessionIdOverride(cashSessionId)
+    if (nextSession) {
+      persistSelectedCashSessionId(nextSession.branch_id, nextSession.id)
+    }
+  }
+
   async function handleOpenSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setOpenError(null)
@@ -113,13 +169,15 @@ export function PosCashPage() {
       return
     }
     try {
-      await openSession.mutateAsync({
+      const openedSessionId = await openSession.mutateAsync({
         branch_id: defaultBranchId,
         post_id: openForm.post_id || null,
         employee_id: openForm.employee_id,
         initial_amount: Number(openForm.initial_amount) || 0,
         notes: openForm.notes.trim() || null,
       })
+      setSelectedCashSessionIdOverride(openedSessionId)
+      persistSelectedCashSessionId(defaultBranchId, openedSessionId)
       setOpenDialogOpen(false)
       setOpenForm({ post_id: "", employee_id: "", initial_amount: "", notes: "" })
     } catch (error) {
@@ -132,11 +190,17 @@ export function PosCashPage() {
     if (!session) return
     setCloseError(null)
     try {
+      const closingSessionId = session.id
+      const closingBranchId = session.branch_id
       await closeSession.mutateAsync({
-        session_id: session.id,
+        session_id: closingSessionId,
         final_amount: Number(closeForm.final_amount) || 0,
         notes: closeForm.notes.trim() || null,
       })
+      if (selectedCashSessionId === closingSessionId) {
+        setSelectedCashSessionIdOverride("")
+        clearSelectedCashSessionId(closingBranchId)
+      }
       setCloseDialogOpen(false)
       setCloseForm({ final_amount: "", notes: "" })
     } catch (error) {
@@ -167,7 +231,7 @@ export function PosCashPage() {
     }
   }
 
-  const isLoading = currentSession.isLoading || sessions.isLoading
+  const isLoading = sessions.isLoading
 
   return (
     <>
@@ -180,12 +244,15 @@ export function PosCashPage() {
               variant="outline"
               size="icon"
               onClick={() => {
-                void currentSession.refetch()
                 void sessions.refetch()
               }}
               aria-label="Atualizar caixa"
             >
               <RefreshCw className="size-4" />
+            </Button>
+            <Button onClick={() => setOpenDialogOpen(true)} disabled={!defaultBranchId}>
+              <Unlock className="size-4" />
+              Abrir caixa
             </Button>
             {session ? (
               <>
@@ -198,12 +265,7 @@ export function PosCashPage() {
                   Fechar caixa
                 </Button>
               </>
-            ) : (
-              <Button onClick={() => setOpenDialogOpen(true)} disabled={!defaultBranchId}>
-                <Unlock className="size-4" />
-                Abrir caixa
-              </Button>
-            )}
+            ) : null}
           </div>
         }
       />
@@ -213,6 +275,48 @@ export function PosCashPage() {
           <StateBlock type="loading" title="Carregando caixa" />
         ) : (
           <>
+            {openSessions.length > 0 ? (
+              <Card className="border bg-white shadow-sm">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Banknote className="size-5" />
+                    Caixas abertos nesta filial
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {openSessions.map((cashSession) => (
+                      <button
+                        key={cashSession.id}
+                        type="button"
+                        onClick={() => chooseCashSession(cashSession.id)}
+                        className={`rounded-lg border px-4 py-3 text-left transition-colors hover:border-slate-400 ${
+                          cashSession.id === session?.id
+                            ? "border-slate-900 bg-slate-50"
+                            : "bg-white"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="font-medium">{cashSessionTitle(cashSession)}</div>
+                          <Badge
+                            variant={cashSession.id === session?.id ? "default" : "outline"}
+                          >
+                            {cashSession.id === session?.id ? "Selecionado" : "Aberto"}
+                          </Badge>
+                        </div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {cashSessionDetail(cashSession)}
+                        </div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          Aberto em {formatDateTimeBR(cashSession.opened_at)}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            ) : null}
+
             {session ? (
               <>
                 <BentoGrid>
@@ -240,7 +344,7 @@ export function PosCashPage() {
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <Banknote className="size-5" />
-                      Movimentos do caixa atual
+                      Movimentos - {cashSessionTitle(session)}
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
@@ -293,7 +397,9 @@ export function PosCashPage() {
               </>
             ) : (
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-                Nenhum caixa aberto para esta filial. Abra o caixa para comecar a registrar vendas.
+                {openSessions.length > 0
+                  ? "Selecione um caixa aberto para ver saldo, movimentos e fechamento."
+                  : "Nenhum caixa aberto para esta filial. Abra um caixa para comecar a registrar vendas."}
               </div>
             )}
 
@@ -313,6 +419,8 @@ export function PosCashPage() {
                       <thead>
                         <tr className="border-b text-left text-muted-foreground">
                           <th className="px-4 py-3 font-medium">Abertura</th>
+                          <th className="px-4 py-3 font-medium">Posto</th>
+                          <th className="px-4 py-3 font-medium">Operador</th>
                           <th className="px-4 py-3 font-medium">Fechamento</th>
                           <th className="px-4 py-3 font-medium">Inicial</th>
                           <th className="px-4 py-3 font-medium">Esperado</th>
@@ -324,6 +432,8 @@ export function PosCashPage() {
                         {(sessions.data ?? []).map((s) => (
                           <tr key={s.id} className="border-b last:border-0 hover:bg-slate-50">
                             <td className="px-4 py-3">{formatDateTimeBR(s.opened_at)}</td>
+                            <td className="px-4 py-3">{cashSessionTitle(s)}</td>
+                            <td className="px-4 py-3">{cashSessionDetail(s)}</td>
                             <td className="px-4 py-3">
                               {s.closed_at ? formatDateTimeBR(s.closed_at) : "-"}
                             </td>
@@ -386,8 +496,13 @@ export function PosCashPage() {
                 >
                   <option value="">Sem posto</option>
                   {activePosts.map((post) => (
-                    <option key={post.id} value={post.id}>
+                    <option
+                      key={post.id}
+                      value={post.id}
+                      disabled={openPostIds.has(post.id)}
+                    >
                       {post.name}
+                      {openPostIds.has(post.id) ? " (ja aberto)" : ""}
                     </option>
                   ))}
                 </select>
