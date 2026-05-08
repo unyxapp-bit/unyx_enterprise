@@ -10,6 +10,8 @@ import {
   copySchedulesFromDate,
   createPosCashMovement,
   createProduct,
+  createProductCategory,
+  createProductVariant,
   allocatePost,
   confirmCashMovement,
   createBranch,
@@ -23,6 +25,9 @@ import {
   createSector,
   createTrainingItem,
   deactivateEmployees,
+  deleteProduct,
+  deleteProductCategory,
+  deleteProductVariant,
   deleteEmployees,
   deleteDeliveryOrder,
   deleteSchedulesBulk,
@@ -39,6 +44,8 @@ import {
   listCashSessions,
   listOrganizationModules,
   listPosCashMovements,
+  listProductCategories,
+  listProductVariants,
   listProducts,
   listSaleItems,
   listSalePayments,
@@ -46,6 +53,8 @@ import {
   openCashSession,
   setupSegmentDefaults,
   updateProduct,
+  updateProductCategory,
+  updateProductVariant,
   listAllAuditLogs,
   listAttendanceEvents,
   listAuditLogs,
@@ -101,6 +110,8 @@ import type {
   DeliveryOrderInput,
   EmployeeImportInput,
   ProductInput,
+  ProductCategoryInput,
+  ProductVariantInput,
   ScheduleImportInput,
 } from "@/services/unyxApi"
 import type {
@@ -1411,6 +1422,26 @@ export function useProducts(branchId?: string | null) {
   })
 }
 
+export function useProductCategories(branchId?: string | null) {
+  const { profile } = useAuth()
+  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
+  const effectiveBranchId = arguments.length > 0 ? branchId ?? null : selectedBranchId
+  return useQuery({
+    queryKey: ["pos-categories", profile?.organization_id, effectiveBranchId],
+    queryFn: () => listProductCategories(effectiveBranchId),
+    enabled: Boolean(profile),
+  })
+}
+
+export function useProductVariants() {
+  const { profile } = useAuth()
+  return useQuery({
+    queryKey: ["pos-product-variants", profile?.organization_id],
+    queryFn: () => listProductVariants(),
+    enabled: Boolean(profile),
+  })
+}
+
 export function useCurrentCashSession(branchId?: string | null) {
   const { profile } = useAuth()
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
@@ -1506,6 +1537,109 @@ export function useUpdateProduct() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["pos-products"] })
       toast.success("Produto atualizado.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useDeleteProduct() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+  return useMutation({
+    mutationFn: (productId: string) => deleteProduct(profile, productId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["pos-products"] })
+      await queryClient.invalidateQueries({ queryKey: ["pos-product-variants"] })
+      toast.success("Produto excluido.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useCreateProductCategory() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+  return useMutation({
+    mutationFn: (input: ProductCategoryInput) => createProductCategory(profile, input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["pos-categories"] })
+      await queryClient.invalidateQueries({ queryKey: ["pos-products"] })
+      toast.success("Categoria cadastrada.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useUpdateProductCategory() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+  return useMutation({
+    mutationFn: (input: {
+      categoryId: string
+      values: Partial<ProductCategoryInput & { active: boolean }>
+    }) => updateProductCategory(profile, input.categoryId, input.values),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["pos-categories"] })
+      await queryClient.invalidateQueries({ queryKey: ["pos-products"] })
+      toast.success("Categoria atualizada.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useDeleteProductCategory() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+  return useMutation({
+    mutationFn: (categoryId: string) => deleteProductCategory(profile, categoryId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["pos-categories"] })
+      await queryClient.invalidateQueries({ queryKey: ["pos-products"] })
+      toast.success("Categoria excluida.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useCreateProductVariant() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+  return useMutation({
+    mutationFn: (input: ProductVariantInput) => createProductVariant(profile, input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["pos-product-variants"] })
+      await queryClient.invalidateQueries({ queryKey: ["pos-products"] })
+      toast.success("Variacao cadastrada.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useUpdateProductVariant() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+  return useMutation({
+    mutationFn: (input: {
+      variantId: string
+      values: Partial<ProductVariantInput & { active: boolean }>
+    }) => updateProductVariant(profile, input.variantId, input.values),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["pos-product-variants"] })
+      await queryClient.invalidateQueries({ queryKey: ["pos-products"] })
+      toast.success("Variacao atualizada.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useDeleteProductVariant() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+  return useMutation({
+    mutationFn: (variantId: string) => deleteProductVariant(profile, variantId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["pos-product-variants"] })
+      toast.success("Variacao excluida.")
     },
     onError: (error) => { toast.error(error.message) },
   })
@@ -1608,6 +1742,8 @@ export function useCompleteSale() {
       await queryClient.invalidateQueries({ queryKey: ["pos-sales"] })
       await queryClient.invalidateQueries({ queryKey: ["pos-current-session"] })
       await queryClient.invalidateQueries({ queryKey: ["pos-cash-movements"] })
+      await queryClient.invalidateQueries({ queryKey: ["pos-products"] })
+      await queryClient.invalidateQueries({ queryKey: ["pos-product-variants"] })
       await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
       toast.success("Venda finalizada.")
     },

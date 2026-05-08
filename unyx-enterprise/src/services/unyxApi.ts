@@ -38,6 +38,10 @@ import type {
   PosCashMovementType,
   PostAllocation,
   Product,
+  ProductCategory,
+  ProductCategorySegment,
+  ProductKind,
+  ProductVariant,
   Sale,
   SaleItem,
   SalePayment,
@@ -2197,6 +2201,8 @@ function isMissingPosFeature(error: { code?: string; message: string } | null) {
   if (!error) return false
   const message = error.message.toLowerCase()
   const mentionsPos =
+    message.includes("product_categories") ||
+    message.includes("product_variants") ||
     message.includes("cash_sessions") ||
     message.includes("sale_items") ||
     message.includes("sale_payments") ||
@@ -2247,14 +2253,45 @@ function deliveryFeatureMessage() {
 
 export interface ProductInput {
   branch_id: string | null
+  category_id: string | null
   name: string
+  description: string | null
   barcode: string | null
   sku: string | null
   category: string | null
+  brand: string | null
+  product_kind: ProductKind
+  size_label: string | null
+  dosage: string | null
   unit: string
   price: number
   cost_price: number | null
   stock_quantity: number
+  min_stock_quantity: number
+  track_inventory: boolean
+  allow_fractional_quantity: boolean
+  perishable: boolean
+  prescription_required: boolean
+  controlled_substance: boolean
+  preparation_time_minutes: number | null
+}
+
+export interface ProductCategoryInput {
+  branch_id: string | null
+  name: string
+  description: string | null
+  segment: ProductCategorySegment
+}
+
+export interface ProductVariantInput {
+  product_id: string
+  name: string
+  barcode: string | null
+  sku: string | null
+  price: number
+  cost_price: number | null
+  stock_quantity: number
+  sort_order: number
 }
 
 export interface DeliveryOrderInput {
@@ -2341,6 +2378,105 @@ function deliveryStatusTimestampPatch(
   return { delivered_at: null, cancelled_at: null }
 }
 
+async function validateProductCategory(
+  profile: UserProfile,
+  categoryId: string | null | undefined,
+  branchId: string | null | undefined
+) {
+  if (!categoryId) return
+
+  const { data: category, error } = await supabase
+    .from("product_categories")
+    .select("id, organization_id, branch_id, active")
+    .eq("id", categoryId)
+    .maybeSingle()
+
+  if (isMissingPosFeature(error)) throw new Error(posFeatureMessage())
+  raise(error)
+
+  if (
+    !category ||
+    category.organization_id !== profile.organization_id ||
+    !category.active
+  ) {
+    throw new Error("Categoria invalida para este produto.")
+  }
+
+  if (category.branch_id && category.branch_id !== branchId) {
+    throw new Error("A categoria selecionada pertence a outra filial.")
+  }
+}
+
+async function getProductForMutation(profile: UserProfile, productId: string) {
+  const { data, error } = await supabase
+    .from("products")
+    .select("*")
+    .eq("id", productId)
+    .maybeSingle()
+
+  if (isMissingPosFeature(error)) throw new Error(posFeatureMessage())
+  raise(error)
+
+  if (!data || data.organization_id !== profile.organization_id) {
+    throw new Error("Produto nao encontrado.")
+  }
+
+  return data as Product
+}
+
+function normalizeProductInput(input: ProductInput) {
+  const name = input.name.trim()
+  if (!name) throw new Error("Informe o nome do produto.")
+
+  return {
+    ...input,
+    name,
+    description: input.description?.trim() || null,
+    barcode: input.barcode?.trim() || null,
+    sku: input.sku?.trim() || null,
+    category: input.category?.trim() || null,
+    brand: input.brand?.trim() || null,
+    size_label: input.size_label?.trim() || null,
+    dosage: input.dosage?.trim() || null,
+    unit: input.unit.trim() || "un",
+    price: Math.max(0, Number(input.price) || 0),
+    cost_price: input.cost_price == null ? null : Math.max(0, Number(input.cost_price) || 0),
+    stock_quantity: Math.max(0, Number(input.stock_quantity) || 0),
+    min_stock_quantity: Math.max(0, Number(input.min_stock_quantity) || 0),
+    preparation_time_minutes:
+      input.preparation_time_minutes == null
+        ? null
+        : Math.max(0, Number(input.preparation_time_minutes) || 0),
+  }
+}
+
+function normalizeCategoryInput(input: ProductCategoryInput) {
+  const name = input.name.trim()
+  if (!name) throw new Error("Informe o nome da categoria.")
+
+  return {
+    ...input,
+    name,
+    description: input.description?.trim() || null,
+  }
+}
+
+function normalizeVariantInput(input: ProductVariantInput) {
+  const name = input.name.trim()
+  if (!name) throw new Error("Informe o nome da variacao.")
+
+  return {
+    ...input,
+    name,
+    barcode: input.barcode?.trim() || null,
+    sku: input.sku?.trim() || null,
+    price: Math.max(0, Number(input.price) || 0),
+    cost_price: input.cost_price == null ? null : Math.max(0, Number(input.cost_price) || 0),
+    stock_quantity: Math.max(0, Number(input.stock_quantity) || 0),
+    sort_order: Number(input.sort_order) || 0,
+  }
+}
+
 export async function listProducts(branchId?: string | null) {
   let query = supabase
     .from("products")
@@ -2354,12 +2490,104 @@ export async function listProducts(branchId?: string | null) {
   return (data ?? []) as Product[]
 }
 
+export async function listProductCategories(branchId?: string | null) {
+  let query = supabase
+    .from("product_categories")
+    .select("*")
+    .order("active", { ascending: false })
+    .order("name")
+
+  if (branchId) query = query.or(`branch_id.is.null,branch_id.eq.${branchId}`)
+
+  const { data, error } = await query
+  if (isMissingPosFeature(error)) throw new Error(posFeatureMessage())
+  raise(error)
+
+  return (data ?? []) as ProductCategory[]
+}
+
+export async function createProductCategory(
+  profile: UserProfile,
+  input: ProductCategoryInput
+) {
+  const payload = normalizeCategoryInput(input)
+  if (payload.branch_id) await validateBranchAndSector(profile, payload.branch_id)
+
+  const { data, error } = await supabase
+    .from("product_categories")
+    .insert({
+      ...payload,
+      organization_id: profile.organization_id,
+    })
+    .select("*")
+    .single()
+
+  if (isMissingPosFeature(error)) throw new Error(posFeatureMessage())
+  raise(error)
+
+  return data as ProductCategory
+}
+
+export async function updateProductCategory(
+  profile: UserProfile,
+  categoryId: string,
+  input: Partial<ProductCategoryInput & { active: boolean }>
+) {
+  if (input.branch_id) await validateBranchAndSector(profile, input.branch_id)
+
+  const payload = {
+    ...input,
+    name: input.name?.trim(),
+    description: input.description === undefined ? undefined : input.description?.trim() || null,
+    updated_at: new Date().toISOString(),
+  }
+
+  const { data, error } = await supabase
+    .from("product_categories")
+    .update(payload)
+    .eq("id", categoryId)
+    .eq("organization_id", profile.organization_id)
+    .select("*")
+    .single()
+
+  if (isMissingPosFeature(error)) throw new Error(posFeatureMessage())
+  raise(error)
+
+  return data as ProductCategory
+}
+
+export async function deleteProductCategory(profile: UserProfile, categoryId: string) {
+  const { error } = await supabase
+    .from("product_categories")
+    .delete()
+    .eq("id", categoryId)
+    .eq("organization_id", profile.organization_id)
+
+  if (isMissingPosFeature(error)) throw new Error(posFeatureMessage())
+  raise(error)
+}
+
+export async function listProductVariants() {
+  const { data, error } = await supabase
+    .from("product_variants")
+    .select("*, products(name, branch_id, track_inventory)")
+    .order("sort_order")
+    .order("name")
+
+  if (isMissingPosFeature(error)) throw new Error(posFeatureMessage())
+  raise(error)
+
+  return (data ?? []) as ProductVariant[]
+}
+
 export async function createProduct(profile: UserProfile, input: ProductInput) {
-  const name = input.name.trim()
-  if (!name) throw new Error("Informe o nome do produto.")
+  const payload = normalizeProductInput(input)
+  if (payload.branch_id) await validateBranchAndSector(profile, payload.branch_id)
+  await validateProductCategory(profile, payload.category_id, payload.branch_id)
+
   const { data, error } = await supabase
     .from("products")
-    .insert({ ...input, name, organization_id: profile.organization_id })
+    .insert({ ...payload, organization_id: profile.organization_id })
     .select("*")
     .single()
   if (isMissingPosFeature(error)) throw new Error(posFeatureMessage())
@@ -2368,19 +2596,130 @@ export async function createProduct(profile: UserProfile, input: ProductInput) {
 }
 
 export async function updateProduct(
-  _profile: UserProfile,
+  profile: UserProfile,
   productId: string,
   input: Partial<ProductInput & { active: boolean }>
 ) {
+  const previous = await getProductForMutation(profile, productId)
+  const payload = {
+    ...input,
+    name: input.name?.trim(),
+    description: input.description === undefined ? undefined : input.description?.trim() || null,
+    barcode: input.barcode === undefined ? undefined : input.barcode?.trim() || null,
+    sku: input.sku === undefined ? undefined : input.sku?.trim() || null,
+    category: input.category === undefined ? undefined : input.category?.trim() || null,
+    brand: input.brand === undefined ? undefined : input.brand?.trim() || null,
+    size_label: input.size_label === undefined ? undefined : input.size_label?.trim() || null,
+    dosage: input.dosage === undefined ? undefined : input.dosage?.trim() || null,
+    updated_at: new Date().toISOString(),
+  }
+
+  const nextBranchId = input.branch_id === undefined ? previous.branch_id : input.branch_id
+  const nextCategoryId =
+    input.category_id === undefined ? previous.category_id : input.category_id
+  if (nextBranchId) await validateBranchAndSector(profile, nextBranchId)
+  await validateProductCategory(profile, nextCategoryId, nextBranchId)
+
   const { data, error } = await supabase
     .from("products")
-    .update(input)
+    .update(payload)
     .eq("id", productId)
     .select("*")
     .single()
   if (isMissingPosFeature(error)) throw new Error(posFeatureMessage())
   raise(error)
   return data as Product
+}
+
+export async function deleteProduct(profile: UserProfile, productId: string) {
+  await getProductForMutation(profile, productId)
+  const { error } = await supabase
+    .from("products")
+    .delete()
+    .eq("id", productId)
+    .eq("organization_id", profile.organization_id)
+
+  if (isMissingPosFeature(error)) throw new Error(posFeatureMessage())
+  raise(error)
+}
+
+export async function createProductVariant(
+  profile: UserProfile,
+  input: ProductVariantInput
+) {
+  const product = await getProductForMutation(profile, input.product_id)
+  const payload = normalizeVariantInput(input)
+
+  const { data, error } = await supabase
+    .from("product_variants")
+    .insert({
+      ...payload,
+      organization_id: product.organization_id,
+    })
+    .select("*")
+    .single()
+
+  if (isMissingPosFeature(error)) throw new Error(posFeatureMessage())
+  raise(error)
+
+  return data as ProductVariant
+}
+
+export async function updateProductVariant(
+  profile: UserProfile,
+  variantId: string,
+  input: Partial<ProductVariantInput & { active: boolean }>
+) {
+  const { data: previous, error: previousError } = await supabase
+    .from("product_variants")
+    .select("*")
+    .eq("id", variantId)
+    .maybeSingle()
+
+  if (isMissingPosFeature(previousError)) throw new Error(posFeatureMessage())
+  raise(previousError)
+
+  if (!previous || previous.organization_id !== profile.organization_id) {
+    throw new Error("Variacao nao encontrada.")
+  }
+
+  const nextProductId =
+    input.product_id === undefined ? previous.product_id : input.product_id
+  if (nextProductId !== previous.product_id) {
+    await getProductForMutation(profile, nextProductId)
+  }
+
+  const payload = {
+    ...input,
+    name: input.name?.trim(),
+    barcode: input.barcode === undefined ? undefined : input.barcode?.trim() || null,
+    sku: input.sku === undefined ? undefined : input.sku?.trim() || null,
+    updated_at: new Date().toISOString(),
+  }
+
+  const { data, error } = await supabase
+    .from("product_variants")
+    .update(payload)
+    .eq("id", variantId)
+    .eq("organization_id", profile.organization_id)
+    .select("*")
+    .single()
+
+  if (isMissingPosFeature(error)) throw new Error(posFeatureMessage())
+  raise(error)
+
+  return data as ProductVariant
+}
+
+export async function deleteProductVariant(profile: UserProfile, variantId: string) {
+  const { error } = await supabase
+    .from("product_variants")
+    .delete()
+    .eq("id", variantId)
+    .eq("organization_id", profile.organization_id)
+
+  if (isMissingPosFeature(error)) throw new Error(posFeatureMessage())
+  raise(error)
 }
 
 export async function getCurrentCashSession(
@@ -2455,6 +2794,7 @@ export interface CompleteSaleInput {
   notes: string | null
   items: Array<{
     product_id: string | null
+    variant_id: string | null
     product_name: string
     quantity: number
     unit_price: number

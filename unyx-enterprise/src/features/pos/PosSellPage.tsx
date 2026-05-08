@@ -28,11 +28,12 @@ import {
   useCompleteSale,
   useCreateDeliveryOrder,
   useCurrentCashSession,
+  useProductVariants,
   useProducts,
 } from "@/hooks/useUnyxData"
 import { formatCurrency } from "@/lib/format"
 import { useAppStore } from "@/store/useAppStore"
-import type { PaymentMethod, Product } from "@/types/domain"
+import type { PaymentMethod, Product, ProductVariant } from "@/types/domain"
 
 const fieldClass =
   "h-8 w-full rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
@@ -47,10 +48,23 @@ const paymentMethodLabel: Record<PaymentMethod, string> = {
 }
 
 type CartItem = {
+  key: string
   product: Product
+  variant: ProductVariant | null
   quantity: number
   unit_price: number
   discount: number
+}
+
+type SellableItem = {
+  key: string
+  product: Product
+  variant: ProductVariant | null
+  name: string
+  barcode: string | null
+  sku: string | null
+  unit_price: number
+  stock_quantity: number
 }
 
 type PaymentEntry = {
@@ -88,15 +102,36 @@ function cashChange(payments: PaymentEntry[], total: number): number {
   return Math.max(0, cash + nonCash - total)
 }
 
+function cartItemName(item: CartItem) {
+  return item.variant ? `${item.product.name} - ${item.variant.name}` : item.product.name
+}
+
+function sellableName(product: Product, variant: ProductVariant | null) {
+  return variant ? `${product.name} - ${variant.name}` : product.name
+}
+
+function normalizeQuantity(product: Product, value: number) {
+  if (product.allow_fractional_quantity) return Math.max(0.001, value)
+  return Math.max(1, Math.round(value))
+}
+
 export function PosSellPage() {
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
   const currentSession = useCurrentCashSession()
   const products = useProducts()
+  const productVariants = useProductVariants()
   const completeSale = useCompleteSale()
   const createDelivery = useCreateDeliveryOrder()
 
   const session = currentSession.data ?? null
-  const allProducts = (products.data ?? []).filter((p) => p.active)
+  const allProducts = useMemo(
+    () => (products.data ?? []).filter((p) => p.active),
+    [products.data]
+  )
+  const activeVariants = useMemo(
+    () => (productVariants.data ?? []).filter((variant) => variant.active),
+    [productVariants.data]
+  )
 
   const [search, setSearch] = useState("")
   const [cart, setCart] = useState<CartItem[]>([])
@@ -121,64 +156,137 @@ export function PosSellPage() {
   })
   const [saleError, setSaleError] = useState<string | null>(null)
 
-  const filteredProducts = useMemo(() => {
-    if (!search.trim()) return allProducts.slice(0, 20)
-    const q = search.toLowerCase()
-    return allProducts.filter(
-      (p) =>
-        p.name.toLowerCase().includes(q) ||
-        (p.barcode ?? "").toLowerCase().includes(q) ||
-        (p.category ?? "").toLowerCase().includes(q)
-    )
-  }, [allProducts, search])
+  const variantsByProduct = useMemo(() => {
+    const grouped = new Map<string, ProductVariant[]>()
+    activeVariants.forEach((variant) => {
+      const current = grouped.get(variant.product_id) ?? []
+      current.push(variant)
+      grouped.set(variant.product_id, current)
+    })
+    return grouped
+  }, [activeVariants])
 
-  function addToCart(product: Product) {
+  const sellableItems = useMemo<SellableItem[]>(() => {
+    return allProducts.flatMap((product): SellableItem[] => {
+      const variants = variantsByProduct.get(product.id) ?? []
+      if (variants.length > 0) {
+        return variants.map((variant) => ({
+          key: `${product.id}:${variant.id}`,
+          product,
+          variant,
+          name: sellableName(product, variant),
+          barcode: variant.barcode ?? product.barcode,
+          sku: variant.sku ?? product.sku,
+          unit_price: variant.price,
+          stock_quantity: variant.stock_quantity,
+        }))
+      }
+      return [
+        {
+          key: `${product.id}:base`,
+          product,
+          variant: null,
+          name: product.name,
+          barcode: product.barcode,
+          sku: product.sku,
+          unit_price: product.price,
+          stock_quantity: product.stock_quantity,
+        },
+      ]
+    })
+  }, [allProducts, variantsByProduct])
+
+  const filteredProducts = useMemo(() => {
+    if (!search.trim()) return sellableItems.slice(0, 24)
+    const q = search.toLowerCase()
+    return sellableItems.filter((item) => {
+      const searchText = [
+        item.name,
+        item.product.name,
+        item.barcode,
+        item.sku,
+        item.product.category,
+        item.product.brand,
+        item.product.size_label,
+        item.product.dosage,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+      return searchText.includes(q)
+    })
+  }, [sellableItems, search])
+
+  function addToCart(item: SellableItem) {
     setCart((prev) => {
-      const existing = prev.findIndex((item) => item.product.id === product.id)
+      const existing = prev.findIndex((cartItem) => cartItem.key === item.key)
       if (existing >= 0) {
         const updated = [...prev]
         updated[existing] = {
           ...updated[existing],
-          quantity: updated[existing].quantity + 1,
+          quantity: normalizeQuantity(
+            updated[existing].product,
+            updated[existing].quantity + 1
+          ),
         }
         return updated
       }
       return [
         ...prev,
-        { product, quantity: 1, unit_price: product.price, discount: 0 },
+        {
+          key: item.key,
+          product: item.product,
+          variant: item.variant,
+          quantity: 1,
+          unit_price: item.unit_price,
+          discount: 0,
+        },
       ]
     })
     setSearch("")
   }
 
-  function updateQuantity(productId: string, delta: number) {
+  function updateQuantity(itemKey: string, delta: number) {
     setCart((prev) => {
       return prev
         .map((item) => {
-          if (item.product.id !== productId) return item
-          return { ...item, quantity: Math.max(1, item.quantity + delta) }
+          if (item.key !== itemKey) return item
+          return {
+            ...item,
+            quantity: normalizeQuantity(item.product, item.quantity + delta),
+          }
         })
     })
   }
 
-  function removeFromCart(productId: string) {
-    setCart((prev) => prev.filter((item) => item.product.id !== productId))
-  }
-
-  function updateItemPrice(productId: string, value: string) {
+  function updateQuantityValue(itemKey: string, value: string) {
     setCart((prev) =>
       prev.map((item) =>
-        item.product.id === productId
+        item.key === itemKey
+          ? { ...item, quantity: normalizeQuantity(item.product, Number(value) || 0) }
+          : item
+      )
+    )
+  }
+
+  function removeFromCart(itemKey: string) {
+    setCart((prev) => prev.filter((item) => item.key !== itemKey))
+  }
+
+  function updateItemPrice(itemKey: string, value: string) {
+    setCart((prev) =>
+      prev.map((item) =>
+        item.key === itemKey
           ? { ...item, unit_price: Math.max(0, Number(value) || 0) }
           : item
       )
     )
   }
 
-  function updateItemDiscount(productId: string, value: string) {
+  function updateItemDiscount(itemKey: string, value: string) {
     setCart((prev) =>
       prev.map((item) =>
-        item.product.id === productId
+        item.key === itemKey
           ? { ...item, discount: Math.max(0, Number(value) || 0) }
           : item
       )
@@ -244,7 +352,8 @@ export function PosSellPage() {
       const branchId = selectedBranchId ?? session.branch_id
       const saleItems = cart.map((item) => ({
         product_id: item.product.id,
-        product_name: item.product.name,
+        variant_id: item.variant?.id ?? null,
+        product_name: cartItemName(item),
         quantity: item.quantity,
         unit_price: item.unit_price,
         discount_amount: item.discount,
@@ -262,6 +371,7 @@ export function PosSellPage() {
               ...saleItems,
               {
                 product_id: null,
+                variant_id: null,
                 product_name: "Taxa de entrega",
                 quantity: 1,
                 unit_price: deliveryFee,
@@ -301,7 +411,7 @@ export function PosSellPage() {
           estimated_delivery_at: deliveryForm.estimated_delivery_at || null,
           notes: deliveryForm.notes.trim() || null,
           items: cart.map((item) => ({
-            name: item.product.name,
+            name: cartItemName(item),
             quantity: item.quantity,
           })),
         })
@@ -384,20 +494,26 @@ export function PosSellPage() {
                   <StateBlock title="Nenhum produto encontrado" />
                 ) : (
                   <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                    {filteredProducts.map((product) => (
+                    {filteredProducts.map((item) => (
                       <button
-                        key={product.id}
+                        key={item.key}
                         type="button"
                         className="rounded-lg border bg-white p-3 text-left transition-colors hover:bg-slate-50 hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-ring"
-                        onClick={() => addToCart(product)}
+                        onClick={() => addToCart(item)}
                       >
-                        <div className="font-medium text-sm truncate">{product.name}</div>
+                        <div className="font-medium text-sm truncate">{item.name}</div>
                         <div className="mt-1 text-xs text-muted-foreground">
-                          {product.category ?? product.unit}
+                          {item.product.category ?? item.product.unit}
+                          {item.variant ? " - variacao" : ""}
                         </div>
                         <div className="mt-1 font-semibold text-sm">
-                          {formatCurrency(product.price)}
+                          {formatCurrency(item.unit_price)}
                         </div>
+                        {item.product.track_inventory ?? true ? (
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            Estoque {item.stock_quantity} {item.product.unit}
+                          </div>
+                        ) : null}
                       </button>
                     ))}
                   </div>
@@ -426,13 +542,13 @@ export function PosSellPage() {
                     <div className="space-y-2">
                       {cart.map((item) => (
                         <div
-                          key={item.product.id}
+                          key={item.key}
                           className="rounded-lg border p-3 space-y-2"
                         >
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
                               <div className="font-medium text-sm truncate">
-                                {item.product.name}
+                                {cartItemName(item)}
                               </div>
                               <div className="text-xs text-muted-foreground">
                                 {formatCurrency(cartItemTotal(item))}
@@ -441,7 +557,7 @@ export function PosSellPage() {
                             <button
                               type="button"
                               className="shrink-0 text-muted-foreground hover:text-red-500"
-                              onClick={() => removeFromCart(item.product.id)}
+                              onClick={() => removeFromCart(item.key)}
                               aria-label="Remover"
                             >
                               <X className="size-4" />
@@ -453,19 +569,25 @@ export function PosSellPage() {
                               variant="outline"
                               size="icon"
                               className="size-7"
-                              onClick={() => updateQuantity(item.product.id, -1)}
+                              onClick={() => updateQuantity(item.key, -1)}
                             >
                               <Minus className="size-3" />
                             </Button>
-                            <span className="w-8 text-center text-sm font-medium">
-                              {item.quantity}
-                            </span>
+                            <input
+                              type="number"
+                              min={item.product.allow_fractional_quantity ? "0.001" : "1"}
+                              step={item.product.allow_fractional_quantity ? "0.001" : "1"}
+                              className="h-7 w-16 rounded border px-1.5 text-center text-sm font-medium outline-none focus:border-ring"
+                              value={item.quantity}
+                              onChange={(e) => updateQuantityValue(item.key, e.target.value)}
+                              aria-label="Quantidade"
+                            />
                             <Button
                               type="button"
                               variant="outline"
                               size="icon"
                               className="size-7"
-                              onClick={() => updateQuantity(item.product.id, 1)}
+                              onClick={() => updateQuantity(item.key, 1)}
                             >
                               <Plus className="size-3" />
                             </Button>
@@ -477,7 +599,7 @@ export function PosSellPage() {
                                 min="0"
                                 className="h-7 w-20 rounded border px-1.5 text-xs outline-none focus:border-ring"
                                 value={item.unit_price}
-                                onChange={(e) => updateItemPrice(item.product.id, e.target.value)}
+                                onChange={(e) => updateItemPrice(item.key, e.target.value)}
                               />
                             </div>
                           </div>
@@ -489,7 +611,7 @@ export function PosSellPage() {
                               min="0"
                               className="h-7 w-20 rounded border px-1.5 text-xs outline-none focus:border-ring"
                               value={item.discount || ""}
-                              onChange={(e) => updateItemDiscount(item.product.id, e.target.value)}
+                              onChange={(e) => updateItemDiscount(item.key, e.target.value)}
                             />
                           </div>
                         </div>

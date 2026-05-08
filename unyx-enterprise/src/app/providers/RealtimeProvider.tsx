@@ -15,6 +15,11 @@ const tableQueryKeyMap: Record<string, string> = {
   operational_posts: "operational-posts",
   post_allocations: "post-allocations",
   cash_movements: "cash-movements",
+  products: "pos-products",
+  product_categories: "pos-categories",
+  product_variants: "pos-product-variants",
+  cash_sessions: "pos-sessions",
+  sales: "pos-sales",
   audit_logs: "audit-logs",
 }
 
@@ -42,9 +47,13 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
             queryKey === "operational-status" ||
             queryKey === "schedules" ||
             queryKey === "operational-posts" ||
-            queryKey === "post-allocations"
+            queryKey === "post-allocations" ||
+            queryKey === "pos-sales"
           ) {
             void queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+          }
+          if (queryKey === "pos-sessions") {
+            void queryClient.invalidateQueries({ queryKey: ["pos-current-session"] })
           }
         }
       )

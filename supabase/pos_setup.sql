@@ -20,18 +20,54 @@ DO $$ BEGIN CREATE TYPE public.pos_cash_movement_type AS ENUM ('sale_cash_in','c
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- ── products ─────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS public.products (
+-- product_categories
+CREATE TABLE IF NOT EXISTS public.product_categories (
   id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id  uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
   branch_id        uuid REFERENCES public.branches(id) ON DELETE CASCADE,
   name             text NOT NULL,
+  description      text,
+  segment          text NOT NULL DEFAULT 'all',
+  active           boolean NOT NULL DEFAULT true,
+  created_at       timestamptz NOT NULL DEFAULT now(),
+  updated_at       timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_product_categories_organization ON public.product_categories(organization_id);
+CREATE INDEX IF NOT EXISTS idx_product_categories_branch       ON public.product_categories(branch_id);
+CREATE INDEX IF NOT EXISTS idx_product_categories_segment      ON public.product_categories(segment);
+CREATE INDEX IF NOT EXISTS idx_product_categories_name         ON public.product_categories(name);
+
+DO $$ BEGIN
+  ALTER TABLE public.product_categories
+    ADD CONSTRAINT product_categories_segment_check
+    CHECK (segment IN ('all','retail_store','supermarket','restaurant','pharmacy','other'));
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+CREATE TABLE IF NOT EXISTS public.products (
+  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id  uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+  branch_id        uuid REFERENCES public.branches(id) ON DELETE CASCADE,
+  category_id      uuid REFERENCES public.product_categories(id) ON DELETE SET NULL,
+  name             text NOT NULL,
+  description      text,
   barcode          text,
   sku              text,
   category         text,
+  brand            text,
+  product_kind     text NOT NULL DEFAULT 'retail',
+  size_label       text,
+  dosage           text,
   unit             text NOT NULL DEFAULT 'un',
   price            numeric(12,2) NOT NULL DEFAULT 0,
   cost_price       numeric(12,2),
   stock_quantity   numeric(12,3) NOT NULL DEFAULT 0,
+  min_stock_quantity numeric(12,3) NOT NULL DEFAULT 0,
+  track_inventory  boolean NOT NULL DEFAULT true,
+  allow_fractional_quantity boolean NOT NULL DEFAULT false,
+  perishable       boolean NOT NULL DEFAULT false,
+  prescription_required boolean NOT NULL DEFAULT false,
+  controlled_substance boolean NOT NULL DEFAULT false,
+  preparation_time_minutes integer,
   active           boolean NOT NULL DEFAULT true,
   created_at       timestamptz NOT NULL DEFAULT now(),
   updated_at       timestamptz NOT NULL DEFAULT now()
@@ -40,6 +76,50 @@ CREATE INDEX IF NOT EXISTS idx_products_organization ON public.products(organiza
 CREATE INDEX IF NOT EXISTS idx_products_branch      ON public.products(branch_id);
 CREATE INDEX IF NOT EXISTS idx_products_barcode     ON public.products(barcode) WHERE barcode IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_products_name        ON public.products(name);
+
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS category_id uuid REFERENCES public.product_categories(id) ON DELETE SET NULL;
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS description text;
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS brand text;
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS product_kind text NOT NULL DEFAULT 'retail';
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS size_label text;
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS dosage text;
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS min_stock_quantity numeric(12,3) NOT NULL DEFAULT 0;
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS track_inventory boolean NOT NULL DEFAULT true;
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS allow_fractional_quantity boolean NOT NULL DEFAULT false;
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS perishable boolean NOT NULL DEFAULT false;
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS prescription_required boolean NOT NULL DEFAULT false;
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS controlled_substance boolean NOT NULL DEFAULT false;
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS preparation_time_minutes integer;
+UPDATE public.products SET product_kind = 'retail' WHERE product_kind IS NULL;
+CREATE INDEX IF NOT EXISTS idx_products_category_id ON public.products(category_id);
+CREATE INDEX IF NOT EXISTS idx_products_sku         ON public.products(sku) WHERE sku IS NOT NULL;
+
+DO $$ BEGIN
+  ALTER TABLE public.products
+    ADD CONSTRAINT products_product_kind_check
+    CHECK (product_kind IN ('retail','food','medicine','service'));
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- product_variants
+CREATE TABLE IF NOT EXISTS public.product_variants (
+  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id  uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+  product_id       uuid NOT NULL REFERENCES public.products(id) ON DELETE CASCADE,
+  name             text NOT NULL,
+  barcode          text,
+  sku              text,
+  price            numeric(12,2) NOT NULL DEFAULT 0,
+  cost_price       numeric(12,2),
+  stock_quantity   numeric(12,3) NOT NULL DEFAULT 0,
+  active           boolean NOT NULL DEFAULT true,
+  sort_order       integer NOT NULL DEFAULT 0,
+  created_at       timestamptz NOT NULL DEFAULT now(),
+  updated_at       timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_product_variants_organization ON public.product_variants(organization_id);
+CREATE INDEX IF NOT EXISTS idx_product_variants_product      ON public.product_variants(product_id);
+CREATE INDEX IF NOT EXISTS idx_product_variants_barcode      ON public.product_variants(barcode) WHERE barcode IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_product_variants_sku          ON public.product_variants(sku) WHERE sku IS NOT NULL;
 
 -- ── cash_sessions ─────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.cash_sessions (
@@ -95,6 +175,7 @@ CREATE TABLE IF NOT EXISTS public.sale_items (
   organization_id  uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
   sale_id          uuid NOT NULL REFERENCES public.sales(id) ON DELETE CASCADE,
   product_id       uuid REFERENCES public.products(id) ON DELETE SET NULL,
+  variant_id       uuid REFERENCES public.product_variants(id) ON DELETE SET NULL,
   product_name     text NOT NULL,
   quantity         numeric(12,3) NOT NULL DEFAULT 1,
   unit_price       numeric(12,2) NOT NULL DEFAULT 0,
@@ -104,6 +185,8 @@ CREATE TABLE IF NOT EXISTS public.sale_items (
 );
 CREATE INDEX IF NOT EXISTS idx_sale_items_sale    ON public.sale_items(sale_id);
 CREATE INDEX IF NOT EXISTS idx_sale_items_product ON public.sale_items(product_id);
+ALTER TABLE public.sale_items ADD COLUMN IF NOT EXISTS variant_id uuid REFERENCES public.product_variants(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_sale_items_variant ON public.sale_items(variant_id);
 
 -- ── sale_payments ─────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.sale_payments (
@@ -138,6 +221,8 @@ CREATE INDEX IF NOT EXISTS idx_pos_cash_movements_session ON public.pos_cash_mov
 
 -- ── RLS ───────────────────────────────────────────────
 ALTER TABLE public.products           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.product_categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.product_variants   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.cash_sessions      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sales              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sale_items         ENABLE ROW LEVEL SECURITY;
@@ -149,6 +234,22 @@ DROP POLICY IF EXISTS "pos_products_write"  ON public.products;
 CREATE POLICY "pos_products_read"  ON public.products FOR SELECT
   USING (organization_id = current_organization_id());
 CREATE POLICY "pos_products_write" ON public.products FOR ALL
+  USING (organization_id = current_organization_id()
+    AND current_user_role() IN ('owner','admin','branch_manager','supervisor','operator'));
+
+DROP POLICY IF EXISTS "pos_product_categories_read"  ON public.product_categories;
+DROP POLICY IF EXISTS "pos_product_categories_write" ON public.product_categories;
+CREATE POLICY "pos_product_categories_read"  ON public.product_categories FOR SELECT
+  USING (organization_id = current_organization_id());
+CREATE POLICY "pos_product_categories_write" ON public.product_categories FOR ALL
+  USING (organization_id = current_organization_id()
+    AND current_user_role() IN ('owner','admin','branch_manager','supervisor','operator'));
+
+DROP POLICY IF EXISTS "pos_product_variants_read"  ON public.product_variants;
+DROP POLICY IF EXISTS "pos_product_variants_write" ON public.product_variants;
+CREATE POLICY "pos_product_variants_read"  ON public.product_variants FOR SELECT
+  USING (organization_id = current_organization_id());
+CREATE POLICY "pos_product_variants_write" ON public.product_variants FOR ALL
   USING (organization_id = current_organization_id()
     AND current_user_role() IN ('owner','admin','branch_manager','supervisor','operator'));
 
@@ -193,7 +294,9 @@ CREATE POLICY "pos_movements_write" ON public.pos_cash_movements FOR ALL
     AND current_user_role() IN ('owner','admin','branch_manager','supervisor','operator'));
 
 -- ── Grants ────────────────────────────────────────────
-GRANT SELECT, INSERT, UPDATE ON public.products           TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.products           TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.product_categories TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.product_variants   TO authenticated;
 GRANT SELECT, INSERT, UPDATE ON public.cash_sessions      TO authenticated;
 GRANT SELECT, INSERT, UPDATE ON public.sales              TO authenticated;
 GRANT SELECT, INSERT         ON public.sale_items         TO authenticated;
@@ -268,6 +371,10 @@ DECLARE
   v_cash_net numeric := 0;
   v_item     jsonb;
   v_payment  jsonb;
+  v_product_id uuid;
+  v_variant_id uuid;
+  v_quantity numeric;
+  v_track_inventory boolean;
 BEGIN
   v_org_id := current_organization_id();
   IF v_org_id IS NULL THEN RAISE EXCEPTION 'Usuário sem organização.'; END IF;
@@ -297,18 +404,48 @@ BEGIN
   ) RETURNING id INTO v_sale_id;
 
   FOR v_item IN SELECT * FROM jsonb_array_elements(p_items) LOOP
+    v_product_id := NULLIF(v_item->>'product_id', '')::uuid;
+    v_variant_id := NULLIF(v_item->>'variant_id', '')::uuid;
+    v_quantity := COALESCE((v_item->>'quantity')::numeric, 0);
+
     INSERT INTO sale_items (
-      organization_id, sale_id, product_id, product_name,
+      organization_id, sale_id, product_id, variant_id, product_name,
       quantity, unit_price, discount_amount, total_amount
     ) VALUES (
       v_org_id, v_sale_id,
-      NULLIF(v_item->>'product_id', '')::uuid,
+      v_product_id,
+      v_variant_id,
       v_item->>'product_name',
-      (v_item->>'quantity')::numeric,
+      v_quantity,
       (v_item->>'unit_price')::numeric,
       COALESCE((v_item->>'discount_amount')::numeric, 0),
       (v_item->>'total_amount')::numeric
     );
+
+    IF v_product_id IS NOT NULL THEN
+      v_track_inventory := false;
+      SELECT COALESCE(track_inventory, true)
+        INTO v_track_inventory
+        FROM products
+       WHERE id = v_product_id AND organization_id = v_org_id;
+
+      IF COALESCE(v_track_inventory, false) THEN
+        IF v_variant_id IS NOT NULL THEN
+          UPDATE product_variants
+             SET stock_quantity = GREATEST(0, stock_quantity - v_quantity),
+                 updated_at = now()
+           WHERE id = v_variant_id
+             AND product_id = v_product_id
+             AND organization_id = v_org_id;
+        ELSE
+          UPDATE products
+             SET stock_quantity = GREATEST(0, stock_quantity - v_quantity),
+                 updated_at = now()
+           WHERE id = v_product_id
+             AND organization_id = v_org_id;
+        END IF;
+      END IF;
+    END IF;
   END LOOP;
 
   FOR v_payment IN SELECT * FROM jsonb_array_elements(p_payments) LOOP

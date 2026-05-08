@@ -463,22 +463,67 @@ export type PosCashMovementType =
   | "sangria"
   | "change_reinforcement"
   | "adjustment"
+export type ProductKind = "retail" | "food" | "medicine" | "service"
+export type ProductCategorySegment = BusinessSegment | "all"
+
+export interface ProductCategory {
+  id: string
+  organization_id: string
+  branch_id: string | null
+  name: string
+  description: string | null
+  segment: ProductCategorySegment
+  active: boolean
+  created_at: string
+  updated_at: string
+}
 
 export interface Product {
   id: string
   organization_id: string
   branch_id: string | null
+  category_id: string | null
   name: string
+  description: string | null
   barcode: string | null
   sku: string | null
   category: string | null
+  brand: string | null
+  product_kind: ProductKind
+  size_label: string | null
+  dosage: string | null
   unit: string
   price: number
   cost_price: number | null
   stock_quantity: number
+  min_stock_quantity: number
+  track_inventory: boolean
+  allow_fractional_quantity: boolean
+  perishable: boolean
+  prescription_required: boolean
+  controlled_substance: boolean
+  preparation_time_minutes: number | null
   active: boolean
   created_at: string
   updated_at: string
+  product_categories?: Pick<ProductCategory, "name" | "segment"> | null
+}
+
+export interface ProductVariant {
+  id: string
+  organization_id: string
+  product_id: string
+  name: string
+  barcode: string | null
+  sku: string | null
+  price: number
+  cost_price: number | null
+  stock_quantity: number
+  active: boolean
+  sort_order: number
+  created_at: string
+  updated_at: string
+  products?: Pick<Product, "name" | "branch_id" | "track_inventory"> | null
 }
 
 export interface CashSession {
@@ -530,6 +575,7 @@ export interface SaleItem {
   organization_id: string
   sale_id: string
   product_id: string | null
+  variant_id: string | null
   product_name: string
   quantity: number
   unit_price: number
