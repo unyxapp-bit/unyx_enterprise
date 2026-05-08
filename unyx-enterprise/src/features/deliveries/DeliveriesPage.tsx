@@ -40,14 +40,17 @@ import { Input } from "@/components/ui/input"
 import {
   useBranches,
   useCreateDeliveryOrder,
+  useCustomers,
   useDeleteDeliveryOrder,
   useDeliveryOrders,
   useEmployees,
   useUpdateDeliveryOrder,
 } from "@/hooks/useUnyxData"
 import { formatCurrency, formatDateTimeBR } from "@/lib/format"
+import { formatCep, lookupCep } from "@/services/viaCep"
 import { useAppStore } from "@/store/useAppStore"
 import type {
+  Customer,
   DeliveryItem,
   DeliveryOrder,
   DeliveryPaymentStatus,
@@ -112,13 +115,17 @@ const deleteRoles: UserRole[] = ["owner", "admin", "branch_manager", "supervisor
 
 type DeliveryFormState = {
   branch_id: string
+  customer_id: string
   assigned_employee_id: string
   source: DeliverySource
   status: DeliveryStatus
   priority: DeliveryPriority
   customer_name: string
   customer_phone: string
+  postal_code: string
   address_line: string
+  address_number: string
+  complement: string
   neighborhood: string
   city: string
   state: string
@@ -190,13 +197,17 @@ function stringifyItems(items: DeliveryItem[]) {
 function buildDefaultForm(branchId: string): DeliveryFormState {
   return {
     branch_id: branchId,
+    customer_id: "",
     assigned_employee_id: "",
     source: "manual",
     status: "pending",
     priority: "normal",
     customer_name: "",
     customer_phone: "",
+    postal_code: "",
     address_line: "",
+    address_number: "",
+    complement: "",
     neighborhood: "",
     city: "",
     state: "",
@@ -215,13 +226,17 @@ function buildDefaultForm(branchId: string): DeliveryFormState {
 function buildFormFromDelivery(delivery: DeliveryOrder): DeliveryFormState {
   return {
     branch_id: delivery.branch_id,
+    customer_id: delivery.customer_id ?? "",
     assigned_employee_id: delivery.assigned_employee_id ?? "",
     source: delivery.source,
     status: delivery.status,
     priority: delivery.priority,
     customer_name: delivery.customer_name,
     customer_phone: delivery.customer_phone ?? "",
+    postal_code: delivery.postal_code ?? "",
     address_line: delivery.address_line,
+    address_number: delivery.address_number ?? "",
+    complement: delivery.complement ?? "",
     neighborhood: delivery.neighborhood ?? "",
     city: delivery.city ?? "",
     state: delivery.state ?? "",
@@ -256,6 +271,7 @@ export function DeliveriesPage() {
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
   const branches = useBranches()
   const deliveries = useDeliveryOrders()
+  const customers = useCustomers(undefined, { optional: true })
   const createDelivery = useCreateDeliveryOrder()
   const updateDelivery = useUpdateDeliveryOrder()
   const deleteDelivery = useDeleteDeliveryOrder()
@@ -264,12 +280,19 @@ export function DeliveriesPage() {
   const [sourceFilter, setSourceFilter] = useState<DeliverySource | "all">("all")
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<DeliveryOrder | null>(null)
+  const [cepLoading, setCepLoading] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
   const fallbackBranchId =
     selectedBranchId ?? profile?.branch_id ?? branches.data?.[0]?.id ?? ""
   const [form, setForm] = useState<DeliveryFormState>(() =>
     buildDefaultForm(fallbackBranchId)
   )
   const employees = useEmployees(form.branch_id || fallbackBranchId || null)
+  const customerOptions = (customers.data ?? []).filter(
+    (customer) =>
+      customer.status !== "blocked" &&
+      (!form.branch_id || !customer.branch_id || customer.branch_id === form.branch_id)
+  )
   const canManageDeliveries = canManage(profile?.role)
   const canDeleteDeliveries = canDelete(profile?.role)
 
@@ -308,26 +331,76 @@ export function DeliveriesPage() {
   function openCreateDialog() {
     setEditing(null)
     setForm(buildDefaultForm(fallbackBranchId))
+    setFormError(null)
     setDialogOpen(true)
   }
 
   function openEditDialog(delivery: DeliveryOrder) {
     setEditing(delivery)
     setForm(buildFormFromDelivery(delivery))
+    setFormError(null)
     setDialogOpen(true)
+  }
+
+  function applyCustomer(customerId: string) {
+    const customer = (customers.data ?? []).find((item) => item.id === customerId)
+    if (!customer) {
+      setForm((current) => ({ ...current, customer_id: "" }))
+      return
+    }
+
+    setForm((current) => ({
+      ...current,
+      customer_id: customer.id,
+      customer_name: customer.name,
+      customer_phone: customer.phone ?? "",
+      postal_code: customer.postal_code ?? current.postal_code,
+      address_line: customer.address_line ?? current.address_line,
+      address_number: customer.address_number ?? current.address_number,
+      complement: customer.complement ?? current.complement,
+      neighborhood: customer.neighborhood ?? current.neighborhood,
+      city: customer.city ?? current.city,
+      state: customer.state ?? current.state,
+      reference: customer.reference ?? current.reference,
+    }))
+  }
+
+  async function fillAddressFromCep() {
+    setFormError(null)
+    setCepLoading(true)
+    try {
+      const address = await lookupCep(form.postal_code)
+      setForm((current) => ({
+        ...current,
+        postal_code: address.cep,
+        address_line: address.logradouro || current.address_line,
+        complement: current.complement || address.complemento || "",
+        neighborhood: address.bairro || current.neighborhood,
+        city: address.localidade || current.city,
+        state: address.uf || current.state,
+      }))
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Nao foi possivel buscar o CEP.")
+    } finally {
+      setCepLoading(false)
+    }
   }
 
   function formToPayload() {
     return {
       branch_id: form.branch_id,
       sale_id: editing?.sale_id ?? null,
+      customer_id: form.customer_id || null,
       assigned_employee_id: form.assigned_employee_id || null,
       source: form.source,
       status: form.status,
       priority: form.priority,
       customer_name: form.customer_name,
       customer_phone: form.customer_phone || null,
+      postal_code: form.postal_code || null,
       address_line: form.address_line,
+      address_number: form.address_number || null,
+      complement: form.complement || null,
       neighborhood: form.neighborhood || null,
       city: form.city || null,
       state: form.state || null,
@@ -345,19 +418,24 @@ export function DeliveriesPage() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    setFormError(null)
     const payload = formToPayload()
 
-    if (editing) {
-      await updateDelivery.mutateAsync({
-        deliveryId: editing.id,
-        values: payload,
-      })
-    } else {
-      await createDelivery.mutateAsync(payload)
-    }
+    try {
+      if (editing) {
+        await updateDelivery.mutateAsync({
+          deliveryId: editing.id,
+          values: payload,
+        })
+      } else {
+        await createDelivery.mutateAsync(payload)
+      }
 
-    setDialogOpen(false)
-    setEditing(null)
+      setDialogOpen(false)
+      setEditing(null)
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Nao foi possivel salvar a entrega.")
+    }
   }
 
   async function handleDelete(delivery: DeliveryOrder) {
@@ -534,8 +612,12 @@ export function DeliveriesPage() {
                                 <MapPin className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                                 <span className="break-words">
                                   {delivery.address_line}
+                                  {delivery.address_number ? `, ${delivery.address_number}` : ""}
+                                  {delivery.complement ? `, ${delivery.complement}` : ""}
                                   {delivery.neighborhood ? `, ${delivery.neighborhood}` : ""}
                                   {delivery.city ? ` - ${delivery.city}` : ""}
+                                  {delivery.state ? `/${delivery.state}` : ""}
+                                  {delivery.postal_code ? ` - CEP ${formatCep(delivery.postal_code)}` : ""}
                                   {delivery.reference ? ` (${delivery.reference})` : ""}
                                 </span>
                               </div>
@@ -634,7 +716,7 @@ export function DeliveriesPage() {
           </DialogHeader>
 
           <form className="space-y-4" onSubmit={(event) => void handleSubmit(event)}>
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-4">
               <label className="space-y-1 text-sm">
                 <span className="font-medium">Filial</span>
                 <select
@@ -646,6 +728,7 @@ export function DeliveriesPage() {
                       ...current,
                       branch_id: event.target.value,
                       assigned_employee_id: "",
+                      customer_id: "",
                     }))
                   }
                 >
@@ -696,7 +779,43 @@ export function DeliveriesPage() {
                   ))}
                 </select>
               </label>
+              <label className="space-y-1 text-sm">
+                <span className="font-medium">Prioridade</span>
+                <select
+                  className={fieldClass}
+                  value={form.priority}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      priority: event.target.value as DeliveryPriority,
+                    }))
+                  }
+                >
+                  {priorityOptions.map((priority) => (
+                    <option key={priority} value={priority}>
+                      {priorityLabel[priority]}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
+
+            <label className="space-y-1 text-sm">
+              <span className="font-medium">Cliente cadastrado</span>
+              <select
+                className={fieldClass}
+                value={form.customer_id}
+                onChange={(event) => applyCustomer(event.target.value)}
+              >
+                <option value="">Preencher manualmente</option>
+                {customerOptions.map((customer: Customer) => (
+                  <option key={customer.id} value={customer.id}>
+                    {customer.customer_code} - {customer.name}
+                    {customer.phone ? ` (${customer.phone})` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
 
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="space-y-1 text-sm">
@@ -726,21 +845,70 @@ export function DeliveriesPage() {
               </label>
             </div>
 
-            <label className="space-y-1 text-sm">
-              <span className="font-medium">Endereco</span>
-              <Input
-                required
-                value={form.address_line}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    address_line: event.target.value,
-                  }))
-                }
-              />
-            </label>
+            <div className="grid gap-3 sm:grid-cols-[170px_1fr_auto]">
+              <label className="space-y-1 text-sm">
+                <span className="font-medium">CEP</span>
+                <Input
+                  value={form.postal_code}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      postal_code: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label className="space-y-1 text-sm">
+                <span className="font-medium">Endereco</span>
+                <Input
+                  required
+                  value={form.address_line}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      address_line: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <div className="flex items-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void fillAddressFromCep()}
+                  disabled={cepLoading}
+                >
+                  <MapPin className="size-4" />
+                  Buscar CEP
+                </Button>
+              </div>
+            </div>
 
             <div className="grid gap-3 sm:grid-cols-4">
+              <label className="space-y-1 text-sm">
+                <span className="font-medium">Numero</span>
+                <Input
+                  value={form.address_number}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      address_number: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label className="space-y-1 text-sm">
+                <span className="font-medium">Complemento</span>
+                <Input
+                  value={form.complement}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      complement: event.target.value,
+                    }))
+                  }
+                />
+              </label>
               <label className="space-y-1 text-sm">
                 <span className="font-medium">Bairro</span>
                 <Input
@@ -762,6 +930,9 @@ export function DeliveriesPage() {
                   }
                 />
               </label>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-[120px_1fr]">
               <label className="space-y-1 text-sm">
                 <span className="font-medium">UF</span>
                 <Input
@@ -773,35 +944,15 @@ export function DeliveriesPage() {
                 />
               </label>
               <label className="space-y-1 text-sm">
-                <span className="font-medium">Prioridade</span>
-                <select
-                  className={fieldClass}
-                  value={form.priority}
+                <span className="font-medium">Referencia</span>
+                <Input
+                  value={form.reference}
                   onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      priority: event.target.value as DeliveryPriority,
-                    }))
+                    setForm((current) => ({ ...current, reference: event.target.value }))
                   }
-                >
-                  {priorityOptions.map((priority) => (
-                    <option key={priority} value={priority}>
-                      {priorityLabel[priority]}
-                    </option>
-                  ))}
-                </select>
+                />
               </label>
             </div>
-
-            <label className="space-y-1 text-sm">
-              <span className="font-medium">Referencia</span>
-              <Input
-                value={form.reference}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, reference: event.target.value }))
-                }
-              />
-            </label>
 
             <div className="grid gap-3 sm:grid-cols-3">
               <label className="space-y-1 text-sm">
@@ -938,6 +1089,12 @@ export function DeliveriesPage() {
                 }
               />
             </label>
+
+            {formError ? (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {formError}
+              </div>
+            ) : null}
 
             {(createDelivery.error || updateDelivery.error) ? (
               <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">

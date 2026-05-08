@@ -8,6 +8,7 @@ export type PermissionKey =
   | "checklists"
   | "branches"
   | "employees"
+  | "customers"
   | "users"
   | "settings"
   | "pos_sell"
@@ -30,6 +31,7 @@ export const PERMISSION_LABEL: Record<PermissionKey, string> = {
   checklists: "Checklists e Procedimentos",
   branches: "Filiais",
   employees: "Colaboradores",
+  customers: "Clientes",
   users: "Usuarios",
   settings: "Configuracoes",
   pos_sell: "PDV - Venda",
@@ -47,7 +49,7 @@ export const PERMISSION_LABEL: Record<PermissionKey, string> = {
 
 export const PERMISSION_GROUP: Record<string, PermissionKey[]> = {
   "Unyx Ops": ["dashboard", "operations", "alerts", "schedules", "checklists"],
-  "Unyx Control": ["branches", "employees", "users", "settings"],
+  "Unyx Control": ["branches", "employees", "customers", "users", "settings"],
   "Unyx POS": ["pos_sell", "pos_cash", "pos_products", "pos_sales", "deliveries"],
   "Unyx Insight": ["reports", "audit"],
   Expansao: ["comms", "game", "academy", "ai"],
@@ -61,6 +63,7 @@ export const PERMISSIONS: Record<PermissionKey, UserRole[]> = {
   checklists: ["owner", "admin", "branch_manager", "supervisor", "operator", "employee"],
   branches: ["owner", "admin", "branch_manager"],
   employees: ["owner", "admin", "branch_manager", "supervisor"],
+  customers: ["owner", "admin", "branch_manager", "supervisor", "operator"],
   users: ["owner", "admin"],
   settings: ["owner"],
   pos_sell: ["owner", "admin", "branch_manager", "supervisor", "operator", "employee"],

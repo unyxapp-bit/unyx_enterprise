@@ -7,6 +7,7 @@ import {
   Building2,
   CalendarDays,
   ClipboardList,
+  Contact,
   GraduationCap,
   ChevronDown,
   LayoutDashboard,
@@ -68,6 +69,7 @@ const navGroups = [
     items: [
       { to: "/app/branches",  label: "Filiais",       icon: Building2, perm: "branches"  as PermissionKey },
       { to: "/app/employees", label: "Colaboradores", icon: Users,     perm: "employees" as PermissionKey },
+      { to: "/app/customers", label: "Clientes",      icon: Contact,   perm: "customers" as PermissionKey },
       { to: "/app/users",     label: "Usuarios",      icon: UserCog,   perm: "users"     as PermissionKey },
       { to: "/app/settings",  label: "Configuracoes", icon: Settings,  perm: "settings"  as PermissionKey },
     ],

@@ -374,6 +374,7 @@ values
   ('unyx_comms', 'Unyx Comms', 'Comunicacao interna, avisos, feed corporativo e leitura confirmada.', true),
   ('unyx_game', 'Unyx Game', 'Gamificacao operacional, ranking, pontos, metas e engajamento.', true),
   ('unyx_deliveries', 'Unyx Deliveries', 'Entregas integradas ao PDV, pedidos manuais, rotas, status, taxas e historico operacional.', true),
+  ('unyx_customers', 'Unyx Customers', 'Cadastro unico de clientes com codigo numerico, contato, endereco e integracao com entregas.', true),
   ('unyx_checklists', 'Unyx Checklists', 'Procedimentos operacionais, checklists executaveis, evidencias e historico de conclusao.', true),
   ('unyx_academy', 'Unyx Academy', 'Treinamentos, onboarding, trilhas e progresso de capacitacao.', true),
   ('unyx_ai', 'Unyx AI', 'Insights automaticos, previsao de risco e sugestoes operacionais.', true)

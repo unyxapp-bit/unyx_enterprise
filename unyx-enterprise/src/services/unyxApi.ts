@@ -17,6 +17,8 @@ import type {
   CommsPost,
   CommsPostComment,
   DashboardRow,
+  Customer,
+  CustomerStatus,
   DeliveryItem,
   DeliveryOrder,
   DeliveryPaymentStatus,
@@ -2248,7 +2250,52 @@ function isMissingDeliveryFeature(error: { code?: string; message: string } | nu
 }
 
 function deliveryFeatureMessage() {
-  return "Modulo de entregas ainda nao instalado. Rode supabase/deliveries_setup.sql no SQL Editor do Supabase e recarregue o app."
+  return "Modulo de entregas ainda nao instalado ou desatualizado. Rode supabase/deliveries_setup.sql e supabase/customers_setup.sql no SQL Editor do Supabase e recarregue o app."
+}
+
+function isMissingCustomerFeature(error: { code?: string; message: string } | null) {
+  if (!error) return false
+  const message = error.message.toLowerCase()
+  const mentionsCustomer =
+    message.includes("customers") ||
+    message.includes("customer_id") ||
+    message.includes("customer")
+
+  return (
+    mentionsCustomer &&
+    (
+      error.code === "42P01" ||
+      error.code === "PGRST204" ||
+      error.code === "PGRST205" ||
+      message.includes("schema cache") ||
+      message.includes("does not exist") ||
+      message.includes("could not find")
+    )
+  )
+}
+
+function customerFeatureMessage() {
+  return "Modulo de clientes ainda nao instalado. Rode supabase/customers_setup.sql no SQL Editor do Supabase e recarregue o app."
+}
+
+export interface CustomerInput {
+  branch_id: string | null
+  name: string
+  document: string | null
+  phone: string | null
+  email: string | null
+  birth_date: string | null
+  status: CustomerStatus
+  postal_code: string | null
+  address_line: string | null
+  address_number: string | null
+  complement: string | null
+  neighborhood: string | null
+  city: string | null
+  state: string | null
+  reference: string | null
+  notes: string | null
+  marketing_opt_in: boolean
 }
 
 export interface ProductInput {
@@ -2297,13 +2344,17 @@ export interface ProductVariantInput {
 export interface DeliveryOrderInput {
   branch_id: string
   sale_id: string | null
+  customer_id: string | null
   assigned_employee_id: string | null
   source: DeliverySource
   status: DeliveryStatus
   priority: DeliveryPriority
   customer_name: string
   customer_phone: string | null
+  postal_code: string | null
   address_line: string
+  address_number: string | null
+  complement: string | null
   neighborhood: string | null
   city: string | null
   state: string | null
@@ -2340,12 +2391,16 @@ function normalizeDeliveryPayload(input: DeliveryOrderInput) {
 
   return {
     ...input,
+    customer_id: input.customer_id || null,
     customer_name: customerName,
     customer_phone: input.customer_phone?.trim() || null,
+    postal_code: onlyDigits(input.postal_code),
     address_line: addressLine,
+    address_number: input.address_number?.trim() || null,
+    complement: input.complement?.trim() || null,
     neighborhood: input.neighborhood?.trim() || null,
     city: input.city?.trim() || null,
-    state: input.state?.trim() || null,
+    state: normalizeState(input.state),
     reference: input.reference?.trim() || null,
     courier_name: input.courier_name?.trim() || null,
     delivery_fee: deliveryFee,
@@ -2376,6 +2431,227 @@ function deliveryStatusTimestampPatch(
     return { cancelled_at: now }
   }
   return { delivered_at: null, cancelled_at: null }
+}
+
+function onlyDigits(value: string | null | undefined) {
+  return value?.replace(/\D/g, "") || null
+}
+
+function normalizeState(value: string | null | undefined) {
+  return value?.trim().toUpperCase().slice(0, 2) || null
+}
+
+function normalizeCustomerInput(input: CustomerInput) {
+  const name = input.name.trim()
+  if (!name) throw new Error("Informe o nome do cliente.")
+
+  const email = input.email?.trim().toLowerCase() || null
+  if (email && !email.includes("@")) {
+    throw new Error("Informe um e-mail valido para o cliente.")
+  }
+
+  return {
+    ...input,
+    name,
+    document: onlyDigits(input.document),
+    phone: onlyDigits(input.phone),
+    email,
+    birth_date: input.birth_date || null,
+    postal_code: onlyDigits(input.postal_code),
+    address_line: input.address_line?.trim() || null,
+    address_number: input.address_number?.trim() || null,
+    complement: input.complement?.trim() || null,
+    neighborhood: input.neighborhood?.trim() || null,
+    city: input.city?.trim() || null,
+    state: normalizeState(input.state),
+    reference: input.reference?.trim() || null,
+    notes: input.notes?.trim() || null,
+    marketing_opt_in: Boolean(input.marketing_opt_in),
+  }
+}
+
+export async function listCustomers(
+  branchId?: string | null,
+  options: { optional?: boolean } = {}
+) {
+  let query = supabase
+    .from("customers")
+    .select("*, branches(name), user_profiles!created_by(name)")
+    .order("customer_code", { ascending: true })
+    .limit(1000)
+
+  if (branchId) query = query.or(`branch_id.is.null,branch_id.eq.${branchId}`)
+
+  const { data, error } = await query
+  if (isMissingCustomerFeature(error)) {
+    if (options.optional) return []
+    throw new Error(customerFeatureMessage())
+  }
+  raise(error)
+
+  return (data ?? []) as Customer[]
+}
+
+async function getCustomerForMutation(profile: UserProfile, customerId: string) {
+  const { data, error } = await supabase
+    .from("customers")
+    .select("*")
+    .eq("id", customerId)
+    .maybeSingle()
+
+  if (isMissingCustomerFeature(error)) throw new Error(customerFeatureMessage())
+  raise(error)
+
+  if (!data || data.organization_id !== profile.organization_id) {
+    throw new Error("Cliente nao encontrado.")
+  }
+
+  return data as Customer
+}
+
+export async function createCustomer(profile: UserProfile, input: CustomerInput) {
+  const payload = normalizeCustomerInput(input)
+  if (payload.branch_id) await validateBranchAndSector(profile, payload.branch_id)
+
+  const { data, error } = await supabase
+    .from("customers")
+    .insert({
+      ...payload,
+      organization_id: profile.organization_id,
+      created_by: profile.id,
+    })
+    .select("*, branches(name), user_profiles!created_by(name)")
+    .single()
+
+  if (isMissingCustomerFeature(error)) throw new Error(customerFeatureMessage())
+  raise(error)
+
+  await createAuditLog(profile, {
+    branch_id: payload.branch_id,
+    action: "customer_created",
+    entity_type: "customers",
+    entity_id: data.id,
+    old_value: null,
+    new_value: data,
+  })
+
+  return data as Customer
+}
+
+export async function updateCustomer(
+  profile: UserProfile,
+  customerId: string,
+  values: Partial<CustomerInput>
+) {
+  const previous = await getCustomerForMutation(profile, customerId)
+  const merged = normalizeCustomerInput({
+    branch_id: values.branch_id === undefined ? previous.branch_id : values.branch_id,
+    name: values.name ?? previous.name,
+    document: values.document === undefined ? previous.document : values.document,
+    phone: values.phone === undefined ? previous.phone : values.phone,
+    email: values.email === undefined ? previous.email : values.email,
+    birth_date:
+      values.birth_date === undefined ? previous.birth_date : values.birth_date,
+    status: values.status ?? previous.status,
+    postal_code:
+      values.postal_code === undefined ? previous.postal_code : values.postal_code,
+    address_line:
+      values.address_line === undefined ? previous.address_line : values.address_line,
+    address_number:
+      values.address_number === undefined
+        ? previous.address_number
+        : values.address_number,
+    complement:
+      values.complement === undefined ? previous.complement : values.complement,
+    neighborhood:
+      values.neighborhood === undefined
+        ? previous.neighborhood
+        : values.neighborhood,
+    city: values.city === undefined ? previous.city : values.city,
+    state: values.state === undefined ? previous.state : values.state,
+    reference:
+      values.reference === undefined ? previous.reference : values.reference,
+    notes: values.notes === undefined ? previous.notes : values.notes,
+    marketing_opt_in:
+      values.marketing_opt_in === undefined
+        ? previous.marketing_opt_in
+        : values.marketing_opt_in,
+  })
+
+  if (merged.branch_id) await validateBranchAndSector(profile, merged.branch_id)
+
+  const { data, error } = await supabase
+    .from("customers")
+    .update({ ...merged, updated_at: new Date().toISOString() })
+    .eq("id", customerId)
+    .eq("organization_id", profile.organization_id)
+    .select("*, branches(name), user_profiles!created_by(name)")
+    .single()
+
+  if (isMissingCustomerFeature(error)) throw new Error(customerFeatureMessage())
+  raise(error)
+
+  await createAuditLog(profile, {
+    branch_id: data.branch_id,
+    action: "customer_updated",
+    entity_type: "customers",
+    entity_id: data.id,
+    old_value: previous,
+    new_value: data,
+  })
+
+  return data as Customer
+}
+
+export async function deleteCustomer(profile: UserProfile, customerId: string) {
+  const previous = await getCustomerForMutation(profile, customerId)
+
+  const { error } = await supabase
+    .from("customers")
+    .delete()
+    .eq("id", customerId)
+    .eq("organization_id", profile.organization_id)
+
+  if (isMissingCustomerFeature(error)) throw new Error(customerFeatureMessage())
+  raise(error)
+
+  await createAuditLog(profile, {
+    branch_id: previous.branch_id,
+    action: "customer_deleted",
+    entity_type: "customers",
+    entity_id: previous.id,
+    old_value: previous,
+    new_value: null,
+  })
+}
+
+async function validateDeliveryCustomer(
+  profile: UserProfile,
+  customerId: string | null | undefined,
+  branchId: string
+) {
+  if (!customerId) return
+
+  const { data: customer, error } = await supabase
+    .from("customers")
+    .select("id, organization_id, branch_id, status")
+    .eq("id", customerId)
+    .maybeSingle()
+
+  if (isMissingCustomerFeature(error)) throw new Error(customerFeatureMessage())
+  raise(error)
+
+  if (
+    !customer ||
+    customer.organization_id !== profile.organization_id ||
+    customer.status === "blocked"
+  ) {
+    throw new Error("Cliente invalido para esta entrega.")
+  }
+
+  if (customer.branch_id && customer.branch_id !== branchId) {
+    throw new Error("O cliente selecionado pertence a outra filial.")
+  }
 }
 
 async function validateProductCategory(
@@ -2891,7 +3167,7 @@ export async function listSalePayments(saleId: string) {
 export async function listDeliveryOrders(branchId?: string | null) {
   let query = supabase
     .from("delivery_orders")
-    .select("*, branches(name), employees!assigned_employee_id(name), user_profiles!created_by(name)")
+    .select("*, branches(name), customers(name, phone), employees!assigned_employee_id(name), user_profiles!created_by(name)")
     .order("created_at", { ascending: false })
     .limit(300)
 
@@ -2899,6 +3175,7 @@ export async function listDeliveryOrders(branchId?: string | null) {
 
   const { data, error } = await query
   if (isMissingDeliveryFeature(error)) throw new Error(deliveryFeatureMessage())
+  if (isMissingCustomerFeature(error)) throw new Error(customerFeatureMessage())
   raise(error)
 
   return (data ?? []) as DeliveryOrder[]
@@ -2906,9 +3183,10 @@ export async function listDeliveryOrders(branchId?: string | null) {
 
 async function validateDeliveryReferences(
   profile: UserProfile,
-  input: Pick<DeliveryOrderInput, "branch_id" | "sale_id" | "assigned_employee_id">
+  input: Pick<DeliveryOrderInput, "branch_id" | "sale_id" | "customer_id" | "assigned_employee_id">
 ) {
   await validateBranchAndSector(profile, input.branch_id)
+  await validateDeliveryCustomer(profile, input.customer_id, input.branch_id)
 
   if (input.sale_id) {
     const { data: sale, error: saleError } = await supabase
@@ -2964,10 +3242,11 @@ export async function createDeliveryOrder(
       created_by: profile.id,
       ...deliveryStatusTimestampPatch(payload.status),
     })
-    .select("*, branches(name), employees!assigned_employee_id(name), user_profiles!created_by(name)")
+    .select("*, branches(name), customers(name, phone), employees!assigned_employee_id(name), user_profiles!created_by(name)")
     .single()
 
   if (isMissingDeliveryFeature(error)) throw new Error(deliveryFeatureMessage())
+  if (isMissingCustomerFeature(error)) throw new Error(customerFeatureMessage())
   raise(error)
 
   await createAuditLog(profile, {
@@ -2995,6 +3274,7 @@ export async function updateDeliveryOrder(
     .maybeSingle()
 
   if (isMissingDeliveryFeature(previousError)) throw new Error(deliveryFeatureMessage())
+  if (isMissingCustomerFeature(previousError)) throw new Error(customerFeatureMessage())
   raise(previousError)
 
   if (!previous) throw new Error("Entrega nao encontrada.")
@@ -3002,6 +3282,8 @@ export async function updateDeliveryOrder(
   const merged = normalizeDeliveryPayload({
     branch_id: values.branch_id ?? previous.branch_id,
     sale_id: values.sale_id === undefined ? previous.sale_id : values.sale_id,
+    customer_id:
+      values.customer_id === undefined ? previous.customer_id : values.customer_id,
     assigned_employee_id:
       values.assigned_employee_id === undefined
         ? previous.assigned_employee_id
@@ -3012,7 +3294,15 @@ export async function updateDeliveryOrder(
     customer_name: values.customer_name ?? previous.customer_name,
     customer_phone:
       values.customer_phone === undefined ? previous.customer_phone : values.customer_phone,
+    postal_code:
+      values.postal_code === undefined ? previous.postal_code : values.postal_code,
     address_line: values.address_line ?? previous.address_line,
+    address_number:
+      values.address_number === undefined
+        ? previous.address_number
+        : values.address_number,
+    complement:
+      values.complement === undefined ? previous.complement : values.complement,
     neighborhood:
       values.neighborhood === undefined ? previous.neighborhood : values.neighborhood,
     city: values.city === undefined ? previous.city : values.city,
@@ -3044,10 +3334,11 @@ export async function updateDeliveryOrder(
     })
     .eq("id", deliveryId)
     .eq("organization_id", profile.organization_id)
-    .select("*, branches(name), employees!assigned_employee_id(name), user_profiles!created_by(name)")
+    .select("*, branches(name), customers(name, phone), employees!assigned_employee_id(name), user_profiles!created_by(name)")
     .single()
 
   if (isMissingDeliveryFeature(error)) throw new Error(deliveryFeatureMessage())
+  if (isMissingCustomerFeature(error)) throw new Error(customerFeatureMessage())
   raise(error)
 
   await createAuditLog(profile, {

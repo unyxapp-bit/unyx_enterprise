@@ -8,6 +8,7 @@ import {
   completeChecklistRun,
   completeSale,
   copySchedulesFromDate,
+  createCustomer,
   createPosCashMovement,
   createProduct,
   createProductCategory,
@@ -25,6 +26,7 @@ import {
   createSector,
   createTrainingItem,
   deactivateEmployees,
+  deleteCustomer,
   deleteProduct,
   deleteProductCategory,
   deleteProductVariant,
@@ -42,6 +44,7 @@ import {
   getCurrentCashSession,
   listAllocationHistory,
   listCashSessions,
+  listCustomers,
   listOrganizationModules,
   listPosCashMovements,
   listProductCategories,
@@ -92,6 +95,7 @@ import {
   toggleSectorActive,
   transferPostAllocation,
   updateBranch,
+  updateCustomer,
   updateDeliveryOrder,
   updateEmployee,
   updateCurrentUserPassword,
@@ -107,6 +111,7 @@ import type {
   BulkImportResult,
   ChecklistProcedureInput,
   CompleteSaleInput,
+  CustomerInput,
   DeliveryOrderInput,
   EmployeeImportInput,
   ProductInput,
@@ -1512,6 +1517,70 @@ export function useDeliveryOrders(branchId?: string | null) {
     queryFn: () => listDeliveryOrders(effectiveBranchId),
     enabled: Boolean(profile),
     refetchInterval: 45_000,
+  })
+}
+
+export function useCustomers(
+  branchId?: string | null,
+  options: { optional?: boolean } = {}
+) {
+  const { profile } = useAuth()
+  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
+  const effectiveBranchId = branchId === undefined ? selectedBranchId : branchId
+  return useQuery({
+    queryKey: ["customers", profile?.organization_id, effectiveBranchId, options.optional],
+    queryFn: () => listCustomers(effectiveBranchId, options),
+    enabled: Boolean(profile),
+  })
+}
+
+export function useCreateCustomer() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+  return useMutation({
+    mutationFn: (input: CustomerInput) => createCustomer(profile, input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["customers"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success("Cliente cadastrado.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useUpdateCustomer() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+  return useMutation({
+    mutationFn: (input: {
+      customerId: string
+      values: Partial<CustomerInput>
+    }) => updateCustomer(profile, input.customerId, input.values),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["customers"] })
+      await queryClient.invalidateQueries({ queryKey: ["delivery-orders"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success("Cliente atualizado.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useDeleteCustomer() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+  return useMutation({
+    mutationFn: (customerId: string) => deleteCustomer(profile, customerId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["customers"] })
+      await queryClient.invalidateQueries({ queryKey: ["delivery-orders"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success("Cliente excluido.")
+    },
+    onError: (error) => { toast.error(error.message) },
   })
 }
 

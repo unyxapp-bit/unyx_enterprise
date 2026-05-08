@@ -597,6 +597,36 @@ export interface SalePayment {
   created_at: string
 }
 
+export type CustomerStatus = "active" | "inactive" | "blocked"
+
+export interface Customer {
+  id: string
+  organization_id: string
+  branch_id: string | null
+  customer_code: string
+  name: string
+  document: string | null
+  phone: string | null
+  email: string | null
+  birth_date: string | null
+  status: CustomerStatus
+  postal_code: string | null
+  address_line: string | null
+  address_number: string | null
+  complement: string | null
+  neighborhood: string | null
+  city: string | null
+  state: string | null
+  reference: string | null
+  notes: string | null
+  marketing_opt_in: boolean
+  created_by: string | null
+  created_at: string
+  updated_at: string
+  branches?: Pick<Branch, "name"> | null
+  user_profiles?: Pick<UserProfile, "name"> | null
+}
+
 export type DeliverySource = "manual" | "pos"
 export type DeliveryStatus =
   | "pending"
@@ -620,6 +650,7 @@ export interface DeliveryOrder {
   organization_id: string
   branch_id: string
   sale_id: string | null
+  customer_id: string | null
   created_by: string | null
   assigned_employee_id: string | null
   source: DeliverySource
@@ -627,7 +658,10 @@ export interface DeliveryOrder {
   priority: DeliveryPriority
   customer_name: string
   customer_phone: string | null
+  postal_code: string | null
   address_line: string
+  address_number: string | null
+  complement: string | null
   neighborhood: string | null
   city: string | null
   state: string | null
@@ -650,6 +684,7 @@ export interface DeliveryOrder {
   sales?: Pick<Sale, "id" | "customer_name" | "total_amount" | "sold_at"> | null
   employees?: Pick<Employee, "name"> | null
   user_profiles?: Pick<UserProfile, "name"> | null
+  customers?: Pick<Customer, "name" | "phone"> | null
 }
 
 export interface PosCashMovement {

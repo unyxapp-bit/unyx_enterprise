@@ -28,10 +28,12 @@ import {
   useCompleteSale,
   useCreateDeliveryOrder,
   useCurrentCashSession,
+  useCustomers,
   useProductVariants,
   useProducts,
 } from "@/hooks/useUnyxData"
 import { formatCurrency } from "@/lib/format"
+import { lookupCep } from "@/services/viaCep"
 import { useAppStore } from "@/store/useAppStore"
 import type { PaymentMethod, Product, ProductVariant } from "@/types/domain"
 
@@ -120,6 +122,7 @@ export function PosSellPage() {
   const currentSession = useCurrentCashSession()
   const products = useProducts()
   const productVariants = useProductVariants()
+  const customers = useCustomers(undefined, { optional: true })
   const completeSale = useCompleteSale()
   const createDelivery = useCreateDeliveryOrder()
 
@@ -142,9 +145,14 @@ export function PosSellPage() {
     { method: "cash", amount: "" },
   ])
   const [deliveryEnabled, setDeliveryEnabled] = useState(false)
+  const [deliveryCepLoading, setDeliveryCepLoading] = useState(false)
   const [deliveryForm, setDeliveryForm] = useState({
+    customer_id: "",
     customer_phone: "",
+    postal_code: "",
     address_line: "",
+    address_number: "",
+    complement: "",
     neighborhood: "",
     city: "",
     state: "",
@@ -155,6 +163,12 @@ export function PosSellPage() {
     notes: "",
   })
   const [saleError, setSaleError] = useState<string | null>(null)
+
+  const customerOptions = (customers.data ?? []).filter(
+    (customer) =>
+      customer.status !== "blocked" &&
+      (!selectedBranchId || !customer.branch_id || customer.branch_id === selectedBranchId)
+  )
 
   const variantsByProduct = useMemo(() => {
     const grouped = new Map<string, ProductVariant[]>()
@@ -326,6 +340,50 @@ export function PosSellPage() {
     )
   }
 
+  function applyDeliveryCustomer(customerId: string) {
+    const customer = (customers.data ?? []).find((item) => item.id === customerId)
+    if (!customer) {
+      setDeliveryForm((current) => ({ ...current, customer_id: "" }))
+      return
+    }
+
+    setCustomerName(customer.name)
+    setDeliveryForm((current) => ({
+      ...current,
+      customer_id: customer.id,
+      customer_phone: customer.phone ?? "",
+      postal_code: customer.postal_code ?? current.postal_code,
+      address_line: customer.address_line ?? current.address_line,
+      address_number: customer.address_number ?? current.address_number,
+      complement: customer.complement ?? current.complement,
+      neighborhood: customer.neighborhood ?? current.neighborhood,
+      city: customer.city ?? current.city,
+      state: customer.state ?? current.state,
+      reference: customer.reference ?? current.reference,
+    }))
+  }
+
+  async function fillDeliveryAddressFromCep() {
+    setSaleError(null)
+    setDeliveryCepLoading(true)
+    try {
+      const address = await lookupCep(deliveryForm.postal_code)
+      setDeliveryForm((current) => ({
+        ...current,
+        postal_code: address.cep,
+        address_line: address.logradouro || current.address_line,
+        complement: current.complement || address.complemento || "",
+        neighborhood: address.bairro || current.neighborhood,
+        city: address.localidade || current.city,
+        state: address.uf || current.state,
+      }))
+    } catch (error) {
+      setSaleError(error instanceof Error ? error.message : "Nao foi possivel buscar o CEP.")
+    } finally {
+      setDeliveryCepLoading(false)
+    }
+  }
+
   async function handleSaleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!session) return
@@ -392,13 +450,17 @@ export function PosSellPage() {
         await createDelivery.mutateAsync({
           branch_id: branchId,
           sale_id: saleId,
+          customer_id: deliveryForm.customer_id || null,
           assigned_employee_id: null,
           source: "pos",
           status: "pending",
           priority: "normal",
           customer_name: customerName.trim() || "Cliente PDV",
           customer_phone: deliveryForm.customer_phone.trim() || null,
+          postal_code: deliveryForm.postal_code.trim() || null,
           address_line: deliveryForm.address_line.trim(),
+          address_number: deliveryForm.address_number.trim() || null,
+          complement: deliveryForm.complement.trim() || null,
           neighborhood: deliveryForm.neighborhood.trim() || null,
           city: deliveryForm.city.trim() || null,
           state: deliveryForm.state.trim() || null,
@@ -421,8 +483,12 @@ export function PosSellPage() {
       setCartDiscount_("")
       setDeliveryEnabled(false)
       setDeliveryForm({
+        customer_id: "",
         customer_phone: "",
+        postal_code: "",
         address_line: "",
+        address_number: "",
+        complement: "",
         neighborhood: "",
         city: "",
         state: "",
@@ -720,6 +786,22 @@ export function PosSellPage() {
               </label>
               {deliveryEnabled ? (
                 <div className="space-y-3 border-t pt-3">
+                  <label className="space-y-1 text-sm">
+                    <span className="font-medium">Cliente cadastrado</span>
+                    <select
+                      className={fieldClass}
+                      value={deliveryForm.customer_id}
+                      onChange={(e) => applyDeliveryCustomer(e.target.value)}
+                    >
+                      <option value="">Cliente avulso</option>
+                      {customerOptions.map((customer) => (
+                        <option key={customer.id} value={customer.id}>
+                          {customer.customer_code} - {customer.name}
+                          {customer.phone ? ` (${customer.phone})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                   <div className="grid gap-2 sm:grid-cols-2">
                     <label className="space-y-1 text-sm">
                       <span className="font-medium">Telefone</span>
@@ -749,20 +831,69 @@ export function PosSellPage() {
                       />
                     </label>
                   </div>
-                  <label className="space-y-1 text-sm">
-                    <span className="font-medium">Endereco</span>
-                    <Input
-                      required={deliveryEnabled}
-                      value={deliveryForm.address_line}
-                      onChange={(e) =>
-                        setDeliveryForm((current) => ({
-                          ...current,
-                          address_line: e.target.value,
-                        }))
-                      }
-                    />
-                  </label>
+                  <div className="grid gap-2 sm:grid-cols-[140px_1fr_auto]">
+                    <label className="space-y-1 text-sm">
+                      <span className="font-medium">CEP</span>
+                      <Input
+                        value={deliveryForm.postal_code}
+                        onChange={(e) =>
+                          setDeliveryForm((current) => ({
+                            ...current,
+                            postal_code: e.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="space-y-1 text-sm">
+                      <span className="font-medium">Endereco</span>
+                      <Input
+                        required={deliveryEnabled}
+                        value={deliveryForm.address_line}
+                        onChange={(e) =>
+                          setDeliveryForm((current) => ({
+                            ...current,
+                            address_line: e.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                    <div className="flex items-end">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => void fillDeliveryAddressFromCep()}
+                        disabled={deliveryCepLoading}
+                      >
+                        <MapPin className="size-4" />
+                        CEP
+                      </Button>
+                    </div>
+                  </div>
                   <div className="grid gap-2 sm:grid-cols-4">
+                    <label className="space-y-1 text-sm">
+                      <span className="font-medium">Numero</span>
+                      <Input
+                        value={deliveryForm.address_number}
+                        onChange={(e) =>
+                          setDeliveryForm((current) => ({
+                            ...current,
+                            address_number: e.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="space-y-1 text-sm">
+                      <span className="font-medium">Compl.</span>
+                      <Input
+                        value={deliveryForm.complement}
+                        onChange={(e) =>
+                          setDeliveryForm((current) => ({
+                            ...current,
+                            complement: e.target.value,
+                          }))
+                        }
+                      />
+                    </label>
                     <label className="space-y-1 text-sm sm:col-span-2">
                       <span className="font-medium">Bairro</span>
                       <Input
@@ -775,6 +906,8 @@ export function PosSellPage() {
                         }
                       />
                     </label>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-3">
                     <label className="space-y-1 text-sm">
                       <span className="font-medium">Cidade</span>
                       <Input

@@ -26,6 +26,7 @@ create table if not exists public.delivery_orders (
   organization_id uuid not null references public.organizations(id) on delete cascade,
   branch_id uuid not null references public.branches(id) on delete cascade,
   sale_id uuid,
+  customer_id uuid,
   created_by uuid references public.user_profiles(id) on delete set null,
   assigned_employee_id uuid references public.employees(id) on delete set null,
   source text not null default 'manual' check (source in ('manual', 'pos')),
@@ -42,7 +43,10 @@ create table if not exists public.delivery_orders (
   priority text not null default 'normal' check (priority in ('normal', 'urgent')),
   customer_name text not null,
   customer_phone text,
+  postal_code text,
   address_line text not null,
+  address_number text,
+  complement text,
   neighborhood text,
   city text,
   state text,
@@ -77,6 +81,30 @@ where sale_id is not null;
 create index if not exists idx_delivery_orders_assigned_employee
 on public.delivery_orders(assigned_employee_id)
 where assigned_employee_id is not null;
+
+alter table public.delivery_orders add column if not exists customer_id uuid;
+alter table public.delivery_orders add column if not exists postal_code text;
+alter table public.delivery_orders add column if not exists address_number text;
+alter table public.delivery_orders add column if not exists complement text;
+
+do $$ begin
+  if to_regclass('public.customers') is not null
+    and not exists (
+      select 1
+      from pg_constraint
+      where conname = 'delivery_orders_customer_id_fkey'
+        and conrelid = 'public.delivery_orders'::regclass
+    )
+  then
+    alter table public.delivery_orders
+      add constraint delivery_orders_customer_id_fkey
+      foreign key (customer_id) references public.customers(id) on delete set null;
+  end if;
+end $$;
+
+create index if not exists idx_delivery_orders_customer
+on public.delivery_orders(customer_id)
+where customer_id is not null;
 
 drop trigger if exists trg_delivery_orders_updated_at on public.delivery_orders;
 create trigger trg_delivery_orders_updated_at

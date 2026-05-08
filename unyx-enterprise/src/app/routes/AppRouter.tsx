@@ -11,6 +11,7 @@ import { AuditPage } from "@/features/audit/AuditPage"
 import { BranchesPage } from "@/features/branches/BranchesPage"
 import { ChecklistsPage } from "@/features/checklists/ChecklistsPage"
 import { CommsPage } from "@/features/comms/CommsPage"
+import { CustomersPage } from "@/features/customers/CustomersPage"
 import { DashboardPage } from "@/features/dashboard/DashboardPage"
 import { DeliveriesPage } from "@/features/deliveries/DeliveriesPage"
 import { EmployeesPage } from "@/features/employees/EmployeesPage"
@@ -84,6 +85,9 @@ export function AppRouter() {
             </Route>
             <Route element={<RequirePermission perm="employees" />}>
               <Route path="employees" element={<EmployeesPage />} />
+            </Route>
+            <Route element={<RequirePermission perm="customers" />}>
+              <Route path="customers" element={<CustomersPage />} />
             </Route>
             <Route element={<RequirePermission perm="users" />}>
               <Route path="users" element={<UsersPage />} />
