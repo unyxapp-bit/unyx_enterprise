@@ -556,18 +556,22 @@ export interface Sale {
   post_id: string | null
   user_profile_id: string | null
   employee_id: string | null
+  customer_id: string | null
   customer_name: string | null
+  sale_mode: BusinessSegment | null
   subtotal: number
   discount_amount: number
   total_amount: number
   status: SaleStatus
   sold_at: string
   cancelled_at: string | null
+  manager_authorization: string | null
   notes: string | null
   created_at: string
   updated_at: string
   operational_posts?: Pick<OperationalPost, "name" | "type"> | null
   user_profiles?: Pick<UserProfile, "name"> | null
+  customers?: Pick<Customer, "customer_code" | "name" | "phone"> | null
 }
 
 export interface SaleItem {

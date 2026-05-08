@@ -153,13 +153,17 @@ CREATE TABLE IF NOT EXISTS public.sales (
   post_id          uuid REFERENCES public.operational_posts(id) ON DELETE SET NULL,
   user_profile_id  uuid REFERENCES public.user_profiles(id) ON DELETE SET NULL,
   employee_id      uuid REFERENCES public.employees(id) ON DELETE SET NULL,
+  customer_id      uuid,
   customer_name    text,
+  sale_mode        public.business_segment DEFAULT 'retail_store',
   subtotal         numeric(12,2) NOT NULL DEFAULT 0,
   discount_amount  numeric(12,2) NOT NULL DEFAULT 0,
   total_amount     numeric(12,2) NOT NULL DEFAULT 0,
   status           public.sale_status NOT NULL DEFAULT 'completed',
   sold_at          timestamptz NOT NULL DEFAULT now(),
   cancelled_at     timestamptz,
+  manager_authorization text,
+  cancel_reason    text,
   notes            text,
   created_at       timestamptz NOT NULL DEFAULT now(),
   updated_at       timestamptz NOT NULL DEFAULT now()
@@ -168,6 +172,25 @@ CREATE INDEX IF NOT EXISTS idx_sales_organization ON public.sales(organization_i
 CREATE INDEX IF NOT EXISTS idx_sales_branch       ON public.sales(branch_id);
 CREATE INDEX IF NOT EXISTS idx_sales_session      ON public.sales(cash_session_id);
 CREATE INDEX IF NOT EXISTS idx_sales_sold_at      ON public.sales(sold_at DESC);
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS customer_id uuid;
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS sale_mode public.business_segment DEFAULT 'retail_store';
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS manager_authorization text;
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS cancel_reason text;
+CREATE INDEX IF NOT EXISTS idx_sales_customer ON public.sales(customer_id) WHERE customer_id IS NOT NULL;
+DO $$ BEGIN
+  IF to_regclass('public.customers') IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1
+      FROM pg_constraint
+      WHERE conname = 'sales_customer_id_fkey'
+        AND conrelid = 'public.sales'::regclass
+    )
+  THEN
+    ALTER TABLE public.sales
+      ADD CONSTRAINT sales_customer_id_fkey
+      FOREIGN KEY (customer_id) REFERENCES public.customers(id) ON DELETE SET NULL;
+  END IF;
+END $$;
 
 -- ── sale_items ────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.sale_items (
@@ -349,13 +372,18 @@ BEGIN
 END; $$;
 
 -- ── RPC: pos_complete_sale ────────────────────────────
+DROP FUNCTION IF EXISTS public.pos_complete_sale(uuid, uuid, uuid, jsonb, jsonb, text, numeric, text);
+
 CREATE OR REPLACE FUNCTION public.pos_complete_sale(
   p_branch_id      uuid,
   p_session_id     uuid,
   p_post_id        uuid    DEFAULT NULL,
   p_items          jsonb   DEFAULT '[]',
   p_payments       jsonb   DEFAULT '[]',
+  p_customer_id    uuid    DEFAULT NULL,
   p_customer_name  text    DEFAULT NULL,
+  p_sale_mode      public.business_segment DEFAULT 'retail_store',
+  p_manager_authorization text DEFAULT NULL,
   p_discount_amount numeric DEFAULT 0,
   p_notes          text    DEFAULT NULL
 )
@@ -390,17 +418,20 @@ BEGIN
   END IF;
 
   FOR v_item IN SELECT * FROM jsonb_array_elements(p_items) LOOP
-    v_subtotal := v_subtotal + (v_item->>'total_amount')::numeric;
+    v_subtotal := v_subtotal
+      + ((v_item->>'quantity')::numeric * (v_item->>'unit_price')::numeric);
   END LOOP;
   v_total := v_subtotal - COALESCE(p_discount_amount, 0);
 
   INSERT INTO sales (
     organization_id, branch_id, cash_session_id, post_id, user_profile_id,
-    customer_name, subtotal, discount_amount, total_amount, status, sold_at, notes
+    customer_id, customer_name, sale_mode, subtotal, discount_amount, total_amount,
+    status, sold_at, manager_authorization, notes
   ) VALUES (
     v_org_id, p_branch_id, p_session_id, p_post_id, v_user_id,
-    p_customer_name, v_subtotal, COALESCE(p_discount_amount, 0), v_total,
-    'completed', now(), p_notes
+    p_customer_id, p_customer_name, COALESCE(p_sale_mode, 'retail_store'),
+    v_subtotal, COALESCE(p_discount_amount, 0), v_total,
+    'completed', now(), NULLIF(btrim(p_manager_authorization), ''), p_notes
   ) RETURNING id INTO v_sale_id;
 
   FOR v_item IN SELECT * FROM jsonb_array_elements(p_items) LOOP

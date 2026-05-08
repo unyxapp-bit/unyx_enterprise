@@ -2209,6 +2209,9 @@ function isMissingPosFeature(error: { code?: string; message: string } | null) {
     message.includes("sale_items") ||
     message.includes("sale_payments") ||
     message.includes("pos_cash_movements") ||
+    message.includes("sale_mode") ||
+    message.includes("manager_authorization") ||
+    message.includes("sales_customer_id") ||
     message.includes("pos_open_cash_session") ||
     message.includes("pos_complete_sale") ||
     message.includes("pos_close_cash_session") ||
@@ -3065,7 +3068,10 @@ export interface CompleteSaleInput {
   branch_id: string
   session_id: string
   post_id: string | null
+  customer_id: string | null
   customer_name: string | null
+  sale_mode: BusinessSegment
+  manager_authorization: string | null
   discount_amount: number
   notes: string | null
   items: Array<{
@@ -3089,9 +3095,12 @@ export async function completeSale(input: CompleteSaleInput) {
     p_branch_id:       input.branch_id,
     p_session_id:      input.session_id,
     p_post_id:         input.post_id,
+    p_customer_id:     input.customer_id,
     p_items:           input.items,
     p_payments:        input.payments,
     p_customer_name:   input.customer_name,
+    p_sale_mode:       input.sale_mode,
+    p_manager_authorization: input.manager_authorization,
     p_discount_amount: input.discount_amount,
     p_notes:           input.notes,
   })
@@ -3131,7 +3140,7 @@ export async function listPosCashMovements(sessionId: string) {
 export async function listSales(branchId?: string | null, date?: string | null) {
   let query = supabase
     .from("sales")
-    .select("*, operational_posts(name, type), user_profiles!user_profile_id(name)")
+    .select("*, operational_posts(name, type), user_profiles!user_profile_id(name), customers(customer_code, name, phone)")
     .order("sold_at", { ascending: false })
     .limit(200)
   if (branchId) query = query.eq("branch_id", branchId)

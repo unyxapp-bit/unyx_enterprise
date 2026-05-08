@@ -1,13 +1,28 @@
-import { useMemo, useState } from "react"
-import type { FormEvent } from "react"
+import { useMemo, useRef, useState } from "react"
+import type { FormEvent, KeyboardEvent } from "react"
 import {
+  AlertTriangle,
+  Ban,
+  Barcode,
+  Clock3,
   CreditCard,
+  History,
   MapPin,
   Minus,
+  PackageCheck,
+  Pause,
+  Percent,
+  Pill,
   Plus,
+  ReceiptText,
+  RotateCcw,
   Search,
+  ShieldCheck,
   ShoppingCart,
+  Store,
   Trash2,
+  UserPlus,
+  Utensils,
   X,
 } from "lucide-react"
 
@@ -26,19 +41,32 @@ import {
 import { Input } from "@/components/ui/input"
 import {
   useCompleteSale,
+  useCreateCustomer,
   useCreateDeliveryOrder,
   useCurrentCashSession,
   useCustomers,
+  useOrganization,
   useProductVariants,
   useProducts,
 } from "@/hooks/useUnyxData"
 import { formatCurrency } from "@/lib/format"
-import { lookupCep } from "@/services/viaCep"
+import { formatCep, lookupCep } from "@/services/viaCep"
 import { useAppStore } from "@/store/useAppStore"
-import type { PaymentMethod, Product, ProductVariant } from "@/types/domain"
+import type {
+  BusinessSegment,
+  Customer,
+  PaymentMethod,
+  Product,
+  ProductVariant,
+} from "@/types/domain"
 
 const fieldClass =
-  "h-8 w-full rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+  "h-8 w-full rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50 disabled:cursor-not-allowed disabled:bg-slate-100"
+
+const textareaClass =
+  "min-h-16 w-full rounded-lg border bg-white px-2.5 py-2 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+
+const heldSalesStorageKey = "unyx-pos-held-sales-v1"
 
 const paymentMethodLabel: Record<PaymentMethod, string> = {
   cash: "Dinheiro",
@@ -49,13 +77,71 @@ const paymentMethodLabel: Record<PaymentMethod, string> = {
   other: "Outro",
 }
 
+const saleModeLabel: Record<BusinessSegment, string> = {
+  retail_store: "Varejo",
+  supermarket: "Supermercado",
+  restaurant: "Restaurante",
+  pharmacy: "Farmacia",
+  other: "Geral",
+}
+
+const saleModeIcon: Record<BusinessSegment, typeof Store> = {
+  retail_store: Store,
+  supermarket: Barcode,
+  restaurant: Utensils,
+  pharmacy: Pill,
+  other: PackageCheck,
+}
+
+const saleModeOptions: BusinessSegment[] = [
+  "supermarket",
+  "restaurant",
+  "pharmacy",
+  "retail_store",
+  "other",
+]
+
+type DeliveryFormState = {
+  customer_id: string
+  customer_phone: string
+  postal_code: string
+  address_line: string
+  address_number: string
+  complement: string
+  neighborhood: string
+  city: string
+  state: string
+  reference: string
+  courier_name: string
+  delivery_fee: string
+  estimated_delivery_at: string
+  notes: string
+}
+
+type QuickCustomerForm = {
+  name: string
+  phone: string
+  document: string
+  postal_code: string
+  address_line: string
+  address_number: string
+  complement: string
+  neighborhood: string
+  city: string
+  state: string
+  reference: string
+}
+
 type CartItem = {
   key: string
   product: Product
   variant: ProductVariant | null
   quantity: number
   unit_price: number
+  base_price: number
   discount: number
+  notes: string
+  prescription_checked: boolean
 }
 
 type SellableItem = {
@@ -67,11 +153,63 @@ type SellableItem = {
   sku: string | null
   unit_price: number
   stock_quantity: number
+  category: string
+  segment: BusinessSegment | "all" | null
 }
 
 type PaymentEntry = {
   method: PaymentMethod
   amount: string
+}
+
+type HeldSale = {
+  id: string
+  branch_id: string
+  session_id: string | null
+  label: string
+  created_at: string
+  customer_name: string
+  selected_customer_id: string
+  cart_discount: string
+  sale_mode: BusinessSegment
+  delivery_enabled: boolean
+  delivery_form: DeliveryFormState
+  cart: CartItem[]
+}
+
+function emptyDeliveryForm(): DeliveryFormState {
+  return {
+    customer_id: "",
+    customer_phone: "",
+    postal_code: "",
+    address_line: "",
+    address_number: "",
+    complement: "",
+    neighborhood: "",
+    city: "",
+    state: "",
+    reference: "",
+    courier_name: "",
+    delivery_fee: "",
+    estimated_delivery_at: "",
+    notes: "",
+  }
+}
+
+function emptyQuickCustomerForm(): QuickCustomerForm {
+  return {
+    name: "",
+    phone: "",
+    document: "",
+    postal_code: "",
+    address_line: "",
+    address_number: "",
+    complement: "",
+    neighborhood: "",
+    city: "",
+    state: "",
+    reference: "",
+  }
 }
 
 function cartItemTotal(item: CartItem): number {
@@ -91,17 +229,12 @@ function cartTotal(cart: CartItem[]): number {
 }
 
 function paymentTotal(payments: PaymentEntry[]): number {
-  return payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
+  return payments.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0)
 }
 
 function cashChange(payments: PaymentEntry[], total: number): number {
-  const cash = payments
-    .filter((p) => p.method === "cash")
-    .reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
-  const nonCash = payments
-    .filter((p) => p.method !== "cash")
-    .reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
-  return Math.max(0, cash + nonCash - total)
+  const paid = paymentTotal(payments)
+  return Math.max(0, paid - total)
 }
 
 function cartItemName(item: CartItem) {
@@ -112,23 +245,117 @@ function sellableName(product: Product, variant: ProductVariant | null) {
   return variant ? `${product.name} - ${variant.name}` : product.name
 }
 
-function normalizeQuantity(product: Product, value: number) {
-  if (product.allow_fractional_quantity) return Math.max(0.001, value)
-  return Math.max(1, Math.round(value))
+function productCategory(product: Product) {
+  return product.product_categories?.name ?? product.category ?? "Sem categoria"
+}
+
+function productSegment(product: Product): BusinessSegment | "all" | null {
+  return product.product_categories?.segment ?? "all"
+}
+
+function tracksInventory(product: Product) {
+  return product.track_inventory ?? true
+}
+
+function normalizeQuantity(product: Product, stock: number, value: number) {
+  const min = product.allow_fractional_quantity ? 0.001 : 1
+  const base = product.allow_fractional_quantity
+    ? Math.max(min, Number(value) || min)
+    : Math.max(1, Math.round(Number(value) || 1))
+  if (!tracksInventory(product)) return base
+  return Math.min(base, Math.max(min, stock))
+}
+
+function itemHasPrescriptionRule(item: CartItem) {
+  return item.product.prescription_required || item.product.controlled_substance
+}
+
+function itemHasPriceChange(item: CartItem) {
+  return Math.abs(item.unit_price - item.base_price) > 0.005
+}
+
+function readHeldSales(): HeldSale[] {
+  if (typeof window === "undefined") return []
+  try {
+    const raw = window.localStorage.getItem(heldSalesStorageKey)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? (parsed as HeldSale[]) : []
+  } catch {
+    return []
+  }
+}
+
+function writeHeldSales(sales: HeldSale[]) {
+  if (typeof window === "undefined") return
+  window.localStorage.setItem(heldSalesStorageKey, JSON.stringify(sales.slice(0, 30)))
+}
+
+function heldSaleLabel(customerName: string, total: number) {
+  const customer = customerName.trim() || "Cliente avulso"
+  return `${customer} - ${formatCurrency(total)}`
+}
+
+function badgeForStock(item: SellableItem) {
+  if (!tracksInventory(item.product)) return "Sem controle"
+  if (item.stock_quantity <= 0) return "Sem estoque"
+  if (item.stock_quantity <= (item.product.min_stock_quantity ?? 0)) return "Estoque baixo"
+  return `${item.stock_quantity} ${item.product.unit}`
+}
+
+function formatQuantity(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(3).replace(/0+$/, "").replace(/\.$/, "")
 }
 
 export function PosSellPage() {
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
   const currentSession = useCurrentCashSession()
+  const organization = useOrganization()
   const products = useProducts()
   const productVariants = useProductVariants()
   const customers = useCustomers(undefined, { optional: true })
+  const createCustomer = useCreateCustomer()
   const completeSale = useCompleteSale()
   const createDelivery = useCreateDeliveryOrder()
 
+  const searchRef = useRef<HTMLInputElement>(null)
   const session = currentSession.data ?? null
+  const branchId = selectedBranchId ?? session?.branch_id ?? ""
+  const organizationMode = organization.data?.segment ?? "retail_store"
+
+  const [modeOverride, setModeOverride] = useState<BusinessSegment | null>(null)
+  const saleMode = modeOverride ?? organizationMode
+  const ModeIcon = saleModeIcon[saleMode]
+
+  const [search, setSearch] = useState("")
+  const [categoryFilter, setCategoryFilter] = useState("all")
+  const [cart, setCart] = useState<CartItem[]>([])
+  const [customerName, setCustomerName] = useState("")
+  const [selectedCustomerId, setSelectedCustomerId] = useState("")
+  const [cartDiscount_, setCartDiscount_] = useState("")
+  const [managerAuthorization, setManagerAuthorization] = useState("")
+  const [prescriptionConfirmed, setPrescriptionConfirmed] = useState(false)
+  const [payDialogOpen, setPayDialogOpen] = useState(false)
+  const [quickCustomerOpen, setQuickCustomerOpen] = useState(false)
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
+  const [cancelReason, setCancelReason] = useState("")
+  const [payments, setPayments] = useState<PaymentEntry[]>([
+    { method: "cash", amount: "" },
+  ])
+  const [deliveryEnabled, setDeliveryEnabled] = useState(false)
+  const [deliveryCepLoading, setDeliveryCepLoading] = useState(false)
+  const [quickCepLoading, setQuickCepLoading] = useState(false)
+  const [deliveryForm, setDeliveryForm] = useState<DeliveryFormState>(() =>
+    emptyDeliveryForm()
+  )
+  const [quickCustomerForm, setQuickCustomerForm] = useState<QuickCustomerForm>(() =>
+    emptyQuickCustomerForm()
+  )
+  const [heldSales, setHeldSales] = useState<HeldSale[]>(() => readHeldSales())
+  const [saleError, setSaleError] = useState<string | null>(null)
+
   const allProducts = useMemo(
-    () => (products.data ?? []).filter((p) => p.active),
+    () => (products.data ?? []).filter((product) => product.active),
     [products.data]
   )
   const activeVariants = useMemo(
@@ -136,38 +363,14 @@ export function PosSellPage() {
     [productVariants.data]
   )
 
-  const [search, setSearch] = useState("")
-  const [cart, setCart] = useState<CartItem[]>([])
-  const [customerName, setCustomerName] = useState("")
-  const [cartDiscount_, setCartDiscount_] = useState("")
-  const [payDialogOpen, setPayDialogOpen] = useState(false)
-  const [payments, setPayments] = useState<PaymentEntry[]>([
-    { method: "cash", amount: "" },
-  ])
-  const [deliveryEnabled, setDeliveryEnabled] = useState(false)
-  const [deliveryCepLoading, setDeliveryCepLoading] = useState(false)
-  const [deliveryForm, setDeliveryForm] = useState({
-    customer_id: "",
-    customer_phone: "",
-    postal_code: "",
-    address_line: "",
-    address_number: "",
-    complement: "",
-    neighborhood: "",
-    city: "",
-    state: "",
-    reference: "",
-    courier_name: "",
-    delivery_fee: "",
-    estimated_delivery_at: "",
-    notes: "",
-  })
-  const [saleError, setSaleError] = useState<string | null>(null)
-
-  const customerOptions = (customers.data ?? []).filter(
-    (customer) =>
-      customer.status !== "blocked" &&
-      (!selectedBranchId || !customer.branch_id || customer.branch_id === selectedBranchId)
+  const customerOptions = useMemo(
+    () =>
+      (customers.data ?? []).filter(
+        (customer) =>
+          customer.status !== "blocked" &&
+          (!branchId || !customer.branch_id || customer.branch_id === branchId)
+      ),
+    [branchId, customers.data]
   )
 
   const variantsByProduct = useMemo(() => {
@@ -193,6 +396,8 @@ export function PosSellPage() {
           sku: variant.sku ?? product.sku,
           unit_price: variant.price,
           stock_quantity: variant.stock_quantity,
+          category: productCategory(product),
+          segment: productSegment(product),
         }))
       }
       return [
@@ -205,153 +410,110 @@ export function PosSellPage() {
           sku: product.sku,
           unit_price: product.price,
           stock_quantity: product.stock_quantity,
+          category: productCategory(product),
+          segment: productSegment(product),
         },
       ]
     })
   }, [allProducts, variantsByProduct])
 
+  const categoryOptions = useMemo(() => {
+    const categories = new Set<string>()
+    sellableItems.forEach((item) => {
+      const matchesMode =
+        item.segment === "all" || !item.segment || item.segment === saleMode
+      if (matchesMode) categories.add(item.category)
+    })
+    return Array.from(categories).sort((a, b) => a.localeCompare(b))
+  }, [saleMode, sellableItems])
+
   const filteredProducts = useMemo(() => {
-    if (!search.trim()) return sellableItems.slice(0, 24)
-    const q = search.toLowerCase()
-    return sellableItems.filter((item) => {
-      const searchText = [
-        item.name,
-        item.product.name,
-        item.barcode,
-        item.sku,
-        item.product.category,
-        item.product.brand,
-        item.product.size_label,
-        item.product.dosage,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
-      return searchText.includes(q)
-    })
-  }, [sellableItems, search])
+    const q = search.trim().toLowerCase()
+    return sellableItems
+      .filter((item) => {
+        const matchesMode =
+          item.segment === "all" || !item.segment || item.segment === saleMode
+        const matchesCategory =
+          categoryFilter === "all" || item.category === categoryFilter
+        const searchText = [
+          item.name,
+          item.product.name,
+          item.barcode,
+          item.sku,
+          item.category,
+          item.product.brand,
+          item.product.size_label,
+          item.product.dosage,
+          item.product.unit,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+        return matchesMode && matchesCategory && (!q || searchText.includes(q))
+      })
+      .slice(0, q ? 80 : 36)
+  }, [categoryFilter, saleMode, search, sellableItems])
 
-  function addToCart(item: SellableItem) {
-    setCart((prev) => {
-      const existing = prev.findIndex((cartItem) => cartItem.key === item.key)
-      if (existing >= 0) {
-        const updated = [...prev]
-        updated[existing] = {
-          ...updated[existing],
-          quantity: normalizeQuantity(
-            updated[existing].product,
-            updated[existing].quantity + 1
-          ),
-        }
-        return updated
-      }
-      return [
-        ...prev,
-        {
-          key: item.key,
-          product: item.product,
-          variant: item.variant,
-          quantity: 1,
-          unit_price: item.unit_price,
-          discount: 0,
-        },
-      ]
-    })
-    setSearch("")
-  }
-
-  function updateQuantity(itemKey: string, delta: number) {
-    setCart((prev) => {
-      return prev
-        .map((item) => {
-          if (item.key !== itemKey) return item
-          return {
-            ...item,
-            quantity: normalizeQuantity(item.product, item.quantity + delta),
-          }
-        })
-    })
-  }
-
-  function updateQuantityValue(itemKey: string, value: string) {
-    setCart((prev) =>
-      prev.map((item) =>
-        item.key === itemKey
-          ? { ...item, quantity: normalizeQuantity(item.product, Number(value) || 0) }
-          : item
-      )
-    )
-  }
-
-  function removeFromCart(itemKey: string) {
-    setCart((prev) => prev.filter((item) => item.key !== itemKey))
-  }
-
-  function updateItemPrice(itemKey: string, value: string) {
-    setCart((prev) =>
-      prev.map((item) =>
-        item.key === itemKey
-          ? { ...item, unit_price: Math.max(0, Number(value) || 0) }
-          : item
-      )
-    )
-  }
-
-  function updateItemDiscount(itemKey: string, value: string) {
-    setCart((prev) =>
-      prev.map((item) =>
-        item.key === itemKey
-          ? { ...item, discount: Math.max(0, Number(value) || 0) }
-          : item
-      )
-    )
-  }
+  const heldSalesForBranch = useMemo(
+    () => heldSales.filter((sale) => sale.branch_id === branchId),
+    [branchId, heldSales]
+  )
 
   const extraDiscount = Number(cartDiscount_) || 0
+  const subtotal = cartSubtotal(cart)
+  const itemDiscount = cartDiscount(cart)
+  const discountTotal = itemDiscount + extraDiscount
   const deliveryFee = deliveryEnabled ? Number(deliveryForm.delivery_fee) || 0 : 0
   const finalTotal = Math.max(0, cartTotal(cart) - extraDiscount + deliveryFee)
   const totalPaid = paymentTotal(payments)
   const change = cashChange(payments, finalTotal)
   const remaining = Math.max(0, finalTotal - totalPaid)
+  const discountRate = subtotal > 0 ? discountTotal / subtotal : 0
+  const hasPriceOverride = cart.some(itemHasPriceChange)
+  const requiresAuthorization = hasPriceOverride || discountRate > 0.1
+  const requiresPrescription = cart.some(itemHasPrescriptionRule)
+  const totalUnits = cart.reduce((sum, item) => sum + item.quantity, 0)
 
-  function openPayDialog() {
+  function focusSearch() {
+    window.setTimeout(() => searchRef.current?.focus(), 0)
+  }
+
+  function setHeldSalesPersisted(next: HeldSale[]) {
+    setHeldSales(next)
+    writeHeldSales(next)
+  }
+
+  function resetCurrentSale() {
+    setCart([])
+    setCustomerName("")
+    setSelectedCustomerId("")
+    setCartDiscount_("")
+    setManagerAuthorization("")
+    setPrescriptionConfirmed(false)
+    setDeliveryEnabled(false)
+    setDeliveryForm(emptyDeliveryForm())
+    setPayments([{ method: "cash", amount: "" }])
     setSaleError(null)
-    setPayments([{ method: "cash", amount: String(finalTotal.toFixed(2)) }])
-    setPayDialogOpen(true)
+    focusSearch()
   }
 
-  function addPaymentLine() {
-    setPayments((prev) => [...prev, { method: "pix", amount: "" }])
+  function findCustomer(customerId: string) {
+    return customerOptions.find((customer) => customer.id === customerId) ?? null
   }
 
-  function removePaymentLine(index: number) {
-    setPayments((prev) => prev.filter((_, i) => i !== index))
-  }
-
-  function updatePaymentMethod(index: number, method: PaymentMethod) {
-    setPayments((prev) =>
-      prev.map((p, i) => (i === index ? { ...p, method } : p))
-    )
-  }
-
-  function updatePaymentAmount(index: number, amount: string) {
-    setPayments((prev) =>
-      prev.map((p, i) => (i === index ? { ...p, amount } : p))
-    )
-  }
-
-  function applyDeliveryCustomer(customerId: string) {
-    const customer = (customers.data ?? []).find((item) => item.id === customerId)
+  function applyCustomer(customer: Customer | null) {
     if (!customer) {
+      setSelectedCustomerId("")
       setDeliveryForm((current) => ({ ...current, customer_id: "" }))
       return
     }
 
+    setSelectedCustomerId(customer.id)
     setCustomerName(customer.name)
     setDeliveryForm((current) => ({
       ...current,
       customer_id: customer.id,
-      customer_phone: customer.phone ?? "",
+      customer_phone: customer.phone ?? current.customer_phone,
       postal_code: customer.postal_code ?? current.postal_code,
       address_line: customer.address_line ?? current.address_line,
       address_number: customer.address_number ?? current.address_number,
@@ -361,6 +523,178 @@ export function PosSellPage() {
       state: customer.state ?? current.state,
       reference: customer.reference ?? current.reference,
     }))
+  }
+
+  function applyCustomerById(customerId: string) {
+    applyCustomer(findCustomer(customerId))
+  }
+
+  function addToCart(item: SellableItem) {
+    setSaleError(null)
+    if (tracksInventory(item.product) && item.stock_quantity <= 0) {
+      setSaleError("Produto sem estoque disponivel.")
+      return
+    }
+
+    setCart((current) => {
+      const existing = current.findIndex((cartItem) => cartItem.key === item.key)
+      if (existing >= 0) {
+        const updated = [...current]
+        const nextQuantity = normalizeQuantity(
+          updated[existing].product,
+          item.stock_quantity,
+          updated[existing].quantity + 1
+        )
+        if (nextQuantity === updated[existing].quantity && tracksInventory(item.product)) {
+          setSaleError("Quantidade limitada pelo estoque.")
+        }
+        updated[existing] = { ...updated[existing], quantity: nextQuantity }
+        return updated
+      }
+
+      return [
+        ...current,
+        {
+          key: item.key,
+          product: item.product,
+          variant: item.variant,
+          quantity: 1,
+          unit_price: item.unit_price,
+          base_price: item.unit_price,
+          discount: 0,
+          notes: "",
+          prescription_checked: false,
+        },
+      ]
+    })
+    setSearch("")
+    focusSearch()
+  }
+
+  function updateQuantity(itemKey: string, delta: number) {
+    setCart((current) =>
+      current.map((item) => {
+        if (item.key !== itemKey) return item
+        const stock = item.variant?.stock_quantity ?? item.product.stock_quantity
+        return {
+          ...item,
+          quantity: normalizeQuantity(item.product, stock, item.quantity + delta),
+        }
+      })
+    )
+  }
+
+  function updateQuantityValue(itemKey: string, value: string) {
+    setCart((current) =>
+      current.map((item) => {
+        if (item.key !== itemKey) return item
+        const stock = item.variant?.stock_quantity ?? item.product.stock_quantity
+        return {
+          ...item,
+          quantity: normalizeQuantity(item.product, stock, Number(value) || 0),
+        }
+      })
+    )
+  }
+
+  function removeFromCart(itemKey: string) {
+    setCart((current) => current.filter((item) => item.key !== itemKey))
+    focusSearch()
+  }
+
+  function updateItemPrice(itemKey: string, value: string) {
+    setCart((current) =>
+      current.map((item) =>
+        item.key === itemKey
+          ? { ...item, unit_price: Math.max(0, Number(value) || 0) }
+          : item
+      )
+    )
+  }
+
+  function updateItemDiscount(itemKey: string, value: string) {
+    setCart((current) =>
+      current.map((item) =>
+        item.key === itemKey
+          ? { ...item, discount: Math.min(Math.max(0, Number(value) || 0), item.quantity * item.unit_price) }
+          : item
+      )
+    )
+  }
+
+  function updateItemNotes(itemKey: string, value: string) {
+    setCart((current) =>
+      current.map((item) => (item.key === itemKey ? { ...item, notes: value } : item))
+    )
+  }
+
+  function togglePrescriptionCheck(itemKey: string, checked: boolean) {
+    setCart((current) =>
+      current.map((item) =>
+        item.key === itemKey ? { ...item, prescription_checked: checked } : item
+      )
+    )
+  }
+
+  function handleSearchKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key !== "Enter") return
+    event.preventDefault()
+    const q = search.trim().toLowerCase()
+    const exact = q
+      ? sellableItems.find(
+          (item) =>
+            item.barcode?.toLowerCase() === q ||
+            item.sku?.toLowerCase() === q ||
+            item.name.toLowerCase() === q
+        )
+      : null
+    const target = exact ?? (filteredProducts.length === 1 ? filteredProducts[0] : null)
+    if (!target) {
+      setSaleError("Produto nao identificado para adicionar.")
+      return
+    }
+    addToCart(target)
+  }
+
+  function openPayDialog() {
+    setSaleError(null)
+    if (cart.length === 0) {
+      setSaleError("Adicione pelo menos um produto.")
+      return
+    }
+    setPayments([{ method: "cash", amount: String(finalTotal.toFixed(2)) }])
+    setPayDialogOpen(true)
+  }
+
+  function addPaymentLine(method: PaymentMethod = "pix") {
+    setPayments((current) => [
+      ...current,
+      { method, amount: remaining > 0 ? remaining.toFixed(2) : "" },
+    ])
+  }
+
+  function removePaymentLine(index: number) {
+    setPayments((current) => current.filter((_, idx) => idx !== index))
+  }
+
+  function updatePaymentMethod(index: number, method: PaymentMethod) {
+    setPayments((current) =>
+      current.map((payment, idx) => (idx === index ? { ...payment, method } : payment))
+    )
+  }
+
+  function updatePaymentAmount(index: number, amount: string) {
+    setPayments((current) =>
+      current.map((payment, idx) => (idx === index ? { ...payment, amount } : payment))
+    )
+  }
+
+  function fillPaymentRemaining(index: number) {
+    const paidByOthers = payments.reduce(
+      (sum, payment, idx) => sum + (idx === index ? 0 : Number(payment.amount) || 0),
+      0
+    )
+    updatePaymentAmount(index, Math.max(0, finalTotal - paidByOthers).toFixed(2))
   }
 
   async function fillDeliveryAddressFromCep() {
@@ -384,6 +718,128 @@ export function PosSellPage() {
     }
   }
 
+  async function fillQuickCustomerAddressFromCep() {
+    setSaleError(null)
+    setQuickCepLoading(true)
+    try {
+      const address = await lookupCep(quickCustomerForm.postal_code)
+      setQuickCustomerForm((current) => ({
+        ...current,
+        postal_code: address.cep,
+        address_line: address.logradouro || current.address_line,
+        complement: current.complement || address.complemento || "",
+        neighborhood: address.bairro || current.neighborhood,
+        city: address.localidade || current.city,
+        state: address.uf || current.state,
+      }))
+    } catch (error) {
+      setSaleError(error instanceof Error ? error.message : "Nao foi possivel buscar o CEP.")
+    } finally {
+      setQuickCepLoading(false)
+    }
+  }
+
+  async function handleQuickCustomerSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setSaleError(null)
+    try {
+      const customer = await createCustomer.mutateAsync({
+        branch_id: branchId || null,
+        name: quickCustomerForm.name.trim(),
+        document: quickCustomerForm.document.trim() || null,
+        phone: quickCustomerForm.phone.trim() || null,
+        email: null,
+        birth_date: null,
+        status: "active",
+        postal_code: quickCustomerForm.postal_code.trim() || null,
+        address_line: quickCustomerForm.address_line.trim() || null,
+        address_number: quickCustomerForm.address_number.trim() || null,
+        complement: quickCustomerForm.complement.trim() || null,
+        neighborhood: quickCustomerForm.neighborhood.trim() || null,
+        city: quickCustomerForm.city.trim() || null,
+        state: quickCustomerForm.state.trim() || null,
+        reference: quickCustomerForm.reference.trim() || null,
+        notes: "Criado pelo PDV",
+        marketing_opt_in: false,
+      })
+      applyCustomer(customer)
+      setQuickCustomerForm(emptyQuickCustomerForm())
+      setQuickCustomerOpen(false)
+    } catch (error) {
+      setSaleError(error instanceof Error ? error.message : "Nao foi possivel criar o cliente.")
+    }
+  }
+
+  function holdCurrentSale() {
+    if (!branchId || cart.length === 0) {
+      setSaleError("Adicione itens antes de colocar a venda em espera.")
+      return
+    }
+    const nextIndex =
+      heldSales.reduce((max, sale) => {
+        const current = Number(sale.id.replace("held-", ""))
+        return Number.isFinite(current) ? Math.max(max, current) : max
+      }, 0) + 1
+    const held: HeldSale = {
+      id: `held-${nextIndex}`,
+      branch_id: branchId,
+      session_id: session?.id ?? null,
+      label: heldSaleLabel(customerName, Math.max(0, cartTotal(cart) - extraDiscount)),
+      created_at: new Date().toISOString(),
+      customer_name: customerName,
+      selected_customer_id: selectedCustomerId,
+      cart_discount: cartDiscount_,
+      sale_mode: saleMode,
+      delivery_enabled: deliveryEnabled,
+      delivery_form: deliveryForm,
+      cart,
+    }
+    setHeldSalesPersisted([held, ...heldSales])
+    resetCurrentSale()
+  }
+
+  function restoreHeldSale(held: HeldSale) {
+    setCart(held.cart)
+    setCustomerName(held.customer_name)
+    setSelectedCustomerId(held.selected_customer_id)
+    setCartDiscount_(held.cart_discount)
+    setModeOverride(held.sale_mode)
+    setDeliveryEnabled(held.delivery_enabled)
+    setDeliveryForm(held.delivery_form)
+    setHeldSalesPersisted(heldSales.filter((sale) => sale.id !== held.id))
+    setSaleError(null)
+    focusSearch()
+  }
+
+  function removeHeldSale(heldId: string) {
+    setHeldSalesPersisted(heldSales.filter((sale) => sale.id !== heldId))
+  }
+
+  function confirmCancelCurrentSale() {
+    if (!cancelReason.trim()) {
+      setSaleError("Informe o motivo do cancelamento.")
+      return
+    }
+    setCancelDialogOpen(false)
+    setCancelReason("")
+    resetCurrentSale()
+  }
+
+  function buildSaleNotes() {
+    const notes: string[] = [`Modo: ${saleModeLabel[saleMode]}`]
+    const itemNotes = cart
+      .filter((item) => item.notes.trim())
+      .map((item) => `${cartItemName(item)}: ${item.notes.trim()}`)
+    if (itemNotes.length > 0) notes.push(`Itens: ${itemNotes.join(" | ")}`)
+    if (requiresAuthorization) {
+      notes.push(`Autorizacao: ${managerAuthorization.trim()}`)
+    }
+    if (requiresPrescription) {
+      notes.push(`Receita/conferencia: ${prescriptionConfirmed ? "sim" : "nao"}`)
+    }
+    return notes.join("\n")
+  }
+
   async function handleSaleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!session) return
@@ -394,10 +850,23 @@ export function PosSellPage() {
       return
     }
 
+    if (requiresAuthorization && managerAuthorization.trim().length < 3) {
+      setSaleError("Informe a autorizacao para desconto ou alteracao de preco.")
+      return
+    }
+
+    if (requiresPrescription && !prescriptionConfirmed) {
+      setSaleError("Confirme a receita ou conferencia farmaceutica.")
+      return
+    }
+
+    if (saleMode === "pharmacy" && requiresPrescription && !customerName.trim()) {
+      setSaleError("Informe o cliente para venda com item controlado ou receita.")
+      return
+    }
+
     if (totalPaid < finalTotal - 0.005) {
-      setSaleError(
-        `Pagamento insuficiente. Falta ${formatCurrency(remaining)}.`
-      )
+      setSaleError(`Pagamento insuficiente. Falta ${formatCurrency(remaining)}.`)
       return
     }
 
@@ -406,8 +875,16 @@ export function PosSellPage() {
       return
     }
 
+    const invalidStock = cart.find((item) => {
+      const stock = item.variant?.stock_quantity ?? item.product.stock_quantity
+      return tracksInventory(item.product) && item.quantity > stock
+    })
+    if (invalidStock) {
+      setSaleError(`Estoque insuficiente para ${cartItemName(invalidStock)}.`)
+      return
+    }
+
     try {
-      const branchId = selectedBranchId ?? session.branch_id
       const saleItems = cart.map((item) => ({
         product_id: item.product.id,
         variant_id: item.variant?.id ?? null,
@@ -421,9 +898,14 @@ export function PosSellPage() {
         branch_id: branchId,
         session_id: session.id,
         post_id: session.post_id ?? null,
+        customer_id: selectedCustomerId || deliveryForm.customer_id || null,
         customer_name: customerName.trim() || null,
-        discount_amount: cartDiscount(cart) + extraDiscount,
-        notes: null,
+        sale_mode: saleMode,
+        manager_authorization: requiresAuthorization
+          ? managerAuthorization.trim()
+          : null,
+        discount_amount: discountTotal,
+        notes: buildSaleNotes(),
         items: deliveryFee > 0
           ? [
               ...saleItems,
@@ -439,18 +921,18 @@ export function PosSellPage() {
             ]
           : saleItems,
         payments: payments
-          .filter((p) => Number(p.amount) > 0)
-          .map((p) => ({
-            method: p.method,
-            amount: Number(p.amount),
-            change_amount: p.method === "cash" ? change : 0,
+          .filter((payment) => Number(payment.amount) > 0)
+          .map((payment) => ({
+            method: payment.method,
+            amount: Number(payment.amount),
+            change_amount: payment.method === "cash" ? change : 0,
           })),
       })
       if (deliveryEnabled) {
         await createDelivery.mutateAsync({
           branch_id: branchId,
           sale_id: saleId,
-          customer_id: deliveryForm.customer_id || null,
+          customer_id: selectedCustomerId || deliveryForm.customer_id || null,
           assigned_employee_id: null,
           source: "pos",
           status: "pending",
@@ -475,30 +957,12 @@ export function PosSellPage() {
           items: cart.map((item) => ({
             name: cartItemName(item),
             quantity: item.quantity,
+            notes: item.notes.trim() || null,
           })),
         })
       }
-      setCart([])
-      setCustomerName("")
-      setCartDiscount_("")
-      setDeliveryEnabled(false)
-      setDeliveryForm({
-        customer_id: "",
-        customer_phone: "",
-        postal_code: "",
-        address_line: "",
-        address_number: "",
-        complement: "",
-        neighborhood: "",
-        city: "",
-        state: "",
-        reference: "",
-        courier_name: "",
-        delivery_fee: "",
-        estimated_delivery_at: "",
-        notes: "",
-      })
       setPayDialogOpen(false)
+      resetCurrentSale()
     } catch (error) {
       setSaleError(error instanceof Error ? error.message : "Nao foi possivel finalizar a venda.")
     }
@@ -515,7 +979,7 @@ export function PosSellPage() {
   if (!session) {
     return (
       <>
-        <PageHeader title="PDV — Venda" description="Registre vendas pelo caixa." />
+        <PageHeader title="PDV - Venda" description="Registre vendas pelo caixa." />
         <div className="p-6">
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
             Nenhum caixa aberto. Acesse <strong>Caixa</strong> para abrir um caixa antes de registrar vendas.
@@ -528,231 +992,466 @@ export function PosSellPage() {
   return (
     <>
       <PageHeader
-        title="PDV — Venda"
-        description="Registre vendas pelo caixa."
+        title="PDV - Venda"
+        description="Registro de venda, cliente, pagamento e entrega no mesmo fluxo."
         action={
-          <Badge variant="default" className="text-sm">
-            Caixa aberto
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="gap-1">
+              <ModeIcon className="size-3" />
+              {saleModeLabel[saleMode]}
+            </Badge>
+            <Badge variant="default" className="text-sm">
+              Caixa aberto
+            </Badge>
+          </div>
         }
       />
 
-      <div className="p-6">
-        <div className="grid gap-6 xl:grid-cols-[1fr_400px]">
-          {/* Product search */}
+      <div className="p-4 sm:p-6">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_430px]">
           <div className="space-y-4">
             <Card className="border bg-white shadow-sm">
-              <CardHeader>
-                <CardTitle>Buscar produto</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
+              <CardHeader className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <CardTitle className="flex items-center gap-2">
+                    <Search className="size-5" />
+                    Produtos
+                  </CardTitle>
+                  <div className="flex flex-wrap gap-1">
+                    {saleModeOptions.map((mode) => {
+                      const Icon = saleModeIcon[mode]
+                      const active = mode === saleMode
+                      return (
+                        <Button
+                          key={mode}
+                          type="button"
+                          size="sm"
+                          variant={active ? "default" : "outline"}
+                          onClick={() => setModeOverride(mode)}
+                        >
+                          <Icon className="size-3.5" />
+                          {saleModeLabel[mode]}
+                        </Button>
+                      )
+                    })}
+                  </div>
+                </div>
                 <div className="relative">
                   <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
-                    className="pl-9"
-                    placeholder="Nome, codigo ou categoria..."
+                    ref={searchRef}
+                    className="h-10 pl-9 text-base"
+                    placeholder="Produto, codigo, SKU, categoria..."
                     value={search}
-                    onChange={(e) => setSearch(e.target.value)}
+                    onChange={(event) => setSearch(event.target.value)}
+                    onKeyDown={handleSearchKeyDown}
                     autoFocus
                   />
                 </div>
+                <div className="flex gap-1 overflow-x-auto pb-1">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={categoryFilter === "all" ? "default" : "outline"}
+                    onClick={() => setCategoryFilter("all")}
+                  >
+                    Todas
+                  </Button>
+                  {categoryOptions.map((category) => (
+                    <Button
+                      key={category}
+                      type="button"
+                      size="sm"
+                      variant={categoryFilter === category ? "default" : "outline"}
+                      onClick={() => setCategoryFilter(category)}
+                    >
+                      {category}
+                    </Button>
+                  ))}
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {saleError ? (
+                  <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {saleError}
+                  </div>
+                ) : null}
                 {filteredProducts.length === 0 ? (
                   <StateBlock title="Nenhum produto encontrado" />
                 ) : (
-                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                    {filteredProducts.map((item) => (
-                      <button
-                        key={item.key}
-                        type="button"
-                        className="rounded-lg border bg-white p-3 text-left transition-colors hover:bg-slate-50 hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-ring"
-                        onClick={() => addToCart(item)}
-                      >
-                        <div className="font-medium text-sm truncate">{item.name}</div>
-                        <div className="mt-1 text-xs text-muted-foreground">
-                          {item.product.category ?? item.product.unit}
-                          {item.variant ? " - variacao" : ""}
-                        </div>
-                        <div className="mt-1 font-semibold text-sm">
-                          {formatCurrency(item.unit_price)}
-                        </div>
-                        {item.product.track_inventory ?? true ? (
-                          <div className="mt-1 text-xs text-muted-foreground">
-                            Estoque {item.stock_quantity} {item.product.unit}
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+                    {filteredProducts.map((item) => {
+                      const stockBlocked = tracksInventory(item.product) && item.stock_quantity <= 0
+                      const needsPrescription =
+                        item.product.prescription_required || item.product.controlled_substance
+                      return (
+                        <button
+                          key={item.key}
+                          type="button"
+                          className="min-h-32 rounded-lg border bg-white p-3 text-left transition-colors hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-55"
+                          onClick={() => addToCart(item)}
+                          disabled={stockBlocked}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="line-clamp-2 text-sm font-semibold">
+                                {item.name}
+                              </div>
+                              <div className="mt-1 text-xs text-muted-foreground">
+                                {item.category}
+                              </div>
+                            </div>
+                            {needsPrescription ? (
+                              <Badge variant="destructive">
+                                <Pill className="size-3" />
+                                RX
+                              </Badge>
+                            ) : null}
                           </div>
-                        ) : null}
-                      </button>
-                    ))}
+                          <div className="mt-3 flex items-end justify-between gap-2">
+                            <div>
+                              <div className="text-base font-semibold">
+                                {formatCurrency(item.unit_price)}
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                {item.product.unit}
+                              </div>
+                            </div>
+                            <Badge variant={stockBlocked ? "destructive" : "outline"}>
+                              {badgeForStock(item)}
+                            </Badge>
+                          </div>
+                          {(item.barcode || item.sku) ? (
+                            <div className="mt-2 truncate text-xs text-muted-foreground">
+                              {item.barcode ?? item.sku}
+                            </div>
+                          ) : null}
+                        </button>
+                      )
+                    })}
                   </div>
                 )}
               </CardContent>
             </Card>
           </div>
 
-          {/* Cart */}
           <div className="space-y-4">
             <Card className="border bg-white shadow-sm">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <ShoppingCart className="size-5" />
-                  Carrinho
-                  {cart.length > 0 && (
-                    <Badge variant="secondary">{cart.length} {cart.length === 1 ? "item" : "itens"}</Badge>
-                  )}
-                </CardTitle>
+              <CardHeader className="space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <CardTitle className="flex items-center gap-2">
+                    <ShoppingCart className="size-5" />
+                    Carrinho
+                  </CardTitle>
+                  <Badge variant="secondary">
+                    {cart.length} {cart.length === 1 ? "item" : "itens"}
+                  </Badge>
+                </div>
+                <div className="grid gap-2">
+                  <label className="space-y-1 text-sm">
+                    <span className="font-medium">Cliente cadastrado</span>
+                    <div className="flex gap-2">
+                      <select
+                        className={fieldClass}
+                        value={selectedCustomerId}
+                        onChange={(event) => applyCustomerById(event.target.value)}
+                      >
+                        <option value="">Cliente avulso</option>
+                        {customerOptions.map((customer) => (
+                          <option key={customer.id} value={customer.id}>
+                            {customer.customer_code} - {customer.name}
+                            {customer.phone ? ` (${customer.phone})` : ""}
+                          </option>
+                        ))}
+                      </select>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        onClick={() => setQuickCustomerOpen(true)}
+                        aria-label="Novo cliente"
+                      >
+                        <UserPlus className="size-4" />
+                      </Button>
+                    </div>
+                  </label>
+                  <label className="space-y-1 text-sm">
+                    <span className="font-medium">Nome no cupom</span>
+                    <Input
+                      value={customerName}
+                      onChange={(event) => setCustomerName(event.target.value)}
+                      placeholder="Consumidor final"
+                    />
+                  </label>
+                </div>
               </CardHeader>
               <CardContent className="space-y-3">
                 {cart.length === 0 ? (
-                  <StateBlock title="Carrinho vazio" description="Adicione produtos ao lado." />
+                  <StateBlock title="Carrinho vazio" description="Adicione produtos para iniciar." />
                 ) : (
                   <>
-                    <div className="space-y-2">
-                      {cart.map((item) => (
-                        <div
-                          key={item.key}
-                          className="rounded-lg border p-3 space-y-2"
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <div className="font-medium text-sm truncate">
-                                {cartItemName(item)}
+                    <div className="max-h-[48vh] space-y-2 overflow-y-auto pr-1">
+                      {cart.map((item) => {
+                        const needsPrescription = itemHasPrescriptionRule(item)
+                        return (
+                          <div key={item.key} className="rounded-lg border p-2.5">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="truncate text-sm font-semibold">
+                                  {cartItemName(item)}
+                                </div>
+                                <div className="flex flex-wrap gap-1 pt-1">
+                                  <Badge variant="outline">
+                                    {formatCurrency(cartItemTotal(item))}
+                                  </Badge>
+                                  {itemHasPriceChange(item) ? (
+                                    <Badge variant="destructive">
+                                      <ShieldCheck className="size-3" />
+                                      Preco
+                                    </Badge>
+                                  ) : null}
+                                  {needsPrescription ? (
+                                    <Badge variant="destructive">
+                                      <Pill className="size-3" />
+                                      Receita
+                                    </Badge>
+                                  ) : null}
+                                </div>
                               </div>
-                              <div className="text-xs text-muted-foreground">
-                                {formatCurrency(cartItemTotal(item))}
-                              </div>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon-sm"
+                                onClick={() => removeFromCart(item.key)}
+                                aria-label="Remover item"
+                              >
+                                <X className="size-4" />
+                              </Button>
                             </div>
-                            <button
-                              type="button"
-                              className="shrink-0 text-muted-foreground hover:text-red-500"
-                              onClick={() => removeFromCart(item.key)}
-                              aria-label="Remover"
-                            >
-                              <X className="size-4" />
-                            </button>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="icon"
-                              className="size-7"
-                              onClick={() => updateQuantity(item.key, -1)}
-                            >
-                              <Minus className="size-3" />
-                            </Button>
-                            <input
-                              type="number"
-                              min={item.product.allow_fractional_quantity ? "0.001" : "1"}
-                              step={item.product.allow_fractional_quantity ? "0.001" : "1"}
-                              className="h-7 w-16 rounded border px-1.5 text-center text-sm font-medium outline-none focus:border-ring"
-                              value={item.quantity}
-                              onChange={(e) => updateQuantityValue(item.key, e.target.value)}
-                              aria-label="Quantidade"
-                            />
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="icon"
-                              className="size-7"
-                              onClick={() => updateQuantity(item.key, 1)}
-                            >
-                              <Plus className="size-3" />
-                            </Button>
-                            <div className="flex items-center gap-1 ml-auto">
-                              <span className="text-xs text-muted-foreground">R$</span>
+
+                            <div className="mt-2 grid grid-cols-[auto_64px_auto_1fr] items-center gap-1.5">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="icon-sm"
+                                onClick={() => updateQuantity(item.key, -1)}
+                              >
+                                <Minus className="size-3" />
+                              </Button>
                               <input
                                 type="number"
-                                step="0.01"
-                                min="0"
-                                className="h-7 w-20 rounded border px-1.5 text-xs outline-none focus:border-ring"
-                                value={item.unit_price}
-                                onChange={(e) => updateItemPrice(item.key, e.target.value)}
+                                min={item.product.allow_fractional_quantity ? "0.001" : "1"}
+                                step={item.product.allow_fractional_quantity ? "0.001" : "1"}
+                                className="h-7 rounded border px-1.5 text-center text-sm font-medium outline-none focus:border-ring"
+                                value={formatQuantity(item.quantity)}
+                                onChange={(event) =>
+                                  updateQuantityValue(item.key, event.target.value)
+                                }
+                                aria-label="Quantidade"
                               />
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="icon-sm"
+                                onClick={() => updateQuantity(item.key, 1)}
+                              >
+                                <Plus className="size-3" />
+                              </Button>
+                              <div className="grid grid-cols-2 gap-1">
+                                <label className="flex items-center gap-1">
+                                  <span className="text-xs text-muted-foreground">R$</span>
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    className="h-7 min-w-0 rounded border px-1.5 text-xs outline-none focus:border-ring"
+                                    value={item.unit_price}
+                                    onChange={(event) =>
+                                      updateItemPrice(item.key, event.target.value)
+                                    }
+                                  />
+                                </label>
+                                <label className="flex items-center gap-1">
+                                  <Percent className="size-3 text-muted-foreground" />
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    className="h-7 min-w-0 rounded border px-1.5 text-xs outline-none focus:border-ring"
+                                    value={item.discount || ""}
+                                    onChange={(event) =>
+                                      updateItemDiscount(item.key, event.target.value)
+                                    }
+                                  />
+                                </label>
+                              </div>
                             </div>
+
+                            {(saleMode === "restaurant" || saleMode === "pharmacy" || needsPrescription) ? (
+                              <div className="mt-2 space-y-2">
+                                {saleMode === "restaurant" ? (
+                                  <label className="space-y-1 text-xs">
+                                    <span className="font-medium">Observacao do item</span>
+                                    <Input
+                                      className="h-7 text-xs"
+                                      value={item.notes}
+                                      onChange={(event) =>
+                                        updateItemNotes(item.key, event.target.value)
+                                      }
+                                      placeholder="Sem cebola, ponto da carne..."
+                                    />
+                                  </label>
+                                ) : null}
+                                {needsPrescription ? (
+                                  <label className="flex items-center gap-2 text-xs font-medium">
+                                    <input
+                                      type="checkbox"
+                                      checked={item.prescription_checked}
+                                      onChange={(event) =>
+                                        togglePrescriptionCheck(item.key, event.target.checked)
+                                      }
+                                    />
+                                    Receita/conferencia do item
+                                  </label>
+                                ) : null}
+                              </div>
+                            ) : null}
                           </div>
-                          <div className="flex items-center gap-1">
-                            <span className="text-xs text-muted-foreground">Desc. item R$</span>
-                            <input
-                              type="number"
-                              step="0.01"
-                              min="0"
-                              className="h-7 w-20 rounded border px-1.5 text-xs outline-none focus:border-ring"
-                              value={item.discount || ""}
-                              onChange={(e) => updateItemDiscount(item.key, e.target.value)}
-                            />
-                          </div>
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
 
-                    <div className="space-y-2 border-t pt-3">
+                    <div className="grid gap-2 border-t pt-3">
                       <label className="flex items-center justify-between gap-2 text-sm">
-                        <span className="text-muted-foreground">Cliente (opcional)</span>
-                        <Input
-                          className="w-40 h-7 text-xs"
-                          placeholder="Nome..."
-                          value={customerName}
-                          onChange={(e) => setCustomerName(e.target.value)}
-                        />
-                      </label>
-                      <label className="flex items-center justify-between gap-2 text-sm">
-                        <span className="text-muted-foreground">Desconto extra R$</span>
+                        <span className="text-muted-foreground">Desconto venda R$</span>
                         <input
                           type="number"
                           step="0.01"
                           min="0"
                           placeholder="0,00"
-                          className="h-7 w-24 rounded border px-1.5 text-xs outline-none focus:border-ring"
+                          className="h-8 w-28 rounded border px-2 text-sm outline-none focus:border-ring"
                           value={cartDiscount_}
-                          onChange={(e) => setCartDiscount_(e.target.value)}
+                          onChange={(event) => setCartDiscount_(event.target.value)}
                         />
                       </label>
+                      {requiresAuthorization ? (
+                        <label className="space-y-1 text-sm">
+                          <span className="font-medium">Autorizacao</span>
+                          <Input
+                            value={managerAuthorization}
+                            onChange={(event) =>
+                              setManagerAuthorization(event.target.value)
+                            }
+                            placeholder="Responsavel"
+                          />
+                        </label>
+                      ) : null}
                     </div>
 
-                    <div className="rounded-lg border bg-slate-50 p-3 space-y-1 text-sm">
+                    <div className="rounded-lg border bg-slate-50 p-3 text-sm">
                       <div className="flex justify-between text-muted-foreground">
                         <span>Subtotal</span>
-                        <span>{formatCurrency(cartSubtotal(cart))}</span>
+                        <span>{formatCurrency(subtotal)}</span>
                       </div>
-                      {(cartDiscount(cart) + extraDiscount) > 0 && (
+                      {discountTotal > 0 ? (
                         <div className="flex justify-between text-red-600">
                           <span>Descontos</span>
-                          <span>- {formatCurrency(cartDiscount(cart) + extraDiscount)}</span>
+                          <span>- {formatCurrency(discountTotal)}</span>
                         </div>
-                      )}
-                      {deliveryFee > 0 && (
+                      ) : null}
+                      {deliveryFee > 0 ? (
                         <div className="flex justify-between text-muted-foreground">
                           <span>Taxa de entrega</span>
                           <span>{formatCurrency(deliveryFee)}</span>
                         </div>
-                      )}
-                      <div className="flex justify-between font-semibold text-base border-t pt-1">
+                      ) : null}
+                      <div className="mt-1 flex justify-between border-t pt-2 text-lg font-semibold">
                         <span>Total</span>
                         <span>{formatCurrency(finalTotal)}</span>
                       </div>
                     </div>
 
-                    <Button
-                      className="w-full"
-                      onClick={openPayDialog}
-                      disabled={cart.length === 0}
-                    >
-                      <CreditCard className="size-4" />
-                      Pagamento — {formatCurrency(finalTotal)}
-                    </Button>
-
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      onClick={() => {
-                        setCart([])
-                        setCustomerName("")
-                        setCartDiscount_("")
-                      }}
-                    >
-                      <Trash2 className="size-4" />
-                      Limpar carrinho
-                    </Button>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button type="button" onClick={openPayDialog}>
+                        <CreditCard className="size-4" />
+                        Pagamento
+                      </Button>
+                      <Button type="button" variant="outline" onClick={holdCurrentSale}>
+                        <Pause className="size-4" />
+                        Espera
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setCancelDialogOpen(true)}
+                      >
+                        <Ban className="size-4" />
+                        Cancelar
+                      </Button>
+                      <Button type="button" variant="outline" onClick={resetCurrentSale}>
+                        <Trash2 className="size-4" />
+                        Limpar
+                      </Button>
+                    </div>
                   </>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="border bg-white shadow-sm">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <History className="size-5" />
+                  Em espera
+                  {heldSalesForBranch.length > 0 ? (
+                    <Badge variant="secondary">{heldSalesForBranch.length}</Badge>
+                  ) : null}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {heldSalesForBranch.length === 0 ? (
+                  <StateBlock title="Nenhuma venda em espera" />
+                ) : (
+                  <div className="space-y-2">
+                    {heldSalesForBranch.map((held) => (
+                      <div
+                        key={held.id}
+                        className="flex items-center justify-between gap-2 rounded-lg border p-2"
+                      >
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-medium">
+                            {held.label}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {new Date(held.created_at).toLocaleTimeString("pt-BR", {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </div>
+                        </div>
+                        <div className="flex gap-1">
+                          <Button
+                            type="button"
+                            size="icon-sm"
+                            variant="outline"
+                            onClick={() => restoreHeldSale(held)}
+                            aria-label="Retomar venda"
+                          >
+                            <RotateCcw className="size-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            size="icon-sm"
+                            variant="ghost"
+                            onClick={() => removeHeldSale(held.id)}
+                            aria-label="Excluir venda em espera"
+                          >
+                            <X className="size-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </CardContent>
             </Card>
@@ -760,86 +1459,116 @@ export function PosSellPage() {
         </div>
       </div>
 
-      {/* Payment dialog */}
       <Dialog open={payDialogOpen} onOpenChange={setPayDialogOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-h-[92vh] max-w-3xl overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Pagamento</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <ReceiptText className="size-5" />
+              Pagamento
+            </DialogTitle>
           </DialogHeader>
-          <form className="space-y-4" onSubmit={(e) => void handleSaleSubmit(e)}>
-            <div className="rounded-lg border bg-slate-50 p-3 text-sm space-y-1">
-              <div className="flex justify-between font-semibold">
-                <span>Total a pagar</span>
-                <span>{formatCurrency(finalTotal)}</span>
+          <form className="space-y-4" onSubmit={(event) => void handleSaleSubmit(event)}>
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="rounded-lg border bg-slate-50 p-3">
+                <div className="text-xs text-muted-foreground">Itens</div>
+                <div className="text-xl font-semibold">{formatQuantity(totalUnits)}</div>
+              </div>
+              <div className="rounded-lg border bg-slate-50 p-3">
+                <div className="text-xs text-muted-foreground">Total</div>
+                <div className="text-xl font-semibold">{formatCurrency(finalTotal)}</div>
+              </div>
+              <div className="rounded-lg border bg-slate-50 p-3">
+                <div className="text-xs text-muted-foreground">Falta</div>
+                <div className={remaining > 0.005 ? "text-xl font-semibold text-red-600" : "text-xl font-semibold text-emerald-700"}>
+                  {formatCurrency(remaining)}
+                </div>
               </div>
             </div>
+
+            {(requiresAuthorization || requiresPrescription) ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                <div className="flex items-center gap-2 font-medium">
+                  <AlertTriangle className="size-4" />
+                  Conferencia necessaria
+                </div>
+                {requiresAuthorization ? (
+                  <label className="mt-2 block space-y-1">
+                    <span>Autorizacao</span>
+                    <Input
+                      value={managerAuthorization}
+                      onChange={(event) => setManagerAuthorization(event.target.value)}
+                      placeholder="Responsavel"
+                    />
+                  </label>
+                ) : null}
+                {requiresPrescription ? (
+                  <label className="mt-2 flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={prescriptionConfirmed}
+                      onChange={(event) =>
+                        setPrescriptionConfirmed(event.target.checked)
+                      }
+                    />
+                    Receita ou conferencia farmaceutica confirmada
+                  </label>
+                ) : null}
+              </div>
+            ) : null}
 
             <div className="space-y-3 rounded-lg border p-3">
               <label className="flex items-center gap-2 text-sm font-medium">
                 <input
                   type="checkbox"
                   checked={deliveryEnabled}
-                  onChange={(e) => setDeliveryEnabled(e.target.checked)}
+                  onChange={(event) => setDeliveryEnabled(event.target.checked)}
                 />
                 <MapPin className="size-4" />
-                Gerar entrega a partir desta venda
+                Gerar entrega
               </label>
               {deliveryEnabled ? (
                 <div className="space-y-3 border-t pt-3">
-                  <label className="space-y-1 text-sm">
-                    <span className="font-medium">Cliente cadastrado</span>
-                    <select
-                      className={fieldClass}
-                      value={deliveryForm.customer_id}
-                      onChange={(e) => applyDeliveryCustomer(e.target.value)}
-                    >
-                      <option value="">Cliente avulso</option>
-                      {customerOptions.map((customer) => (
-                        <option key={customer.id} value={customer.id}>
-                          {customer.customer_code} - {customer.name}
-                          {customer.phone ? ` (${customer.phone})` : ""}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <div className="grid gap-2 sm:grid-cols-2">
+                  <div className="grid gap-2 md:grid-cols-[1fr_150px]">
                     <label className="space-y-1 text-sm">
-                      <span className="font-medium">Telefone</span>
-                      <Input
-                        value={deliveryForm.customer_phone}
-                        onChange={(e) =>
-                          setDeliveryForm((current) => ({
-                            ...current,
-                            customer_phone: e.target.value,
-                          }))
-                        }
-                      />
+                      <span className="font-medium">Cliente da entrega</span>
+                      <select
+                        className={fieldClass}
+                        value={deliveryForm.customer_id || selectedCustomerId}
+                        onChange={(event) => applyCustomerById(event.target.value)}
+                      >
+                        <option value="">Cliente avulso</option>
+                        {customerOptions.map((customer) => (
+                          <option key={customer.id} value={customer.id}>
+                            {customer.customer_code} - {customer.name}
+                          </option>
+                        ))}
+                      </select>
                     </label>
                     <label className="space-y-1 text-sm">
-                      <span className="font-medium">Taxa de entrega</span>
+                      <span className="font-medium">Taxa</span>
                       <Input
                         type="number"
                         min={0}
                         step="0.01"
                         value={deliveryForm.delivery_fee}
-                        onChange={(e) =>
+                        onChange={(event) =>
                           setDeliveryForm((current) => ({
                             ...current,
-                            delivery_fee: e.target.value,
+                            delivery_fee: event.target.value,
                           }))
                         }
                       />
                     </label>
                   </div>
-                  <div className="grid gap-2 sm:grid-cols-[140px_1fr_auto]">
+                  <div className="grid gap-2 md:grid-cols-[130px_1fr_auto]">
                     <label className="space-y-1 text-sm">
                       <span className="font-medium">CEP</span>
                       <Input
-                        value={deliveryForm.postal_code}
-                        onChange={(e) =>
+                        value={formatCep(deliveryForm.postal_code)}
+                        onChange={(event) =>
                           setDeliveryForm((current) => ({
                             ...current,
-                            postal_code: e.target.value,
+                            postal_code: event.target.value,
                           }))
                         }
                       />
@@ -849,10 +1578,10 @@ export function PosSellPage() {
                       <Input
                         required={deliveryEnabled}
                         value={deliveryForm.address_line}
-                        onChange={(e) =>
+                        onChange={(event) =>
                           setDeliveryForm((current) => ({
                             ...current,
-                            address_line: e.target.value,
+                            address_line: event.target.value,
                           }))
                         }
                       />
@@ -869,15 +1598,15 @@ export function PosSellPage() {
                       </Button>
                     </div>
                   </div>
-                  <div className="grid gap-2 sm:grid-cols-4">
+                  <div className="grid gap-2 md:grid-cols-4">
                     <label className="space-y-1 text-sm">
                       <span className="font-medium">Numero</span>
                       <Input
                         value={deliveryForm.address_number}
-                        onChange={(e) =>
+                        onChange={(event) =>
                           setDeliveryForm((current) => ({
                             ...current,
-                            address_number: e.target.value,
+                            address_number: event.target.value,
                           }))
                         }
                       />
@@ -886,36 +1615,36 @@ export function PosSellPage() {
                       <span className="font-medium">Compl.</span>
                       <Input
                         value={deliveryForm.complement}
-                        onChange={(e) =>
+                        onChange={(event) =>
                           setDeliveryForm((current) => ({
                             ...current,
-                            complement: e.target.value,
+                            complement: event.target.value,
                           }))
                         }
                       />
                     </label>
-                    <label className="space-y-1 text-sm sm:col-span-2">
+                    <label className="space-y-1 text-sm md:col-span-2">
                       <span className="font-medium">Bairro</span>
                       <Input
                         value={deliveryForm.neighborhood}
-                        onChange={(e) =>
+                        onChange={(event) =>
                           setDeliveryForm((current) => ({
                             ...current,
-                            neighborhood: e.target.value,
+                            neighborhood: event.target.value,
                           }))
                         }
                       />
                     </label>
                   </div>
-                  <div className="grid gap-2 sm:grid-cols-3">
+                  <div className="grid gap-2 md:grid-cols-[1fr_80px_1fr]">
                     <label className="space-y-1 text-sm">
                       <span className="font-medium">Cidade</span>
                       <Input
                         value={deliveryForm.city}
-                        onChange={(e) =>
+                        onChange={(event) =>
                           setDeliveryForm((current) => ({
                             ...current,
-                            city: e.target.value,
+                            city: event.target.value,
                           }))
                         }
                       />
@@ -925,24 +1654,36 @@ export function PosSellPage() {
                       <Input
                         maxLength={2}
                         value={deliveryForm.state}
-                        onChange={(e) =>
+                        onChange={(event) =>
                           setDeliveryForm((current) => ({
                             ...current,
-                            state: e.target.value,
+                            state: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="space-y-1 text-sm">
+                      <span className="font-medium">Telefone</span>
+                      <Input
+                        value={deliveryForm.customer_phone}
+                        onChange={(event) =>
+                          setDeliveryForm((current) => ({
+                            ...current,
+                            customer_phone: event.target.value,
                           }))
                         }
                       />
                     </label>
                   </div>
-                  <div className="grid gap-2 sm:grid-cols-2">
+                  <div className="grid gap-2 md:grid-cols-2">
                     <label className="space-y-1 text-sm">
                       <span className="font-medium">Referencia</span>
                       <Input
                         value={deliveryForm.reference}
-                        onChange={(e) =>
+                        onChange={(event) =>
                           setDeliveryForm((current) => ({
                             ...current,
-                            reference: e.target.value,
+                            reference: event.target.value,
                           }))
                         }
                       />
@@ -952,24 +1693,24 @@ export function PosSellPage() {
                       <Input
                         type="datetime-local"
                         value={deliveryForm.estimated_delivery_at}
-                        onChange={(e) =>
+                        onChange={(event) =>
                           setDeliveryForm((current) => ({
                             ...current,
-                            estimated_delivery_at: e.target.value,
+                            estimated_delivery_at: event.target.value,
                           }))
                         }
                       />
                     </label>
                   </div>
                   <label className="space-y-1 text-sm">
-                    <span className="font-medium">Observacoes da entrega</span>
+                    <span className="font-medium">Observacoes</span>
                     <textarea
-                      className="min-h-16 w-full rounded-lg border bg-white px-2.5 py-2 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
+                      className={textareaClass}
                       value={deliveryForm.notes}
-                      onChange={(e) =>
+                      onChange={(event) =>
                         setDeliveryForm((current) => ({
                           ...current,
-                          notes: e.target.value,
+                          notes: event.target.value,
                         }))
                       }
                     />
@@ -978,74 +1719,88 @@ export function PosSellPage() {
               ) : null}
             </div>
 
-            <div className="space-y-2">
-              {payments.map((payment, idx) => (
-                <div key={idx} className="flex items-center gap-2">
+            <div className="grid gap-2">
+              <div className="flex flex-wrap gap-1">
+                {(Object.keys(paymentMethodLabel) as PaymentMethod[]).map((method) => (
+                  <Button
+                    key={method}
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => addPaymentLine(method)}
+                  >
+                    {paymentMethodLabel[method]}
+                  </Button>
+                ))}
+              </div>
+              {payments.map((payment, index) => (
+                <div key={index} className="grid grid-cols-[1fr_120px_auto_auto] gap-2">
                   <select
-                    className={`${fieldClass} flex-1`}
+                    className={fieldClass}
                     value={payment.method}
-                    onChange={(e) =>
-                      updatePaymentMethod(idx, e.target.value as PaymentMethod)
+                    onChange={(event) =>
+                      updatePaymentMethod(index, event.target.value as PaymentMethod)
                     }
                   >
-                    {(Object.keys(paymentMethodLabel) as PaymentMethod[]).map(
-                      (m) => (
-                        <option key={m} value={m}>
-                          {paymentMethodLabel[m]}
-                        </option>
-                      )
-                    )}
+                    {(Object.keys(paymentMethodLabel) as PaymentMethod[]).map((method) => (
+                      <option key={method} value={method}>
+                        {paymentMethodLabel[method]}
+                      </option>
+                    ))}
                   </select>
                   <Input
                     type="number"
                     step="0.01"
                     min="0"
                     placeholder="0,00"
-                    className="w-28"
                     value={payment.amount}
-                    onChange={(e) => updatePaymentAmount(idx, e.target.value)}
+                    onChange={(event) => updatePaymentAmount(index, event.target.value)}
                   />
-                  {payments.length > 1 && (
-                    <button
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="outline"
+                    onClick={() => fillPaymentRemaining(index)}
+                    aria-label="Preencher restante"
+                  >
+                    <Clock3 className="size-4" />
+                  </Button>
+                  {payments.length > 1 ? (
+                    <Button
                       type="button"
-                      className="text-muted-foreground hover:text-red-500"
-                      onClick={() => removePaymentLine(idx)}
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => removePaymentLine(index)}
+                      aria-label="Remover pagamento"
                     >
                       <X className="size-4" />
-                    </button>
+                    </Button>
+                  ) : (
+                    <span />
                   )}
                 </div>
               ))}
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={addPaymentLine}
-              >
-                <Plus className="size-3" />
-                Outra forma
-              </Button>
             </div>
 
-            <div className="rounded-lg border p-3 text-sm space-y-1">
+            <div className="rounded-lg border p-3 text-sm">
               <div className="flex justify-between text-muted-foreground">
                 <span>Total pago</span>
                 <span className={totalPaid >= finalTotal ? "text-emerald-700" : "text-red-600"}>
                   {formatCurrency(totalPaid)}
                 </span>
               </div>
-              {change > 0 && (
+              {change > 0 ? (
                 <div className="flex justify-between font-semibold text-emerald-700">
                   <span>Troco</span>
                   <span>{formatCurrency(change)}</span>
                 </div>
-              )}
-              {remaining > 0.005 && (
+              ) : null}
+              {remaining > 0.005 ? (
                 <div className="flex justify-between font-semibold text-red-600">
                   <span>Falta pagar</span>
                   <span>{formatCurrency(remaining)}</span>
                 </div>
-              )}
+              ) : null}
             </div>
 
             {saleError ? (
@@ -1063,10 +1818,220 @@ export function PosSellPage() {
                   totalPaid < finalTotal - 0.005
                 }
               >
+                <CreditCard className="size-4" />
                 Confirmar venda
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={quickCustomerOpen} onOpenChange={setQuickCustomerOpen}>
+        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserPlus className="size-5" />
+              Cliente rapido
+            </DialogTitle>
+          </DialogHeader>
+          <form className="space-y-3" onSubmit={(event) => void handleQuickCustomerSubmit(event)}>
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="space-y-1 text-sm">
+                <span className="font-medium">Nome</span>
+                <Input
+                  required
+                  value={quickCustomerForm.name}
+                  onChange={(event) =>
+                    setQuickCustomerForm((current) => ({
+                      ...current,
+                      name: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label className="space-y-1 text-sm">
+                <span className="font-medium">Telefone</span>
+                <Input
+                  value={quickCustomerForm.phone}
+                  onChange={(event) =>
+                    setQuickCustomerForm((current) => ({
+                      ...current,
+                      phone: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+            </div>
+            <div className="grid gap-3 md:grid-cols-[1fr_130px_auto]">
+              <label className="space-y-1 text-sm">
+                <span className="font-medium">Documento</span>
+                <Input
+                  value={quickCustomerForm.document}
+                  onChange={(event) =>
+                    setQuickCustomerForm((current) => ({
+                      ...current,
+                      document: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label className="space-y-1 text-sm">
+                <span className="font-medium">CEP</span>
+                <Input
+                  value={formatCep(quickCustomerForm.postal_code)}
+                  onChange={(event) =>
+                    setQuickCustomerForm((current) => ({
+                      ...current,
+                      postal_code: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <div className="flex items-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void fillQuickCustomerAddressFromCep()}
+                  disabled={quickCepLoading}
+                >
+                  <MapPin className="size-4" />
+                  CEP
+                </Button>
+              </div>
+            </div>
+            <div className="grid gap-3 md:grid-cols-[1fr_110px_1fr]">
+              <label className="space-y-1 text-sm">
+                <span className="font-medium">Endereco</span>
+                <Input
+                  value={quickCustomerForm.address_line}
+                  onChange={(event) =>
+                    setQuickCustomerForm((current) => ({
+                      ...current,
+                      address_line: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label className="space-y-1 text-sm">
+                <span className="font-medium">Numero</span>
+                <Input
+                  value={quickCustomerForm.address_number}
+                  onChange={(event) =>
+                    setQuickCustomerForm((current) => ({
+                      ...current,
+                      address_number: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label className="space-y-1 text-sm">
+                <span className="font-medium">Complemento</span>
+                <Input
+                  value={quickCustomerForm.complement}
+                  onChange={(event) =>
+                    setQuickCustomerForm((current) => ({
+                      ...current,
+                      complement: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+            </div>
+            <div className="grid gap-3 md:grid-cols-[1fr_1fr_80px]">
+              <label className="space-y-1 text-sm">
+                <span className="font-medium">Bairro</span>
+                <Input
+                  value={quickCustomerForm.neighborhood}
+                  onChange={(event) =>
+                    setQuickCustomerForm((current) => ({
+                      ...current,
+                      neighborhood: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label className="space-y-1 text-sm">
+                <span className="font-medium">Cidade</span>
+                <Input
+                  value={quickCustomerForm.city}
+                  onChange={(event) =>
+                    setQuickCustomerForm((current) => ({
+                      ...current,
+                      city: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label className="space-y-1 text-sm">
+                <span className="font-medium">UF</span>
+                <Input
+                  maxLength={2}
+                  value={quickCustomerForm.state}
+                  onChange={(event) =>
+                    setQuickCustomerForm((current) => ({
+                      ...current,
+                      state: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+            </div>
+            <label className="space-y-1 text-sm">
+              <span className="font-medium">Referencia</span>
+              <Input
+                value={quickCustomerForm.reference}
+                onChange={(event) =>
+                  setQuickCustomerForm((current) => ({
+                    ...current,
+                    reference: event.target.value,
+                  }))
+                }
+              />
+            </label>
+            <DialogFooter>
+              <Button type="submit" disabled={createCustomer.isPending}>
+                <UserPlus className="size-4" />
+                Salvar cliente
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Ban className="size-5" />
+              Cancelar venda atual
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <label className="space-y-1 text-sm">
+              <span className="font-medium">Motivo</span>
+              <textarea
+                className={textareaClass}
+                value={cancelReason}
+                onChange={(event) => setCancelReason(event.target.value)}
+              />
+            </label>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setCancelDialogOpen(false)}
+              >
+                Voltar
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={confirmCancelCurrentSale}
+              >
+                Cancelar venda
+              </Button>
+            </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
     </>

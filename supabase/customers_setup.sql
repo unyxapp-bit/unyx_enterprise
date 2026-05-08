@@ -151,6 +151,25 @@ do $$ begin
     on public.delivery_orders(customer_id)
     where customer_id is not null;
   end if;
+
+  if to_regclass('public.sales') is not null then
+    alter table public.sales add column if not exists customer_id uuid;
+
+    if not exists (
+      select 1
+      from pg_constraint
+      where conname = 'sales_customer_id_fkey'
+        and conrelid = 'public.sales'::regclass
+    ) then
+      alter table public.sales
+        add constraint sales_customer_id_fkey
+        foreign key (customer_id) references public.customers(id) on delete set null;
+    end if;
+
+    create index if not exists idx_sales_customer
+    on public.sales(customer_id)
+    where customer_id is not null;
+  end if;
 exception when duplicate_object then null; end $$;
 
 alter table public.customers enable row level security;
