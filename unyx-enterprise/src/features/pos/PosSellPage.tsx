@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import type { FormEvent, KeyboardEvent } from "react"
 import {
   AlertTriangle,
@@ -334,6 +334,15 @@ export function PosSellPage() {
   const verifyOperator = useVerifyPosOperator()
 
   const searchRef = useRef<HTMLInputElement>(null)
+  const customerSelectRef = useRef<HTMLSelectElement>(null)
+  const cartDiscountRef = useRef<HTMLInputElement>(null)
+  const payFormRef = useRef<HTMLFormElement>(null)
+  const firstPaymentAmountRef = useRef<HTMLInputElement>(null)
+  const quantityInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
+  const discountInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
+  const shortcutHandlerRef = useRef<(event: globalThis.KeyboardEvent) => void>(
+    () => undefined
+  )
   const [selectedCashSessionIdOverride, setSelectedCashSessionIdOverride] = useState("")
   const openCashSessions = useMemo(
     () =>
@@ -371,6 +380,7 @@ export function PosSellPage() {
   const [productsExpanded, setProductsExpanded] = useState(false)
   const [categoryFilter, setCategoryFilter] = useState("all")
   const [cart, setCart] = useState<CartItem[]>([])
+  const [selectedCartItemKey, setSelectedCartItemKey] = useState("")
   const [customerName, setCustomerName] = useState("")
   const [selectedCustomerId, setSelectedCustomerId] = useState("")
   const [cartDiscount_, setCartDiscount_] = useState("")
@@ -564,9 +574,18 @@ export function PosSellPage() {
     Boolean(session?.id) &&
     !operatorReady &&
     operatorDialogDismissedSessionId !== session?.id
+  const selectedCartItem =
+    cart.find((item) => item.key === selectedCartItemKey) ?? cart.at(-1) ?? null
 
   function focusSearch() {
     window.setTimeout(() => searchRef.current?.focus(), 0)
+  }
+
+  function focusAndSelect(input: HTMLInputElement | null | undefined) {
+    window.setTimeout(() => {
+      input?.focus()
+      input?.select()
+    }, 0)
   }
 
   function queueCouponPrint(coupon: {
@@ -663,6 +682,7 @@ export function PosSellPage() {
 
   function resetCurrentSale() {
     setCart([])
+    setSelectedCartItemKey("")
     setCustomerName("")
     setSelectedCustomerId("")
     setCartDiscount_("")
@@ -745,6 +765,7 @@ export function PosSellPage() {
         },
       ]
     })
+    setSelectedCartItemKey(item.key)
     setSearch("")
     setProductsExpanded(false)
     focusSearch()
@@ -777,8 +798,73 @@ export function PosSellPage() {
   }
 
   function removeFromCart(itemKey: string) {
+    const removedIndex = cart.findIndex((item) => item.key === itemKey)
+    const nextCart = cart.filter((item) => item.key !== itemKey)
     setCart((current) => current.filter((item) => item.key !== itemKey))
+    if (selectedCartItem?.key === itemKey) {
+      const nextIndex = Math.min(Math.max(removedIndex, 0), nextCart.length - 1)
+      setSelectedCartItemKey(nextCart[nextIndex]?.key ?? "")
+    }
     focusSearch()
+  }
+
+  function selectCartItemByOffset(offset: number) {
+    if (cart.length === 0) {
+      setSaleError("Carrinho vazio.")
+      focusSearch()
+      return
+    }
+
+    const currentIndex = selectedCartItem
+      ? cart.findIndex((item) => item.key === selectedCartItem.key)
+      : cart.length - 1
+    const baseIndex = currentIndex >= 0 ? currentIndex : cart.length - 1
+    const nextIndex = (baseIndex + offset + cart.length) % cart.length
+    setSelectedCartItemKey(cart[nextIndex].key)
+    focusSearch()
+  }
+
+  function updateSelectedQuantity(delta: number) {
+    if (!selectedCartItem) {
+      setSaleError("Selecione ou adicione um item.")
+      focusSearch()
+      return
+    }
+
+    updateQuantity(selectedCartItem.key, delta)
+    setSelectedCartItemKey(selectedCartItem.key)
+    focusSearch()
+  }
+
+  function focusSelectedQuantity() {
+    if (!selectedCartItem) {
+      setSaleError("Adicione um item para alterar quantidade.")
+      focusSearch()
+      return
+    }
+
+    setSelectedCartItemKey(selectedCartItem.key)
+    focusAndSelect(quantityInputRefs.current[selectedCartItem.key])
+  }
+
+  function focusSelectedDiscount() {
+    if (selectedCartItem) {
+      setSelectedCartItemKey(selectedCartItem.key)
+      focusAndSelect(discountInputRefs.current[selectedCartItem.key])
+      return
+    }
+
+    focusAndSelect(cartDiscountRef.current)
+  }
+
+  function removeSelectedCartItem() {
+    if (!selectedCartItem) {
+      setSaleError("Nenhum item selecionado para remover.")
+      focusSearch()
+      return
+    }
+
+    removeFromCart(selectedCartItem.key)
   }
 
   function updateItemPrice(itemKey: string, value: string) {
@@ -849,6 +935,7 @@ export function PosSellPage() {
     }
     setPayments([{ method: "cash", amount: String(finalTotal.toFixed(2)) }])
     setPayDialogOpen(true)
+    focusAndSelect(firstPaymentAmountRef.current)
   }
 
   function addPaymentLine(method: PaymentMethod = "pix") {
@@ -985,6 +1072,7 @@ export function PosSellPage() {
 
   function restoreHeldSale(held: HeldSale) {
     setCart(held.cart)
+    setSelectedCartItemKey(held.cart.at(-1)?.key ?? "")
     setCustomerName(held.customer_name)
     setSelectedCustomerId(held.selected_customer_id)
     setCartDiscount_(held.cart_discount)
@@ -993,6 +1081,23 @@ export function PosSellPage() {
     setHeldSalesPersisted(heldSales.filter((sale) => sale.id !== held.id))
     setSaleError(null)
     focusSearch()
+  }
+
+  function restoreLatestHeldSale() {
+    if (cart.length > 0) {
+      setSaleError("Finalize, limpe ou coloque a venda atual em espera antes de recuperar outra.")
+      focusSearch()
+      return
+    }
+
+    const held = heldSalesForBranch[0]
+    if (!held) {
+      setSaleError("Nenhuma venda em espera para recuperar.")
+      focusSearch()
+      return
+    }
+
+    restoreHeldSale(held)
   }
 
   function removeHeldSale(heldId: string) {
@@ -1193,6 +1298,171 @@ export function PosSellPage() {
       setSaleError(error instanceof Error ? error.message : "Nao foi possivel finalizar a venda.")
     }
   }
+
+  useEffect(() => {
+    shortcutHandlerRef.current = (event: globalThis.KeyboardEvent) => {
+    function isEditableTarget(target: EventTarget | null) {
+      if (!(target instanceof HTMLElement)) return false
+      const tagName = target.tagName
+      return (
+        target.isContentEditable ||
+        tagName === "INPUT" ||
+        tagName === "TEXTAREA" ||
+        tagName === "SELECT"
+      )
+    }
+
+    function closeTopDialog() {
+      if (payDialogOpen) {
+        setPayDialogOpen(false)
+        focusSearch()
+        return true
+      }
+      if (quickCustomerOpen) {
+        setQuickCustomerOpen(false)
+        focusSearch()
+        return true
+      }
+      if (cancelDialogOpen) {
+        setCancelDialogOpen(false)
+        focusSearch()
+        return true
+      }
+      if (cashSessionDialogOpen) {
+        setCashSessionDialogOpen(false)
+        focusSearch()
+        return true
+      }
+      if (operatorDialogOpen) {
+        closeOperatorDialog()
+        focusSearch()
+        return true
+      }
+      return false
+    }
+
+    if (event.defaultPrevented || event.altKey || event.metaKey) return
+
+    const target = event.target
+    const editableTarget = isEditableTarget(target)
+    const searchTarget = target === searchRef.current
+    const key = event.key
+
+    if (event.ctrlKey) {
+      if (key.toLowerCase() !== "l") return
+      event.preventDefault()
+      setSearch("")
+      setProductsExpanded(false)
+      focusSearch()
+      return
+    }
+
+    if (key === "Escape") {
+      event.preventDefault()
+      if (!closeTopDialog()) {
+        setSearch("")
+        setProductsExpanded(false)
+        focusSearch()
+      }
+      return
+    }
+
+    if (payDialogOpen) {
+      if (key === "F8") {
+        event.preventDefault()
+        focusAndSelect(firstPaymentAmountRef.current)
+        return
+      }
+      if (key === "F9") {
+        event.preventDefault()
+        payFormRef.current?.requestSubmit()
+        return
+      }
+      return
+    }
+
+    if (quickCustomerOpen || cancelDialogOpen || cashSessionDialogOpen || operatorDialogOpen) {
+      return
+    }
+
+    if ((key === "ArrowUp" || key === "ArrowDown") && (!editableTarget || searchTarget)) {
+      event.preventDefault()
+      selectCartItemByOffset(key === "ArrowDown" ? 1 : -1)
+      return
+    }
+
+    if (event.code === "NumpadAdd" || (!editableTarget && key === "+")) {
+      event.preventDefault()
+      updateSelectedQuantity(1)
+      return
+    }
+
+    if (event.code === "NumpadSubtract" || (!editableTarget && key === "-")) {
+      event.preventDefault()
+      updateSelectedQuantity(-1)
+      return
+    }
+
+    if (editableTarget && !key.startsWith("F")) return
+
+    switch (key) {
+      case "F2":
+        event.preventDefault()
+        setProductsExpanded(true)
+        focusSearch()
+        break
+      case "F3":
+        event.preventDefault()
+        customerSelectRef.current?.focus()
+        break
+      case "F4":
+        event.preventDefault()
+        focusSelectedQuantity()
+        break
+      case "F5":
+        event.preventDefault()
+        focusSelectedDiscount()
+        break
+      case "F6":
+        event.preventDefault()
+        holdCurrentSale()
+        break
+      case "F7":
+        event.preventDefault()
+        restoreLatestHeldSale()
+        break
+      case "F8":
+        event.preventDefault()
+        openPayDialog()
+        break
+      case "F9":
+        event.preventDefault()
+        openPayDialog()
+        break
+      case "F10":
+        event.preventDefault()
+        if (cart.length === 0) {
+          setSaleError("Nenhuma venda em andamento para cancelar.")
+          focusSearch()
+          return
+        }
+        setCancelDialogOpen(true)
+        break
+      case "Delete":
+        event.preventDefault()
+        removeSelectedCartItem()
+        break
+    }
+    }
+  })
+
+  useEffect(() => {
+    const handlePosShortcut = (event: globalThis.KeyboardEvent) => {
+      shortcutHandlerRef.current(event)
+    }
+    window.addEventListener("keydown", handlePosShortcut)
+    return () => window.removeEventListener("keydown", handlePosShortcut)
+  }, [])
 
   if (cashSessions.isLoading) {
     return (
@@ -1432,6 +1702,7 @@ export function PosSellPage() {
                     <span className="font-medium">Cliente cadastrado</span>
                     <div className="flex gap-2">
                       <select
+                        ref={customerSelectRef}
                         className={fieldClass}
                         value={selectedCustomerId}
                         onChange={(event) => applyCustomerById(event.target.value)}
@@ -1473,8 +1744,19 @@ export function PosSellPage() {
                     <div className="max-h-[48vh] space-y-2 overflow-y-auto pr-1">
                       {cart.map((item) => {
                         const needsPrescription = itemHasPrescriptionRule(item)
+                        const isSelected = selectedCartItem?.key === item.key
                         return (
-                          <div key={item.key} className="rounded-lg border p-2.5">
+                          <div
+                            key={item.key}
+                            tabIndex={0}
+                            onClick={() => setSelectedCartItemKey(item.key)}
+                            onFocus={() => setSelectedCartItemKey(item.key)}
+                            className={`rounded-lg border p-2.5 outline-none transition-colors ${
+                              isSelected
+                                ? "border-slate-900 bg-slate-50 ring-2 ring-slate-200"
+                                : "bg-white focus:border-slate-400"
+                            }`}
+                          >
                             <div className="flex items-start justify-between gap-2">
                               <div className="min-w-0">
                                 <div className="truncate text-sm font-semibold">
@@ -1519,11 +1801,15 @@ export function PosSellPage() {
                                 <Minus className="size-3" />
                               </Button>
                               <input
+                                ref={(node) => {
+                                  quantityInputRefs.current[item.key] = node
+                                }}
                                 type="number"
                                 min={item.product.allow_fractional_quantity ? "0.001" : "1"}
                                 step={item.product.allow_fractional_quantity ? "0.001" : "1"}
                                 className="h-7 rounded border px-1.5 text-center text-sm font-medium outline-none focus:border-ring"
                                 value={formatQuantity(item.quantity)}
+                                onFocus={() => setSelectedCartItemKey(item.key)}
                                 onChange={(event) =>
                                   updateQuantityValue(item.key, event.target.value)
                                 }
@@ -1546,6 +1832,7 @@ export function PosSellPage() {
                                     min="0"
                                     className="h-7 min-w-0 rounded border px-1.5 text-xs outline-none focus:border-ring"
                                     value={item.unit_price}
+                                    onFocus={() => setSelectedCartItemKey(item.key)}
                                     onChange={(event) =>
                                       updateItemPrice(item.key, event.target.value)
                                     }
@@ -1554,11 +1841,15 @@ export function PosSellPage() {
                                 <label className="flex items-center gap-1">
                                   <Percent className="size-3 text-muted-foreground" />
                                   <input
+                                    ref={(node) => {
+                                      discountInputRefs.current[item.key] = node
+                                    }}
                                     type="number"
                                     step="0.01"
                                     min="0"
                                     className="h-7 min-w-0 rounded border px-1.5 text-xs outline-none focus:border-ring"
                                     value={item.discount || ""}
+                                    onFocus={() => setSelectedCartItemKey(item.key)}
                                     onChange={(event) =>
                                       updateItemDiscount(item.key, event.target.value)
                                     }
@@ -1610,6 +1901,7 @@ export function PosSellPage() {
                           min="0"
                           placeholder="0,00"
                           className="h-8 w-28 rounded border px-2 text-sm outline-none focus:border-ring"
+                          ref={cartDiscountRef}
                           value={cartDiscount_}
                           onChange={(event) => setCartDiscount_(event.target.value)}
                         />
@@ -1735,6 +2027,30 @@ export function PosSellPage() {
                 )}
               </CardContent>
             </Card>
+          </div>
+        </div>
+        <div className="sticky bottom-0 z-20 mt-4 -mx-4 border-t bg-white/95 px-4 py-2 shadow-sm backdrop-blur sm:-mx-6 sm:px-6">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+            {[
+              ["F2", "Produto"],
+              ["F3", "Cliente"],
+              ["F4", "Qtd"],
+              ["F5", "Desc"],
+              ["F6", "Espera"],
+              ["F7", "Retomar"],
+              ["F8", "Pagar"],
+              ["F9", "Confirmar"],
+              ["Esc", "Voltar"],
+              ["Del", "Item"],
+              ["+/-", "Qtd"],
+            ].map(([key, label]) => (
+              <span key={`${key}-${label}`} className="inline-flex items-center gap-1">
+                <kbd className="rounded border bg-slate-50 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-slate-900">
+                  {key}
+                </kbd>
+                {label}
+              </span>
+            ))}
           </div>
         </div>
       </div>
@@ -1870,7 +2186,11 @@ export function PosSellPage() {
               Pagamento
             </DialogTitle>
           </DialogHeader>
-          <form className="space-y-4" onSubmit={(event) => void handleSaleSubmit(event)}>
+          <form
+            ref={payFormRef}
+            className="space-y-4"
+            onSubmit={(event) => void handleSaleSubmit(event)}
+          >
             <div className="grid gap-3 md:grid-cols-3">
               <div className="rounded-lg border bg-slate-50 p-3">
                 <div className="text-xs text-muted-foreground">Itens</div>
@@ -2152,6 +2472,7 @@ export function PosSellPage() {
                     ))}
                   </select>
                   <Input
+                    ref={index === 0 ? firstPaymentAmountRef : undefined}
                     type="number"
                     step="0.01"
                     min="0"
