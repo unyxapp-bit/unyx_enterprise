@@ -59,10 +59,7 @@ import {
   type FiscalCouponPrintPayment,
 } from "@/features/pos/FiscalDocumentsPage"
 import { formatCurrency, formatDateTimeBR } from "@/lib/format"
-import {
-  getSelectedCashSessionId,
-  setSelectedCashSessionId as persistSelectedCashSessionId,
-} from "@/lib/posSession"
+import { setSelectedCashSessionId as persistSelectedCashSessionId } from "@/lib/posSession"
 import { formatCep, lookupCep } from "@/services/viaCep"
 import { useAppStore } from "@/store/useAppStore"
 import type {
@@ -357,17 +354,8 @@ export function PosSellPage() {
       return selectedCashSessionIdOverride
     }
 
-    const branchKey = selectedBranchId ?? openCashSessions[0]?.branch_id ?? ""
-    const storedSessionId = branchKey ? getSelectedCashSessionId(branchKey) : ""
-    if (
-      storedSessionId &&
-      openCashSessions.some((cashSession) => cashSession.id === storedSessionId)
-    ) {
-      return storedSessionId
-    }
-
     return openCashSessions.length === 1 ? openCashSessions[0].id : ""
-  }, [openCashSessions, selectedBranchId, selectedCashSessionIdOverride])
+  }, [openCashSessions, selectedCashSessionIdOverride])
   const session =
     openCashSessions.find(
       (cashSession) => cashSession.id === selectedCashSessionId

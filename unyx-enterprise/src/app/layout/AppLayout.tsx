@@ -106,10 +106,8 @@ const navGroups = [
   },
 ]
 
-const posModePathPrefixes = ["/app/pos", "/app/deliveries"]
-
 function isPosModePath(pathname: string) {
-  return posModePathPrefixes.some((prefix) => pathname.startsWith(prefix))
+  return pathname === "/app/pos/sell" || pathname.startsWith("/app/pos/sell/")
 }
 
 function UserAvatar({ name }: { name: string }) {
@@ -169,7 +167,12 @@ export function AppLayout() {
     organization?.trade_name ?? organization?.name ?? "Unyx Enterprise"
   const visibleNavGroups =
     accessMode === "pos"
-      ? navGroups.filter((group) => group.label === "Unyx POS")
+      ? navGroups
+          .filter((group) => group.label === "Unyx POS")
+          .map((group) => ({
+            ...group,
+            items: group.items.filter((item) => item.to === "/app/pos/sell"),
+          }))
       : navGroups
   const accessModeLabel = accessMode === "pos" ? "Modo PDV" : "Sistema completo"
 
