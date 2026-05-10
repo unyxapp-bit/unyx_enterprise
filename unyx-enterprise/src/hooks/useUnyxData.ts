@@ -221,7 +221,7 @@ export function useSchedules(workDate: string, branchId?: string | null) {
 
   return useQuery({
     queryKey: ["schedules", profile?.organization_id, effectiveBranchId, workDate],
-    queryFn: () => listSchedules(workDate, effectiveBranchId),
+    queryFn: () => listSchedules(workDate, effectiveBranchId, profile!.organization_id),
     enabled: Boolean(profile),
   })
 }
@@ -232,7 +232,8 @@ export function useSchedulesRange(dateFrom: string, dateTo: string) {
 
   return useQuery({
     queryKey: ["schedules", profile?.organization_id, selectedBranchId, dateFrom, dateTo],
-    queryFn: () => listSchedulesRange(dateFrom, dateTo, selectedBranchId),
+    queryFn: () =>
+      listSchedulesRange(dateFrom, dateTo, selectedBranchId, profile!.organization_id),
     enabled: Boolean(profile) && Boolean(dateFrom) && Boolean(dateTo),
   })
 }
@@ -259,7 +260,7 @@ export function useDashboardRows(workDate: string) {
 
   return useQuery({
     queryKey: ["dashboard", profile?.organization_id, selectedBranchId, workDate],
-    queryFn: () => listDashboardRows(workDate, selectedBranchId),
+    queryFn: () => listDashboardRows(workDate, selectedBranchId, profile!.organization_id),
     enabled: Boolean(profile),
     refetchInterval: 45_000,
   })
@@ -271,7 +272,7 @@ export function useOperationalStatuses() {
 
   return useQuery({
     queryKey: ["operational-status", profile?.organization_id, selectedBranchId],
-    queryFn: () => listOperationalStatuses(selectedBranchId),
+    queryFn: () => listOperationalStatuses(selectedBranchId, profile!.organization_id),
     enabled: Boolean(profile),
     refetchInterval: 45_000,
   })
@@ -283,7 +284,7 @@ export function useAttendanceEvents() {
 
   return useQuery({
     queryKey: ["attendance-events", profile?.organization_id, selectedBranchId],
-    queryFn: () => listAttendanceEvents(selectedBranchId),
+    queryFn: () => listAttendanceEvents(selectedBranchId, profile!.organization_id),
     enabled: Boolean(profile),
     refetchInterval: 45_000,
   })
@@ -318,7 +319,8 @@ export function usePostAllocations(
       effectiveBranchId,
       activeOnly,
     ],
-    queryFn: () => listPostAllocations(effectiveBranchId, activeOnly),
+    queryFn: () =>
+      listPostAllocations(effectiveBranchId, activeOnly, profile!.organization_id),
     enabled: Boolean(profile),
     refetchInterval: 45_000,
   })
@@ -332,7 +334,7 @@ export function useAllocationHistory(branchId?: string | null) {
 
   return useQuery({
     queryKey: ["allocation-history", profile?.organization_id, effectiveBranchId],
-    queryFn: () => listAllocationHistory(effectiveBranchId),
+    queryFn: () => listAllocationHistory(effectiveBranchId, profile!.organization_id),
     enabled: Boolean(profile),
   })
 }

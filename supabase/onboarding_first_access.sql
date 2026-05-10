@@ -2724,7 +2724,8 @@ grant execute on function public.record_operational_action(
   text
 ) to authenticated;
 
-create or replace view public.v_operational_dashboard as
+create or replace view public.v_operational_dashboard
+with (security_invoker = true) as
 select
   coalesce(os.id, sc.id) as id,
   sc.organization_id,
@@ -2780,12 +2781,19 @@ select
   ) as status_reason,
   coalesce(os.updated_at, sc.updated_at) as updated_at
 from public.schedules sc
-join public.employees e on e.id = sc.employee_id
-join public.branches b on b.id = sc.branch_id
-left join public.sectors s on s.id = e.sector_id
+join public.employees e
+  on e.id = sc.employee_id
+  and e.organization_id = sc.organization_id
+join public.branches b
+  on b.id = sc.branch_id
+  and b.organization_id = sc.organization_id
+left join public.sectors s
+  on s.id = e.sector_id
+  and s.organization_id = sc.organization_id
 left join public.operational_status os
   on os.schedule_id = sc.id
-  and os.employee_id = sc.employee_id;
+  and os.employee_id = sc.employee_id
+  and os.organization_id = sc.organization_id;
 
 notify pgrst, 'reload schema';
 

@@ -1177,13 +1177,18 @@ export async function importEmployees(
   }
 }
 
-export async function listSchedules(workDate: string, branchId?: string | null) {
+export async function listSchedules(
+  workDate: string,
+  branchId?: string | null,
+  organizationId?: string | null
+) {
   let query = supabase
     .from("schedules")
     .select("*, branches(name), employees(*, sectors(name))")
     .eq("work_date", workDate)
     .order("start_time", { nullsFirst: false })
 
+  if (organizationId) query = query.eq("organization_id", organizationId)
   if (branchId) query = query.eq("branch_id", branchId)
 
   const { data, error } = await query
@@ -1194,7 +1199,8 @@ export async function listSchedules(workDate: string, branchId?: string | null) 
 export async function listSchedulesRange(
   dateFrom: string,
   dateTo: string,
-  branchId?: string | null
+  branchId?: string | null,
+  organizationId?: string | null
 ) {
   let query = supabase
     .from("schedules")
@@ -1204,6 +1210,7 @@ export async function listSchedulesRange(
     .order("work_date", { ascending: true })
     .order("start_time", { nullsFirst: false })
 
+  if (organizationId) query = query.eq("organization_id", organizationId)
   if (branchId) query = query.eq("branch_id", branchId)
 
   const { data, error } = await query
@@ -1350,7 +1357,8 @@ export async function deleteSchedulesBulk(
 
 export async function listDashboardRows(
   workDate: string,
-  branchId?: string | null
+  branchId?: string | null,
+  organizationId?: string | null
 ) {
   let query = supabase
     .from("v_operational_dashboard")
@@ -1359,6 +1367,7 @@ export async function listDashboardRows(
     .order("priority_level", { ascending: false })
     .order("delay_minutes", { ascending: false })
 
+  if (organizationId) query = query.eq("organization_id", organizationId)
   if (branchId) query = query.eq("branch_id", branchId)
 
   const { data, error } = await query
@@ -1366,13 +1375,17 @@ export async function listDashboardRows(
   return (data ?? []) as DashboardRow[]
 }
 
-export async function listOperationalStatuses(branchId?: string | null) {
+export async function listOperationalStatuses(
+  branchId?: string | null,
+  organizationId?: string | null
+) {
   let query = supabase
     .from("operational_status")
     .select("*, branches(name), employees(*, sectors(name)), schedules(work_date, start_time, break_start, break_end, end_time)")
     .order("priority_level", { ascending: false })
     .order("updated_at", { ascending: false })
 
+  if (organizationId) query = query.eq("organization_id", organizationId)
   if (branchId) query = query.eq("branch_id", branchId)
 
   const { data, error } = await query
@@ -1380,13 +1393,17 @@ export async function listOperationalStatuses(branchId?: string | null) {
   return (data ?? []) as OperationalStatusRecord[]
 }
 
-export async function listAttendanceEvents(branchId?: string | null) {
+export async function listAttendanceEvents(
+  branchId?: string | null,
+  organizationId?: string | null
+) {
   let query = supabase
     .from("attendance_events")
     .select("*, employees(name), branches(name)")
     .order("event_time", { ascending: false })
     .limit(60)
 
+  if (organizationId) query = query.eq("organization_id", organizationId)
   if (branchId) query = query.eq("branch_id", branchId)
 
   const { data, error } = await query
@@ -1476,7 +1493,8 @@ export async function toggleOperationalPost(
 
 export async function listPostAllocations(
   branchId?: string | null,
-  activeOnly = true
+  activeOnly = true,
+  organizationId?: string | null
 ) {
   let query = supabase
     .from("post_allocations")
@@ -1486,6 +1504,7 @@ export async function listPostAllocations(
     .order("started_at", { ascending: false })
     .limit(activeOnly ? 200 : 500)
 
+  if (organizationId) query = query.eq("organization_id", organizationId)
   if (branchId) query = query.eq("branch_id", branchId)
   if (activeOnly) {
     query = query
@@ -1499,8 +1518,11 @@ export async function listPostAllocations(
   return (data ?? []) as PostAllocation[]
 }
 
-export async function listAllocationHistory(branchId?: string | null) {
-  return listPostAllocations(branchId, false)
+export async function listAllocationHistory(
+  branchId?: string | null,
+  organizationId?: string | null
+) {
+  return listPostAllocations(branchId, false, organizationId)
 }
 
 export async function listCashMovements(branchId?: string | null) {
