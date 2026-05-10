@@ -44,6 +44,7 @@ import {
   useCompleteSale,
   useCreateCustomer,
   useCreateDeliveryOrder,
+  useCreateFiscalDocument,
   useCashSessions,
   useCustomers,
   useEmployees,
@@ -52,6 +53,11 @@ import {
   useProducts,
   useVerifyPosOperator,
 } from "@/hooks/useUnyxData"
+import {
+  PrintableCoupon,
+  type FiscalCouponPrintItem,
+  type FiscalCouponPrintPayment,
+} from "@/features/pos/FiscalDocumentsPage"
 import { formatCurrency, formatDateTimeBR } from "@/lib/format"
 import {
   getSelectedCashSessionId,
@@ -63,6 +69,7 @@ import type {
   BusinessSegment,
   CashSession,
   Customer,
+  FiscalDocument,
   PaymentMethod,
   Product,
   ProductVariant,
@@ -326,6 +333,7 @@ export function PosSellPage() {
   const createCustomer = useCreateCustomer()
   const completeSale = useCompleteSale()
   const createDelivery = useCreateDeliveryOrder()
+  const createFiscalDocument = useCreateFiscalDocument()
   const verifyOperator = useVerifyPosOperator()
 
   const searchRef = useRef<HTMLInputElement>(null)
@@ -384,6 +392,11 @@ export function PosSellPage() {
   const [cashSessionDialogOpen, setCashSessionDialogOpen] = useState(false)
   const [quickCustomerOpen, setQuickCustomerOpen] = useState(false)
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
+  const [autoPrintCoupon, setAutoPrintCoupon] = useState<{
+    document: FiscalDocument
+    items: FiscalCouponPrintItem[]
+    payments: FiscalCouponPrintPayment[]
+  } | null>(null)
   const [cancelReason, setCancelReason] = useState("")
   const [payments, setPayments] = useState<PaymentEntry[]>([
     { method: "cash", amount: "" },
@@ -560,6 +573,22 @@ export function PosSellPage() {
 
   function focusSearch() {
     window.setTimeout(() => searchRef.current?.focus(), 0)
+  }
+
+  function queueCouponPrint(coupon: {
+    document: FiscalDocument
+    items: FiscalCouponPrintItem[]
+    payments: FiscalCouponPrintPayment[]
+  }) {
+    setAutoPrintCoupon(coupon)
+
+    const clearPrintedCoupon = () => {
+      setAutoPrintCoupon(null)
+      window.removeEventListener("afterprint", clearPrintedCoupon)
+    }
+
+    window.addEventListener("afterprint", clearPrintedCoupon)
+    window.setTimeout(() => window.print(), 150)
   }
 
   function chooseCashSession(cashSession: CashSession) {
@@ -1040,6 +1069,27 @@ export function PosSellPage() {
         discount_amount: item.discount,
         total_amount: cartItemTotal(item),
       }))
+      const saleItemsWithDelivery = deliveryFee > 0
+        ? [
+            ...saleItems,
+            {
+              product_id: null,
+              variant_id: null,
+              product_name: "Taxa de entrega",
+              quantity: 1,
+              unit_price: deliveryFee,
+              discount_amount: 0,
+              total_amount: deliveryFee,
+            },
+          ]
+        : saleItems
+      const salePayments = payments
+        .filter((payment) => Number(payment.amount) > 0)
+        .map((payment) => ({
+          method: payment.method,
+          amount: Number(payment.amount),
+          change_amount: payment.method === "cash" ? change : 0,
+        }))
       const saleId = await completeSale.mutateAsync({
         branch_id: branchId,
         session_id: session.id,
@@ -1054,27 +1104,8 @@ export function PosSellPage() {
           : null,
         discount_amount: discountTotal,
         notes: buildSaleNotes(),
-        items: deliveryFee > 0
-          ? [
-              ...saleItems,
-              {
-                product_id: null,
-                variant_id: null,
-                product_name: "Taxa de entrega",
-                quantity: 1,
-                unit_price: deliveryFee,
-                discount_amount: 0,
-                total_amount: deliveryFee,
-              },
-            ]
-          : saleItems,
-        payments: payments
-          .filter((payment) => Number(payment.amount) > 0)
-          .map((payment) => ({
-            method: payment.method,
-            amount: Number(payment.amount),
-            change_amount: payment.method === "cash" ? change : 0,
-          })),
+        items: saleItemsWithDelivery,
+        payments: salePayments,
       })
       if (deliveryEnabled) {
         await createDelivery.mutateAsync({
@@ -1109,8 +1140,40 @@ export function PosSellPage() {
           })),
         })
       }
+
+      let postSaleWarning: string | null = null
+      try {
+        const document = await createFiscalDocument.mutateAsync({
+          sale_id: saleId,
+          doc_type: "internal_coupon",
+          series: "1",
+          notes: "Cupom interno gerado automaticamente ao finalizar a venda.",
+        })
+        queueCouponPrint({
+          document,
+          items: saleItemsWithDelivery.map((item, index) => ({
+            id: `${saleId}-item-${index}`,
+            product_name: item.product_name,
+            quantity: item.quantity,
+            unit_price: item.unit_price,
+            total_amount: item.total_amount,
+          })),
+          payments: salePayments.map((payment, index) => ({
+            id: `${saleId}-payment-${index}`,
+            method: payment.method,
+            amount: payment.amount,
+          })),
+        })
+      } catch (error) {
+        postSaleWarning =
+          error instanceof Error
+            ? `Venda finalizada, mas nao foi possivel gerar o cupom automatico: ${error.message}`
+            : "Venda finalizada, mas nao foi possivel gerar o cupom automatico."
+      }
+
       setPayDialogOpen(false)
       resetCurrentSale()
+      if (postSaleWarning) setSaleError(postSaleWarning)
     } catch (error) {
       setSaleError(error instanceof Error ? error.message : "Nao foi possivel finalizar a venda.")
     }
@@ -2114,6 +2177,7 @@ export function PosSellPage() {
                 disabled={
                   completeSale.isPending ||
                   createDelivery.isPending ||
+                  createFiscalDocument.isPending ||
                   totalPaid < finalTotal - 0.005
                 }
               >
@@ -2333,6 +2397,14 @@ export function PosSellPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {autoPrintCoupon ? (
+        <PrintableCoupon
+          document={autoPrintCoupon.document}
+          items={autoPrintCoupon.items}
+          payments={autoPrintCoupon.payments}
+        />
+      ) : null}
     </>
   )
 }

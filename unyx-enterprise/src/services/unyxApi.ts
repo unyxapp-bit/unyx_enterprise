@@ -3278,7 +3278,21 @@ export async function createFiscalDocumentFromSale(input: {
   })
   if (isMissingFiscalFeature(error)) throw new Error(fiscalFeatureMessage())
   raise(error)
-  return data as string
+
+  if (typeof data === "string") {
+    const { data: document, error: fetchError } = await supabase
+      .from("fiscal_documents")
+      .select("*, branches(name), sales(id, customer_name, total_amount, sold_at), user_profiles!created_by(name)")
+      .eq("id", data)
+      .maybeSingle()
+
+    if (isMissingFiscalFeature(fetchError)) throw new Error(fiscalFeatureMessage())
+    raise(fetchError)
+    if (!document) throw new Error("Documento fiscal nao encontrado apos geracao.")
+    return document as FiscalDocument
+  }
+
+  return data as FiscalDocument
 }
 
 export async function cancelFiscalDocument(

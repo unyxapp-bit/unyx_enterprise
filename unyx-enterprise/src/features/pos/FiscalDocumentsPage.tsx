@@ -39,8 +39,6 @@ import type {
   FiscalDocumentStatus,
   FiscalDocumentType,
   Sale,
-  SaleItem,
-  SalePayment,
 } from "@/types/domain"
 
 const documentTypeLabel: Record<FiscalDocumentType, string> = {
@@ -86,14 +84,28 @@ function statusVariant(status: FiscalDocumentStatus) {
   return "default"
 }
 
-function PrintableCoupon({
+export type FiscalCouponPrintItem = {
+  id: string
+  product_name: string
+  quantity: number
+  unit_price: number
+  total_amount: number
+}
+
+export type FiscalCouponPrintPayment = {
+  id: string
+  method: string
+  amount: number
+}
+
+export function PrintableCoupon({
   document,
   items,
   payments,
 }: {
   document: FiscalDocument
-  items: SaleItem[]
-  payments: SalePayment[]
+  items: FiscalCouponPrintItem[]
+  payments: FiscalCouponPrintPayment[]
 }) {
   const issuerName =
     getSnapshotValue(document.issuer_snapshot, "trade_name") ||

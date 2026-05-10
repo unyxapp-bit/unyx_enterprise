@@ -115,21 +115,24 @@ CREATE POLICY "fiscal_documents_write" ON public.fiscal_documents FOR ALL
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.fiscal_document_counters TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.fiscal_documents TO authenticated;
 
+DROP FUNCTION IF EXISTS public.fiscal_create_document_from_sale(uuid, text, text, text);
+
 CREATE OR REPLACE FUNCTION public.fiscal_create_document_from_sale(
   p_sale_id uuid,
   p_doc_type text DEFAULT 'internal_coupon',
   p_series text DEFAULT '1',
   p_notes text DEFAULT NULL
 )
-RETURNS uuid
+RETURNS public.fiscal_documents
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions
 AS $$
 DECLARE
   v_org_id uuid;
   v_user_id uuid;
+  v_role text;
   v_sale record;
   v_number bigint;
-  v_doc_id uuid;
+  v_document public.fiscal_documents%ROWTYPE;
   v_status text;
   v_key text;
   v_issuer jsonb;
@@ -139,7 +142,10 @@ BEGIN
   v_org_id := current_organization_id();
   IF v_org_id IS NULL THEN RAISE EXCEPTION 'Usuario sem organizacao.'; END IF;
 
-  IF current_user_role() NOT IN ('owner','admin','branch_manager','supervisor') THEN
+  v_role := current_user_role();
+
+  IF v_role NOT IN ('owner','admin','branch_manager','supervisor')
+     AND NOT (v_role IN ('operator','employee') AND p_doc_type = 'internal_coupon') THEN
     RAISE EXCEPTION 'Sem permissao para documentos fiscais.';
   END IF;
 
@@ -162,6 +168,10 @@ BEGIN
 
   IF v_sale.status <> 'completed' THEN
     RAISE EXCEPTION 'Somente vendas concluidas podem gerar cupom.';
+  END IF;
+
+  IF v_role IN ('operator','employee') AND v_sale.user_profile_id IS DISTINCT FROM v_user_id THEN
+    RAISE EXCEPTION 'Operador so pode gerar cupom da propria venda.';
   END IF;
 
   IF EXISTS (
@@ -238,15 +248,15 @@ BEGIN
     p_doc_type, v_status, 'offline', COALESCE(NULLIF(p_series, ''), '1'), v_number, v_key,
     COALESCE(v_issuer, '{}'::jsonb), COALESCE(v_customer, '{}'::jsonb), v_totals, NULLIF(btrim(COALESCE(p_notes, '')), '')
   )
-  RETURNING id INTO v_doc_id;
+  RETURNING * INTO v_document;
 
   INSERT INTO audit_logs (organization_id, branch_id, user_id, action, entity_type, entity_id, old_value, new_value)
   VALUES (
-    v_org_id, v_sale.branch_id, v_user_id, 'fiscal_document_created', 'fiscal_documents', v_doc_id, NULL,
+    v_org_id, v_sale.branch_id, v_user_id, 'fiscal_document_created', 'fiscal_documents', v_document.id, NULL,
     jsonb_build_object('sale_id', p_sale_id, 'doc_type', p_doc_type, 'number', v_number)
   );
 
-  RETURN v_doc_id;
+  RETURN v_document;
 END; $$;
 
 GRANT EXECUTE ON FUNCTION public.fiscal_create_document_from_sale(uuid, text, text, text) TO authenticated;
