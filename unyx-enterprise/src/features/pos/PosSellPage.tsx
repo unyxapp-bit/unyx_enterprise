@@ -405,6 +405,8 @@ export function PosSellPage() {
   const [operatorEmployeeId, setOperatorEmployeeId] = useState("")
   const [operatorPassword, setOperatorPassword] = useState("")
   const [operatorError, setOperatorError] = useState<string | null>(null)
+  const [operatorDialogDismissedSessionId, setOperatorDialogDismissedSessionId] =
+    useState("")
 
   const allProducts = useMemo(
     () => (products.data ?? []).filter((product) => product.active),
@@ -558,6 +560,10 @@ export function PosSellPage() {
     operatorSessionId === session?.id && operatorEmployeeId
       ? operatorEmployeeId
       : session?.employee_id ?? ""
+  const operatorDialogOpen =
+    Boolean(session?.id) &&
+    !operatorReady &&
+    operatorDialogDismissedSessionId !== session?.id
 
   function focusSearch() {
     window.setTimeout(() => searchRef.current?.focus(), 0)
@@ -588,8 +594,26 @@ export function PosSellPage() {
     setOperatorEmployeeId("")
     setOperatorPassword("")
     setOperatorError(null)
+    setOperatorDialogDismissedSessionId("")
     setSaleError(null)
     focusSearch()
+  }
+
+  function openOperatorDialog() {
+    setOperatorDialogDismissedSessionId("")
+  }
+
+  function closeOperatorDialog() {
+    setOperatorDialogDismissedSessionId(session?.id ?? "")
+    setOperatorPassword("")
+    setOperatorError(null)
+  }
+
+  function handleOperatorBack() {
+    closeOperatorDialog()
+    if (openCashSessions.length > 1) {
+      setCashSessionDialogOpen(true)
+    }
   }
 
   async function handleOperatorUnlock(event: FormEvent<HTMLFormElement>) {
@@ -625,6 +649,7 @@ export function PosSellPage() {
       setOperatorUnlocked(true)
       setOperatorSessionId(session.id)
       setOperatorEmployeeId(selectedOperatorEmployeeId)
+      setOperatorDialogDismissedSessionId(session.id)
       focusSearch()
     } catch (error) {
       setOperatorError(error instanceof Error ? error.message : "Nao foi possivel liberar o PDV.")
@@ -819,6 +844,7 @@ export function PosSellPage() {
 
     if (!session?.employee_id || !operatorReady) {
       setSaleError("Libere o PDV com a senha do operador do caixa.")
+      openOperatorDialog()
       return
     }
     setPayments([{ method: "cash", amount: String(finalTotal.toFixed(2)) }])
@@ -1010,6 +1036,7 @@ export function PosSellPage() {
 
     if (!session.employee_id || !operatorReady) {
       setSaleError("Libere o PDV com a senha do operador do caixa.")
+      openOperatorDialog()
       return
     }
 
@@ -1246,6 +1273,16 @@ export function PosSellPage() {
             <Badge variant="default" className="text-sm">
               Caixa aberto
             </Badge>
+            {!operatorReady ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={openOperatorDialog}
+              >
+                <LockKeyhole className="size-4" />
+                Liberar PDV
+              </Button>
+            ) : null}
           </div>
         }
       />
@@ -1739,7 +1776,16 @@ export function PosSellPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!operatorReady}>
+      <Dialog
+        open={operatorDialogOpen}
+        onOpenChange={(open) => {
+          if (open) {
+            openOperatorDialog()
+            return
+          }
+          closeOperatorDialog()
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -1797,7 +1843,14 @@ export function PosSellPage() {
                 {operatorError}
               </div>
             ) : null}
-            <DialogFooter>
+            <DialogFooter className="gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleOperatorBack}
+              >
+                Voltar
+              </Button>
               <Button
                 type="submit"
                 disabled={verifyOperator.isPending || !session.employee_id}
