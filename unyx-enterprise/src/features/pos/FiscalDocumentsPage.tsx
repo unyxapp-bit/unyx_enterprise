@@ -39,6 +39,8 @@ import type {
   FiscalDocumentStatus,
   FiscalDocumentType,
   Sale,
+  SaleItem,
+  SalePayment,
 } from "@/types/domain"
 
 const documentTypeLabel: Record<FiscalDocumentType, string> = {
@@ -71,10 +73,114 @@ function getSnapshotValue(snapshot: Record<string, unknown>, key: string) {
   return ""
 }
 
+function getSnapshotNumber(snapshot: Record<string, unknown>, key: string) {
+  const value = snapshot[key]
+  if (typeof value === "number") return value
+  if (typeof value === "string") return Number(value) || 0
+  return 0
+}
+
 function statusVariant(status: FiscalDocumentStatus) {
   if (status === "cancelled") return "destructive"
   if (status === "draft") return "secondary"
   return "default"
+}
+
+function PrintableCoupon({
+  document,
+  items,
+  payments,
+}: {
+  document: FiscalDocument
+  items: SaleItem[]
+  payments: SalePayment[]
+}) {
+  const issuerName =
+    getSnapshotValue(document.issuer_snapshot, "trade_name") ||
+    getSnapshotValue(document.issuer_snapshot, "name") ||
+    "Empresa"
+  const issuerDocument = getSnapshotValue(document.issuer_snapshot, "document")
+  const customerName =
+    getSnapshotValue(document.customer_snapshot, "name") ||
+    document.sales?.customer_name ||
+    "Consumidor final"
+  const subtotal = getSnapshotNumber(document.totals_snapshot, "subtotal")
+  const discount = getSnapshotNumber(document.totals_snapshot, "discount_amount")
+  const total =
+    getSnapshotNumber(document.totals_snapshot, "total_amount") ||
+    document.sales?.total_amount ||
+    0
+
+  return (
+    <div className="fiscal-print-root">
+      <div className="fiscal-coupon">
+        <div className="fiscal-coupon-center fiscal-coupon-strong">
+          {issuerName}
+        </div>
+        {issuerDocument ? (
+          <div className="fiscal-coupon-center">CNPJ/CPF: {issuerDocument}</div>
+        ) : null}
+        <div className="fiscal-coupon-separator" />
+        <div className="fiscal-coupon-center fiscal-coupon-strong">
+          CUPOM NAO FISCAL
+        </div>
+        <div className="fiscal-coupon-center">
+          Documento local sem autorizacao SEFAZ
+        </div>
+        <div className="fiscal-coupon-separator" />
+
+        <div>Tipo: {documentTypeLabel[document.doc_type]}</div>
+        <div>Numero: {documentNumber(document)}</div>
+        <div>Emissao: {formatDateTimeBR(document.issued_at)}</div>
+        <div>Cliente: {customerName}</div>
+        <div>Chave local: {document.fiscal_key}</div>
+        <div className="fiscal-coupon-separator" />
+
+        <div className="fiscal-coupon-strong">Itens</div>
+        {items.map((item) => (
+          <div key={item.id} className="fiscal-coupon-item">
+            <div>{item.product_name}</div>
+            <div className="fiscal-coupon-row">
+              <span>
+                {item.quantity} x {formatCurrency(item.unit_price)}
+              </span>
+              <span>{formatCurrency(item.total_amount)}</span>
+            </div>
+          </div>
+        ))}
+        {items.length === 0 ? <div>Sem itens.</div> : null}
+        <div className="fiscal-coupon-separator" />
+
+        <div className="fiscal-coupon-row">
+          <span>Subtotal</span>
+          <span>{formatCurrency(subtotal)}</span>
+        </div>
+        <div className="fiscal-coupon-row">
+          <span>Desconto</span>
+          <span>{formatCurrency(discount)}</span>
+        </div>
+        <div className="fiscal-coupon-row fiscal-coupon-total">
+          <span>Total</span>
+          <span>{formatCurrency(total)}</span>
+        </div>
+        <div className="fiscal-coupon-separator" />
+
+        <div className="fiscal-coupon-strong">Pagamentos</div>
+        {payments.map((payment) => (
+          <div key={payment.id} className="fiscal-coupon-row">
+            <span>{paymentMethodLabel[payment.method] ?? payment.method}</span>
+            <span>{formatCurrency(payment.amount)}</span>
+          </div>
+        ))}
+        {payments.length === 0 ? <div>Sem pagamentos.</div> : null}
+        <div className="fiscal-coupon-separator" />
+
+        <div className="fiscal-coupon-center">
+          Documento auxiliar interno. Nao substitui NFC-e, NF-e ou outro documento fiscal autorizado.
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function FiscalDocumentDialog({
@@ -93,6 +199,13 @@ function FiscalDocumentDialog({
     getSnapshotValue(document.customer_snapshot, "name") ||
     document.sales?.customer_name ||
     "Consumidor final"
+  const loadedItems = items.data ?? []
+  const loadedPayments = payments.data ?? []
+  const canPrint = !items.isLoading && !payments.isLoading
+
+  function printCoupon() {
+    window.setTimeout(() => window.print(), 0)
+  }
 
   return (
     <Dialog open={Boolean(document)} onOpenChange={(open) => { if (!open) onClose() }}>
@@ -176,12 +289,19 @@ function FiscalDocumentDialog({
           <Button type="button" variant="outline" onClick={onClose}>
             Fechar
           </Button>
-          <Button type="button" onClick={() => window.print()}>
+          <Button type="button" disabled={!canPrint} onClick={printCoupon}>
             <Printer className="size-4" />
             Imprimir
           </Button>
         </DialogFooter>
       </DialogContent>
+      {canPrint ? (
+        <PrintableCoupon
+          document={document}
+          items={loadedItems}
+          payments={loadedPayments}
+        />
+      ) : null}
     </Dialog>
   )
 }

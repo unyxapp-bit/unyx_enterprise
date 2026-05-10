@@ -128,3 +128,69 @@
     font-family: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
   }
 }
+
+.fiscal-print-root {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: 80mm auto;
+    margin: 4mm;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  .fiscal-print-root,
+  .fiscal-print-root * {
+    visibility: visible;
+  }
+
+  .fiscal-print-root {
+    display: block;
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 72mm;
+    color: #000;
+    background: #fff;
+  }
+
+  .fiscal-coupon {
+    width: 72mm;
+    font-family: "Courier New", monospace;
+    font-size: 10px;
+    line-height: 1.25;
+    letter-spacing: 0;
+  }
+
+  .fiscal-coupon-center {
+    text-align: center;
+  }
+
+  .fiscal-coupon-strong {
+    font-weight: 700;
+  }
+
+  .fiscal-coupon-separator {
+    margin: 6px 0;
+    border-top: 1px dashed #000;
+  }
+
+  .fiscal-coupon-item {
+    margin-bottom: 4px;
+  }
+
+  .fiscal-coupon-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .fiscal-coupon-total {
+    margin-top: 4px;
+    font-size: 12px;
+    font-weight: 700;
+  }
+}
