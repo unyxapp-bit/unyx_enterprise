@@ -19,6 +19,7 @@ import {
   createChecklistProcedure,
   createCommsPost,
   createDeliveryOrder,
+  createFiscalDocumentFromSale,
   createCommsPostComment,
   createEmployee,
   createOperationalPost,
@@ -32,6 +33,7 @@ import {
   deleteProductVariant,
   deleteEmployees,
   deleteDeliveryOrder,
+  cancelFiscalDocument,
   deleteSchedulesBulk,
   listSchedulesRange,
   deleteSchedule,
@@ -70,6 +72,7 @@ import {
   listCommsPosts,
   listCommsPostComments,
   listDeliveryOrders,
+  listFiscalDocuments,
   listModules,
   listOperationalPosts,
   listOperationalStatuses,
@@ -125,6 +128,7 @@ import type {
   Branch,
   BusinessSegment,
   CashMovementType,
+  FiscalDocumentType,
   Invitation,
   OperationalPost,
   OperationalPostType,
@@ -1509,6 +1513,52 @@ export function useSalePayments(saleId: string | null | undefined) {
     queryKey: ["pos-sale-payments", saleId],
     queryFn: () => listSalePayments(saleId!),
     enabled: Boolean(profile) && Boolean(saleId),
+  })
+}
+
+export function useFiscalDocuments(branchId?: string | null, date?: string | null) {
+  const { profile } = useAuth()
+  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
+  const effectiveBranchId = arguments.length > 0 ? branchId ?? null : selectedBranchId
+  return useQuery({
+    queryKey: ["fiscal-documents", profile?.organization_id, effectiveBranchId, date],
+    queryFn: () => listFiscalDocuments(effectiveBranchId, date),
+    enabled: Boolean(profile),
+  })
+}
+
+export function useCreateFiscalDocument() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: {
+      sale_id: string
+      doc_type: FiscalDocumentType
+      series: string
+      notes: string | null
+    }) => createFiscalDocumentFromSale(input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["fiscal-documents"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      toast.success("Documento fiscal local gerado.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useCancelFiscalDocument() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: { documentId: string; reason: string | null }) =>
+      cancelFiscalDocument(profile, input.documentId, input.reason),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["fiscal-documents"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success("Documento fiscal local cancelado.")
+    },
+    onError: (error) => { toast.error(error.message) },
   })
 }
 

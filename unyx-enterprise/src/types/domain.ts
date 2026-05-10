@@ -456,6 +456,13 @@ export type CashSessionStatus = "open" | "closed" | "cancelled"
 export type SaleStatus = "draft" | "completed" | "cancelled" | "refunded"
 export type PaymentMethod = "cash" | "pix" | "debit_card" | "credit_card" | "voucher" | "other"
 export type PaymentStatus = "pending" | "confirmed" | "cancelled"
+export type FiscalDocumentType = "internal_coupon" | "nfce_draft"
+export type FiscalDocumentStatus = "draft" | "ready_to_print" | "cancelled"
+export type FiscalDocumentOperationMode =
+  | "offline"
+  | "sefaz_pending"
+  | "sefaz_authorized"
+  | "sefaz_rejected"
 export type PosCashMovementType =
   | "sale_cash_in"
   | "cash_out"
@@ -599,6 +606,34 @@ export interface SalePayment {
   paid_at: string
   notes: string | null
   created_at: string
+}
+
+export interface FiscalDocument {
+  id: string
+  organization_id: string
+  branch_id: string
+  sale_id: string
+  created_by: string | null
+  doc_type: FiscalDocumentType
+  status: FiscalDocumentStatus
+  operation_mode: FiscalDocumentOperationMode
+  series: string
+  number: number
+  fiscal_key: string
+  sefaz_protocol: string | null
+  sefaz_authorized_at: string | null
+  sefaz_rejection_reason: string | null
+  issuer_snapshot: Record<string, unknown>
+  customer_snapshot: Record<string, unknown>
+  totals_snapshot: Record<string, unknown>
+  notes: string | null
+  issued_at: string
+  cancelled_at: string | null
+  created_at: string
+  updated_at: string
+  branches?: Pick<Branch, "name"> | null
+  sales?: Pick<Sale, "id" | "customer_name" | "total_amount" | "sold_at"> | null
+  user_profiles?: Pick<UserProfile, "name"> | null
 }
 
 export type CustomerStatus = "active" | "inactive" | "blocked"

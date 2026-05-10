@@ -15,6 +15,7 @@ export type PermissionKey =
   | "pos_cash"
   | "pos_products"
   | "pos_sales"
+  | "fiscal_documents"
   | "deliveries"
   | "reports"
   | "audit"
@@ -38,6 +39,7 @@ export const PERMISSION_LABEL: Record<PermissionKey, string> = {
   pos_cash: "Caixa",
   pos_products: "Produtos",
   pos_sales: "Historico POS",
+  fiscal_documents: "Cupons / NFC-e",
   deliveries: "Entregas",
   reports: "Relatorios",
   audit: "Auditoria",
@@ -50,7 +52,7 @@ export const PERMISSION_LABEL: Record<PermissionKey, string> = {
 export const PERMISSION_GROUP: Record<string, PermissionKey[]> = {
   "Unyx Ops": ["dashboard", "operations", "alerts", "schedules", "checklists"],
   "Unyx Control": ["branches", "employees", "customers", "users", "settings"],
-  "Unyx POS": ["pos_sell", "pos_cash", "pos_products", "pos_sales", "deliveries"],
+  "Unyx POS": ["pos_sell", "pos_cash", "pos_products", "pos_sales", "fiscal_documents", "deliveries"],
   "Unyx Insight": ["reports", "audit"],
   Expansao: ["comms", "game", "academy", "ai"],
 }
@@ -70,6 +72,7 @@ export const PERMISSIONS: Record<PermissionKey, UserRole[]> = {
   pos_cash: ["owner", "admin", "branch_manager", "supervisor", "operator"],
   pos_products: ["owner", "admin", "branch_manager"],
   pos_sales: ["owner", "admin", "branch_manager", "supervisor"],
+  fiscal_documents: ["owner", "admin", "branch_manager", "supervisor"],
   deliveries: ["owner", "admin", "branch_manager", "supervisor", "operator", "employee"],
   reports: ["owner", "admin", "branch_manager"],
   audit: ["owner", "admin"],
@@ -93,6 +96,9 @@ export function canAccessUser(
   profile: { role: UserRole; custom_permissions: string[] | null },
   key: PermissionKey
 ): boolean {
+  if (key === "fiscal_documents" && !canAccess(profile.role, key)) {
+    return false
+  }
   if (profile.custom_permissions && profile.custom_permissions.length > 0) {
     return profile.custom_permissions.includes(key)
   }

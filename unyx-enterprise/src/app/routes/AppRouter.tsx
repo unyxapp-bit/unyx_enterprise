@@ -26,6 +26,7 @@ import { SettingsPage } from "@/features/settings/SettingsPage"
 import { UsersPage } from "@/features/users/UsersPage"
 import { PosProductsPage } from "@/features/pos/PosProductsPage"
 import { PosCashPage } from "@/features/pos/PosCashPage"
+import { FiscalDocumentsPage } from "@/features/pos/FiscalDocumentsPage"
 import { PosSellPage } from "@/features/pos/PosSellPage"
 import { PosSalesPage } from "@/features/pos/PosSalesPage"
 
@@ -109,6 +110,9 @@ export function AppRouter() {
             </Route>
             <Route element={<RequirePermission perm="pos_sales" />}>
               <Route path="pos/sales" element={<PosSalesPage />} />
+            </Route>
+            <Route element={<RequirePermission perm="fiscal_documents" />}>
+              <Route path="pos/fiscal" element={<FiscalDocumentsPage />} />
             </Route>
             <Route element={<RequirePermission perm="deliveries" />}>
               <Route path="deliveries" element={<DeliveriesPage />} />

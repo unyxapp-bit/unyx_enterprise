@@ -27,6 +27,8 @@ import type {
   DeliveryStatus,
   Employee,
   EmployeeWithRelations,
+  FiscalDocument,
+  FiscalDocumentType,
   Invitation,
   Module,
   OrganizationModule,
@@ -2295,6 +2297,32 @@ function customerFeatureMessage() {
   return "Modulo de clientes ainda nao instalado. Rode supabase/customers_setup.sql no SQL Editor do Supabase e recarregue o app."
 }
 
+function isMissingFiscalFeature(error: { code?: string; message: string } | null) {
+  if (!error) return false
+  const message = error.message.toLowerCase()
+  const mentionsFiscal =
+    message.includes("fiscal_documents") ||
+    message.includes("fiscal_document_counters") ||
+    message.includes("fiscal_create_document_from_sale")
+
+  return (
+    mentionsFiscal &&
+    (
+      error.code === "42P01" ||
+      error.code === "PGRST202" ||
+      error.code === "PGRST204" ||
+      error.code === "PGRST205" ||
+      message.includes("schema cache") ||
+      message.includes("does not exist") ||
+      message.includes("could not find")
+    )
+  )
+}
+
+function fiscalFeatureMessage() {
+  return "Modulo fiscal ainda nao instalado. Rode supabase/fiscal_documents_setup.sql no SQL Editor do Supabase e recarregue o app."
+}
+
 export interface CustomerInput {
   branch_id: string | null
   name: string
@@ -3218,6 +3246,88 @@ export async function listSalePayments(saleId: string) {
   if (isMissingPosFeature(error)) return []
   raise(error)
   return (data ?? []) as SalePayment[]
+}
+
+export async function listFiscalDocuments(branchId?: string | null, date?: string | null) {
+  let query = supabase
+    .from("fiscal_documents")
+    .select("*, branches(name), sales(id, customer_name, total_amount, sold_at), user_profiles!created_by(name)")
+    .order("issued_at", { ascending: false })
+    .limit(200)
+
+  if (branchId) query = query.eq("branch_id", branchId)
+  if (date) query = query.gte("issued_at", `${date}T00:00:00`).lte("issued_at", `${date}T23:59:59`)
+
+  const { data, error } = await query
+  if (isMissingFiscalFeature(error)) throw new Error(fiscalFeatureMessage())
+  raise(error)
+  return (data ?? []) as FiscalDocument[]
+}
+
+export async function createFiscalDocumentFromSale(input: {
+  sale_id: string
+  doc_type: FiscalDocumentType
+  series: string
+  notes: string | null
+}) {
+  const { data, error } = await supabase.rpc("fiscal_create_document_from_sale", {
+    p_sale_id: input.sale_id,
+    p_doc_type: input.doc_type,
+    p_series: input.series || "1",
+    p_notes: input.notes,
+  })
+  if (isMissingFiscalFeature(error)) throw new Error(fiscalFeatureMessage())
+  raise(error)
+  return data as string
+}
+
+export async function cancelFiscalDocument(
+  profile: UserProfile,
+  documentId: string,
+  reason: string | null
+) {
+  const { data: previous, error: previousError } = await supabase
+    .from("fiscal_documents")
+    .select("*")
+    .eq("id", documentId)
+    .eq("organization_id", profile.organization_id)
+    .maybeSingle()
+
+  if (isMissingFiscalFeature(previousError)) throw new Error(fiscalFeatureMessage())
+  raise(previousError)
+
+  if (!previous) throw new Error("Documento fiscal nao encontrado.")
+  if (previous.status === "cancelled") throw new Error("Documento fiscal ja cancelado.")
+
+  const notes = [previous.notes, reason ? `Cancelado localmente: ${reason}` : "Cancelado localmente"]
+    .filter(Boolean)
+    .join("\n")
+
+  const { data, error } = await supabase
+    .from("fiscal_documents")
+    .update({
+      status: "cancelled",
+      cancelled_at: new Date().toISOString(),
+      notes,
+    })
+    .eq("id", documentId)
+    .eq("organization_id", profile.organization_id)
+    .select("*")
+    .single()
+
+  if (isMissingFiscalFeature(error)) throw new Error(fiscalFeatureMessage())
+  raise(error)
+
+  await createAuditLog(profile, {
+    branch_id: data.branch_id,
+    action: "fiscal_document_cancelled",
+    entity_type: "fiscal_documents",
+    entity_id: data.id,
+    old_value: previous,
+    new_value: data,
+  })
+
+  return data as FiscalDocument
 }
 
 export async function listDeliveryOrders(branchId?: string | null) {
