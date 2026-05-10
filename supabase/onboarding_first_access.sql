@@ -4,10 +4,15 @@
 -- =========================================================
 --
 -- Como usar:
--- 1. Rode este arquivo uma vez no SQL Editor do Supabase.
--- 2. Crie uma conta pelo app.
--- 3. Complete os dados iniciais no formulario de onboarding.
--- 4. O dashboard so sera liberado depois que o perfil for criado.
+-- 1. Em base existente, rode primeiro supabase/enum_values_before_onboarding.sql.
+-- 2. Rode este arquivo uma vez no SQL Editor do Supabase.
+-- 3. Crie uma conta pelo app.
+-- 4. Complete os dados iniciais no formulario de onboarding.
+-- 5. O dashboard so sera liberado depois que o perfil for criado.
+--
+-- Se aparecer "unsafe use of new value ... of enum type", rode o arquivo
+-- supabase/enum_values_before_onboarding.sql sozinho e depois rode este
+-- arquivo completo novamente.
 
 drop function if exists public.bootstrap_current_user_profile();
 
@@ -124,8 +129,8 @@ begin
 exception when duplicate_object then null;
 end $$;
 
--- Se o Supabase avisar "unsafe use of new value", rode somente estes dois
--- ALTER TYPE primeiro e depois execute o arquivo completo novamente.
+-- Para bases existentes, prefira rodar antes:
+-- supabase/enum_values_before_onboarding.sql
 alter type public.operational_status_type add value if not exists 'aguardando_evento';
 alter type public.operational_status_type add value if not exists 'finalizado';
 
