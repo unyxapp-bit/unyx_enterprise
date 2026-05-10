@@ -63,6 +63,7 @@ import type {
 
 export interface BulkImportResult {
   created: number
+  updated?: number
   skipped: number
   errors: string[]
 }
@@ -2416,6 +2417,45 @@ export interface ProductVariantInput {
   sort_order: number
 }
 
+export interface ProductCatalogImportInput {
+  branch_id: string | null
+  segment: ProductCategorySegment
+  category_name: string | null
+  category_description: string | null
+  name: string | null
+  description: string | null
+  barcode: string | null
+  sku: string | null
+  brand: string | null
+  product_kind: ProductKind
+  size_label: string | null
+  dosage: string | null
+  unit: string
+  price: number
+  cost_price: number | null
+  stock_quantity: number
+  min_stock_quantity: number
+  track_inventory: boolean
+  allow_fractional_quantity: boolean
+  perishable: boolean
+  prescription_required: boolean
+  controlled_substance: boolean
+  preparation_time_minutes: number | null
+  active: boolean
+  variant_name: string | null
+  variant_barcode: string | null
+  variant_sku: string | null
+  variant_price: number | null
+  variant_cost_price: number | null
+  variant_stock_quantity: number | null
+  variant_sort_order: number
+  variant_active: boolean
+}
+
+export interface ProductCatalogImportOptions {
+  update_existing: boolean
+}
+
 export interface DeliveryOrderInput {
   branch_id: string
   sale_id: string | null
@@ -2826,6 +2866,435 @@ function normalizeVariantInput(input: ProductVariantInput) {
     stock_quantity: Math.max(0, Number(input.stock_quantity) || 0),
     sort_order: Number(input.sort_order) || 0,
   }
+}
+
+function normalizeCatalogKey(value: string | null | undefined) {
+  return normalizeText(value)
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+function branchCatalogScope(branchId: string | null | undefined) {
+  return branchId || "global"
+}
+
+function categoryCatalogKey(
+  branchId: string | null | undefined,
+  segment: ProductCategorySegment,
+  name: string
+) {
+  return `${branchCatalogScope(branchId)}:${segment}:${normalizeCatalogKey(name)}`
+}
+
+function scopedCatalogKey(branchId: string | null | undefined, value: string) {
+  return `${branchCatalogScope(branchId)}:${normalizeCatalogKey(value)}`
+}
+
+function productNameCatalogKey(
+  branchId: string | null | undefined,
+  categoryName: string | null | undefined,
+  productName: string
+) {
+  return `${branchCatalogScope(branchId)}:${normalizeCatalogKey(categoryName)}:${normalizeCatalogKey(productName)}`
+}
+
+function variantCatalogKey(value: string | null | undefined) {
+  return normalizeCatalogKey(value)
+}
+
+export async function importProductCatalog(
+  profile: UserProfile,
+  rows: ProductCatalogImportInput[],
+  options: ProductCatalogImportOptions
+): Promise<BulkImportResult> {
+  const errors: string[] = []
+  let created = 0
+  let updated = 0
+  let skipped = 0
+
+  if (rows.length === 0) {
+    return { created, updated, skipped, errors }
+  }
+
+  const { data: existingCategories, error: categoriesError } = await supabase
+    .from("product_categories")
+    .select("*")
+    .eq("organization_id", profile.organization_id)
+
+  if (isMissingPosFeature(categoriesError)) throw new Error(posFeatureMessage())
+  raise(categoriesError)
+
+  const { data: existingProducts, error: productsError } = await supabase
+    .from("products")
+    .select("*")
+    .eq("organization_id", profile.organization_id)
+
+  if (isMissingPosFeature(productsError)) throw new Error(posFeatureMessage())
+  raise(productsError)
+
+  const { data: existingVariants, error: variantsError } = await supabase
+    .from("product_variants")
+    .select("*")
+    .eq("organization_id", profile.organization_id)
+
+  if (isMissingPosFeature(variantsError)) throw new Error(posFeatureMessage())
+  raise(variantsError)
+
+  const categoryByKey = new Map<string, ProductCategory>()
+  const categoryNameById = new Map<string, string>()
+  ;((existingCategories ?? []) as ProductCategory[]).forEach((category) => {
+    categoryByKey.set(
+      categoryCatalogKey(category.branch_id, category.segment, category.name),
+      category
+    )
+    categoryNameById.set(category.id, category.name)
+  })
+
+  function findCategory(
+    branchId: string | null,
+    segment: ProductCategorySegment,
+    name: string
+  ) {
+    return (
+      categoryByKey.get(categoryCatalogKey(branchId, segment, name)) ??
+      categoryByKey.get(categoryCatalogKey(null, segment, name)) ??
+      categoryByKey.get(categoryCatalogKey(branchId, "all", name)) ??
+      categoryByKey.get(categoryCatalogKey(null, "all", name)) ??
+      null
+    )
+  }
+
+  const productByBarcode = new Map<string, Product>()
+  const productBySku = new Map<string, Product>()
+  const productByBarcodeGlobal = new Map<string, Product>()
+  const productBySkuGlobal = new Map<string, Product>()
+  const productByName = new Map<string, Product>()
+
+  function indexProduct(product: Product) {
+    const categoryName = product.category_id
+      ? categoryNameById.get(product.category_id) ?? product.category
+      : product.category
+    if (product.barcode) {
+      productByBarcode.set(scopedCatalogKey(product.branch_id, product.barcode), product)
+      productByBarcodeGlobal.set(variantCatalogKey(product.barcode), product)
+    }
+    if (product.sku) {
+      productBySku.set(scopedCatalogKey(product.branch_id, product.sku), product)
+      productBySkuGlobal.set(variantCatalogKey(product.sku), product)
+    }
+    productByName.set(
+      productNameCatalogKey(product.branch_id, categoryName, product.name),
+      product
+    )
+  }
+
+  ;((existingProducts ?? []) as Product[]).forEach(indexProduct)
+
+  function findProduct(row: ProductCatalogImportInput, categoryName: string | null) {
+    if (row.barcode) {
+      const barcodeKey = variantCatalogKey(row.barcode)
+      const product =
+        productByBarcode.get(scopedCatalogKey(row.branch_id, row.barcode)) ??
+        productByBarcode.get(scopedCatalogKey(null, row.barcode)) ??
+        productByBarcodeGlobal.get(barcodeKey)
+      if (product) return product
+    }
+
+    if (row.sku) {
+      const skuKey = variantCatalogKey(row.sku)
+      const product =
+        productBySku.get(scopedCatalogKey(row.branch_id, row.sku)) ??
+        productBySku.get(scopedCatalogKey(null, row.sku)) ??
+        productBySkuGlobal.get(skuKey)
+      if (product) return product
+    }
+
+    if (!row.name) return null
+
+    return (
+      productByName.get(productNameCatalogKey(row.branch_id, categoryName, row.name)) ??
+      productByName.get(productNameCatalogKey(null, categoryName, row.name)) ??
+      null
+    )
+  }
+
+  const variantsByProduct = new Map<string, ProductVariant[]>()
+  ;((existingVariants ?? []) as ProductVariant[]).forEach((variant) => {
+    const current = variantsByProduct.get(variant.product_id) ?? []
+    current.push(variant)
+    variantsByProduct.set(variant.product_id, current)
+  })
+
+  function findVariant(productId: string, row: ProductCatalogImportInput) {
+    const productVariants = variantsByProduct.get(productId) ?? []
+
+    if (row.variant_barcode) {
+      const key = variantCatalogKey(row.variant_barcode)
+      const variant = productVariants.find(
+        (item) => variantCatalogKey(item.barcode) === key
+      )
+      if (variant) return variant
+    }
+
+    if (row.variant_sku) {
+      const key = variantCatalogKey(row.variant_sku)
+      const variant = productVariants.find(
+        (item) => variantCatalogKey(item.sku) === key
+      )
+      if (variant) return variant
+    }
+
+    if (!row.variant_name) return null
+    const nameKey = variantCatalogKey(row.variant_name)
+    return (
+      productVariants.find((item) => variantCatalogKey(item.name) === nameKey) ?? null
+    )
+  }
+
+  function indexVariant(variant: ProductVariant) {
+    const current = variantsByProduct.get(variant.product_id) ?? []
+    const next = current.filter((item) => item.id !== variant.id)
+    next.push(variant)
+    variantsByProduct.set(variant.product_id, next)
+  }
+
+  for (const [index, row] of rows.entries()) {
+    const lineNumber = index + 2
+
+    try {
+      const categoryName = row.category_name?.trim() || null
+      const productName = row.name?.trim() || null
+      const variantName = row.variant_name?.trim() || null
+
+      if (!categoryName && !productName) {
+        errors.push(`Linha ${lineNumber}: informe categoria ou produto.`)
+        skipped += 1
+        continue
+      }
+
+      if (row.branch_id) await validateBranchAndSector(profile, row.branch_id)
+
+      let category: ProductCategory | null = null
+      let categoryChanged = false
+
+      if (categoryName) {
+        category = findCategory(row.branch_id, row.segment, categoryName)
+
+        if (category && !category.active && options.update_existing) {
+          const { data, error } = await supabase
+            .from("product_categories")
+            .update({
+              active: true,
+              description: row.category_description?.trim() || category.description,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", category.id)
+            .eq("organization_id", profile.organization_id)
+            .select("*")
+            .single()
+
+          if (isMissingPosFeature(error)) throw new Error(posFeatureMessage())
+          raise(error)
+          category = data as ProductCategory
+          categoryByKey.set(
+            categoryCatalogKey(category.branch_id, category.segment, category.name),
+            category
+          )
+          categoryNameById.set(category.id, category.name)
+          categoryChanged = true
+          updated += 1
+        }
+
+        if (!category) {
+          const payload = normalizeCategoryInput({
+            branch_id: row.branch_id,
+            name: categoryName,
+            description: row.category_description,
+            segment: row.segment,
+          })
+
+          const { data, error } = await supabase
+            .from("product_categories")
+            .insert({
+              ...payload,
+              organization_id: profile.organization_id,
+            })
+            .select("*")
+            .single()
+
+          if (isMissingPosFeature(error)) throw new Error(posFeatureMessage())
+          raise(error)
+
+          category = data as ProductCategory
+          categoryChanged = true
+          categoryByKey.set(
+            categoryCatalogKey(category.branch_id, category.segment, category.name),
+            category
+          )
+          categoryNameById.set(category.id, category.name)
+          created += 1
+        }
+      }
+
+      if (!productName) {
+        if (!categoryChanged) skipped += 1
+        continue
+      }
+
+      const productPayload = normalizeProductInput({
+        branch_id: row.branch_id,
+        category_id: category?.id ?? null,
+        name: productName,
+        description: row.description,
+        barcode: row.barcode,
+        sku: row.sku,
+        category: categoryName,
+        brand: row.brand,
+        product_kind: row.product_kind,
+        size_label: row.size_label,
+        dosage: row.dosage,
+        unit: row.unit,
+        price: row.price,
+        cost_price: row.cost_price,
+        stock_quantity: row.stock_quantity,
+        min_stock_quantity: row.min_stock_quantity,
+        track_inventory: row.track_inventory,
+        allow_fractional_quantity: row.allow_fractional_quantity,
+        perishable: row.perishable,
+        prescription_required: row.prescription_required,
+        controlled_substance: row.controlled_substance,
+        preparation_time_minutes: row.preparation_time_minutes,
+      })
+
+      const existingProduct = findProduct(row, categoryName)
+      let product: Product
+
+      if (existingProduct) {
+        product = existingProduct
+
+        if (options.update_existing) {
+          const payload: Record<string, unknown> = {
+            ...productPayload,
+            active: row.active,
+            updated_at: new Date().toISOString(),
+          }
+
+          if (!categoryName) {
+            delete payload.category_id
+            delete payload.category
+          }
+
+          const { data, error } = await supabase
+            .from("products")
+            .update(payload)
+            .eq("id", existingProduct.id)
+            .eq("organization_id", profile.organization_id)
+            .select("*")
+            .single()
+
+          if (isMissingPosFeature(error)) throw new Error(posFeatureMessage())
+          raise(error)
+
+          product = data as Product
+          indexProduct(product)
+          updated += 1
+        } else if (!variantName) {
+          skipped += 1
+        }
+      } else {
+        const { data, error } = await supabase
+          .from("products")
+          .insert({
+            ...productPayload,
+            active: row.active,
+            organization_id: profile.organization_id,
+          })
+          .select("*")
+          .single()
+
+        if (isMissingPosFeature(error)) throw new Error(posFeatureMessage())
+        raise(error)
+
+        product = data as Product
+        indexProduct(product)
+        created += 1
+      }
+
+      if (!variantName) continue
+
+      const existingVariant = findVariant(product.id, row)
+      const variantPayload = normalizeVariantInput({
+        product_id: product.id,
+        name: variantName,
+        barcode: row.variant_barcode,
+        sku: row.variant_sku,
+        price: row.variant_price ?? product.price,
+        cost_price: row.variant_cost_price,
+        stock_quantity: row.variant_stock_quantity ?? 0,
+        sort_order: row.variant_sort_order,
+      })
+
+      if (existingVariant) {
+        if (!options.update_existing) {
+          skipped += 1
+          continue
+        }
+
+        const { data, error } = await supabase
+          .from("product_variants")
+          .update({
+            ...variantPayload,
+            active: row.variant_active,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", existingVariant.id)
+          .eq("organization_id", profile.organization_id)
+          .select("*")
+          .single()
+
+        if (isMissingPosFeature(error)) throw new Error(posFeatureMessage())
+        raise(error)
+
+        indexVariant(data as ProductVariant)
+        updated += 1
+      } else {
+        const { data, error } = await supabase
+          .from("product_variants")
+          .insert({
+            ...variantPayload,
+            active: row.variant_active,
+            organization_id: profile.organization_id,
+          })
+          .select("*")
+          .single()
+
+        if (isMissingPosFeature(error)) throw new Error(posFeatureMessage())
+        raise(error)
+
+        indexVariant(data as ProductVariant)
+        created += 1
+      }
+    } catch (error) {
+      skipped += 1
+      errors.push(
+        `Linha ${lineNumber}: ${
+          error instanceof Error ? error.message : "registro invalido"
+        }`
+      )
+    }
+  }
+
+  if (created > 0 || updated > 0) {
+    await createAuditLog(profile, {
+      action: "product_catalog_imported",
+      entity_type: "products",
+      old_value: null,
+      new_value: { created, updated, skipped },
+    })
+  }
+
+  return { created, updated, skipped, errors }
 }
 
 export async function listProducts(branchId?: string | null) {

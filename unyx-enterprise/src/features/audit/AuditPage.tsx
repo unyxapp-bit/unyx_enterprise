@@ -71,6 +71,7 @@ const actionLabels: Record<string, string> = {
   create_sector: "Criacao de setor",
   update_sector: "Edicao de setor",
   toggle_sector: "Ativacao / desativacao de setor",
+  product_catalog_imported: "Importacao de catalogo PDV",
   // Configuracoes
   update_settings: "Atualizacao de configuracoes",
   update_organization: "Atualizacao da empresa",

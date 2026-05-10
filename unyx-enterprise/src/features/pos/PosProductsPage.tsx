@@ -4,6 +4,8 @@ import {
   AlertTriangle,
   Barcode,
   Boxes,
+  Download,
+  FileSpreadsheet,
   Layers,
   Package,
   Pencil,
@@ -41,6 +43,7 @@ import {
   useDeleteProduct,
   useDeleteProductCategory,
   useDeleteProductVariant,
+  useImportProductCatalog,
   useProductCategories,
   useProducts,
   useProductVariants,
@@ -49,6 +52,7 @@ import {
   useUpdateProductVariant,
 } from "@/hooks/useUnyxData"
 import { formatCurrency } from "@/lib/format"
+import { cellToText, getCell, normalizeColumn, parseSpreadsheet } from "@/lib/spreadsheet"
 import { useAppStore } from "@/store/useAppStore"
 import type {
   Branch,
@@ -60,6 +64,7 @@ import type {
 } from "@/types/domain"
 import type {
   ProductCategoryInput,
+  ProductCatalogImportInput,
   ProductInput,
   ProductVariantInput,
 } from "@/services/unyxApi"
@@ -310,6 +315,565 @@ function errorMessage(error: unknown) {
   return error instanceof Error
     ? error.message
     : "Rode supabase/pos_setup.sql no SQL Editor para ativar o modulo POS."
+}
+
+function normalizeLookup(value: string | null | undefined) {
+  return normalizeColumn(value ?? "").replace(/_/g, " ")
+}
+
+function cellToNumber(value: unknown, fallback = 0) {
+  if (typeof value === "number" && Number.isFinite(value)) return value
+
+  const text = cellToText(value).replace(/\s/g, "")
+  if (!text) return fallback
+
+  const decimalText = text.includes(",")
+    ? text.replace(/\./g, "").replace(",", ".")
+    : text
+  const numericText = decimalText.replace(/[^\d.-]/g, "")
+  const parsed = Number(numericText)
+
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function optionalCellToNumber(value: unknown) {
+  const text = cellToText(value)
+  if (!text) return null
+  return Math.max(0, cellToNumber(value, 0))
+}
+
+function cellToBoolean(value: unknown, fallback: boolean) {
+  const text = normalizeLookup(cellToText(value))
+  if (!text) return fallback
+
+  if (["1", "sim", "s", "yes", "true", "ativo", "ativa"].includes(text)) {
+    return true
+  }
+
+  if (["0", "nao", "n", "no", "false", "inativo", "inativa"].includes(text)) {
+    return false
+  }
+
+  return fallback
+}
+
+function segmentFromText(
+  value: string,
+  fallback: ProductCategorySegment
+): ProductCategorySegment {
+  const text = normalizeLookup(value)
+  if (!text) return fallback
+  if (text.includes("super") || text.includes("mercado")) return "supermarket"
+  if (text.includes("restaurante") || text.includes("lanchonete") || text.includes("food")) {
+    return "restaurant"
+  }
+  if (text.includes("farmacia") || text.includes("drogaria") || text.includes("medic")) {
+    return "pharmacy"
+  }
+  if (text.includes("varejo") || text.includes("atacado") || text.includes("loja")) {
+    return "retail_store"
+  }
+  if (text.includes("todos") || text === "all") return "all"
+  return "other"
+}
+
+function productKindFromText(value: string, fallback: ProductKind): ProductKind {
+  const text = normalizeLookup(value)
+  if (!text) return fallback
+  if (text.includes("serv")) return "service"
+  if (text.includes("med") || text.includes("farma")) return "medicine"
+  if (text.includes("food") || text.includes("alimento") || text.includes("preparo")) {
+    return "food"
+  }
+  return "retail"
+}
+
+function productKindFromSegment(segment: ProductCategorySegment): ProductKind {
+  if (segment === "restaurant") return "food"
+  if (segment === "pharmacy") return "medicine"
+  return "retail"
+}
+
+function defaultFractionalByUnit(unit: string) {
+  return ["kg", "g", "l", "ml"].includes(unit.trim().toLowerCase())
+}
+
+const catalogTemplateHeaders = [
+  "filial",
+  "setor",
+  "categoria",
+  "descricao_categoria",
+  "produto",
+  "descricao",
+  "codigo_barras",
+  "sku",
+  "marca",
+  "tipo_produto",
+  "unidade",
+  "preco",
+  "custo",
+  "estoque",
+  "estoque_minimo",
+  "controla_estoque",
+  "fracionado",
+  "perecivel",
+  "receita",
+  "controlado",
+  "tempo_preparo",
+  "tamanho",
+  "preco_variacao",
+  "sku_variacao",
+  "codigo_barras_variacao",
+  "estoque_variacao",
+  "ativo",
+]
+
+function csvCell(value: string | number | null) {
+  const text = String(value ?? "")
+  return text.includes(";") || text.includes('"') || text.includes("\n")
+    ? `"${text.replace(/"/g, '""')}"`
+    : text
+}
+
+function downloadCatalogTemplate() {
+  const examples = [
+    [
+      "Loja principal",
+      "Supermercado",
+      "Mercearia",
+      "Produtos secos",
+      "Arroz tipo 1 5kg",
+      "Pacote 5kg",
+      "7890000000010",
+      "ARR-5KG",
+      "Marca A",
+      "Varejo",
+      "un",
+      "25,90",
+      "18,00",
+      "50",
+      "5",
+      "sim",
+      "nao",
+      "nao",
+      "nao",
+      "nao",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "sim",
+    ],
+    [
+      "Loja principal",
+      "Restaurante",
+      "Pizzas",
+      "Cardapio",
+      "Pizza margerita",
+      "Molho, queijo e tomate",
+      "",
+      "PIZ-MARG",
+      "",
+      "Alimento",
+      "un",
+      "50,00",
+      "22,00",
+      "0",
+      "0",
+      "nao",
+      "nao",
+      "sim",
+      "nao",
+      "nao",
+      "25",
+      "Grande",
+      "65,00",
+      "PIZ-MARG-G",
+      "",
+      "0",
+      "sim",
+    ],
+    [
+      "Loja principal",
+      "Farmacia",
+      "Medicamentos",
+      "Medicamentos controlados e comuns",
+      "Dipirona 500mg",
+      "Comprimido",
+      "7890000000027",
+      "DIP-500",
+      "Marca Farma",
+      "Medicamento",
+      "cx",
+      "12,50",
+      "7,00",
+      "30",
+      "4",
+      "sim",
+      "nao",
+      "nao",
+      "nao",
+      "nao",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "sim",
+    ],
+  ]
+  const csv = [catalogTemplateHeaders, ...examples]
+    .map((row) => row.map(csvCell).join(";"))
+    .join("\n")
+  const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement("a")
+  link.href = url
+  link.download = "modelo_importacao_catalogo_pdv.csv"
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+function ProductsImportDialog({
+  branches,
+  selectedBranchId,
+}: {
+  branches: Branch[]
+  selectedBranchId: string | null
+}) {
+  const [open, setOpen] = useState(false)
+  const [rows, setRows] = useState<ProductCatalogImportInput[]>([])
+  const [errors, setErrors] = useState<string[]>([])
+  const [fileName, setFileName] = useState("")
+  const [defaultBranchId, setDefaultBranchId] = useState(selectedBranchId ?? "")
+  const [defaultSegment, setDefaultSegment] =
+    useState<ProductCategorySegment>("all")
+  const [updateExisting, setUpdateExisting] = useState(true)
+  const importCatalog = useImportProductCatalog()
+
+  const activeBranches = useMemo(
+    () => branches.filter((branch) => branch.active),
+    [branches]
+  )
+
+  const preview = useMemo(() => {
+    const categories = new Set(
+      rows
+        .filter((row) => row.category_name)
+        .map((row) =>
+          [
+            row.branch_id ?? "global",
+            row.segment,
+            normalizeLookup(row.category_name ?? ""),
+          ].join(":")
+        )
+    )
+
+    return {
+      categories: categories.size,
+      products: rows.filter((row) => row.name).length,
+      variants: rows.filter((row) => row.variant_name).length,
+    }
+  }, [rows])
+
+  function openDialog() {
+    setDefaultBranchId(selectedBranchId ?? "")
+    setOpen(true)
+  }
+
+  async function handleFile(file: File | null) {
+    setRows([])
+    setErrors([])
+    setFileName(file?.name ?? "")
+
+    if (!file) return
+
+    try {
+      const parsed = await parseSpreadsheet(file)
+      const branchByName = new Map(
+        activeBranches.map((branch) => [normalizeLookup(branch.name), branch.id])
+      )
+      const fallbackBranchId = defaultBranchId || null
+      const nextRows: ProductCatalogImportInput[] = []
+      const nextErrors: string[] = []
+
+      parsed.forEach((row, index) => {
+        const lineNumber = index + 2
+        const branchName = cellToText(getCell(row, ["filial", "loja", "unidade"]))
+        const branchId = branchName
+          ? branchByName.get(normalizeLookup(branchName)) ?? ""
+          : fallbackBranchId
+
+        if (branchName && !branchId) {
+          nextErrors.push(`Linha ${lineNumber}: filial "${branchName}" nao encontrada.`)
+          return
+        }
+
+        const segment = segmentFromText(
+          cellToText(getCell(row, ["setor", "segmento", "tipo_setor"])),
+          defaultSegment
+        )
+        const categoryName = cellToText(
+          getCell(row, ["categoria", "grupo", "departamento"])
+        )
+        const productName = cellToText(
+          getCell(row, ["produto", "nome", "nome_produto", "descricao_produto"])
+        )
+        const variantName = cellToText(
+          getCell(row, ["variacao", "variante", "tamanho", "sabor", "dose"])
+        )
+
+        if (!categoryName && !productName) {
+          nextErrors.push(`Linha ${lineNumber}: informe categoria ou produto.`)
+          return
+        }
+
+        if (variantName && !productName) {
+          nextErrors.push(`Linha ${lineNumber}: variacao precisa de um produto.`)
+          return
+        }
+
+        const unit = cellToText(getCell(row, ["unidade", "un"])) || "un"
+        const kindFallback = productKindFromSegment(segment)
+        const productKind = productKindFromText(
+          cellToText(getCell(row, ["tipo_produto", "natureza", "classe"])),
+          kindFallback
+        )
+        const active = cellToBoolean(getCell(row, ["ativo", "status"]), true)
+        const trackInventory = cellToBoolean(
+          getCell(row, ["controla_estoque", "estoque_controlado"]),
+          productKind !== "service"
+        )
+        const allowFractional = cellToBoolean(
+          getCell(row, ["fracionado", "permite_fracionado"]),
+          defaultFractionalByUnit(unit)
+        )
+
+        nextRows.push({
+          branch_id: branchId || null,
+          segment,
+          category_name: categoryName || null,
+          category_description:
+            cellToText(getCell(row, ["descricao_categoria", "desc_categoria"])) ||
+            null,
+          name: productName || null,
+          description:
+            cellToText(getCell(row, ["descricao", "descricao_produto", "obs"])) ||
+            null,
+          barcode:
+            cellToText(getCell(row, ["codigo_barras", "codigo", "ean", "gtin"])) ||
+            null,
+          sku: cellToText(getCell(row, ["sku", "referencia"])) || null,
+          brand: cellToText(getCell(row, ["marca", "fabricante"])) || null,
+          product_kind: productKind,
+          size_label:
+            cellToText(getCell(row, ["tamanho_produto", "embalagem"])) || null,
+          dosage: cellToText(getCell(row, ["dosagem", "concentracao"])) || null,
+          unit,
+          price: Math.max(0, cellToNumber(getCell(row, ["preco", "valor"]), 0)),
+          cost_price: optionalCellToNumber(getCell(row, ["custo", "preco_custo"])),
+          stock_quantity: Math.max(
+            0,
+            cellToNumber(getCell(row, ["estoque", "quantidade"]), 0)
+          ),
+          min_stock_quantity: Math.max(
+            0,
+            cellToNumber(getCell(row, ["estoque_minimo", "minimo"]), 0)
+          ),
+          track_inventory: trackInventory,
+          allow_fractional_quantity: allowFractional,
+          perishable: cellToBoolean(getCell(row, ["perecivel"]), false),
+          prescription_required: cellToBoolean(
+            getCell(row, ["receita", "exige_receita"]),
+            false
+          ),
+          controlled_substance: cellToBoolean(
+            getCell(row, ["controlado", "substancia_controlada"]),
+            false
+          ),
+          preparation_time_minutes: optionalCellToNumber(
+            getCell(row, ["tempo_preparo", "preparo_minutos"])
+          ),
+          active,
+          variant_name: variantName || null,
+          variant_barcode:
+            cellToText(
+              getCell(row, [
+                "codigo_barras_variacao",
+                "codigo_variacao",
+                "ean_variacao",
+              ])
+            ) || null,
+          variant_sku:
+            cellToText(getCell(row, ["sku_variacao", "referencia_variacao"])) ||
+            null,
+          variant_price: optionalCellToNumber(
+            getCell(row, ["preco_variacao", "valor_variacao"])
+          ),
+          variant_cost_price: optionalCellToNumber(
+            getCell(row, ["custo_variacao", "preco_custo_variacao"])
+          ),
+          variant_stock_quantity: optionalCellToNumber(
+            getCell(row, ["estoque_variacao", "quantidade_variacao"])
+          ),
+          variant_sort_order: Math.round(
+            cellToNumber(getCell(row, ["ordem_variacao", "ordem"]), 0)
+          ),
+          variant_active: cellToBoolean(
+            getCell(row, ["ativo_variacao", "variacao_ativa"]),
+            active
+          ),
+        })
+      })
+
+      setRows(nextRows)
+      setErrors(nextErrors)
+    } catch (error) {
+      setErrors([error instanceof Error ? error.message : "Nao foi possivel ler a planilha."])
+    }
+  }
+
+  async function handleImport() {
+    const result = await importCatalog.mutateAsync({
+      rows,
+      options: { update_existing: updateExisting },
+    })
+    setErrors(result.errors)
+
+    if (result.created > 0 || (result.updated ?? 0) > 0) {
+      setRows([])
+      setFileName("")
+      if (result.errors.length === 0) setOpen(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <Button variant="outline" type="button" onClick={openDialog}>
+        <FileSpreadsheet className="size-4" />
+        Importar
+      </Button>
+      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>Importar catalogo por setor</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="rounded-lg border bg-slate-50 p-3 text-sm text-slate-700">
+            A planilha pode misturar supermercado, restaurante, farmacia, varejo e
+            geral. Categorias sao criadas automaticamente por setor e filial. Use
+            .xlsx ou .csv.
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="space-y-1 text-sm">
+              <span className="font-medium">Filial padrao</span>
+              <select
+                className={fieldClass}
+                value={defaultBranchId}
+                onChange={(event) => setDefaultBranchId(event.target.value)}
+              >
+                <option value="">Todas as filiais</option>
+                {activeBranches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1 text-sm">
+              <span className="font-medium">Setor padrao</span>
+              <select
+                className={fieldClass}
+                value={defaultSegment}
+                onChange={(event) =>
+                  setDefaultSegment(event.target.value as ProductCategorySegment)
+                }
+              >
+                {segmentOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={downloadCatalogTemplate}
+            >
+              <Download className="size-4" />
+              Baixar modelo
+            </Button>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={updateExisting}
+                onChange={(event) => setUpdateExisting(event.target.checked)}
+              />
+              Atualizar produtos e variacoes existentes
+            </label>
+          </div>
+
+          <Input
+            type="file"
+            accept=".xlsx,.csv"
+            onChange={(event) => void handleFile(event.target.files?.[0] ?? null)}
+          />
+
+          {fileName ? (
+            <div className="grid gap-2 rounded-lg border bg-white p-3 text-sm sm:grid-cols-4">
+              <div>
+                <div className="text-xs text-muted-foreground">Arquivo</div>
+                <div className="font-medium">{fileName}</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Categorias</div>
+                <div className="font-medium">{preview.categories}</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Produtos</div>
+                <div className="font-medium">{preview.products}</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Variacoes</div>
+                <div className="font-medium">{preview.variants}</div>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="rounded-lg border bg-slate-50 p-3 text-xs text-slate-700">
+            Colunas aceitas: filial, setor, categoria, produto, codigo_barras,
+            sku, marca, tipo_produto, unidade, preco, custo, estoque,
+            estoque_minimo, tamanho/variacao, preco_variacao, sku_variacao e
+            codigo_barras_variacao.
+          </div>
+
+          {errors.length > 0 ? (
+            <div className="max-h-44 overflow-auto rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+              {errors.slice(0, 14).map((error) => (
+                <div key={error}>{error}</div>
+              ))}
+              {errors.length > 14 ? <div>...mais {errors.length - 14}</div> : null}
+            </div>
+          ) : null}
+        </div>
+        <DialogFooter>
+          <Button
+            disabled={rows.length === 0 || importCatalog.isPending}
+            onClick={() => void handleImport()}
+          >
+            {importCatalog.isPending ? "Importando..." : "Importar catalogo"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
 }
 
 export function PosProductsPage() {
@@ -658,6 +1222,10 @@ export function PosProductsPage() {
             >
               <RefreshCw className="size-4" />
             </Button>
+            <ProductsImportDialog
+              branches={allBranches}
+              selectedBranchId={selectedBranchId}
+            />
             <Button variant="outline" type="button" onClick={openCreateCategory}>
               <Tags className="size-4" />
               Nova categoria

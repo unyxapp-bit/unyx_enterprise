@@ -42,6 +42,7 @@ import {
   getOperationalSettings,
   getSubscription,
   importEmployees,
+  importProductCatalog,
   importSchedules,
   getCurrentCashSession,
   listAllocationHistory,
@@ -119,6 +120,8 @@ import type {
   DeliveryOrderInput,
   EmployeeImportInput,
   ProductInput,
+  ProductCatalogImportInput,
+  ProductCatalogImportOptions,
   ProductCategoryInput,
   ProductVariantInput,
   ScheduleImportInput,
@@ -1674,6 +1677,29 @@ export function useDeleteProduct() {
       await queryClient.invalidateQueries({ queryKey: ["pos-products"] })
       await queryClient.invalidateQueries({ queryKey: ["pos-product-variants"] })
       toast.success("Produto excluido.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useImportProductCatalog() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+  return useMutation<
+    BulkImportResult,
+    Error,
+    { rows: ProductCatalogImportInput[]; options: ProductCatalogImportOptions }
+  >({
+    mutationFn: (input) => importProductCatalog(profile, input.rows, input.options),
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries({ queryKey: ["pos-categories"] })
+      await queryClient.invalidateQueries({ queryKey: ["pos-products"] })
+      await queryClient.invalidateQueries({ queryKey: ["pos-product-variants"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success(
+        `${result.created} item(ns) criado(s). ${result.updated ?? 0} atualizado(s). ${result.skipped} ignorado(s).`
+      )
     },
     onError: (error) => { toast.error(error.message) },
   })
