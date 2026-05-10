@@ -91,6 +91,12 @@ const RISK_STATUSES: OperationalStatus[] = [
   "troca_de_caixa",
 ]
 
+const NON_OPERATIONAL_SCHEDULE_STATUSES = new Set([
+  "day_off",
+  "banked_hours",
+  "cancelled",
+])
+
 const SECONDARY_STATUSES: OperationalStatus[] = [
   "deve_sair",
   "aguardando_sangria",
@@ -503,6 +509,10 @@ export function DashboardPage() {
 
   const filteredSchedules = useMemo(() => {
     return scheduledToday.filter((schedule) => {
+      if (NON_OPERATIONAL_SCHEDULE_STATUSES.has(schedule.status)) {
+        return false
+      }
+
       if (
         sectorFilter &&
         schedule.employees?.sectors?.name !== sectorFilter

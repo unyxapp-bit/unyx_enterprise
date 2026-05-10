@@ -60,10 +60,13 @@ begin
     'finished',
     'absent',
     'day_off',
+    'banked_hours',
     'cancelled'
   );
 exception when duplicate_object then null;
 end $$;
+
+alter type public.schedule_status add value if not exists 'banked_hours';
 
 do $$
 begin
@@ -2472,7 +2475,7 @@ begin
     raise exception 'Evento nao corresponde a escala informada.';
   end if;
 
-  if v_schedule.status in ('cancelled', 'day_off') and p_event_type <> 'ocorrencia_registrada' then
+  if v_schedule.status::text in ('cancelled', 'day_off', 'banked_hours') and p_event_type <> 'ocorrencia_registrada' then
     raise exception 'Esta escala nao pode receber acoes operacionais.';
   end if;
 
@@ -2733,19 +2736,23 @@ select
   sc.end_time,
   coalesce(
     os.current_status,
-    case sc.status
+    case sc.status::text
       when 'working' then 'trabalhando'::public.operational_status_type
       when 'on_break' then 'em_intervalo'::public.operational_status_type
       when 'returned' then 'voltou'::public.operational_status_type
       when 'finished' then 'finalizado'::public.operational_status_type
       when 'absent' then 'alerta_critico'::public.operational_status_type
       when 'day_off' then 'folga'::public.operational_status_type
+      when 'banked_hours' then 'folga'::public.operational_status_type
       else 'aguardando_evento'::public.operational_status_type
     end
   ) as current_status,
   coalesce(
     os.priority_level,
-    case sc.status
+    case sc.status::text
+      when 'day_off' then 0
+      when 'banked_hours' then 0
+      when 'cancelled' then 0
       when 'absent' then 110
       when 'on_break' then 50
       else 10
@@ -2754,7 +2761,7 @@ select
   coalesce(os.delay_minutes, 0) as delay_minutes,
   coalesce(
     os.status_reason,
-    case sc.status
+    case sc.status::text
       when 'scheduled' then 'Aguardando primeiro evento'
       when 'working' then 'Trabalhando pela escala'
       when 'on_break' then 'Intervalo pela escala'
@@ -2762,6 +2769,7 @@ select
       when 'finished' then 'Turno finalizado'
       when 'absent' then 'Falta registrada na escala'
       when 'day_off' then 'Folga na escala'
+      when 'banked_hours' then 'Banco de horas na escala'
       when 'cancelled' then 'Escala cancelada'
     end
   ) as status_reason,

@@ -19,6 +19,12 @@ import { getSchedulePriorityByMode } from "@/features/ops/modes/priorityRules"
 import { ENTERED_STATUSES } from "../utils/statusHelpers"
 import type { OperationalTab } from "../utils/types"
 
+const NON_OPERATIONAL_SCHEDULE_STATUSES = new Set([
+  "day_off",
+  "banked_hours",
+  "cancelled",
+])
+
 export function useOperationalData(
   date: string,
   sectorFilter: string,
@@ -50,7 +56,9 @@ export function useOperationalData(
 
   // Filter and sort schedules
   const sortedSchedules = useMemo(() => {
-    let filtered = schedules.data ?? []
+    let filtered = (schedules.data ?? []).filter(
+      (schedule) => !NON_OPERATIONAL_SCHEDULE_STATUSES.has(schedule.status)
+    )
 
     // Apply sector filter
     if (sectorFilter) {

@@ -81,6 +81,13 @@ function normalizeLookup(value: string) {
 function scheduleStatusFromText(value: string): ScheduleStatus {
   const normalized = normalizeLookup(value)
 
+  if (
+    normalized.includes("banco") ||
+    normalized === "bh" ||
+    normalized.includes("b h")
+  ) {
+    return "banked_hours"
+  }
   if (normalized.includes("folga")) return "day_off"
   if (normalized.includes("feriado")) return "day_off"
   if (normalized.includes("falta")) return "absent"
@@ -93,8 +100,30 @@ function scheduleStatusFromText(value: string): ScheduleStatus {
   return "scheduled"
 }
 
+function scheduleClearsTimes(status: ScheduleStatus) {
+  return status === "day_off" || status === "banked_hours"
+}
+
+function scheduleSummary(schedule: ScheduleWithRelations) {
+  if (
+    schedule.status === "day_off" ||
+    schedule.status === "banked_hours" ||
+    schedule.status === "cancelled"
+  ) {
+    return scheduleStatusLabel[schedule.status]
+  }
+
+  return `${formatTime(schedule.start_time)} - ${formatTime(schedule.end_time)}`
+}
+
 function isScheduleIncomplete(schedule: ScheduleWithRelations) {
-  if (schedule.status === "day_off" || schedule.status === "cancelled") return false
+  if (
+    schedule.status === "day_off" ||
+    schedule.status === "banked_hours" ||
+    schedule.status === "cancelled"
+  ) {
+    return false
+  }
   if (!schedule.start_time || !schedule.end_time) return true
   return Boolean(
     (schedule.break_start && !schedule.break_end) ||
@@ -114,7 +143,7 @@ function nextFormForStatus<
   current: T,
   status: ScheduleStatus
 ) {
-  if (status !== "day_off") return { ...current, status }
+  if (!scheduleClearsTimes(status)) return { ...current, status }
 
   return {
     ...current,
@@ -178,6 +207,7 @@ function ScheduleEditDialog({ schedule }: { schedule: ScheduleWithRelations }) {
                   </span>
                   <Input
                     type="time"
+                    disabled={scheduleClearsTimes(form.status)}
                     value={form[field]}
                     onChange={(e) =>
                       setForm((c) => ({ ...c, [field]: e.target.value }))
@@ -609,7 +639,8 @@ function SchedulesImportDialog({
             <>
               <div className="rounded-lg border bg-slate-50 p-3 text-sm text-slate-700">
                 Colunas aceitas: colaborador, cpf/documento, filial, data, entrada,
-                intervalo, retorno, saida, status e observacoes. Use .xlsx ou .csv.
+                intervalo, retorno, saida, status e observacoes. Status aceita Folga,
+                Trabalhando e Banco de horas. Use .xlsx ou .csv.
               </div>
               <Input
                 type="file"
@@ -627,6 +658,7 @@ function SchedulesImportDialog({
               <div className="rounded-lg border bg-slate-50 p-3 text-sm text-slate-700">
                 Cole o texto copiado da planilha. Colunas esperadas (separadas por tabulacao):{" "}
                 <span className="font-medium">nome, documento, filial, data, entrada, inicio intervalo, fim intervalo, saida, status, observacoes</span>.
+                Use Banco de horas no status quando for banco.
               </div>
               <textarea
                 className="h-40 w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50 resize-none font-mono"
@@ -833,11 +865,7 @@ function MonthCalendarView({
                           ) : null}
                         </div>
                         <div className="mt-0.5 text-xs text-muted-foreground">
-                          {schedule.status === "day_off"
-                            ? "Folga"
-                            : schedule.status === "cancelled"
-                            ? "Cancelado"
-                            : `${formatTime(schedule.start_time)} – ${formatTime(schedule.end_time)}`}
+                          {scheduleSummary(schedule)}
                           {schedule.employees?.sectors?.name ? (
                             <span className="ml-2 text-slate-400">
                               · {schedule.employees.sectors.name}
@@ -1151,7 +1179,7 @@ export function SchedulesPage() {
                         <span className="font-medium">
                           {{ start_time: "Entrada", break_start: "Intervalo", break_end: "Retorno", end_time: "Saída" }[field]}
                         </span>
-                        <Input type="time" disabled={form.status === "day_off"} value={form[field]}
+                        <Input type="time" disabled={scheduleClearsTimes(form.status)} value={form[field]}
                           onChange={(e) => setForm((c) => ({ ...c, [field]: e.target.value }))} />
                       </label>
                     ))}

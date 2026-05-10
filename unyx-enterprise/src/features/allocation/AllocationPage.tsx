@@ -85,6 +85,11 @@ import type {
 const fieldClass =
   "h-8 w-full rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
 
+const POST_TYPE_ORDER: OperationalPostType[] = [
+  "cashier", "self_checkout", "counter", "service_desk",
+  "delivery", "stock", "kitchen", "reception", "other",
+]
+
 function timeToMinutes(time: string | null): number | null {
   if (!time) return null
   const [h, m] = time.split(":").map(Number)
@@ -166,9 +171,9 @@ function calcCoffeeTimes(
   if (windowStart === null || windowEnd === null) return result
 
   // Include everyone who is or was working today
-  // Exclude day_off / cancelled / absent — they won't take coffee
+  // Exclude non-working schedules; they won't take coffee
   const eligible = scheduleList.filter(
-    (s) => !["day_off", "cancelled", "absent"].includes(s.status)
+    (s) => !["day_off", "banked_hours", "cancelled", "absent"].includes(s.status)
   )
 
   // Sort based on configured order
@@ -360,11 +365,6 @@ export function AllocationPage() {
       movement.confirmed_at.slice(0, 10) === date &&
       movement.movement_type === "sangria_confirmada"
   ).length
-  const postTypeOrder: OperationalPostType[] = [
-    "cashier", "self_checkout", "counter", "service_desk",
-    "delivery", "stock", "kitchen", "reception", "other",
-  ]
-
   const activePostsByType = useMemo(() => {
     const map = new Map<OperationalPostType, typeof activePosts>()
     for (const post of activePosts) {
@@ -375,7 +375,7 @@ export function AllocationPage() {
   }, [activePosts])
 
   const availableTabs = useMemo(
-    () => postTypeOrder.filter((type) => activePostsByType.has(type)),
+    () => POST_TYPE_ORDER.filter((type) => activePostsByType.has(type)),
     [activePostsByType]
   )
 
@@ -435,7 +435,7 @@ export function AllocationPage() {
       (schedules.data ?? [])
         .filter((s) => {
           if (s.branch_id !== allocationAction.post.branch_id) return false
-          if (["day_off", "cancelled", "finished", "absent"].includes(s.status)) return false
+          if (["day_off", "banked_hours", "cancelled", "finished", "absent"].includes(s.status)) return false
           const endMin = timeToMinutes(s.end_time)
           if (endMin !== null && nowMin > endMin) return false
           return true
@@ -468,7 +468,7 @@ export function AllocationPage() {
       (schedule) =>
         schedule.branch_id === allocationAction.post.branch_id &&
         schedule.employee_id === allocationForm.employee_id &&
-        !["day_off", "cancelled", "finished", "absent"].includes(schedule.status)
+        !["day_off", "banked_hours", "cancelled", "finished", "absent"].includes(schedule.status)
     )
   }, [allocationAction, allocationForm.employee_id, schedules.data])
 
@@ -569,7 +569,7 @@ export function AllocationPage() {
             scheduleId: linkedSchedule.id,
             values: { status: "working" },
           })
-        } catch (_e) {
+        } catch {
           // non-critical — allocation already created
         }
       }
@@ -607,7 +607,7 @@ export function AllocationPage() {
           allocation_id: allocation.id,
           notes: "Saida por horario excedido",
         })
-      } catch (_e) {
+      } catch {
         // individual errors are surfaced by mutation toasts
       }
     }
@@ -682,7 +682,7 @@ export function AllocationPage() {
       }
       setCoffeeAction(null)
       navigate("/app/intervals")
-    } catch (_e) {
+    } catch {
       // errors handled by mutation toasts
     }
   }
@@ -711,7 +711,7 @@ export function AllocationPage() {
       }
       setBreakAction(null)
       navigate("/app/intervals")
-    } catch (_e) {
+    } catch {
       // errors surfaced by mutation toasts
     }
   }
@@ -1438,7 +1438,7 @@ export function AllocationPage() {
                     (s) =>
                       s.branch_id === allocationAction?.post.branch_id &&
                       s.employee_id === empId &&
-                      !["day_off", "cancelled", "finished", "absent"].includes(s.status)
+                      !["day_off", "banked_hours", "cancelled", "finished", "absent"].includes(s.status)
                   )
                   const autoSchedule =
                     empSchedules.find((s) =>

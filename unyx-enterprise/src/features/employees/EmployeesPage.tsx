@@ -97,6 +97,16 @@ function formatPhone(value: string) {
   return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`
 }
 
+function normalizeEmployeeDocumentForImport(value: string) {
+  const raw = value.trim()
+  if (!raw || raw.includes("@")) return ""
+
+  const digits = raw.replace(/\D/g, "")
+  if (!digits) return ""
+
+  return digits.length === 11 || digits.length === 14 ? digits : null
+}
+
 function normalizeLookup(value: string) {
   return normalizeColumn(value).replace(/_/g, " ")
 }
@@ -189,13 +199,20 @@ function EmployeesImportDialog({
           return
         }
 
+        const documentRaw = cellToText(getCell(row, ["documento", "cpf"]))
+        const document = normalizeEmployeeDocumentForImport(documentRaw)
+        if (document === null) {
+          nextErrors.push(`Linha ${index + 2}: CPF/documento invalido.`)
+          return
+        }
+
         nextRows.push({
           branch_id: branchId,
           sector_id: sectorId || null,
           name,
           role: cellToText(getCell(row, ["cargo", "funcao"])) || null,
           phone: formatPhone(cellToText(getCell(row, ["telefone", "celular"]))),
-          document: cellToText(getCell(row, ["documento", "cpf"])),
+          document,
           notes: cellToText(getCell(row, ["observacoes", "obs", "notas"])) || null,
         })
       })

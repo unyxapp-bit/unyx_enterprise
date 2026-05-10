@@ -255,6 +255,24 @@ function cleanDocument(value: string | null | undefined) {
   return (value ?? "").replace(/\D/g, "")
 }
 
+function cleanEmployeeDocument(value: string | null | undefined) {
+  const raw = (value ?? "").trim()
+  if (!raw || raw.includes("@")) return ""
+
+  const digits = cleanDocument(raw)
+  if (!digits) return ""
+
+  if (digits.length !== 11 && digits.length !== 14) {
+    throw new Error("CPF/documento do colaborador deve ter 11 ou 14 numeros.")
+  }
+
+  return digits
+}
+
+function scheduleClearsTimes(status: ScheduleStatus | undefined) {
+  return status === "day_off" || status === "banked_hours"
+}
+
 function normalizeChecklistItems(items: string[]) {
   return Array.from(
     new Set(
@@ -435,7 +453,7 @@ async function validateScheduleEmployee(
 function normalizeScheduleInput<T extends Partial<ScheduleImportInput>>(input: T) {
   const normalized = { ...input }
 
-  if (normalized.status === "day_off") {
+  if (scheduleClearsTimes(normalized.status)) {
     normalized.start_time = null
     normalized.break_start = null
     normalized.break_end = null
@@ -845,7 +863,7 @@ export async function createEmployee(
     name: employeeInput.name.trim(),
     role: employeeInput.role?.trim() || null,
     phone: employeeInput.phone?.trim() || null,
-    document: cleanDocument(employeeInput.document) || null,
+    document: cleanEmployeeDocument(employeeInput.document) || null,
     notes: employeeInput.notes?.trim() || null,
   }
 
@@ -916,7 +934,7 @@ export async function updateEmployee(
   if (typeof payload.phone === "string") payload.phone = payload.phone.trim() || null
   if (typeof payload.notes === "string") payload.notes = payload.notes.trim() || null
   if (typeof payload.document === "string") {
-    payload.document = cleanDocument(payload.document) || null
+    payload.document = cleanEmployeeDocument(payload.document) || null
   }
 
   const nextBranchId = payload.branch_id ?? previous.branch_id
@@ -1038,17 +1056,29 @@ export async function importEmployees(
   const errors: string[] = []
 
   const normalizedRows = rows
-    .map((row, index) => ({
-      index,
-      value: {
-        ...row,
-        name: row.name.trim(),
-        role: row.role?.trim() || null,
-        phone: row.phone?.trim() || null,
-        document: cleanDocument(row.document) || null,
-        notes: row.notes?.trim() || null,
-      },
-    }))
+    .map((row, index) => {
+      try {
+        return {
+          index,
+          value: {
+            ...row,
+            name: row.name.trim(),
+            role: row.role?.trim() || null,
+            phone: row.phone?.trim() || null,
+            document: cleanEmployeeDocument(row.document) || null,
+            notes: row.notes?.trim() || null,
+          },
+        }
+      } catch (error) {
+        errors.push(
+          `Linha ${index + 2}: ${
+            error instanceof Error ? error.message : "documento invalido"
+          }`
+        )
+        return null
+      }
+    })
+    .filter((row): row is { index: number; value: EmployeeImportInput } => row !== null)
     .filter((row) => {
       if (!row.value.name) {
         errors.push(`Linha ${row.index + 2}: nome obrigatorio.`)
@@ -3605,10 +3635,10 @@ export async function copySchedulesFromDate(
       branch_id: schedule.branch_id,
       employee_id: schedule.employee_id,
       work_date: targetDate,
-      start_time: schedule.status === "day_off" ? null : schedule.start_time,
-      break_start: schedule.status === "day_off" ? null : schedule.break_start,
-      break_end: schedule.status === "day_off" ? null : schedule.break_end,
-      end_time: schedule.status === "day_off" ? null : schedule.end_time,
+      start_time: scheduleClearsTimes(schedule.status as ScheduleStatus) ? null : schedule.start_time,
+      break_start: scheduleClearsTimes(schedule.status as ScheduleStatus) ? null : schedule.break_start,
+      break_end: scheduleClearsTimes(schedule.status as ScheduleStatus) ? null : schedule.break_end,
+      end_time: scheduleClearsTimes(schedule.status as ScheduleStatus) ? null : schedule.end_time,
       status: schedule.status as ScheduleStatus,
       notes: schedule.notes,
     }))

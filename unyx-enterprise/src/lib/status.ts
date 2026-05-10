@@ -96,6 +96,7 @@ export const scheduleStatusLabel: Record<ScheduleStatus, string> = {
   finished: "Finalizado",
   absent: "Falta",
   day_off: "Folga",
+  banked_hours: "Banco de horas",
   cancelled: "Cancelado",
 }
 

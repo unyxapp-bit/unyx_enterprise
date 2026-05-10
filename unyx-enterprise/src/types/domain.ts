@@ -28,6 +28,7 @@ export type ScheduleStatus =
   | "finished"
   | "absent"
   | "day_off"
+  | "banked_hours"
   | "cancelled"
 
 export type OperationalStatus =
