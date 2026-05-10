@@ -89,6 +89,23 @@ const paymentMethodLabel: Record<PaymentMethod, string> = {
   other: "Outro",
 }
 
+const paymentMethodShortcut: Record<PaymentMethod, string> = {
+  cash: "F1",
+  pix: "F2",
+  debit_card: "F3",
+  credit_card: "F4",
+  voucher: "F5",
+  other: "F6",
+}
+
+const paymentMethodOptions = (Object.keys(paymentMethodLabel) as PaymentMethod[]).map(
+  (method) => ({
+    value: method,
+    label: paymentMethodLabel[method],
+    shortcut: paymentMethodShortcut[method],
+  })
+)
+
 const saleModeLabel: Record<BusinessSegment, string> = {
   retail_store: "Varejo",
   supermarket: "Supermercado",
@@ -404,9 +421,7 @@ export function PosSellPage() {
     payments: FiscalCouponPrintPayment[]
   } | null>(null)
   const [cancelReason, setCancelReason] = useState("")
-  const [payments, setPayments] = useState<PaymentEntry[]>([
-    { method: "cash", amount: "" },
-  ])
+  const [payments, setPayments] = useState<PaymentEntry[]>([])
   const [deliveryEnabled, setDeliveryEnabled] = useState(false)
   const [deliveryCepLoading, setDeliveryCepLoading] = useState(false)
   const [quickCepLoading, setQuickCepLoading] = useState(false)
@@ -698,7 +713,7 @@ export function PosSellPage() {
     setPrescriptionConfirmed(false)
     setDeliveryEnabled(false)
     setDeliveryForm(emptyDeliveryForm())
-    setPayments([{ method: "cash", amount: "" }])
+    setPayments([])
     setSaleError(null)
     focusSearch()
   }
@@ -941,16 +956,51 @@ export function PosSellPage() {
       openOperatorDialog()
       return
     }
-    setPayments([{ method: "cash", amount: String(finalTotal.toFixed(2)) }])
+    setPayments([])
     setPayDialogOpen(true)
     focusAndSelect(firstPaymentAmountRef.current)
   }
 
-  function addPaymentLine(method: PaymentMethod = "pix") {
-    setPayments((current) => [
-      ...current,
-      { method, amount: remaining > 0 ? remaining.toFixed(2) : "" },
-    ])
+  function choosePaymentMethod(method: PaymentMethod) {
+    setPayments((current) => {
+      if (current.length === 0) {
+        return [{ method, amount: finalTotal.toFixed(2) }]
+      }
+
+      const replaceableIndex = current.findIndex(
+        (payment) => !payment.amount || Number(payment.amount) <= 0
+      )
+      if (replaceableIndex >= 0) {
+        const paidByOthers = current.reduce(
+          (sum, payment, index) =>
+            sum + (index === replaceableIndex ? 0 : Number(payment.amount) || 0),
+          0
+        )
+        const next = [...current]
+        next[replaceableIndex] = {
+          method,
+          amount: Math.max(0, finalTotal - paidByOthers).toFixed(2),
+        }
+        return next
+      }
+
+      const singleFullPayment =
+        current.length === 1 &&
+        Math.abs((Number(current[0].amount) || 0) - finalTotal) <= 0.005
+
+      if (singleFullPayment) {
+        return [{ method, amount: finalTotal.toFixed(2) }]
+      }
+
+      const paid = current.reduce(
+        (sum, payment) => sum + (Number(payment.amount) || 0),
+        0
+      )
+      return [
+        ...current,
+        { method, amount: Math.max(0, finalTotal - paid).toFixed(2) },
+      ]
+    })
   }
 
   function removePaymentLine(index: number) {
@@ -1376,6 +1426,14 @@ export function PosSellPage() {
     }
 
     if (payDialogOpen) {
+      const paymentShortcut = paymentMethodOptions.find(
+        (option) => option.shortcut === key
+      )
+      if (paymentShortcut) {
+        event.preventDefault()
+        choosePaymentMethod(paymentShortcut.value)
+        return
+      }
       if (key === "F8") {
         event.preventDefault()
         focusAndSelect(firstPaymentAmountRef.current)
@@ -2449,15 +2507,16 @@ export function PosSellPage() {
 
             <div className="grid gap-2">
               <div className="flex flex-wrap gap-1">
-                {(Object.keys(paymentMethodLabel) as PaymentMethod[]).map((method) => (
+                {paymentMethodOptions.map((option) => (
                   <Button
-                    key={method}
+                    key={option.value}
                     type="button"
                     size="sm"
                     variant="outline"
-                    onClick={() => addPaymentLine(method)}
+                    onClick={() => choosePaymentMethod(option.value)}
                   >
-                    {paymentMethodLabel[method]}
+                    {option.label}
+                    <ShortcutKey>{option.shortcut}</ShortcutKey>
                   </Button>
                 ))}
               </div>
@@ -2470,9 +2529,9 @@ export function PosSellPage() {
                       updatePaymentMethod(index, event.target.value as PaymentMethod)
                     }
                   >
-                    {(Object.keys(paymentMethodLabel) as PaymentMethod[]).map((method) => (
-                      <option key={method} value={method}>
-                        {paymentMethodLabel[method]}
+                    {paymentMethodOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
                       </option>
                     ))}
                   </select>
