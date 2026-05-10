@@ -320,6 +320,14 @@ function cashSessionDescription(session: CashSession) {
   return `${operator} - Aberto em ${formatDateTimeBR(session.opened_at)}`
 }
 
+function ShortcutKey({ children }: { children: string }) {
+  return (
+    <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded border bg-white px-1.5 font-mono text-[11px] font-semibold leading-none text-slate-900 shadow-sm">
+      {children}
+    </kbd>
+  )
+}
+
 export function PosSellPage() {
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
   const cashSessions = useCashSessions(selectedBranchId ?? null)
@@ -1566,6 +1574,7 @@ export function PosSellPage() {
                   <CardTitle className="flex items-center gap-2">
                     <Search className="size-5" />
                     Produtos
+                    <ShortcutKey>F2</ShortcutKey>
                   </CardTitle>
                   <div className="flex items-center gap-2">
                     <Badge variant="outline" className="gap-1">
@@ -1699,7 +1708,10 @@ export function PosSellPage() {
                 </div>
                 <div className="grid gap-2">
                   <label className="space-y-1 text-sm">
-                    <span className="font-medium">Cliente cadastrado</span>
+                    <span className="flex items-center gap-1.5 font-medium">
+                      Cliente cadastrado
+                      <ShortcutKey>F3</ShortcutKey>
+                    </span>
                     <div className="flex gap-2">
                       <select
                         ref={customerSelectRef}
@@ -1778,6 +1790,7 @@ export function PosSellPage() {
                                       Receita
                                     </Badge>
                                   ) : null}
+                                  {isSelected ? <ShortcutKey>Del</ShortcutKey> : null}
                                 </div>
                               </div>
                               <Button
@@ -1791,7 +1804,19 @@ export function PosSellPage() {
                               </Button>
                             </div>
 
-                            <div className="mt-2 grid grid-cols-[auto_64px_auto_1fr] items-center gap-1.5">
+                            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                              <span className="inline-flex items-center gap-1">
+                                Quantidade
+                                <ShortcutKey>F4</ShortcutKey>
+                                <ShortcutKey>+/-</ShortcutKey>
+                              </span>
+                              <span className="inline-flex items-center gap-1">
+                                Desconto
+                                <ShortcutKey>F5</ShortcutKey>
+                              </span>
+                            </div>
+
+                            <div className="mt-1.5 grid grid-cols-[auto_64px_auto_1fr] items-center gap-1.5">
                               <Button
                                 type="button"
                                 variant="outline"
@@ -1947,10 +1972,12 @@ export function PosSellPage() {
                       <Button type="button" onClick={openPayDialog}>
                         <CreditCard className="size-4" />
                         Pagamento
+                        <ShortcutKey>F8</ShortcutKey>
                       </Button>
                       <Button type="button" variant="outline" onClick={holdCurrentSale}>
                         <Pause className="size-4" />
                         Espera
+                        <ShortcutKey>F6</ShortcutKey>
                       </Button>
                       <Button
                         type="button"
@@ -1959,6 +1986,7 @@ export function PosSellPage() {
                       >
                         <Ban className="size-4" />
                         Cancelar
+                        <ShortcutKey>F10</ShortcutKey>
                       </Button>
                       <Button type="button" variant="outline" onClick={resetCurrentSale}>
                         <Trash2 className="size-4" />
@@ -1975,6 +2003,7 @@ export function PosSellPage() {
                 <CardTitle className="flex items-center gap-2">
                   <History className="size-5" />
                   Em espera
+                  <ShortcutKey>F7</ShortcutKey>
                   {heldSalesForBranch.length > 0 ? (
                     <Badge variant="secondary">{heldSalesForBranch.length}</Badge>
                   ) : null}
@@ -2027,30 +2056,6 @@ export function PosSellPage() {
                 )}
               </CardContent>
             </Card>
-          </div>
-        </div>
-        <div className="sticky bottom-0 z-20 mt-4 -mx-4 border-t bg-white/95 px-4 py-2 shadow-sm backdrop-blur sm:-mx-6 sm:px-6">
-          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
-            {[
-              ["F2", "Produto"],
-              ["F3", "Cliente"],
-              ["F4", "Qtd"],
-              ["F5", "Desc"],
-              ["F6", "Espera"],
-              ["F7", "Retomar"],
-              ["F8", "Pagar"],
-              ["F9", "Confirmar"],
-              ["Esc", "Voltar"],
-              ["Del", "Item"],
-              ["+/-", "Qtd"],
-            ].map(([key, label]) => (
-              <span key={`${key}-${label}`} className="inline-flex items-center gap-1">
-                <kbd className="rounded border bg-slate-50 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-slate-900">
-                  {key}
-                </kbd>
-                {label}
-              </span>
-            ))}
           </div>
         </div>
       </div>
@@ -2545,6 +2550,7 @@ export function PosSellPage() {
               >
                 <CreditCard className="size-4" />
                 Confirmar venda
+                <ShortcutKey>F9</ShortcutKey>
               </Button>
             </DialogFooter>
           </form>
