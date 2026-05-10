@@ -1197,8 +1197,31 @@ export function PosProductsPage() {
   }
 
   async function handleDeleteCategory(category: ProductCategory) {
-    if (!window.confirm(`Excluir a categoria ${category.name}?`)) return
-    await deleteCategory.mutateAsync(category.id)
+    const linkedProducts = allProducts.filter(
+      (product) => product.category_id === category.id
+    )
+
+    if (linkedProducts.length === 0) {
+      if (!window.confirm(`Excluir a categoria ${category.name}?`)) return
+      await deleteCategory.mutateAsync({ categoryId: category.id })
+      return
+    }
+
+    const deleteLinkedProducts = window.confirm(
+      `A categoria ${category.name} possui ${linkedProducts.length} produto(s) vinculado(s).\n\nOK: excluir a categoria e todos os produtos vinculados.\nCancelar: manter os produtos e excluir somente a categoria.`
+    )
+
+    if (!deleteLinkedProducts) {
+      const onlyCategory = window.confirm(
+        `Excluir somente a categoria ${category.name} e manter os produtos sem categoria estruturada?`
+      )
+      if (!onlyCategory) return
+    }
+
+    await deleteCategory.mutateAsync({
+      categoryId: category.id,
+      deleteLinkedProducts,
+    })
   }
 
   async function handleDeleteVariant(variant: ProductVariant) {

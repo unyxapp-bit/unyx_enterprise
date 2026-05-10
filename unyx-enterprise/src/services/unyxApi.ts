@@ -2478,6 +2478,10 @@ export interface ProductCatalogImportOptions {
   update_existing: boolean
 }
 
+export interface DeleteProductCategoryResult {
+  deleted_products: number
+}
+
 export interface DeliveryOrderInput {
   branch_id: string
   sale_id: string | null
@@ -3398,7 +3402,45 @@ export async function updateProductCategory(
   return data as ProductCategory
 }
 
-export async function deleteProductCategory(profile: UserProfile, categoryId: string) {
+export async function deleteProductCategory(
+  profile: UserProfile,
+  categoryId: string,
+  options: { deleteLinkedProducts?: boolean } = {}
+): Promise<DeleteProductCategoryResult> {
+  const { data: category, error: categoryError } = await supabase
+    .from("product_categories")
+    .select("*")
+    .eq("id", categoryId)
+    .eq("organization_id", profile.organization_id)
+    .maybeSingle()
+
+  if (isMissingPosFeature(categoryError)) throw new Error(posFeatureMessage())
+  raise(categoryError)
+
+  if (!category) throw new Error("Categoria nao encontrada.")
+
+  const { data: linkedProducts, error: linkedError } = await supabase
+    .from("products")
+    .select("id")
+    .eq("category_id", categoryId)
+    .eq("organization_id", profile.organization_id)
+
+  if (isMissingPosFeature(linkedError)) throw new Error(posFeatureMessage())
+  raise(linkedError)
+
+  const linkedProductIds = (linkedProducts ?? []).map((product) => product.id)
+
+  if (linkedProductIds.length > 0 && options.deleteLinkedProducts) {
+    const { error: productsError } = await supabase
+      .from("products")
+      .delete()
+      .eq("organization_id", profile.organization_id)
+      .in("id", linkedProductIds)
+
+    if (isMissingPosFeature(productsError)) throw new Error(posFeatureMessage())
+    raise(productsError)
+  }
+
   const { error } = await supabase
     .from("product_categories")
     .delete()
@@ -3407,6 +3449,23 @@ export async function deleteProductCategory(profile: UserProfile, categoryId: st
 
   if (isMissingPosFeature(error)) throw new Error(posFeatureMessage())
   raise(error)
+
+  await createAuditLog(profile, {
+    branch_id: category.branch_id,
+    action: options.deleteLinkedProducts
+      ? "product_category_deleted_with_products"
+      : "product_category_deleted",
+    entity_type: "product_categories",
+    entity_id: categoryId,
+    old_value: category,
+    new_value: {
+      deleted_products: options.deleteLinkedProducts ? linkedProductIds.length : 0,
+    },
+  })
+
+  return {
+    deleted_products: options.deleteLinkedProducts ? linkedProductIds.length : 0,
+  }
 }
 
 export async function listProductVariants() {

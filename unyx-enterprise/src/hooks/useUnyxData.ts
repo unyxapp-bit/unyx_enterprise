@@ -123,6 +123,7 @@ import type {
   ProductCatalogImportInput,
   ProductCatalogImportOptions,
   ProductCategoryInput,
+  DeleteProductCategoryResult,
   ProductVariantInput,
   ScheduleImportInput,
 } from "@/services/unyxApi"
@@ -1741,12 +1742,24 @@ export function useUpdateProductCategory() {
 export function useDeleteProductCategory() {
   const queryClient = useQueryClient()
   const profile = useRequiredProfile()
-  return useMutation({
-    mutationFn: (categoryId: string) => deleteProductCategory(profile, categoryId),
-    onSuccess: async () => {
+  return useMutation<
+    DeleteProductCategoryResult,
+    Error,
+    { categoryId: string; deleteLinkedProducts?: boolean }
+  >({
+    mutationFn: (input) =>
+      deleteProductCategory(profile, input.categoryId, {
+        deleteLinkedProducts: input.deleteLinkedProducts,
+      }),
+    onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: ["pos-categories"] })
       await queryClient.invalidateQueries({ queryKey: ["pos-products"] })
-      toast.success("Categoria excluida.")
+      await queryClient.invalidateQueries({ queryKey: ["pos-product-variants"] })
+      toast.success(
+        result.deleted_products > 0
+          ? `Categoria excluida com ${result.deleted_products} produto(s).`
+          : "Categoria excluida."
+      )
     },
     onError: (error) => { toast.error(error.message) },
   })

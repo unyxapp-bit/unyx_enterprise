@@ -72,6 +72,8 @@ const actionLabels: Record<string, string> = {
   update_sector: "Edicao de setor",
   toggle_sector: "Ativacao / desativacao de setor",
   product_catalog_imported: "Importacao de catalogo PDV",
+  product_category_deleted: "Exclusao de categoria PDV",
+  product_category_deleted_with_products: "Exclusao de categoria e produtos PDV",
   // Configuracoes
   update_settings: "Atualizacao de configuracoes",
   update_organization: "Atualizacao da empresa",

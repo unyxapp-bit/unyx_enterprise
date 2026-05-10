@@ -163,6 +163,10 @@ type CartItem = {
   discount: number
   notes: string
   prescription_checked: boolean
+  half_and_half?: {
+    first: HalfAndHalfPart
+    second: HalfAndHalfPart
+  } | null
 }
 
 type SellableItem = {
@@ -176,6 +180,14 @@ type SellableItem = {
   stock_quantity: number
   category: string
   segment: BusinessSegment | "all" | null
+}
+
+type HalfAndHalfPart = {
+  key: string
+  name: string
+  product_id: string
+  variant_id: string | null
+  unit_price: number
 }
 
 type PaymentEntry = {
@@ -259,6 +271,9 @@ function cashChange(payments: PaymentEntry[], total: number): number {
 }
 
 function cartItemName(item: CartItem) {
+  if (item.half_and_half) {
+    return `Meio a meio: ${item.half_and_half.first.name} / ${item.half_and_half.second.name}`
+  }
   return item.variant ? `${item.product.name} - ${item.variant.name}` : item.product.name
 }
 
@@ -413,6 +428,9 @@ export function PosSellPage() {
   const [prescriptionConfirmed, setPrescriptionConfirmed] = useState(false)
   const [payDialogOpen, setPayDialogOpen] = useState(false)
   const [cashSessionDialogOpen, setCashSessionDialogOpen] = useState(false)
+  const [halfAndHalfDialogOpen, setHalfAndHalfDialogOpen] = useState(false)
+  const [halfAndHalfFirstKey, setHalfAndHalfFirstKey] = useState("")
+  const [halfAndHalfSecondKey, setHalfAndHalfSecondKey] = useState("")
   const [quickCustomerOpen, setQuickCustomerOpen] = useState(false)
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
   const [autoPrintCoupon, setAutoPrintCoupon] = useState<{
@@ -564,6 +582,18 @@ export function PosSellPage() {
       })
       .slice(0, q ? 80 : 36)
   }, [categoryFilter, saleMode, search, sellableItems])
+
+  const halfAndHalfOptions = useMemo(() => {
+    return sellableItems
+      .filter((item) => {
+        const matchesRestaurant =
+          item.segment === "all" || !item.segment || item.segment === "restaurant"
+        const hasStock =
+          !tracksInventory(item.product) || item.stock_quantity > 0
+        return matchesRestaurant && hasStock && item.unit_price > 0
+      })
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [sellableItems])
 
   const hasProductSearch = search.trim().length > 0
   const showProductList =
@@ -794,10 +824,100 @@ export function PosSellPage() {
     focusSearch()
   }
 
+  function halfPartFromItem(item: SellableItem): HalfAndHalfPart {
+    return {
+      key: item.key,
+      name: item.name,
+      product_id: item.product.id,
+      variant_id: item.variant?.id ?? null,
+      unit_price: item.unit_price,
+    }
+  }
+
+  function openHalfAndHalfDialog() {
+    setSaleError(null)
+    if (saleMode !== "restaurant") {
+      setSaleError("Meio a meio esta disponivel para o modo restaurante.")
+      return
+    }
+    if (halfAndHalfOptions.length < 2) {
+      setSaleError("Cadastre pelo menos dois sabores/produtos de restaurante.")
+      return
+    }
+
+    setHalfAndHalfFirstKey(halfAndHalfOptions[0]?.key ?? "")
+    setHalfAndHalfSecondKey(halfAndHalfOptions[1]?.key ?? "")
+    setHalfAndHalfDialogOpen(true)
+  }
+
+  function addHalfAndHalfToCart() {
+    const first = halfAndHalfOptions.find((item) => item.key === halfAndHalfFirstKey)
+    const second = halfAndHalfOptions.find((item) => item.key === halfAndHalfSecondKey)
+
+    if (!first || !second) {
+      setSaleError("Selecione os dois sabores.")
+      return
+    }
+    if (first.key === second.key) {
+      setSaleError("Escolha dois sabores diferentes para o meio a meio.")
+      return
+    }
+
+    const sortedKeys = [first.key, second.key].sort()
+    const key = `half:${sortedKeys[0]}:${sortedKeys[1]}`
+    const unitPrice = Math.max(first.unit_price, second.unit_price)
+    const itemNotes =
+      `Meio a meio: ${first.name} / ${second.name}. ` +
+      "Preco aplicado pelo maior valor."
+
+    setCart((current) => {
+      const existing = current.findIndex((cartItem) => cartItem.key === key)
+      if (existing >= 0) {
+        const updated = [...current]
+        updated[existing] = {
+          ...updated[existing],
+          quantity: updated[existing].quantity + 1,
+        }
+        return updated
+      }
+
+      return [
+        ...current,
+        {
+          key,
+          product: first.product,
+          variant: first.variant,
+          quantity: 1,
+          unit_price: unitPrice,
+          base_price: unitPrice,
+          discount: 0,
+          notes: itemNotes,
+          prescription_checked: false,
+          half_and_half: {
+            first: halfPartFromItem(first),
+            second: halfPartFromItem(second),
+          },
+        },
+      ]
+    })
+
+    setSelectedCartItemKey(key)
+    setHalfAndHalfDialogOpen(false)
+    setSearch("")
+    setProductsExpanded(false)
+    focusSearch()
+  }
+
   function updateQuantity(itemKey: string, delta: number) {
     setCart((current) =>
       current.map((item) => {
         if (item.key !== itemKey) return item
+        if (item.half_and_half) {
+          return {
+            ...item,
+            quantity: Math.max(1, Math.round(item.quantity + delta)),
+          }
+        }
         const stock = item.variant?.stock_quantity ?? item.product.stock_quantity
         return {
           ...item,
@@ -811,6 +931,12 @@ export function PosSellPage() {
     setCart((current) =>
       current.map((item) => {
         if (item.key !== itemKey) return item
+        if (item.half_and_half) {
+          return {
+            ...item,
+            quantity: Math.max(1, Math.round(Number(value) || 1)),
+          }
+        }
         const stock = item.variant?.stock_quantity ?? item.product.stock_quantity
         return {
           ...item,
@@ -1229,6 +1355,7 @@ export function PosSellPage() {
     }
 
     const invalidStock = cart.find((item) => {
+      if (item.half_and_half) return false
       const stock = item.variant?.stock_quantity ?? item.product.stock_quantity
       return tracksInventory(item.product) && item.quantity > stock
     })
@@ -1239,8 +1366,8 @@ export function PosSellPage() {
 
     try {
       const saleItems = cart.map((item) => ({
-        product_id: item.product.id,
-        variant_id: item.variant?.id ?? null,
+        product_id: item.half_and_half ? null : item.product.id,
+        variant_id: item.half_and_half ? null : item.variant?.id ?? null,
         product_name: cartItemName(item),
         quantity: item.quantity,
         unit_price: item.unit_price,
@@ -1391,6 +1518,12 @@ export function PosSellPage() {
         focusSearch()
         return true
       }
+      if (halfAndHalfDialogOpen) {
+        setHalfAndHalfDialogOpen(false)
+        setSaleError(null)
+        focusSearch()
+        return true
+      }
       if (operatorDialogOpen) {
         closeOperatorDialog()
         focusSearch()
@@ -1447,7 +1580,13 @@ export function PosSellPage() {
       return
     }
 
-    if (quickCustomerOpen || cancelDialogOpen || cashSessionDialogOpen || operatorDialogOpen) {
+    if (
+      quickCustomerOpen ||
+      cancelDialogOpen ||
+      cashSessionDialogOpen ||
+      halfAndHalfDialogOpen ||
+      operatorDialogOpen
+    ) {
       return
     }
 
@@ -1639,6 +1778,17 @@ export function PosSellPage() {
                       <ModeIcon className="size-3" />
                       {saleModeLabel[saleMode]}
                     </Badge>
+                    {saleMode === "restaurant" ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={openHalfAndHalfDialog}
+                      >
+                        <Utensils className="size-4" />
+                        Meio a meio
+                      </Button>
+                    ) : null}
                     <Button
                       type="button"
                       size="sm"
@@ -1842,6 +1992,9 @@ export function PosSellPage() {
                                       Preco
                                     </Badge>
                                   ) : null}
+                                  {item.half_and_half ? (
+                                    <Badge variant="secondary">Meio a meio</Badge>
+                                  ) : null}
                                   {needsPrescription ? (
                                     <Badge variant="destructive">
                                       <Pill className="size-3" />
@@ -1888,8 +2041,8 @@ export function PosSellPage() {
                                   quantityInputRefs.current[item.key] = node
                                 }}
                                 type="number"
-                                min={item.product.allow_fractional_quantity ? "0.001" : "1"}
-                                step={item.product.allow_fractional_quantity ? "0.001" : "1"}
+                                min={item.half_and_half || !item.product.allow_fractional_quantity ? "1" : "0.001"}
+                                step={item.half_and_half || !item.product.allow_fractional_quantity ? "1" : "0.001"}
                                 className="h-7 rounded border px-1.5 text-center text-sm font-medium outline-none focus:border-ring"
                                 value={formatQuantity(item.quantity)}
                                 onFocus={() => setSelectedCartItemKey(item.key)}
@@ -2152,6 +2305,76 @@ export function PosSellPage() {
               </button>
             ))}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={halfAndHalfDialogOpen}
+        onOpenChange={(open) => {
+          setHalfAndHalfDialogOpen(open)
+          if (!open) setSaleError(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Utensils className="size-5" />
+              Pizza meio a meio
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-lg border bg-slate-50 p-3 text-sm text-slate-700">
+              Selecione dois sabores. O PDV aplica o maior valor entre eles, pratica
+              comum em pizzarias.
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="space-y-1 text-sm">
+                <span className="font-medium">Primeiro sabor</span>
+                <select
+                  className={fieldClass}
+                  value={halfAndHalfFirstKey}
+                  onChange={(event) => setHalfAndHalfFirstKey(event.target.value)}
+                >
+                  {halfAndHalfOptions.map((item) => (
+                    <option key={item.key} value={item.key}>
+                      {item.name} - {formatCurrency(item.unit_price)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1 text-sm">
+                <span className="font-medium">Segundo sabor</span>
+                <select
+                  className={fieldClass}
+                  value={halfAndHalfSecondKey}
+                  onChange={(event) => setHalfAndHalfSecondKey(event.target.value)}
+                >
+                  {halfAndHalfOptions.map((item) => (
+                    <option key={item.key} value={item.key}>
+                      {item.name} - {formatCurrency(item.unit_price)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            {saleError ? (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {saleError}
+              </div>
+            ) : null}
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setHalfAndHalfDialogOpen(false)}
+            >
+              Cancelar
+            </Button>
+            <Button type="button" onClick={addHalfAndHalfToCart}>
+              Adicionar ao carrinho
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
