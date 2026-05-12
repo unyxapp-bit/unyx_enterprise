@@ -310,6 +310,23 @@ function itemHasPriceChange(item: CartItem) {
   return Math.abs(item.unit_price - item.base_price) > 0.005
 }
 
+function isPizzaItem(item: SellableItem) {
+  const text = [
+    item.name,
+    item.product.name,
+    item.category,
+    item.product.description,
+    item.product.size_label,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+
+  return text.includes("pizza") || text.includes("pizzaria")
+}
+
 function readHeldSales(): HeldSale[] {
   if (typeof window === "undefined") return []
   try {
@@ -586,14 +603,21 @@ export function PosSellPage() {
   const halfAndHalfOptions = useMemo(() => {
     return sellableItems
       .filter((item) => {
-        const matchesRestaurant =
-          item.segment === "all" || !item.segment || item.segment === "restaurant"
+        const matchesHalfAndHalfContext =
+          saleMode === "restaurant"
+            ? item.segment === "all" || !item.segment || item.segment === "restaurant"
+            : isPizzaItem(item) &&
+              (item.segment === "all" || !item.segment || item.segment === saleMode)
         const hasStock =
           !tracksInventory(item.product) || item.stock_quantity > 0
-        return matchesRestaurant && hasStock && item.unit_price > 0
+        return matchesHalfAndHalfContext && hasStock && item.unit_price > 0
       })
       .sort((a, b) => a.name.localeCompare(b.name))
-  }, [sellableItems])
+  }, [saleMode, sellableItems])
+
+  const canUseHalfAndHalf =
+    (saleMode === "restaurant" || saleMode === "supermarket") &&
+    halfAndHalfOptions.length >= 2
 
   const hasProductSearch = search.trim().length > 0
   const showProductList =
@@ -836,12 +860,12 @@ export function PosSellPage() {
 
   function openHalfAndHalfDialog() {
     setSaleError(null)
-    if (saleMode !== "restaurant") {
-      setSaleError("Meio a meio esta disponivel para o modo restaurante.")
+    if (saleMode !== "restaurant" && saleMode !== "supermarket") {
+      setSaleError("Meio a meio esta disponivel para restaurante ou pizzas do supermercado.")
       return
     }
     if (halfAndHalfOptions.length < 2) {
-      setSaleError("Cadastre pelo menos dois sabores/produtos de restaurante.")
+      setSaleError("Cadastre pelo menos dois sabores/produtos de pizza.")
       return
     }
 
@@ -1778,7 +1802,7 @@ export function PosSellPage() {
                       <ModeIcon className="size-3" />
                       {saleModeLabel[saleMode]}
                     </Badge>
-                    {saleMode === "restaurant" ? (
+                    {canUseHalfAndHalf ? (
                       <Button
                         type="button"
                         size="sm"
