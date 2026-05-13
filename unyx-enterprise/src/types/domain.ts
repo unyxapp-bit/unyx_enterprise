@@ -419,6 +419,86 @@ export interface ChecklistRun {
   user_profiles?: Pick<UserProfile, "name"> | null
 }
 
+export type OperationalSupportPriority = "low" | "normal" | "high" | "urgent"
+export type OperationalNoteStatus = "open" | "in_review" | "resolved" | "archived"
+
+export interface OperationalNote {
+  id: string
+  organization_id: string
+  branch_id: string | null
+  sector_id: string | null
+  created_by: string | null
+  title: string
+  content: string
+  category: string | null
+  priority: OperationalSupportPriority
+  status: OperationalNoteStatus
+  due_at: string | null
+  resolved_at: string | null
+  active: boolean
+  created_at: string
+  updated_at: string
+  branches?: Pick<Branch, "name"> | null
+  sectors?: Pick<Sector, "name"> | null
+  user_profiles?: Pick<UserProfile, "name"> | null
+}
+
+export interface OperationalForm {
+  id: string
+  organization_id: string
+  branch_id: string | null
+  sector_id: string | null
+  created_by: string | null
+  title: string
+  description: string | null
+  category: string | null
+  questions: string[]
+  active: boolean
+  created_at: string
+  updated_at: string
+  branches?: Pick<Branch, "name"> | null
+  sectors?: Pick<Sector, "name"> | null
+  user_profiles?: Pick<UserProfile, "name"> | null
+}
+
+export interface OperationalFormResponse {
+  id: string
+  organization_id: string
+  form_id: string
+  branch_id: string | null
+  user_id: string | null
+  answers: Record<string, string>
+  notes: string | null
+  submitted_at: string
+  created_at: string
+  operational_forms?: Pick<OperationalForm, "title" | "category"> | null
+  branches?: Pick<Branch, "name"> | null
+  user_profiles?: Pick<UserProfile, "name"> | null
+}
+
+export type OperationalPosterTone = "neutral" | "info" | "attention" | "urgent" | "success"
+export type OperationalPosterFormat = "a4" | "a5" | "thermal"
+
+export interface OperationalPoster {
+  id: string
+  organization_id: string
+  branch_id: string | null
+  sector_id: string | null
+  created_by: string | null
+  title: string
+  subtitle: string | null
+  body: string
+  footer: string | null
+  tone: OperationalPosterTone
+  format: OperationalPosterFormat
+  active: boolean
+  created_at: string
+  updated_at: string
+  branches?: Pick<Branch, "name"> | null
+  sectors?: Pick<Sector, "name"> | null
+  user_profiles?: Pick<UserProfile, "name"> | null
+}
+
 export interface AuditLog {
   id: string
   organization_id: string

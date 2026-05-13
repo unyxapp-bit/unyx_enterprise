@@ -6,6 +6,9 @@ export type PermissionKey =
   | "alerts"
   | "schedules"
   | "checklists"
+  | "front_notes"
+  | "front_forms"
+  | "front_posters"
   | "branches"
   | "employees"
   | "customers"
@@ -31,6 +34,9 @@ export const PERMISSION_LABEL: Record<PermissionKey, string> = {
   alerts: "Alertas",
   schedules: "Escalas",
   checklists: "Checklists e Procedimentos",
+  front_notes: "Anotacoes",
+  front_forms: "Formularios",
+  front_posters: "Cartazes",
   branches: "Filiais",
   employees: "Colaboradores",
   customers: "Clientes",
@@ -52,7 +58,7 @@ export const PERMISSION_LABEL: Record<PermissionKey, string> = {
 }
 
 export const PERMISSION_GROUP: Record<string, PermissionKey[]> = {
-  "Unyx Ops": ["dashboard", "operations", "alerts", "schedules", "checklists"],
+  "Unyx Ops": ["dashboard", "operations", "alerts", "schedules", "checklists", "front_notes", "front_forms", "front_posters"],
   "Unyx Control": ["branches", "employees", "customers", "users", "settings"],
   "Unyx POS": ["pos_sell", "pos_cash", "pos_products", "pos_sales", "production_orders", "fiscal_documents", "deliveries"],
   "Unyx Insight": ["reports", "audit"],
@@ -65,6 +71,9 @@ export const PERMISSIONS: Record<PermissionKey, UserRole[]> = {
   alerts: ["owner", "admin", "branch_manager", "supervisor"],
   schedules: ["owner", "admin", "branch_manager", "supervisor"],
   checklists: ["owner", "admin", "branch_manager", "supervisor", "operator", "employee"],
+  front_notes: ["owner", "admin", "branch_manager", "supervisor", "operator"],
+  front_forms: ["owner", "admin", "branch_manager", "supervisor", "operator"],
+  front_posters: ["owner", "admin", "branch_manager", "supervisor"],
   branches: ["owner", "admin", "branch_manager"],
   employees: ["owner", "admin", "branch_manager", "supervisor"],
   customers: ["owner", "admin", "branch_manager", "supervisor", "operator"],

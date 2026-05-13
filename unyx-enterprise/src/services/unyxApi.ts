@@ -35,6 +35,14 @@ import type {
   OperationalPost,
   OperationalPostType,
   OperationalSettings,
+  OperationalForm,
+  OperationalFormResponse,
+  OperationalNote,
+  OperationalNoteStatus,
+  OperationalPoster,
+  OperationalPosterFormat,
+  OperationalPosterTone,
+  OperationalSupportPriority,
   OperationalStatusRecord,
   Organization,
   PaymentMethod,
@@ -170,6 +178,32 @@ function isMissingChecklistFeature(error: { code?: string; message: string } | n
 
 function checklistFeatureMessage() {
   return "Modulo de checklists e procedimentos ainda nao instalado. Rode supabase/checklists_procedures.sql no SQL Editor do Supabase e recarregue o app."
+}
+
+function isMissingFrontStoreFeature(error: { code?: string; message: string } | null) {
+  if (!error) return false
+  const message = error.message.toLowerCase()
+  const mentionsFrontStore =
+    message.includes("operational_notes") ||
+    message.includes("operational_forms") ||
+    message.includes("operational_form_responses") ||
+    message.includes("operational_posters")
+
+  return (
+    mentionsFrontStore &&
+    (
+      error.code === "42P01" ||
+      error.code === "PGRST204" ||
+      error.code === "PGRST205" ||
+      message.includes("schema cache") ||
+      message.includes("does not exist") ||
+      message.includes("could not find")
+    )
+  )
+}
+
+function frontStoreFeatureMessage() {
+  return "Modulos de apoio da frente de loja ainda nao instalados. Rode supabase/front_store_support_setup.sql no SQL Editor do Supabase e recarregue o app."
 }
 
 function isMissingProfileRpc(error: { code?: string; message: string } | null) {
@@ -1945,6 +1979,623 @@ export async function completeChecklistRun(
   })
 
   return data as ChecklistRun
+}
+
+export interface OperationalNoteInput {
+  branch_id: string | null
+  sector_id: string | null
+  title: string
+  content: string
+  category: string | null
+  priority: OperationalSupportPriority
+  status?: OperationalNoteStatus
+  due_at: string | null
+}
+
+export interface OperationalFormInput {
+  branch_id: string | null
+  sector_id: string | null
+  title: string
+  description: string | null
+  category: string | null
+  questions: string[]
+}
+
+export interface OperationalFormResponseInput {
+  form_id: string
+  branch_id: string | null
+  answers: Record<string, string>
+  notes: string | null
+}
+
+export interface OperationalPosterInput {
+  branch_id: string | null
+  sector_id: string | null
+  title: string
+  subtitle: string | null
+  body: string
+  footer: string | null
+  tone: OperationalPosterTone
+  format: OperationalPosterFormat
+}
+
+const operationalNoteSelect =
+  "*, branches(name), sectors(name), user_profiles!created_by(name)"
+
+const operationalFormSelect =
+  "*, branches(name), sectors(name), user_profiles!created_by(name)"
+
+const operationalFormResponseSelect =
+  "*, operational_forms(title, category), branches(name), user_profiles!user_id(name)"
+
+const operationalPosterSelect =
+  "*, branches(name), sectors(name), user_profiles!created_by(name)"
+
+async function validateOptionalScope(
+  profile: UserProfile,
+  branchId: string | null,
+  sectorId?: string | null
+) {
+  if (sectorId && !branchId) {
+    throw new Error("Selecione uma filial antes de escolher o setor.")
+  }
+
+  if (branchId) {
+    await validateBranchAndSector(profile, branchId, sectorId)
+  }
+}
+
+function normalizeOperationalQuestions(questions: string[]) {
+  return normalizeChecklistItems(questions)
+}
+
+export async function listOperationalNotes(
+  branchId?: string | null,
+  status?: OperationalNoteStatus | "all"
+) {
+  let query = supabase
+    .from("operational_notes")
+    .select(operationalNoteSelect)
+    .eq("active", true)
+    .order("created_at", { ascending: false })
+    .limit(160)
+
+  if (branchId) query = query.or(`branch_id.is.null,branch_id.eq.${branchId}`)
+  if (status && status !== "all") query = query.eq("status", status)
+
+  const { data, error } = await query
+  if (isMissingFrontStoreFeature(error)) throw new Error(frontStoreFeatureMessage())
+  raise(error)
+
+  return (data ?? []) as OperationalNote[]
+}
+
+export async function createOperationalNote(
+  profile: UserProfile,
+  input: OperationalNoteInput
+) {
+  const title = input.title.trim()
+  const content = input.content.trim()
+  if (!title) throw new Error("Informe o titulo da anotacao.")
+  if (!content) throw new Error("Informe o conteudo da anotacao.")
+
+  await validateOptionalScope(profile, input.branch_id, input.sector_id)
+
+  const { data, error } = await supabase
+    .from("operational_notes")
+    .insert({
+      organization_id: profile.organization_id,
+      branch_id: input.branch_id,
+      sector_id: input.sector_id,
+      created_by: profile.id,
+      title,
+      content,
+      category: input.category?.trim() || null,
+      priority: input.priority,
+      status: input.status ?? "open",
+      due_at: input.due_at || null,
+    })
+    .select(operationalNoteSelect)
+    .single()
+
+  if (isMissingFrontStoreFeature(error)) throw new Error(frontStoreFeatureMessage())
+  raise(error)
+
+  await createAuditLog(profile, {
+    branch_id: input.branch_id,
+    action: "operational_note_created",
+    entity_type: "operational_notes",
+    entity_id: data.id,
+    old_value: null,
+    new_value: data,
+  })
+
+  return data as OperationalNote
+}
+
+export async function updateOperationalNote(
+  profile: UserProfile,
+  noteId: string,
+  input: Partial<OperationalNoteInput & { active: boolean }>
+) {
+  const { data: previous, error: previousError } = await supabase
+    .from("operational_notes")
+    .select("*")
+    .eq("id", noteId)
+    .eq("organization_id", profile.organization_id)
+    .maybeSingle()
+
+  if (isMissingFrontStoreFeature(previousError)) throw new Error(frontStoreFeatureMessage())
+  raise(previousError)
+  if (!previous) throw new Error("Anotacao nao encontrada.")
+
+  const branchId = input.branch_id === undefined ? previous.branch_id : input.branch_id
+  const sectorId = input.sector_id === undefined ? previous.sector_id : input.sector_id
+  await validateOptionalScope(profile, branchId, sectorId)
+
+  const nextStatus = input.status ?? previous.status
+  const payload = {
+    branch_id: branchId,
+    sector_id: sectorId,
+    title: input.title === undefined ? previous.title : input.title.trim(),
+    content: input.content === undefined ? previous.content : input.content.trim(),
+    category:
+      input.category === undefined
+        ? previous.category
+        : input.category?.trim() || null,
+    priority: input.priority ?? previous.priority,
+    status: nextStatus,
+    due_at: input.due_at === undefined ? previous.due_at : input.due_at || null,
+    active: input.active ?? previous.active,
+    resolved_at:
+      nextStatus === "resolved" && previous.status !== "resolved"
+        ? new Date().toISOString()
+        : nextStatus !== "resolved"
+          ? null
+          : previous.resolved_at,
+  }
+
+  if (!payload.title) throw new Error("Informe o titulo da anotacao.")
+  if (!payload.content) throw new Error("Informe o conteudo da anotacao.")
+
+  const { data, error } = await supabase
+    .from("operational_notes")
+    .update(payload)
+    .eq("id", noteId)
+    .eq("organization_id", profile.organization_id)
+    .select(operationalNoteSelect)
+    .single()
+
+  if (isMissingFrontStoreFeature(error)) throw new Error(frontStoreFeatureMessage())
+  raise(error)
+
+  await createAuditLog(profile, {
+    branch_id: data.branch_id,
+    action: "operational_note_updated",
+    entity_type: "operational_notes",
+    entity_id: noteId,
+    old_value: previous,
+    new_value: data,
+  })
+
+  return data as OperationalNote
+}
+
+export async function deleteOperationalNote(profile: UserProfile, noteId: string) {
+  const { data: previous, error: previousError } = await supabase
+    .from("operational_notes")
+    .select("*")
+    .eq("id", noteId)
+    .eq("organization_id", profile.organization_id)
+    .maybeSingle()
+
+  if (isMissingFrontStoreFeature(previousError)) throw new Error(frontStoreFeatureMessage())
+  raise(previousError)
+  if (!previous) throw new Error("Anotacao nao encontrada.")
+
+  const { error } = await supabase
+    .from("operational_notes")
+    .delete()
+    .eq("id", noteId)
+    .eq("organization_id", profile.organization_id)
+
+  if (isMissingFrontStoreFeature(error)) throw new Error(frontStoreFeatureMessage())
+  raise(error)
+
+  await createAuditLog(profile, {
+    branch_id: previous.branch_id,
+    action: "operational_note_deleted",
+    entity_type: "operational_notes",
+    entity_id: noteId,
+    old_value: previous,
+    new_value: null,
+  })
+}
+
+export async function listOperationalForms(branchId?: string | null) {
+  let query = supabase
+    .from("operational_forms")
+    .select(operationalFormSelect)
+    .eq("active", true)
+    .order("created_at", { ascending: false })
+    .limit(120)
+
+  if (branchId) query = query.or(`branch_id.is.null,branch_id.eq.${branchId}`)
+
+  const { data, error } = await query
+  if (isMissingFrontStoreFeature(error)) throw new Error(frontStoreFeatureMessage())
+  raise(error)
+
+  return (data ?? []) as OperationalForm[]
+}
+
+export async function createOperationalForm(
+  profile: UserProfile,
+  input: OperationalFormInput
+) {
+  const title = input.title.trim()
+  const questions = normalizeOperationalQuestions(input.questions)
+  if (!title) throw new Error("Informe o titulo do formulario.")
+  if (questions.length === 0) throw new Error("Adicione pelo menos uma pergunta.")
+
+  await validateOptionalScope(profile, input.branch_id, input.sector_id)
+
+  const { data, error } = await supabase
+    .from("operational_forms")
+    .insert({
+      organization_id: profile.organization_id,
+      branch_id: input.branch_id,
+      sector_id: input.sector_id,
+      created_by: profile.id,
+      title,
+      description: input.description?.trim() || null,
+      category: input.category?.trim() || null,
+      questions,
+    })
+    .select(operationalFormSelect)
+    .single()
+
+  if (isMissingFrontStoreFeature(error)) throw new Error(frontStoreFeatureMessage())
+  raise(error)
+
+  await createAuditLog(profile, {
+    branch_id: input.branch_id,
+    action: "operational_form_created",
+    entity_type: "operational_forms",
+    entity_id: data.id,
+    old_value: null,
+    new_value: data,
+  })
+
+  return data as OperationalForm
+}
+
+export async function updateOperationalForm(
+  profile: UserProfile,
+  formId: string,
+  input: Partial<OperationalFormInput & { active: boolean }>
+) {
+  const { data: previous, error: previousError } = await supabase
+    .from("operational_forms")
+    .select("*")
+    .eq("id", formId)
+    .eq("organization_id", profile.organization_id)
+    .maybeSingle()
+
+  if (isMissingFrontStoreFeature(previousError)) throw new Error(frontStoreFeatureMessage())
+  raise(previousError)
+  if (!previous) throw new Error("Formulario nao encontrado.")
+
+  const branchId = input.branch_id === undefined ? previous.branch_id : input.branch_id
+  const sectorId = input.sector_id === undefined ? previous.sector_id : input.sector_id
+  await validateOptionalScope(profile, branchId, sectorId)
+
+  const questions =
+    input.questions === undefined
+      ? previous.questions
+      : normalizeOperationalQuestions(input.questions)
+
+  const payload = {
+    branch_id: branchId,
+    sector_id: sectorId,
+    title: input.title === undefined ? previous.title : input.title.trim(),
+    description:
+      input.description === undefined
+        ? previous.description
+        : input.description?.trim() || null,
+    category:
+      input.category === undefined
+        ? previous.category
+        : input.category?.trim() || null,
+    questions,
+    active: input.active ?? previous.active,
+  }
+
+  if (!payload.title) throw new Error("Informe o titulo do formulario.")
+  if ((payload.questions ?? []).length === 0) {
+    throw new Error("Adicione pelo menos uma pergunta.")
+  }
+
+  const { data, error } = await supabase
+    .from("operational_forms")
+    .update(payload)
+    .eq("id", formId)
+    .eq("organization_id", profile.organization_id)
+    .select(operationalFormSelect)
+    .single()
+
+  if (isMissingFrontStoreFeature(error)) throw new Error(frontStoreFeatureMessage())
+  raise(error)
+
+  await createAuditLog(profile, {
+    branch_id: data.branch_id,
+    action: "operational_form_updated",
+    entity_type: "operational_forms",
+    entity_id: formId,
+    old_value: previous,
+    new_value: data,
+  })
+
+  return data as OperationalForm
+}
+
+export async function deleteOperationalForm(profile: UserProfile, formId: string) {
+  const { data: previous, error: previousError } = await supabase
+    .from("operational_forms")
+    .select("*")
+    .eq("id", formId)
+    .eq("organization_id", profile.organization_id)
+    .maybeSingle()
+
+  if (isMissingFrontStoreFeature(previousError)) throw new Error(frontStoreFeatureMessage())
+  raise(previousError)
+  if (!previous) throw new Error("Formulario nao encontrado.")
+
+  const { error } = await supabase
+    .from("operational_forms")
+    .delete()
+    .eq("id", formId)
+    .eq("organization_id", profile.organization_id)
+
+  if (isMissingFrontStoreFeature(error)) throw new Error(frontStoreFeatureMessage())
+  raise(error)
+
+  await createAuditLog(profile, {
+    branch_id: previous.branch_id,
+    action: "operational_form_deleted",
+    entity_type: "operational_forms",
+    entity_id: formId,
+    old_value: previous,
+    new_value: null,
+  })
+}
+
+export async function listOperationalFormResponses(branchId?: string | null) {
+  let query = supabase
+    .from("operational_form_responses")
+    .select(operationalFormResponseSelect)
+    .order("submitted_at", { ascending: false })
+    .limit(120)
+
+  if (branchId) query = query.or(`branch_id.is.null,branch_id.eq.${branchId}`)
+
+  const { data, error } = await query
+  if (isMissingFrontStoreFeature(error)) throw new Error(frontStoreFeatureMessage())
+  raise(error)
+
+  return (data ?? []) as OperationalFormResponse[]
+}
+
+export async function submitOperationalFormResponse(
+  profile: UserProfile,
+  input: OperationalFormResponseInput
+) {
+  const { data: form, error: formError } = await supabase
+    .from("operational_forms")
+    .select("*")
+    .eq("id", input.form_id)
+    .eq("organization_id", profile.organization_id)
+    .eq("active", true)
+    .maybeSingle()
+
+  if (isMissingFrontStoreFeature(formError)) throw new Error(frontStoreFeatureMessage())
+  raise(formError)
+  if (!form) throw new Error("Formulario nao encontrado ou inativo.")
+
+  const questions = normalizeOperationalQuestions(form.questions ?? [])
+  const answers = Object.fromEntries(
+    questions.map((question) => [question, input.answers[question]?.trim() ?? ""])
+  )
+  const missingAnswers = questions.filter((question) => !answers[question])
+  if (missingAnswers.length > 0) {
+    throw new Error("Responda todas as perguntas antes de enviar.")
+  }
+
+  const branchId = form.branch_id ?? input.branch_id ?? profile.branch_id ?? null
+  if (branchId) await validateBranchAndSector(profile, branchId)
+
+  const { data, error } = await supabase
+    .from("operational_form_responses")
+    .insert({
+      organization_id: profile.organization_id,
+      form_id: input.form_id,
+      branch_id: branchId,
+      user_id: profile.id,
+      answers,
+      notes: input.notes?.trim() || null,
+      submitted_at: new Date().toISOString(),
+    })
+    .select(operationalFormResponseSelect)
+    .single()
+
+  if (isMissingFrontStoreFeature(error)) throw new Error(frontStoreFeatureMessage())
+  raise(error)
+
+  await createAuditLog(profile, {
+    branch_id: branchId,
+    action: "operational_form_submitted",
+    entity_type: "operational_form_responses",
+    entity_id: data.id,
+    old_value: null,
+    new_value: data,
+  })
+
+  return data as OperationalFormResponse
+}
+
+export async function listOperationalPosters(branchId?: string | null) {
+  let query = supabase
+    .from("operational_posters")
+    .select(operationalPosterSelect)
+    .eq("active", true)
+    .order("created_at", { ascending: false })
+    .limit(120)
+
+  if (branchId) query = query.or(`branch_id.is.null,branch_id.eq.${branchId}`)
+
+  const { data, error } = await query
+  if (isMissingFrontStoreFeature(error)) throw new Error(frontStoreFeatureMessage())
+  raise(error)
+
+  return (data ?? []) as OperationalPoster[]
+}
+
+export async function createOperationalPoster(
+  profile: UserProfile,
+  input: OperationalPosterInput
+) {
+  const title = input.title.trim()
+  const body = input.body.trim()
+  if (!title) throw new Error("Informe o titulo do cartaz.")
+  if (!body) throw new Error("Informe o conteudo do cartaz.")
+
+  await validateOptionalScope(profile, input.branch_id, input.sector_id)
+
+  const { data, error } = await supabase
+    .from("operational_posters")
+    .insert({
+      organization_id: profile.organization_id,
+      branch_id: input.branch_id,
+      sector_id: input.sector_id,
+      created_by: profile.id,
+      title,
+      subtitle: input.subtitle?.trim() || null,
+      body,
+      footer: input.footer?.trim() || null,
+      tone: input.tone,
+      format: input.format,
+    })
+    .select(operationalPosterSelect)
+    .single()
+
+  if (isMissingFrontStoreFeature(error)) throw new Error(frontStoreFeatureMessage())
+  raise(error)
+
+  await createAuditLog(profile, {
+    branch_id: input.branch_id,
+    action: "operational_poster_created",
+    entity_type: "operational_posters",
+    entity_id: data.id,
+    old_value: null,
+    new_value: data,
+  })
+
+  return data as OperationalPoster
+}
+
+export async function updateOperationalPoster(
+  profile: UserProfile,
+  posterId: string,
+  input: Partial<OperationalPosterInput & { active: boolean }>
+) {
+  const { data: previous, error: previousError } = await supabase
+    .from("operational_posters")
+    .select("*")
+    .eq("id", posterId)
+    .eq("organization_id", profile.organization_id)
+    .maybeSingle()
+
+  if (isMissingFrontStoreFeature(previousError)) throw new Error(frontStoreFeatureMessage())
+  raise(previousError)
+  if (!previous) throw new Error("Cartaz nao encontrado.")
+
+  const branchId = input.branch_id === undefined ? previous.branch_id : input.branch_id
+  const sectorId = input.sector_id === undefined ? previous.sector_id : input.sector_id
+  await validateOptionalScope(profile, branchId, sectorId)
+
+  const payload = {
+    branch_id: branchId,
+    sector_id: sectorId,
+    title: input.title === undefined ? previous.title : input.title.trim(),
+    subtitle:
+      input.subtitle === undefined
+        ? previous.subtitle
+        : input.subtitle?.trim() || null,
+    body: input.body === undefined ? previous.body : input.body.trim(),
+    footer:
+      input.footer === undefined
+        ? previous.footer
+        : input.footer?.trim() || null,
+    tone: input.tone ?? previous.tone,
+    format: input.format ?? previous.format,
+    active: input.active ?? previous.active,
+  }
+
+  if (!payload.title) throw new Error("Informe o titulo do cartaz.")
+  if (!payload.body) throw new Error("Informe o conteudo do cartaz.")
+
+  const { data, error } = await supabase
+    .from("operational_posters")
+    .update(payload)
+    .eq("id", posterId)
+    .eq("organization_id", profile.organization_id)
+    .select(operationalPosterSelect)
+    .single()
+
+  if (isMissingFrontStoreFeature(error)) throw new Error(frontStoreFeatureMessage())
+  raise(error)
+
+  await createAuditLog(profile, {
+    branch_id: data.branch_id,
+    action: "operational_poster_updated",
+    entity_type: "operational_posters",
+    entity_id: posterId,
+    old_value: previous,
+    new_value: data,
+  })
+
+  return data as OperationalPoster
+}
+
+export async function deleteOperationalPoster(profile: UserProfile, posterId: string) {
+  const { data: previous, error: previousError } = await supabase
+    .from("operational_posters")
+    .select("*")
+    .eq("id", posterId)
+    .eq("organization_id", profile.organization_id)
+    .maybeSingle()
+
+  if (isMissingFrontStoreFeature(previousError)) throw new Error(frontStoreFeatureMessage())
+  raise(previousError)
+  if (!previous) throw new Error("Cartaz nao encontrado.")
+
+  const { error } = await supabase
+    .from("operational_posters")
+    .delete()
+    .eq("id", posterId)
+    .eq("organization_id", profile.organization_id)
+
+  if (isMissingFrontStoreFeature(error)) throw new Error(frontStoreFeatureMessage())
+  raise(error)
+
+  await createAuditLog(profile, {
+    branch_id: previous.branch_id,
+    action: "operational_poster_deleted",
+    entity_type: "operational_posters",
+    entity_id: posterId,
+    old_value: previous,
+    new_value: null,
+  })
 }
 
 export async function recordOperationalEvent(

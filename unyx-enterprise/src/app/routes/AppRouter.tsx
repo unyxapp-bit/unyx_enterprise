@@ -16,6 +16,9 @@ import { CustomersPage } from "@/features/customers/CustomersPage"
 import { DashboardPage } from "@/features/dashboard/DashboardPage"
 import { DeliveriesPage } from "@/features/deliveries/DeliveriesPage"
 import { EmployeesPage } from "@/features/employees/EmployeesPage"
+import { OperationalFormsPage } from "@/features/frontstore/OperationalFormsPage"
+import { OperationalNotesPage } from "@/features/frontstore/OperationalNotesPage"
+import { OperationalPostersPage } from "@/features/frontstore/OperationalPostersPage"
 import { GamePage } from "@/features/game/GamePage"
 import { LoginPage } from "@/features/auth/LoginPage"
 import { LandingPage } from "@/features/landing/LandingPage"
@@ -82,6 +85,15 @@ export function AppRouter() {
             </Route>
             <Route element={<RequirePermission perm="checklists" />}>
               <Route path="checklists" element={<ChecklistsPage />} />
+            </Route>
+            <Route element={<RequirePermission perm="front_notes" />}>
+              <Route path="notes" element={<OperationalNotesPage />} />
+            </Route>
+            <Route element={<RequirePermission perm="front_forms" />}>
+              <Route path="forms" element={<OperationalFormsPage />} />
+            </Route>
+            <Route element={<RequirePermission perm="front_posters" />}>
+              <Route path="posters" element={<OperationalPostersPage />} />
             </Route>
 
             <Route element={<RequirePermission perm="branches" />}>

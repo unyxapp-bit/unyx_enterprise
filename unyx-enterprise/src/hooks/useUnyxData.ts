@@ -23,6 +23,9 @@ import {
   createFiscalDocumentFromSale,
   createCommsPostComment,
   createEmployee,
+  createOperationalForm,
+  createOperationalPoster,
+  createOperationalNote,
   createOperationalPost,
   createSchedule,
   createSector,
@@ -35,6 +38,9 @@ import {
   deleteProductionOrder,
   deleteEmployees,
   deleteDeliveryOrder,
+  deleteOperationalForm,
+  deleteOperationalNote,
+  deleteOperationalPoster,
   cancelFiscalDocument,
   deleteSchedulesBulk,
   listSchedulesRange,
@@ -79,6 +85,10 @@ import {
   listDeliveryOrders,
   listFiscalDocuments,
   listModules,
+  listOperationalForms,
+  listOperationalFormResponses,
+  listOperationalNotes,
+  listOperationalPosters,
   listOperationalPosts,
   listOperationalStatuses,
   listPostAllocations,
@@ -98,6 +108,7 @@ import {
   recordOperationalEvent,
   saveOperationalSettings,
   setTrainingProgress,
+  submitOperationalFormResponse,
   toggleBranchActive,
   toggleOperationalPost,
   toggleSectorActive,
@@ -106,6 +117,9 @@ import {
   updateCustomer,
   updateDeliveryOrder,
   updateEmployee,
+  updateOperationalForm,
+  updateOperationalNote,
+  updateOperationalPoster,
   updateCurrentUserPassword,
   updateCurrentUserProfile,
   updateOperationalPost,
@@ -130,6 +144,10 @@ import type {
   DeleteProductCategoryResult,
   ProductVariantInput,
   ProductionOrderInput,
+  OperationalFormInput,
+  OperationalFormResponseInput,
+  OperationalNoteInput,
+  OperationalPosterInput,
   ScheduleImportInput,
 } from "@/services/unyxApi"
 import type {
@@ -142,6 +160,7 @@ import type {
   OperationalPost,
   OperationalPostType,
   OperationalSettings,
+  OperationalNoteStatus,
   PaymentMethod,
   PosCashMovementType,
   ProductionOrderStatus,
@@ -422,6 +441,50 @@ export function useChecklistRuns(since?: string | null) {
   })
 }
 
+export function useOperationalNotes(status?: OperationalNoteStatus | "all") {
+  const { profile } = useAuth()
+  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
+
+  return useQuery({
+    queryKey: ["operational-notes", profile?.organization_id, selectedBranchId, status],
+    queryFn: () => listOperationalNotes(selectedBranchId, status),
+    enabled: Boolean(profile),
+  })
+}
+
+export function useOperationalForms() {
+  const { profile } = useAuth()
+  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
+
+  return useQuery({
+    queryKey: ["operational-forms", profile?.organization_id, selectedBranchId],
+    queryFn: () => listOperationalForms(selectedBranchId),
+    enabled: Boolean(profile),
+  })
+}
+
+export function useOperationalFormResponses() {
+  const { profile } = useAuth()
+  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
+
+  return useQuery({
+    queryKey: ["operational-form-responses", profile?.organization_id, selectedBranchId],
+    queryFn: () => listOperationalFormResponses(selectedBranchId),
+    enabled: Boolean(profile),
+  })
+}
+
+export function useOperationalPosters() {
+  const { profile } = useAuth()
+  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
+
+  return useQuery({
+    queryKey: ["operational-posters", profile?.organization_id, selectedBranchId],
+    queryFn: () => listOperationalPosters(selectedBranchId),
+    enabled: Boolean(profile),
+  })
+}
+
 export function useAuditLogs() {
   const { profile } = useAuth()
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
@@ -595,6 +658,177 @@ export function useCompleteChecklistRun() {
     onError: (error) => {
       toast.error(error.message)
     },
+  })
+}
+
+export function useCreateOperationalNote() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: OperationalNoteInput) => createOperationalNote(profile, input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["operational-notes"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success("Anotacao registrada.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useUpdateOperationalNote() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: {
+      noteId: string
+      values: Partial<OperationalNoteInput & { active: boolean }>
+    }) => updateOperationalNote(profile, input.noteId, input.values),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["operational-notes"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success("Anotacao atualizada.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useDeleteOperationalNote() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (noteId: string) => deleteOperationalNote(profile, noteId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["operational-notes"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success("Anotacao excluida.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useCreateOperationalForm() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: OperationalFormInput) => createOperationalForm(profile, input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["operational-forms"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success("Formulario criado.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useUpdateOperationalForm() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: {
+      formId: string
+      values: Partial<OperationalFormInput & { active: boolean }>
+    }) => updateOperationalForm(profile, input.formId, input.values),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["operational-forms"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success("Formulario atualizado.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useDeleteOperationalForm() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (formId: string) => deleteOperationalForm(profile, formId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["operational-forms"] })
+      await queryClient.invalidateQueries({ queryKey: ["operational-form-responses"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success("Formulario excluido.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useSubmitOperationalFormResponse() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: OperationalFormResponseInput) =>
+      submitOperationalFormResponse(profile, input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["operational-form-responses"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success("Formulario enviado.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useCreateOperationalPoster() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: OperationalPosterInput) => createOperationalPoster(profile, input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["operational-posters"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success("Cartaz criado.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useUpdateOperationalPoster() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: {
+      posterId: string
+      values: Partial<OperationalPosterInput & { active: boolean }>
+    }) => updateOperationalPoster(profile, input.posterId, input.values),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["operational-posters"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success("Cartaz atualizado.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useDeleteOperationalPoster() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (posterId: string) => deleteOperationalPoster(profile, posterId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["operational-posters"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success("Cartaz excluido.")
+    },
+    onError: (error) => { toast.error(error.message) },
   })
 }
 
