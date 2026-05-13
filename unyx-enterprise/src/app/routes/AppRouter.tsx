@@ -29,6 +29,7 @@ import { PosCashPage } from "@/features/pos/PosCashPage"
 import { FiscalDocumentsPage } from "@/features/pos/FiscalDocumentsPage"
 import { PosSellPage } from "@/features/pos/PosSellPage"
 import { PosSalesPage } from "@/features/pos/PosSalesPage"
+import { ProductionOrdersPage } from "@/features/pos/ProductionOrdersPage"
 
 function ProtectedRoute() {
   const { loading, session } = useAuth()
@@ -110,6 +111,9 @@ export function AppRouter() {
             </Route>
             <Route element={<RequirePermission perm="pos_sales" />}>
               <Route path="pos/sales" element={<PosSalesPage />} />
+            </Route>
+            <Route element={<RequirePermission perm="production_orders" />}>
+              <Route path="pos/production" element={<ProductionOrdersPage />} />
             </Route>
             <Route element={<RequirePermission perm="fiscal_documents" />}>
               <Route path="pos/fiscal" element={<FiscalDocumentsPage />} />

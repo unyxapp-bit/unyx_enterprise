@@ -637,6 +637,50 @@ export interface FiscalDocument {
   user_profiles?: Pick<UserProfile, "name"> | null
 }
 
+export type ProductionOrderStatus =
+  | "pending"
+  | "in_production"
+  | "ready"
+  | "delivered"
+  | "cancelled"
+
+export type ProductionOrderPriority = "normal" | "high" | "urgent"
+
+export interface ProductionOrderItem {
+  id: string
+  organization_id: string
+  production_order_id: string
+  product_id: string | null
+  variant_id: string | null
+  product_name: string
+  quantity: number
+  notes: string | null
+  sort_order: number
+  created_at: string
+}
+
+export interface ProductionOrder {
+  id: string
+  organization_id: string
+  branch_id: string
+  order_code: string
+  customer_id: string | null
+  customer_name: string
+  customer_phone: string | null
+  status: ProductionOrderStatus
+  priority: ProductionOrderPriority
+  ordered_at: string
+  promised_at: string | null
+  notes: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+  branches?: Pick<Branch, "name"> | null
+  customers?: Pick<Customer, "customer_code" | "name" | "phone"> | null
+  user_profiles?: Pick<UserProfile, "name"> | null
+  production_order_items?: ProductionOrderItem[] | null
+}
+
 export type CustomerStatus = "active" | "inactive" | "blocked"
 
 export interface Customer {

@@ -13,6 +13,7 @@ import {
   createProduct,
   createProductCategory,
   createProductVariant,
+  createProductionOrder,
   allocatePost,
   confirmCashMovement,
   createBranch,
@@ -31,6 +32,7 @@ import {
   deleteProduct,
   deleteProductCategory,
   deleteProductVariant,
+  deleteProductionOrder,
   deleteEmployees,
   deleteDeliveryOrder,
   cancelFiscalDocument,
@@ -53,6 +55,7 @@ import {
   listProductCategories,
   listProductVariants,
   listProducts,
+  listProductionOrders,
   listSaleItems,
   listSalePayments,
   listSales,
@@ -61,6 +64,7 @@ import {
   updateProduct,
   updateProductCategory,
   updateProductVariant,
+  updateProductionOrderStatus,
   listAllAuditLogs,
   listAttendanceEvents,
   listAuditLogs,
@@ -125,6 +129,7 @@ import type {
   ProductCategoryInput,
   DeleteProductCategoryResult,
   ProductVariantInput,
+  ProductionOrderInput,
   ScheduleImportInput,
 } from "@/services/unyxApi"
 import type {
@@ -139,6 +144,7 @@ import type {
   OperationalSettings,
   PaymentMethod,
   PosCashMovementType,
+  ProductionOrderStatus,
   ScheduleStatus,
   SubscriptionPlan,
   TrainingType,
@@ -1460,6 +1466,17 @@ export function useProductVariants() {
   })
 }
 
+export function useProductionOrders(date?: string | null, status?: ProductionOrderStatus | "all") {
+  const { profile } = useAuth()
+  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
+  return useQuery({
+    queryKey: ["production-orders", profile?.organization_id, selectedBranchId, date, status],
+    queryFn: () => listProductionOrders(selectedBranchId, date, status),
+    enabled: Boolean(profile),
+    refetchInterval: 30_000,
+  })
+}
+
 export function useCurrentCashSession(branchId?: string | null) {
   const { profile } = useAuth()
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
@@ -1804,6 +1821,52 @@ export function useDeleteProductVariant() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["pos-product-variants"] })
       toast.success("Variacao excluida.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useCreateProductionOrder() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+  return useMutation({
+    mutationFn: (input: ProductionOrderInput) => createProductionOrder(profile, input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["production-orders"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success("Pedido de producao criado.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useUpdateProductionOrderStatus() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+  return useMutation({
+    mutationFn: (input: { orderId: string; status: ProductionOrderStatus }) =>
+      updateProductionOrderStatus(profile, input.orderId, input.status),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["production-orders"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success("Pedido atualizado.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useDeleteProductionOrder() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+  return useMutation({
+    mutationFn: (orderId: string) => deleteProductionOrder(profile, orderId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["production-orders"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success("Pedido excluido.")
     },
     onError: (error) => { toast.error(error.message) },
   })

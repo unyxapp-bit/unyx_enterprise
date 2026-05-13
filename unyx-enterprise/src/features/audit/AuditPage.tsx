@@ -74,6 +74,9 @@ const actionLabels: Record<string, string> = {
   product_catalog_imported: "Importacao de catalogo PDV",
   product_category_deleted: "Exclusao de categoria PDV",
   product_category_deleted_with_products: "Exclusao de categoria e produtos PDV",
+  production_order_created: "Pedido de producao criado",
+  production_order_updated: "Pedido de producao atualizado",
+  production_order_deleted: "Pedido de producao excluido",
   // Configuracoes
   update_settings: "Atualizacao de configuracoes",
   update_organization: "Atualizacao da empresa",

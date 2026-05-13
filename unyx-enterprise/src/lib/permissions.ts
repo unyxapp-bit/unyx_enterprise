@@ -15,6 +15,7 @@ export type PermissionKey =
   | "pos_cash"
   | "pos_products"
   | "pos_sales"
+  | "production_orders"
   | "fiscal_documents"
   | "deliveries"
   | "reports"
@@ -39,6 +40,7 @@ export const PERMISSION_LABEL: Record<PermissionKey, string> = {
   pos_cash: "Caixa",
   pos_products: "Produtos",
   pos_sales: "Historico POS",
+  production_orders: "Pedidos de producao",
   fiscal_documents: "Cupons / NFC-e",
   deliveries: "Entregas",
   reports: "Relatorios",
@@ -52,7 +54,7 @@ export const PERMISSION_LABEL: Record<PermissionKey, string> = {
 export const PERMISSION_GROUP: Record<string, PermissionKey[]> = {
   "Unyx Ops": ["dashboard", "operations", "alerts", "schedules", "checklists"],
   "Unyx Control": ["branches", "employees", "customers", "users", "settings"],
-  "Unyx POS": ["pos_sell", "pos_cash", "pos_products", "pos_sales", "fiscal_documents", "deliveries"],
+  "Unyx POS": ["pos_sell", "pos_cash", "pos_products", "pos_sales", "production_orders", "fiscal_documents", "deliveries"],
   "Unyx Insight": ["reports", "audit"],
   Expansao: ["comms", "game", "academy", "ai"],
 }
@@ -72,6 +74,7 @@ export const PERMISSIONS: Record<PermissionKey, UserRole[]> = {
   pos_cash: ["owner", "admin", "branch_manager", "supervisor", "operator"],
   pos_products: ["owner", "admin", "branch_manager"],
   pos_sales: ["owner", "admin", "branch_manager", "supervisor"],
+  production_orders: ["owner", "admin", "branch_manager", "supervisor", "operator", "employee"],
   fiscal_documents: ["owner", "admin", "branch_manager", "supervisor"],
   deliveries: ["owner", "admin", "branch_manager", "supervisor", "operator", "employee"],
   reports: ["owner", "admin", "branch_manager"],

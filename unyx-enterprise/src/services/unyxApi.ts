@@ -46,6 +46,9 @@ import type {
   ProductCategorySegment,
   ProductKind,
   ProductVariant,
+  ProductionOrder,
+  ProductionOrderPriority,
+  ProductionOrderStatus,
   Sale,
   SaleItem,
   SalePayment,
@@ -2376,6 +2379,30 @@ function fiscalFeatureMessage() {
   return "Modulo fiscal ainda nao instalado. Rode supabase/fiscal_documents_setup.sql no SQL Editor do Supabase e recarregue o app."
 }
 
+function isMissingProductionFeature(error: { code?: string; message: string } | null) {
+  if (!error) return false
+  const message = error.message.toLowerCase()
+  const mentionsProduction =
+    message.includes("production_orders") ||
+    message.includes("production_order_items")
+
+  return (
+    mentionsProduction &&
+    (
+      error.code === "42P01" ||
+      error.code === "PGRST204" ||
+      error.code === "PGRST205" ||
+      message.includes("schema cache") ||
+      message.includes("does not exist") ||
+      message.includes("could not find")
+    )
+  )
+}
+
+function productionFeatureMessage() {
+  return "Modulo de pedidos de producao ainda nao instalado. Rode supabase/production_orders_setup.sql no SQL Editor do Supabase e recarregue o app."
+}
+
 export interface CustomerInput {
   branch_id: string | null
   name: string
@@ -2480,6 +2507,23 @@ export interface ProductCatalogImportOptions {
 
 export interface DeleteProductCategoryResult {
   deleted_products: number
+}
+
+export interface ProductionOrderInput {
+  branch_id: string
+  customer_id: string | null
+  customer_name: string
+  customer_phone: string | null
+  priority: ProductionOrderPriority
+  promised_at: string | null
+  notes: string | null
+  items: Array<{
+    product_id: string | null
+    variant_id: string | null
+    product_name: string
+    quantity: number
+    notes: string | null
+  }>
 }
 
 export interface DeliveryOrderInput {
@@ -3621,6 +3665,217 @@ export async function deleteProductVariant(profile: UserProfile, variantId: stri
 
   if (isMissingPosFeature(error)) throw new Error(posFeatureMessage())
   raise(error)
+}
+
+const productionOrderSelect =
+  "*, branches(name), customers(customer_code, name, phone), user_profiles!created_by(name), production_order_items(*)"
+
+function productionOrderCode() {
+  const now = new Date()
+  const stamp = [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, "0"),
+    String(now.getDate()).padStart(2, "0"),
+  ].join("")
+  const time = [
+    String(now.getHours()).padStart(2, "0"),
+    String(now.getMinutes()).padStart(2, "0"),
+    String(now.getSeconds()).padStart(2, "0"),
+  ].join("")
+  const suffix = Math.random().toString(36).slice(2, 5).toUpperCase()
+  return `PRD-${stamp}-${time}-${suffix}`
+}
+
+function normalizeProductionOrderInput(input: ProductionOrderInput) {
+  const customerName = input.customer_name.trim()
+  if (!input.branch_id) throw new Error("Selecione a filial do pedido.")
+  if (!customerName) throw new Error("Informe o nome do cliente.")
+
+  const items = input.items
+    .map((item) => ({
+      product_id: item.product_id || null,
+      variant_id: item.variant_id || null,
+      product_name: item.product_name.trim(),
+      quantity: Math.max(1, Number(item.quantity) || 1),
+      notes: item.notes?.trim() || null,
+    }))
+    .filter((item) => item.product_name)
+
+  if (items.length === 0) throw new Error("Adicione pelo menos um item para producao.")
+
+  return {
+    branch_id: input.branch_id,
+    customer_id: input.customer_id || null,
+    customer_name: customerName,
+    customer_phone: input.customer_phone?.trim() || null,
+    priority: input.priority,
+    promised_at: input.promised_at || null,
+    notes: input.notes?.trim() || null,
+    items,
+  }
+}
+
+export async function listProductionOrders(
+  branchId?: string | null,
+  date?: string | null,
+  status?: ProductionOrderStatus | "all"
+) {
+  let query = supabase
+    .from("production_orders")
+    .select(productionOrderSelect)
+    .order("created_at", { ascending: false })
+    .limit(200)
+
+  if (branchId) query = query.eq("branch_id", branchId)
+  if (status && status !== "all") query = query.eq("status", status)
+  if (date) {
+    const startDate = new Date(`${date}T00:00:00`)
+    const endDate = new Date(startDate)
+    endDate.setDate(endDate.getDate() + 1)
+    query = query.gte("created_at", startDate.toISOString()).lt("created_at", endDate.toISOString())
+  }
+
+  const { data, error } = await query
+  if (isMissingProductionFeature(error)) throw new Error(productionFeatureMessage())
+  raise(error)
+
+  return (data ?? []) as ProductionOrder[]
+}
+
+export async function createProductionOrder(
+  profile: UserProfile,
+  input: ProductionOrderInput
+) {
+  const payload = normalizeProductionOrderInput(input)
+  await validateBranchAndSector(profile, payload.branch_id)
+
+  if (payload.customer_id) {
+    await validateDeliveryCustomer(profile, payload.customer_id, payload.branch_id)
+  }
+
+  const { data: order, error } = await supabase
+    .from("production_orders")
+    .insert({
+      organization_id: profile.organization_id,
+      branch_id: payload.branch_id,
+      order_code: productionOrderCode(),
+      customer_id: payload.customer_id,
+      customer_name: payload.customer_name,
+      customer_phone: payload.customer_phone,
+      priority: payload.priority,
+      promised_at: payload.promised_at,
+      notes: payload.notes,
+      created_by: profile.id,
+    })
+    .select("*")
+    .single()
+
+  if (isMissingProductionFeature(error)) throw new Error(productionFeatureMessage())
+  raise(error)
+
+  const itemsPayload = payload.items.map((item, index) => ({
+    ...item,
+    production_order_id: order.id,
+    organization_id: profile.organization_id,
+    sort_order: index + 1,
+  }))
+
+  const { error: itemsError } = await supabase
+    .from("production_order_items")
+    .insert(itemsPayload)
+
+  if (isMissingProductionFeature(itemsError)) throw new Error(productionFeatureMessage())
+  raise(itemsError)
+
+  await createAuditLog(profile, {
+    branch_id: payload.branch_id,
+    action: "production_order_created",
+    entity_type: "production_orders",
+    entity_id: order.id,
+    old_value: null,
+    new_value: { ...order, items: itemsPayload },
+  })
+
+  const { data: fullOrder, error: fetchError } = await supabase
+    .from("production_orders")
+    .select(productionOrderSelect)
+    .eq("id", order.id)
+    .single()
+
+  if (isMissingProductionFeature(fetchError)) throw new Error(productionFeatureMessage())
+  raise(fetchError)
+
+  return fullOrder as ProductionOrder
+}
+
+export async function updateProductionOrderStatus(
+  profile: UserProfile,
+  orderId: string,
+  status: ProductionOrderStatus
+) {
+  const { data: previous, error: previousError } = await supabase
+    .from("production_orders")
+    .select("*")
+    .eq("id", orderId)
+    .eq("organization_id", profile.organization_id)
+    .maybeSingle()
+
+  if (isMissingProductionFeature(previousError)) throw new Error(productionFeatureMessage())
+  raise(previousError)
+  if (!previous) throw new Error("Pedido de producao nao encontrado.")
+
+  const { data, error } = await supabase
+    .from("production_orders")
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq("id", orderId)
+    .eq("organization_id", profile.organization_id)
+    .select(productionOrderSelect)
+    .single()
+
+  if (isMissingProductionFeature(error)) throw new Error(productionFeatureMessage())
+  raise(error)
+
+  await createAuditLog(profile, {
+    branch_id: previous.branch_id,
+    action: "production_order_updated",
+    entity_type: "production_orders",
+    entity_id: orderId,
+    old_value: previous,
+    new_value: data,
+  })
+
+  return data as ProductionOrder
+}
+
+export async function deleteProductionOrder(profile: UserProfile, orderId: string) {
+  const { data: previous, error: previousError } = await supabase
+    .from("production_orders")
+    .select(productionOrderSelect)
+    .eq("id", orderId)
+    .eq("organization_id", profile.organization_id)
+    .maybeSingle()
+
+  if (isMissingProductionFeature(previousError)) throw new Error(productionFeatureMessage())
+  raise(previousError)
+  if (!previous) throw new Error("Pedido de producao nao encontrado.")
+
+  const { error } = await supabase
+    .from("production_orders")
+    .delete()
+    .eq("id", orderId)
+    .eq("organization_id", profile.organization_id)
+
+  if (isMissingProductionFeature(error)) throw new Error(productionFeatureMessage())
+  raise(error)
+
+  await createAuditLog(profile, {
+    branch_id: previous.branch_id,
+    action: "production_order_deleted",
+    entity_type: "production_orders",
+    entity_id: orderId,
+    old_value: previous,
+    new_value: null,
+  })
 }
 
 export async function setEmployeePosPassword(
