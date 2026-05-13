@@ -889,10 +889,10 @@ export function PosSellPage() {
 
     const sortedKeys = [first.key, second.key].sort()
     const key = `half:${sortedKeys[0]}:${sortedKeys[1]}`
-    const unitPrice = Math.max(first.unit_price, second.unit_price)
+    const unitPrice = (first.unit_price + second.unit_price) / 2
     const itemNotes =
       `Meio a meio: ${first.name} / ${second.name}. ` +
-      "Preco aplicado pelo maior valor."
+      "Preco calculado pela soma das metades."
 
     setCart((current) => {
       const existing = current.findIndex((cartItem) => cartItem.key === key)
@@ -2348,8 +2348,8 @@ export function PosSellPage() {
           </DialogHeader>
           <div className="space-y-4">
             <div className="rounded-lg border bg-slate-50 p-3 text-sm text-slate-700">
-              Selecione dois sabores. O PDV aplica o maior valor entre eles, pratica
-              comum em pizzarias.
+              Selecione dois sabores. O PDV calcula metade do valor de cada sabor
+              e soma as duas metades.
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="space-y-1 text-sm">
