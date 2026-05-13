@@ -17,6 +17,13 @@ import { StateBlock } from "@/components/shared/StateBlock"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import {
   useBranches,
@@ -44,9 +51,6 @@ import type {
 
 const fieldClass =
   "h-8 w-full rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
-
-const textAreaClass =
-  "min-h-16 w-full rounded-lg border bg-white px-2.5 py-2 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
 
 const statusLabel: Record<ProductionOrderStatus, string> = {
   pending: "Aberto",
@@ -78,6 +82,10 @@ type ProductionCartItem = {
   name: string
   quantity: number
   notes: string
+  half_and_half?: {
+    first_name: string
+    second_name: string
+  } | null
 }
 
 function normalizeText(value: string | null | undefined) {
@@ -93,6 +101,12 @@ function productCategory(product: Product, category: ProductCategory | undefined
 
 function sellableName(product: Product, variant: ProductVariant | null) {
   return variant ? `${product.name} - ${variant.name}` : product.name
+}
+
+function formatProductionQuantity(value: number) {
+  return Number.isInteger(value)
+    ? String(value)
+    : value.toFixed(3).replace(/0+$/, "").replace(/\.$/, "")
 }
 
 function isProductionProduct(product: Product, category: ProductCategory | undefined) {
@@ -121,6 +135,22 @@ function isProductionProduct(product: Product, category: ProductCategory | undef
     text.includes("prato") ||
     text.includes("salgado")
   )
+}
+
+function isPizzaOption(item: ProductionItemOption) {
+  const text = normalizeText(
+    [
+      item.name,
+      item.category,
+      item.product.name,
+      item.product.description,
+      item.product.size_label,
+    ]
+      .filter(Boolean)
+      .join(" ")
+  )
+
+  return text.includes("pizza") || text.includes("pizzaria")
 }
 
 function statusVariant(status: ProductionOrderStatus) {
@@ -170,17 +200,18 @@ function PrintableProductionOrder({ order }: { order: ProductionOrder }) {
         <div className="fiscal-coupon-strong">Itens para produzir</div>
         {items.map((item) => (
           <div key={item.id} className="fiscal-coupon-item">
-            <div className="fiscal-coupon-row">
-              <span>{item.quantity}x</span>
-              <span>{item.product_name}</span>
+            <div className="production-coupon-product">
+              {formatProductionQuantity(item.quantity)}x {item.product_name}
             </div>
-            {item.notes ? <div>Obs: {item.notes}</div> : null}
+            {item.notes ? (
+              <div className="production-coupon-note">OBS: {item.notes}</div>
+            ) : null}
           </div>
         ))}
         {order.notes ? (
           <>
             <div className="fiscal-coupon-separator" />
-            <div>Obs. pedido: {order.notes}</div>
+            <div className="production-coupon-note">OBS. PEDIDO: {order.notes}</div>
           </>
         ) : null}
         <div className="fiscal-coupon-separator" />
@@ -208,6 +239,10 @@ export function ProductionOrdersPage() {
   const [cart, setCart] = useState<ProductionCartItem[]>([])
   const [formError, setFormError] = useState<string | null>(null)
   const [printOrder, setPrintOrder] = useState<ProductionOrder | null>(null)
+  const [halfAndHalfDialogOpen, setHalfAndHalfDialogOpen] = useState(false)
+  const [halfAndHalfFirstKey, setHalfAndHalfFirstKey] = useState("")
+  const [halfAndHalfSecondKey, setHalfAndHalfSecondKey] = useState("")
+  const [halfAndHalfNotes, setHalfAndHalfNotes] = useState("")
 
   const branches = useBranches()
   const products = useProducts(branchId || selectedBranchId || null)
@@ -300,6 +335,12 @@ export function ProductionOrdersPage() {
       .slice(0, 60)
   }, [categoryFilter, itemOptions, search])
 
+  const halfAndHalfOptions = useMemo(() => {
+    return itemOptions.filter(isPizzaOption).sort((a, b) => a.name.localeCompare(b.name))
+  }, [itemOptions])
+
+  const canUseHalfAndHalf = halfAndHalfOptions.length >= 2
+
   useEffect(() => {
     if (!printOrder) return
     const clearPrintedOrder = () => setPrintOrder(null)
@@ -340,6 +381,71 @@ export function ProductionOrdersPage() {
         },
       ]
     })
+  }
+
+  function openHalfAndHalfDialog() {
+    setFormError(null)
+    if (halfAndHalfOptions.length < 2) {
+      setFormError("Cadastre pelo menos dois sabores/produtos de pizza.")
+      return
+    }
+
+    setHalfAndHalfFirstKey(halfAndHalfOptions[0]?.key ?? "")
+    setHalfAndHalfSecondKey(halfAndHalfOptions[1]?.key ?? "")
+    setHalfAndHalfNotes("")
+    setHalfAndHalfDialogOpen(true)
+  }
+
+  function addHalfAndHalfItem() {
+    const first = halfAndHalfOptions.find((item) => item.key === halfAndHalfFirstKey)
+    const second = halfAndHalfOptions.find((item) => item.key === halfAndHalfSecondKey)
+
+    if (!first || !second) {
+      setFormError("Selecione os dois sabores.")
+      return
+    }
+    if (first.key === second.key) {
+      setFormError("Escolha dois sabores diferentes para o meio a meio.")
+      return
+    }
+
+    const sortedKeys = [first.key, second.key].sort()
+    const key = `half:${sortedKeys[0]}:${sortedKeys[1]}`
+    const flavorNote = `1/2 ${first.name}\n1/2 ${second.name}`
+    const extraNotes = halfAndHalfNotes.trim()
+    const notes = extraNotes ? `${flavorNote}\n${extraNotes}` : flavorNote
+
+    setCart((current) => {
+      const existing = current.findIndex((item) => item.key === key)
+      if (existing >= 0) {
+        const next = [...current]
+        next[existing] = {
+          ...next[existing],
+          quantity: next[existing].quantity + 1,
+          notes: next[existing].notes || notes,
+        }
+        return next
+      }
+
+      return [
+        ...current,
+        {
+          key,
+          product_id: null,
+          variant_id: null,
+          name: `PIZZA MEIO A MEIO: ${first.name} / ${second.name}`,
+          quantity: 1,
+          notes,
+          half_and_half: {
+            first_name: first.name,
+            second_name: second.name,
+          },
+        },
+      ]
+    })
+
+    setHalfAndHalfDialogOpen(false)
+    setHalfAndHalfNotes("")
   }
 
   function updateItemQuantity(key: string, quantity: number) {
@@ -493,6 +599,17 @@ export function ProductionOrdersPage() {
                   Itens para producao
                 </CardTitle>
                 <div className="flex flex-wrap gap-2">
+                  {canUseHalfAndHalf ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={openHalfAndHalfDialog}
+                    >
+                      <Utensils className="size-4" />
+                      Pizza meio a meio
+                    </Button>
+                  ) : null}
                   <div className="relative">
                     <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
                     <Input
@@ -653,12 +770,24 @@ export function ProductionOrdersPage() {
                           </Button>
                         </div>
                       </div>
-                      <div className="mt-3 grid gap-1 rounded-lg bg-slate-50 p-2 text-sm">
+                      <div className="mt-3 space-y-2 rounded-lg bg-slate-50 p-2">
                         {(order.production_order_items ?? []).map((item) => (
-                          <div key={item.id} className="flex flex-wrap justify-between gap-2">
-                            <span>{item.quantity}x {item.product_name}</span>
+                          <div
+                            key={item.id}
+                            className="rounded-lg border border-slate-200 border-l-4 border-l-slate-900 bg-white p-3"
+                          >
+                            <div className="text-base font-extrabold uppercase leading-snug text-slate-950">
+                              {formatProductionQuantity(item.quantity)}x {item.product_name}
+                            </div>
                             {item.notes ? (
-                              <span className="text-muted-foreground">{item.notes}</span>
+                              <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-amber-950">
+                                <div className="text-[11px] font-bold uppercase">
+                                  Observacao
+                                </div>
+                                <div className="whitespace-pre-wrap text-sm font-semibold leading-snug">
+                                  {item.notes}
+                                </div>
+                              </div>
                             ) : null}
                           </div>
                         ))}
@@ -772,10 +901,20 @@ export function ProductionOrdersPage() {
                 ) : (
                   <div className="space-y-2">
                     {cart.map((item) => (
-                      <div key={item.key} className="rounded-lg border p-2">
+                      <div
+                        key={item.key}
+                        className="rounded-lg border border-slate-200 border-l-4 border-l-slate-900 bg-white p-3"
+                      >
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
-                            <div className="truncate text-sm font-semibold">{item.name}</div>
+                            <div className="text-base font-extrabold uppercase leading-snug text-slate-950">
+                              {item.name}
+                            </div>
+                            {item.half_and_half ? (
+                              <Badge variant="secondary" className="mt-1">
+                                Meio a meio
+                              </Badge>
+                            ) : null}
                           </div>
                           <Button
                             type="button"
@@ -787,23 +926,32 @@ export function ProductionOrdersPage() {
                             <Trash2 className="size-4" />
                           </Button>
                         </div>
-                        <div className="mt-2 grid grid-cols-[90px_1fr] gap-2">
-                          <Input
-                            type="number"
-                            min={1}
-                            step={1}
-                            value={item.quantity}
-                            onChange={(event) =>
-                              updateItemQuantity(item.key, Number(event.target.value))
-                            }
-                          />
-                          <Input
-                            value={item.notes}
-                            onChange={(event) =>
-                              updateItemNotes(item.key, event.target.value)
-                            }
-                            placeholder="Observacao: sem cebola, bem assada..."
-                          />
+                        <div className="mt-3 grid gap-2">
+                          <label className="grid grid-cols-[90px_1fr] items-center gap-2 text-sm">
+                            <span className="font-medium">Qtd.</span>
+                            <Input
+                              type="number"
+                              min={1}
+                              step={1}
+                              value={item.quantity}
+                              onChange={(event) =>
+                                updateItemQuantity(item.key, Number(event.target.value))
+                              }
+                            />
+                          </label>
+                          <label className="space-y-1 text-sm">
+                            <span className="font-bold uppercase text-amber-900">
+                              Observacao da producao
+                            </span>
+                            <textarea
+                              className="min-h-20 w-full rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-sm font-semibold text-amber-950 outline-none transition-colors placeholder:text-amber-700/60 focus:border-amber-400 focus:ring-3 focus:ring-amber-200"
+                              value={item.notes}
+                              onChange={(event) =>
+                                updateItemNotes(item.key, event.target.value)
+                              }
+                              placeholder="Sem cebola, bem assada, retirar borda..."
+                            />
+                          </label>
                         </div>
                       </div>
                     ))}
@@ -812,9 +960,11 @@ export function ProductionOrdersPage() {
               </div>
 
               <label className="space-y-1 text-sm">
-                <span className="font-medium">Observacoes do pedido</span>
+                <span className="font-bold uppercase text-amber-900">
+                  Observacoes do pedido
+                </span>
                 <textarea
-                  className={textAreaClass}
+                  className="min-h-20 w-full rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-sm font-semibold text-amber-950 outline-none transition-colors focus:border-amber-400 focus:ring-3 focus:ring-amber-200"
                   value={notes}
                   onChange={(event) => setNotes(event.target.value)}
                 />
@@ -839,6 +989,86 @@ export function ProductionOrdersPage() {
           </Card>
         </div>
       </div>
+
+      <Dialog
+        open={halfAndHalfDialogOpen}
+        onOpenChange={(open) => {
+          setHalfAndHalfDialogOpen(open)
+          if (!open) {
+            setHalfAndHalfNotes("")
+            setFormError(null)
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Utensils className="size-5" />
+              Pizza meio a meio
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="space-y-1 text-sm">
+                <span className="font-medium">Primeiro sabor</span>
+                <select
+                  className={fieldClass}
+                  value={halfAndHalfFirstKey}
+                  onChange={(event) => setHalfAndHalfFirstKey(event.target.value)}
+                >
+                  {halfAndHalfOptions.map((item) => (
+                    <option key={item.key} value={item.key}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1 text-sm">
+                <span className="font-medium">Segundo sabor</span>
+                <select
+                  className={fieldClass}
+                  value={halfAndHalfSecondKey}
+                  onChange={(event) => setHalfAndHalfSecondKey(event.target.value)}
+                >
+                  {halfAndHalfOptions.map((item) => (
+                    <option key={item.key} value={item.key}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <label className="space-y-1 text-sm">
+              <span className="font-bold uppercase text-amber-900">
+                Observacao da producao
+              </span>
+              <textarea
+                className="min-h-24 w-full rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-sm font-semibold text-amber-950 outline-none transition-colors placeholder:text-amber-700/60 focus:border-amber-400 focus:ring-3 focus:ring-amber-200"
+                value={halfAndHalfNotes}
+                onChange={(event) => setHalfAndHalfNotes(event.target.value)}
+                placeholder="Borda, ponto da massa, retirar ingrediente..."
+              />
+            </label>
+            {formError ? (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {formError}
+              </div>
+            ) : null}
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setHalfAndHalfDialogOpen(false)}
+            >
+              Cancelar
+            </Button>
+            <Button type="button" onClick={addHalfAndHalfItem}>
+              Adicionar pizza
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {printOrder ? <PrintableProductionOrder order={printOrder} /> : null}
     </>

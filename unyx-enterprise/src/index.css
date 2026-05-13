@@ -193,4 +193,22 @@
     font-size: 12px;
     font-weight: 700;
   }
+
+  .production-coupon-product {
+    margin-top: 6px;
+    font-size: 15px;
+    font-weight: 900;
+    line-height: 1.15;
+    text-transform: uppercase;
+  }
+
+  .production-coupon-note {
+    margin-top: 4px;
+    border: 1px solid #000;
+    padding: 3px;
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1.2;
+    white-space: pre-wrap;
+  }
 }
