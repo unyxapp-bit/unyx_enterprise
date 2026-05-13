@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react"
 import type { FormEvent } from "react"
 import {
+  ChevronDown,
   ClipboardCheck,
   ClipboardList,
   Edit3,
@@ -77,6 +78,7 @@ export function OperationalFormsPage() {
   const [selectedFormId, setSelectedFormId] = useState("")
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [responseNotes, setResponseNotes] = useState("")
+  const [expandedFormIds, setExpandedFormIds] = useState<Set<string>>(new Set())
 
   const sectors = useSectors(form.branch_id || null)
   const createForm = useCreateOperationalForm()
@@ -164,6 +166,16 @@ export function OperationalFormsPage() {
   function removeForm(item: OperationalForm) {
     if (!window.confirm(`Excluir o formulario "${item.title}"?`)) return
     void deleteForm.mutateAsync(item.id)
+  }
+
+  function toggleFormExpanded(formId: string) {
+    const newExpanded = new Set(expandedFormIds)
+    if (newExpanded.has(formId)) {
+      newExpanded.delete(formId)
+    } else {
+      newExpanded.add(formId)
+    }
+    setExpandedFormIds(newExpanded)
   }
 
   const isSaving = createForm.isPending || updateForm.isPending
@@ -333,7 +345,7 @@ export function OperationalFormsPage() {
             description={responses.error.message}
           />
         ) : (
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_24rem]">
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_1fr]">
             <div className="space-y-4">
               {(forms.data ?? []).length === 0 ? (
                 <StateBlock
@@ -341,19 +353,34 @@ export function OperationalFormsPage() {
                   description="Crie formularios para rondas, conferencias e pesquisas rapidas."
                 />
               ) : (
-                (forms.data ?? []).map((item) => (
+                (forms.data ?? []).map((item) => {
+                  const isExpanded = expandedFormIds.has(item.id)
+                  return (
                   <Card key={item.id} className="border bg-white shadow-sm">
                     <CardHeader>
                       <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <CardTitle className="flex items-center gap-2 text-base">
-                            <FileText className="size-4 shrink-0" />
-                            <span className="break-words">{item.title}</span>
-                          </CardTitle>
-                          <div className="mt-1 text-xs text-muted-foreground">
-                            {scopeLabel(item)} - {item.questions.length} pergunta(s)
+                        <button
+                          type="button"
+                          onClick={() => toggleFormExpanded(item.id)}
+                          className="min-w-0 flex-1 text-left transition-opacity hover:opacity-70"
+                        >
+                          <div className="flex items-start gap-2">
+                            <ChevronDown
+                              className={`size-4 shrink-0 transition-transform ${
+                                isExpanded ? "" : "-rotate-90"
+                              }`}
+                            />
+                            <div className="min-w-0 flex-1">
+                              <CardTitle className="flex items-center gap-2 text-base">
+                                <FileText className="size-4 shrink-0" />
+                                <span className="break-words">{item.title}</span>
+                              </CardTitle>
+                              <div className="mt-1 text-xs text-muted-foreground">
+                                {scopeLabel(item)} - {item.questions.length} pergunta(s)
+                              </div>
+                            </div>
                           </div>
-                        </div>
+                        </button>
                         <div className="flex flex-wrap gap-1.5">
                           {item.category ? <Badge variant="outline">{item.category}</Badge> : null}
                           <Button
@@ -377,6 +404,7 @@ export function OperationalFormsPage() {
                         </div>
                       </div>
                     </CardHeader>
+                    {isExpanded && (
                     <CardContent className="space-y-3">
                       {item.description ? (
                         <p className="whitespace-pre-wrap text-sm text-slate-700">
@@ -403,8 +431,10 @@ export function OperationalFormsPage() {
                         Responder
                       </Button>
                     </CardContent>
+                    )}
                   </Card>
-                ))
+                  )
+                })
               )}
             </div>
 
