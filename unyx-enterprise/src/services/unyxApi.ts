@@ -2011,10 +2011,19 @@ export interface OperationalFormResponseInput {
 export interface OperationalPosterInput {
   branch_id: string | null
   sector_id: string | null
+  template_key: string | null
   title: string
   subtitle: string | null
   body: string
   footer: string | null
+  product_name: string | null
+  product_description: string | null
+  price_text: string | null
+  sale_unit: string | null
+  product_name_size: number
+  description_size: number
+  price_size: number
+  sale_unit_size: number
   tone: OperationalPosterTone
   format: OperationalPosterFormat
 }
@@ -2466,8 +2475,12 @@ export async function createOperationalPoster(
 ) {
   const title = input.title.trim()
   const body = input.body.trim()
+  const productName = input.product_name?.trim() || title
+  const productDescription = input.product_description?.trim() || body
+  const priceText = input.price_text?.trim() || null
+  const saleUnit = input.sale_unit?.trim() || null
   if (!title) throw new Error("Informe o titulo do cartaz.")
-  if (!body) throw new Error("Informe o conteudo do cartaz.")
+  if (!body && !productDescription) throw new Error("Informe o conteudo do cartaz.")
 
   await validateOptionalScope(profile, input.branch_id, input.sector_id)
 
@@ -2478,10 +2491,19 @@ export async function createOperationalPoster(
       branch_id: input.branch_id,
       sector_id: input.sector_id,
       created_by: profile.id,
+      template_key: input.template_key || null,
       title,
       subtitle: input.subtitle?.trim() || null,
-      body,
+      body: body || productDescription,
       footer: input.footer?.trim() || null,
+      product_name: productName,
+      product_description: productDescription,
+      price_text: priceText,
+      sale_unit: saleUnit,
+      product_name_size: Math.max(12, Number(input.product_name_size) || 32),
+      description_size: Math.max(10, Number(input.description_size) || 18),
+      price_size: Math.max(20, Number(input.price_size) || 72),
+      sale_unit_size: Math.max(8, Number(input.sale_unit_size) || 18),
       tone: input.tone,
       format: input.format,
     })
@@ -2526,6 +2548,10 @@ export async function updateOperationalPoster(
   const payload = {
     branch_id: branchId,
     sector_id: sectorId,
+    template_key:
+      input.template_key === undefined
+        ? previous.template_key
+        : input.template_key || null,
     title: input.title === undefined ? previous.title : input.title.trim(),
     subtitle:
       input.subtitle === undefined
@@ -2536,13 +2562,47 @@ export async function updateOperationalPoster(
       input.footer === undefined
         ? previous.footer
         : input.footer?.trim() || null,
+    product_name:
+      input.product_name === undefined
+        ? previous.product_name
+        : input.product_name?.trim() || null,
+    product_description:
+      input.product_description === undefined
+        ? previous.product_description
+        : input.product_description?.trim() || null,
+    price_text:
+      input.price_text === undefined
+        ? previous.price_text
+        : input.price_text?.trim() || null,
+    sale_unit:
+      input.sale_unit === undefined
+        ? previous.sale_unit
+        : input.sale_unit?.trim() || null,
+    product_name_size:
+      input.product_name_size === undefined
+        ? previous.product_name_size ?? 32
+        : Math.max(12, Number(input.product_name_size) || 32),
+    description_size:
+      input.description_size === undefined
+        ? previous.description_size ?? 18
+        : Math.max(10, Number(input.description_size) || 18),
+    price_size:
+      input.price_size === undefined
+        ? previous.price_size ?? 72
+        : Math.max(20, Number(input.price_size) || 72),
+    sale_unit_size:
+      input.sale_unit_size === undefined
+        ? previous.sale_unit_size ?? 18
+        : Math.max(8, Number(input.sale_unit_size) || 18),
     tone: input.tone ?? previous.tone,
     format: input.format ?? previous.format,
     active: input.active ?? previous.active,
   }
 
   if (!payload.title) throw new Error("Informe o titulo do cartaz.")
-  if (!payload.body) throw new Error("Informe o conteudo do cartaz.")
+  if (!payload.body && !payload.product_description) {
+    throw new Error("Informe o conteudo do cartaz.")
+  }
 
   const { data, error } = await supabase
     .from("operational_posters")

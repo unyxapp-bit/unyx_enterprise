@@ -136,6 +136,41 @@
 
 @media print {
   @page {
+    size: A4 portrait;
+    margin: 6mm;
+  }
+
+  @page fiscal-coupon {
+    size: 80mm auto;
+    margin: 4mm;
+  }
+
+  @page poster-a2 {
+    size: A2 portrait;
+    margin: 8mm;
+  }
+
+  @page poster-a3 {
+    size: A3 portrait;
+    margin: 7mm;
+  }
+
+  @page poster-a4 {
+    size: A4 portrait;
+    margin: 6mm;
+  }
+
+  @page poster-a5 {
+    size: A5 portrait;
+    margin: 5mm;
+  }
+
+  @page poster-a6 {
+    size: A6 portrait;
+    margin: 4mm;
+  }
+
+  @page poster-thermal {
     size: 80mm auto;
     margin: 4mm;
   }
@@ -158,6 +193,7 @@
     width: 72mm;
     color: #000;
     background: #fff;
+    page: fiscal-coupon;
   }
 
   .poster-print-root {
@@ -168,6 +204,54 @@
     justify-content: center;
     color: #111;
     background: #fff;
+    page: poster-a4;
+  }
+
+  .poster-format-a2 {
+    page: poster-a2;
+  }
+
+  .poster-format-a3 {
+    page: poster-a3;
+  }
+
+  .poster-format-a5 {
+    page: poster-a5;
+  }
+
+  .poster-format-a6 {
+    page: poster-a6;
+  }
+
+  .poster-format-thermal {
+    page: poster-thermal;
+  }
+
+  .poster-print-root .poster-template-canvas {
+    width: 198mm;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .poster-format-a2 .poster-template-canvas {
+    width: 404mm;
+  }
+
+  .poster-format-a3 .poster-template-canvas {
+    width: 283mm;
+  }
+
+  .poster-format-a5 .poster-template-canvas {
+    width: 138mm;
+  }
+
+  .poster-format-a6 .poster-template-canvas {
+    width: 97mm;
+  }
+
+  .poster-format-thermal .poster-template-canvas {
+    width: 72mm;
   }
 
   .poster-print-page {

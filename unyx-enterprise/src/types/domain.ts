@@ -477,7 +477,7 @@ export interface OperationalFormResponse {
 }
 
 export type OperationalPosterTone = "neutral" | "info" | "attention" | "urgent" | "success"
-export type OperationalPosterFormat = "a4" | "a5" | "thermal"
+export type OperationalPosterFormat = "a2" | "a3" | "a4" | "a5" | "a6" | "thermal"
 
 export interface OperationalPoster {
   id: string
@@ -485,10 +485,19 @@ export interface OperationalPoster {
   branch_id: string | null
   sector_id: string | null
   created_by: string | null
+  template_key: string | null
   title: string
   subtitle: string | null
   body: string
   footer: string | null
+  product_name: string | null
+  product_description: string | null
+  price_text: string | null
+  sale_unit: string | null
+  product_name_size: number
+  description_size: number
+  price_size: number
+  sale_unit_size: number
   tone: OperationalPosterTone
   format: OperationalPosterFormat
   active: boolean

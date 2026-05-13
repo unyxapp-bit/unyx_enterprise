@@ -93,14 +93,41 @@ create table if not exists public.operational_posters (
   subtitle text,
   body text not null,
   footer text,
+  template_key text,
+  product_name text,
+  product_description text,
+  price_text text,
+  sale_unit text,
+  product_name_size integer not null default 32,
+  description_size integer not null default 18,
+  price_size integer not null default 72,
+  sale_unit_size integer not null default 18,
   tone text not null default 'attention'
     check (tone in ('neutral', 'info', 'attention', 'urgent', 'success')),
   format text not null default 'a4'
-    check (format in ('a4', 'a5', 'thermal')),
+    check (format in ('a2', 'a3', 'a4', 'a5', 'a6', 'thermal')),
   active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.operational_posters
+  add column if not exists template_key text,
+  add column if not exists product_name text,
+  add column if not exists product_description text,
+  add column if not exists price_text text,
+  add column if not exists sale_unit text,
+  add column if not exists product_name_size integer not null default 32,
+  add column if not exists description_size integer not null default 18,
+  add column if not exists price_size integer not null default 72,
+  add column if not exists sale_unit_size integer not null default 18;
+
+alter table public.operational_posters
+  drop constraint if exists operational_posters_format_check;
+
+alter table public.operational_posters
+  add constraint operational_posters_format_check
+  check (format in ('a2', 'a3', 'a4', 'a5', 'a6', 'thermal'));
 
 create index if not exists idx_operational_notes_org_time
 on public.operational_notes(organization_id, active, created_at desc);
