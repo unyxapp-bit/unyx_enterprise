@@ -253,7 +253,9 @@ const emptyForm = {
 type PosterForm = typeof emptyForm
 
 function templateUrl(template: PosterTemplate) {
-  return template.file ? `/cartaz-templates/${encodeURIComponent(template.file)}` : ""
+  return template.file
+    ? `${import.meta.env.BASE_URL}cartaz-templates/${encodeURIComponent(template.file)}`
+    : ""
 }
 
 function getPosterTemplate(key?: string | null) {
@@ -334,6 +336,7 @@ function areaStyle(
 ): CSSProperties {
   return {
     position: "absolute",
+    zIndex: 1,
     left: area.left,
     top: area.top,
     width: area.width,
@@ -379,15 +382,21 @@ function PosterCanvas({
       className="poster-template-canvas relative isolate overflow-hidden rounded-lg border bg-white shadow-sm"
       style={{
         aspectRatio: print ? paperAspectByFormat[data.format] : template.aspectRatio,
-        backgroundImage: hasTemplate ? `url("${templateUrl(template)}")` : undefined,
-        backgroundPosition: "center",
-        backgroundRepeat: "no-repeat",
-        backgroundSize: "100% 100%",
         ...(hasTemplate ? {} : blankToneStyle(data.tone)),
       }}
     >
+      {hasTemplate ? (
+        <img
+          alt=""
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 z-0 size-full object-fill"
+          draggable={false}
+          src={templateUrl(template)}
+        />
+      ) : null}
+
       {!hasTemplate ? (
-        <div className="absolute inset-x-[8%] top-[7%] border-b-4 border-current pb-3 text-center text-sm font-black uppercase text-slate-900">
+        <div className="absolute inset-x-[8%] top-[7%] z-10 border-b-4 border-current pb-3 text-center text-sm font-black uppercase text-slate-900">
           {data.subtitle || "OFERTA"}
         </div>
       ) : null}
@@ -452,6 +461,7 @@ function PosterCanvas({
         <div
           className="absolute inset-x-[8%] bottom-[4%] text-center font-bold uppercase text-slate-900"
           style={{
+            zIndex: 1,
             fontSize: `${clamp(data.sale_unit_size * scale * 0.72, 7, 36)}px`,
             letterSpacing: 0,
             lineHeight: 1.15,
