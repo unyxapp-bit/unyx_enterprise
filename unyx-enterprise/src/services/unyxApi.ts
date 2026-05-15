@@ -2033,6 +2033,7 @@ export interface OperationalPosterInput {
 export type AiAgentSeverity = "normal" | "medio" | "alto" | "critico"
 export type AiAgentPriority = "baixa" | "media" | "alta"
 export type AiAgentProvider = "openai" | "fallback"
+export type AiAgentIntent = "analyze" | "resolve"
 
 export interface AiAgentRisk {
   title: string
@@ -2058,12 +2059,42 @@ export interface AiAgentNextAction {
   tool_name: string | null
 }
 
+export interface AiAgentTarget {
+  id?: string | null
+  branch_id?: string | null
+  title?: string | null
+  severity?: AiAgentSeverity | null
+  evidence?: string | null
+  action?: string | null
+}
+
+export interface AiAgentResolutionNote {
+  title: string
+  content: string
+  category: string
+  priority: OperationalSupportPriority
+  status: Extract<OperationalNoteStatus, "open" | "in_review">
+}
+
+export interface AiAgentResolution {
+  status: "none" | "drafted"
+  target_title: string
+  severity: AiAgentSeverity
+  diagnosis: string
+  immediate_steps: string[]
+  recommended_message: string
+  preventive_actions: string[]
+  confirmation_required: boolean
+  apply_note: AiAgentResolutionNote
+}
+
 export interface AiAgentInsight {
   summary: string
   overall_severity: AiAgentSeverity
   risks: AiAgentRisk[]
   recommendations: AiAgentRecommendation[]
   next_action: AiAgentNextAction
+  resolution: AiAgentResolution
   chat_answer: string
   tools_used: string[]
   provider?: AiAgentProvider
@@ -2073,6 +2104,8 @@ export interface AiAgentInsight {
 
 export interface AiAgentInput {
   branch_id: string | null
+  intent?: AiAgentIntent | null
+  target?: AiAgentTarget | null
   question?: string | null
 }
 

@@ -494,6 +494,8 @@ export function useAiAgent() {
     mutationFn: (input?: Partial<AiAgentInput>) =>
       runAiAgent({
         branch_id: input?.branch_id ?? selectedBranchId ?? null,
+        intent: input?.intent ?? "analyze",
+        target: input?.target ?? null,
         question: input?.question ?? null,
       }),
     onError: (error) => {

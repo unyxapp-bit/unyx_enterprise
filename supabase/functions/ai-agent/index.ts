@@ -1,10 +1,23 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.105.1"
 
 type AgentSeverity = "normal" | "medio" | "alto" | "critico"
+type AgentIntent = "analyze" | "resolve"
+type OperationalSupportPriority = "low" | "normal" | "high" | "urgent"
+
+type AgentTarget = {
+  id?: string | null
+  branch_id?: string | null
+  title?: string | null
+  severity?: AgentSeverity | null
+  evidence?: string | null
+  action?: string | null
+}
 
 type AgentRequest = {
   branch_id?: string | null
   question?: string | null
+  intent?: AgentIntent | null
+  target?: AgentTarget | null
 }
 
 type UserProfile = {
@@ -26,6 +39,64 @@ const corsHeaders = {
 const jsonHeaders = {
   ...corsHeaders,
   "Content-Type": "application/json",
+}
+
+const resolutionSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    status: {
+      type: "string",
+      enum: ["none", "drafted"],
+    },
+    target_title: { type: "string" },
+    severity: {
+      type: "string",
+      enum: ["normal", "medio", "alto", "critico"],
+    },
+    diagnosis: { type: "string" },
+    immediate_steps: {
+      type: "array",
+      maxItems: 6,
+      items: { type: "string" },
+    },
+    recommended_message: { type: "string" },
+    preventive_actions: {
+      type: "array",
+      maxItems: 5,
+      items: { type: "string" },
+    },
+    confirmation_required: { type: "boolean" },
+    apply_note: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        title: { type: "string" },
+        content: { type: "string" },
+        category: { type: "string" },
+        priority: {
+          type: "string",
+          enum: ["low", "normal", "high", "urgent"],
+        },
+        status: {
+          type: "string",
+          enum: ["open", "in_review"],
+        },
+      },
+      required: ["title", "content", "category", "priority", "status"],
+    },
+  },
+  required: [
+    "status",
+    "target_title",
+    "severity",
+    "diagnosis",
+    "immediate_steps",
+    "recommended_message",
+    "preventive_actions",
+    "confirmation_required",
+    "apply_note",
+  ],
 }
 
 const insightSchema = {
@@ -87,6 +158,7 @@ const insightSchema = {
       },
       required: ["title", "description", "can_execute", "tool_name"],
     },
+    resolution: resolutionSchema,
     chat_answer: { type: "string" },
     tools_used: {
       type: "array",
@@ -99,6 +171,7 @@ const insightSchema = {
     "risks",
     "recommendations",
     "next_action",
+    "resolution",
     "chat_answer",
     "tools_used",
   ],
@@ -147,6 +220,90 @@ function scopedBranchId(profile: UserProfile, requestedBranchId?: string | null)
 
 function compactRows(rows: unknown[], maxRows: number) {
   return rows.slice(0, maxRows)
+}
+
+function emptyResolution() {
+  return {
+    status: "none",
+    target_title: "",
+    severity: "normal" as AgentSeverity,
+    diagnosis: "",
+    immediate_steps: [] as string[],
+    recommended_message: "",
+    preventive_actions: [] as string[],
+    confirmation_required: false,
+    apply_note: {
+      title: "",
+      content: "",
+      category: "IA operacional",
+      priority: "normal" as OperationalSupportPriority,
+      status: "open",
+    },
+  }
+}
+
+function priorityForSeverity(severity: AgentSeverity): OperationalSupportPriority {
+  if (severity === "critico") return "urgent"
+  if (severity === "alto") return "high"
+  if (severity === "medio") return "normal"
+  return "low"
+}
+
+function buildFallbackResolution(
+  context: Awaited<ReturnType<typeof fetchContext>>,
+  severity: AgentSeverity,
+  target: AgentTarget | null
+) {
+  const targetTitle =
+    target?.title?.trim() ||
+    (context.status_counts.critical > 0
+      ? "Risco critico operacional"
+      : "Risco operacional")
+  const evidence =
+    target?.evidence?.trim() ||
+    `${context.status_counts.critical} status critico(s), ${context.recent_event_counts.delays} atraso(s) e ${context.recent_event_counts.absences} falta(s) recentes.`
+  const suggestedAction =
+    target?.action?.trim() ||
+    "Validar a situacao com o responsavel da filial e registrar a acao executada."
+  const immediateSteps = [
+    "Confirmar se o alerta continua ativo no painel operacional.",
+    "Acionar o responsavel da filial ou setor antes do proximo pico.",
+    "Registrar a acao tomada para manter historico da ocorrencia.",
+  ]
+  const content = [
+    `Diagnostico: ${targetTitle}.`,
+    `Evidencia: ${evidence}`,
+    `Acao recomendada: ${suggestedAction}`,
+    "",
+    "Passos imediatos:",
+    ...immediateSteps.map((step, index) => `${index + 1}. ${step}`),
+  ].join("\n")
+
+  return {
+    status: "drafted",
+    target_title: targetTitle,
+    severity,
+    diagnosis:
+      severity === "critico"
+        ? "Ha prioridade critica ativa e a acao deve ser acompanhada ate conclusao."
+        : "Ha prioridade alta que precisa de acompanhamento do gestor.",
+    immediate_steps: immediateSteps,
+    recommended_message:
+      "Temos um alerta prioritario ativo. Por favor, valide a situacao agora, informe a acao tomada e registre o retorno no sistema.",
+    preventive_actions: [
+      "Revisar recorrencia no fechamento do turno.",
+      "Confirmar cobertura de equipe para os proximos horarios.",
+      "Acompanhar se o mesmo motivo reaparece nos proximos dias.",
+    ],
+    confirmation_required: true,
+    apply_note: {
+      title: `IA - ${targetTitle}`.slice(0, 120),
+      content,
+      category: "IA operacional",
+      priority: priorityForSeverity(severity),
+      status: "in_review",
+    },
+  }
 }
 
 async function fetchContext(
@@ -256,12 +413,18 @@ async function fetchContext(
   }
 }
 
-function fallbackInsight(context: Awaited<ReturnType<typeof fetchContext>>, question: string | null) {
+function fallbackInsight(
+  context: Awaited<ReturnType<typeof fetchContext>>,
+  question: string | null,
+  intent: AgentIntent,
+  target: AgentTarget | null
+) {
   const critical = context.status_counts.critical
   const delays = context.recent_event_counts.delays
   const absences = context.recent_event_counts.absences
   const severity: AgentSeverity =
     critical > 0 ? "critico" : delays >= 3 || absences >= 2 ? "alto" : delays > 0 ? "medio" : "normal"
+  const targetSeverity = target?.severity ?? severity
 
   return {
     summary:
@@ -303,6 +466,10 @@ function fallbackInsight(context: Awaited<ReturnType<typeof fetchContext>>, ques
       can_execute: false,
       tool_name: null,
     },
+    resolution:
+      intent === "resolve"
+        ? buildFallbackResolution(context, targetSeverity, target)
+        : emptyResolution(),
     chat_answer: question
       ? `Com os dados atuais, minha leitura e: ${critical} risco(s) critico(s), ${delays} atraso(s) e ${absences} falta(s) recentes.`
       : "Clique em perguntar ao agente para aprofundar um ponto especifico.",
@@ -377,10 +544,12 @@ Deno.serve(async (request) => {
     const branchId = scopedBranchId(profile as UserProfile, payload.branch_id)
     const context = await fetchContext(supabase, profile as UserProfile, branchId)
     const question = payload.question?.trim() || null
+    const intent: AgentIntent = payload.intent === "resolve" ? "resolve" : "analyze"
+    const target = payload.target ?? null
 
     if (!openaiKey) {
       return jsonResponse({
-        ...fallbackInsight(context, question),
+        ...fallbackInsight(context, question, intent, target),
         provider: "fallback",
         warning: "OPENAI_API_KEY nao configurada. Usando regras locais.",
       })
@@ -393,13 +562,17 @@ Deno.serve(async (request) => {
           {
             role: "system",
             content:
-              "Voce e o Unyx AI Agent, um agente operacional para varejo, food service e equipes de loja. Analise apenas os dados fornecidos. Seja objetivo, pratico e conservador. Nao invente dados. Nao diga que executou acoes. Acoes sensiveis exigem confirmacao humana. Responda em portugues do Brasil sem acentos problematicos quando possivel.",
+              "Voce e o Unyx AI Agent, um agente operacional para varejo, food service e equipes de loja. Analise apenas os dados fornecidos. Seja objetivo, pratico e conservador. Nao invente dados. Nao diga que executou acoes. Acoes sensiveis exigem confirmacao humana. Quando intent for resolve, gere uma proposta aplicavel para o gestor revisar e registrar como tarefa operacional. Quando intent for analyze, deixe resolution.status como none. Responda em portugues do Brasil sem acentos problematicos quando possivel.",
           },
           {
             role: "user",
             content: JSON.stringify({
               task:
-                "Analise a operacao atual, identifique riscos, recomende acoes e responda a pergunta do gestor se existir.",
+                intent === "resolve"
+                  ? "Resolva de forma assistida o alvo priorizado. Gere diagnostico, passos imediatos, mensagem recomendada, prevencao e uma anotacao operacional pronta para registro. Nao execute mudancas reais."
+                  : "Analise a operacao atual, identifique riscos, recomende acoes e responda a pergunta do gestor se existir.",
+              intent,
+              target,
               question,
               context,
             }),
@@ -429,7 +602,7 @@ Deno.serve(async (request) => {
       console.error("[ai-agent] OpenAI error", openaiData)
       const reason = sanitizeOpenAiError(openaiData)
       return jsonResponse({
-        ...fallbackInsight(context, question),
+        ...fallbackInsight(context, question, intent, target),
         provider: "fallback",
         warning: `OpenAI retornou erro (${reason}). Usando regras locais.`,
       })
@@ -445,7 +618,7 @@ Deno.serve(async (request) => {
 
     if (!outputText) {
       return jsonResponse({
-        ...fallbackInsight(context, question),
+        ...fallbackInsight(context, question, intent, target),
         provider: "fallback",
         warning: "Resposta vazia da OpenAI. Usando regras locais.",
       })
