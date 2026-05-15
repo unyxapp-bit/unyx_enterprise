@@ -12,7 +12,7 @@ npm run supabase:secrets:set
 
 Use `supabase/.env.local` como base local. Ele deve seguir `supabase/.env.example` e nao deve ser commitado.
 
-`OPENAI_MODEL` e opcional. Se nao for definido, a funcao usa `gpt-5.5`.
+`OPENAI_MODEL` e opcional. Se nao for definido, a funcao usa `gpt-5.4-mini`, que e o padrao recomendado aqui por custo e disponibilidade.
 
 ## Login e link
 

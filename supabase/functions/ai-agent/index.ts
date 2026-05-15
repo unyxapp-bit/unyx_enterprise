@@ -316,6 +316,17 @@ function fallbackInsight(context: Awaited<ReturnType<typeof fetchContext>>, ques
   }
 }
 
+function sanitizeOpenAiError(value: unknown) {
+  const error = (value as { error?: { code?: string; message?: string; type?: string } })?.error
+  if (!error) return "erro_desconhecido"
+
+  const raw = [error.code, error.type, error.message].filter(Boolean).join(" - ")
+  return raw
+    .replace(/sk-proj-[A-Za-z0-9_-]+/g, "sk-proj-***")
+    .replace(/sk-[A-Za-z0-9_-]+/g, "sk-***")
+    .slice(0, 260)
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders })
@@ -329,7 +340,7 @@ Deno.serve(async (request) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")
     const openaiKey = Deno.env.get("OPENAI_API_KEY")
-    const openaiModel = Deno.env.get("OPENAI_MODEL") || "gpt-5.5"
+    const openaiModel = Deno.env.get("OPENAI_MODEL") || "gpt-5.4-mini"
     const authHeader = request.headers.get("Authorization") ?? ""
     const token = authHeader.replace("Bearer ", "")
 
@@ -416,10 +427,11 @@ Deno.serve(async (request) => {
 
     if (!response.ok) {
       console.error("[ai-agent] OpenAI error", openaiData)
+      const reason = sanitizeOpenAiError(openaiData)
       return jsonResponse({
         ...fallbackInsight(context, question),
         provider: "fallback",
-        warning: "OpenAI indisponivel. Usando regras locais.",
+        warning: `OpenAI retornou erro (${reason}). Usando regras locais.`,
       })
     }
 
