@@ -7,17 +7,27 @@ Edge Function: `ai-agent`
 Configure a chave da OpenAI somente no Supabase:
 
 ```bash
-supabase secrets set OPENAI_API_KEY="sua_chave_openai"
-supabase secrets set OPENAI_MODEL="gpt-5.5"
+npm run supabase:secrets:set
 ```
 
+Use `supabase/.env.local` como base local. Ele deve seguir `supabase/.env.example` e nao deve ser commitado.
+
 `OPENAI_MODEL` e opcional. Se nao for definido, a funcao usa `gpt-5.5`.
+
+## Login e link
+
+```bash
+npm run supabase:login
+npm run supabase:link -- <project-ref>
+```
 
 ## Deploy
 
 ```bash
-supabase functions deploy ai-agent
+npm run supabase:functions:deploy
 ```
+
+O deploy usa `--use-api`, entao nao depende do Docker para publicar a Edge Function.
 
 ## Como funciona
 

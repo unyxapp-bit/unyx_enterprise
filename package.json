@@ -1,0 +1,33 @@
+{
+  "name": "unyx-enterprise",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Root tooling for Unyx Enterprise Supabase workflows.",
+  "scripts": {
+    "supabase": "supabase",
+    "supabase:version": "supabase --version",
+    "supabase:login": "supabase login",
+    "supabase:link": "supabase link --project-ref",
+    "supabase:status": "supabase status",
+    "supabase:start": "supabase start",
+    "supabase:stop": "supabase stop",
+    "supabase:functions:list": "supabase functions list --project-ref tctyxfedbbuycyvhafwk",
+    "supabase:functions:serve": "supabase functions serve ai-agent --env-file ./supabase/.env.local",
+    "supabase:functions:deploy": "supabase functions deploy ai-agent --use-api --project-ref tctyxfedbbuycyvhafwk",
+    "supabase:secrets:set": "supabase secrets set --env-file ./supabase/.env.local --project-ref tctyxfedbbuycyvhafwk",
+    "supabase:secrets:list": "supabase secrets list --project-ref tctyxfedbbuycyvhafwk",
+    "supabase:types": "supabase gen types typescript --project-id tctyxfedbbuycyvhafwk --schema public > unyx-enterprise/src/types/supabase.generated.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/unyxapp-bit/unyx_enterprise.git"
+  },
+  "license": "UNLICENSED",
+  "bugs": {
+    "url": "https://github.com/unyxapp-bit/unyx_enterprise/issues"
+  },
+  "homepage": "https://github.com/unyxapp-bit/unyx_enterprise#readme",
+  "devDependencies": {
+    "supabase": "^2.98.2"
+  }
+}
