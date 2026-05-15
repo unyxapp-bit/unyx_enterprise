@@ -345,6 +345,14 @@ function areaPercent(area: PosterArea, axis: PosterPositionAxis) {
   return percentNumber(axis === "x" ? area.left : area.top) ?? 0
 }
 
+function areaDefaultPosition(area: PosterArea, axis: PosterPositionAxis) {
+  if (axis === "y") return areaPercent(area, "y")
+
+  const left = percentNumber(area.left) ?? 0
+  const width = percentNumber(area.width) ?? 0
+  return clamp(left + width / 2, 0, 100)
+}
+
 function cssPercent(value: number) {
   return `${formatPercentValue(value)}%`
 }
@@ -355,15 +363,22 @@ function layoutPositionValue(
   axis: PosterPositionAxis,
   fallbackArea: PosterArea
 ) {
-  return formatPercentValue(
-    percentNumber(layoutConfig?.[field]?.[axis]) ?? areaPercent(fallbackArea, axis)
-  )
+  const value = percentNumber(layoutConfig?.[field]?.[axis])
+
+  if (value === null) return formatPercentValue(areaDefaultPosition(fallbackArea, axis))
+
+  if (axis === "x" && layoutConfig?.mode !== "center") {
+    const width = percentNumber(fallbackArea.width) ?? 0
+    return formatPercentValue(clamp(value + width / 2, 0, 100))
+  }
+
+  return formatPercentValue(value)
 }
 
 function normalizeLayoutConfig(
   value: OperationalPosterLayoutConfig | null | undefined
 ): OperationalPosterLayoutConfig | null {
-  const next: OperationalPosterLayoutConfig = {}
+  const next: OperationalPosterLayoutConfig = value?.mode === "center" ? { mode: "center" } : {}
 
   for (const { field } of positionFields) {
     const x = percentNumber(value?.[field]?.x)
@@ -376,7 +391,24 @@ function normalizeLayoutConfig(
     }
   }
 
-  return Object.keys(next).length > 0 ? next : null
+  return positionFields.some(({ field }) => Boolean(next[field])) ? next : null
+}
+
+function layoutConfigPosition(
+  layoutConfig: OperationalPosterLayoutConfig | null,
+  field: OperationalPosterLayoutField,
+  area: PosterArea,
+  axis: PosterPositionAxis
+) {
+  const value = percentNumber(layoutConfig?.[field]?.[axis])
+  if (value === null) return areaDefaultPosition(area, axis)
+
+  if (axis === "x" && layoutConfig?.mode !== "center") {
+    const width = percentNumber(area.width) ?? 0
+    return clamp(value + width / 2, 0, 100)
+  }
+
+  return value
 }
 
 function areaWithPosition(
@@ -384,10 +416,14 @@ function areaWithPosition(
   layoutConfig: OperationalPosterLayoutConfig | null,
   field: OperationalPosterLayoutField
 ): PosterArea {
+  const width = percentNumber(area.width) ?? 0
+  const centerX = layoutConfigPosition(layoutConfig, field, area, "x")
+  const top = layoutConfigPosition(layoutConfig, field, area, "y")
+
   return {
     ...area,
-    left: cssPercent(percentNumber(layoutConfig?.[field]?.x) ?? areaPercent(area, "x")),
-    top: cssPercent(percentNumber(layoutConfig?.[field]?.y) ?? areaPercent(area, "y")),
+    left: cssPercent(clamp(centerX - width / 2, 0, Math.max(0, 100 - width))),
+    top: cssPercent(top),
   }
 }
 
@@ -405,21 +441,26 @@ function resolveTemplateLayout(
   }
 }
 
-function buildLayoutConfigFromForm(form: PosterForm): OperationalPosterLayoutConfig {
+function buildLayoutConfigFromForm(form: PosterForm): OperationalPosterLayoutConfig | null {
   const template = getPosterTemplate(form.template_key)
-  const next: OperationalPosterLayoutConfig = {}
+  const next: OperationalPosterLayoutConfig = { mode: "center" }
 
   for (const { field } of positionFields) {
     const xKey = positionFormKeys[field].x
     const yKey = positionFormKeys[field].y
     const area = template.layout[field]
-    next[field] = {
-      x: percentNumber(form[xKey]) ?? areaPercent(area, "x"),
-      y: percentNumber(form[yKey]) ?? areaPercent(area, "y"),
-    }
+    const x = percentNumber(form[xKey])
+    const y = percentNumber(form[yKey])
+    const defaultX = areaDefaultPosition(area, "x")
+    const defaultY = areaDefaultPosition(area, "y")
+    const fieldConfig: { x?: number; y?: number } = {}
+
+    if (x !== null && Math.abs(x - defaultX) > 0.05) fieldConfig.x = x
+    if (y !== null && Math.abs(y - defaultY) > 0.05) fieldConfig.y = y
+    if (Object.keys(fieldConfig).length > 0) next[field] = fieldConfig
   }
 
-  return next
+  return positionFields.some(({ field }) => Boolean(next[field])) ? next : null
 }
 
 function getFormPositionValue(
@@ -951,12 +992,14 @@ export function OperationalPostersPage() {
                       <select
                         className={fieldClass}
                         value={form.template_key}
-                        onChange={(event) =>
+                        onChange={(event) => {
+                          const templateKey = event.target.value
                           setForm((current) => ({
                             ...current,
-                            template_key: event.target.value,
+                            template_key: templateKey,
+                            ...formPositionsFromLayoutConfig(null, templateKey),
                           }))
-                        }
+                        }}
                       >
                         {posterTemplates.map((template) => (
                           <option key={template.key} value={template.key}>

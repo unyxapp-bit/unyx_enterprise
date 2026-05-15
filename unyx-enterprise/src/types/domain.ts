@@ -488,7 +488,9 @@ export type OperationalPosterLayoutField =
 
 export type OperationalPosterLayoutConfig = Partial<
   Record<OperationalPosterLayoutField, { x?: number | null; y?: number | null }>
->
+> & {
+  mode?: "center" | null
+}
 
 export interface OperationalPoster {
   id: string
