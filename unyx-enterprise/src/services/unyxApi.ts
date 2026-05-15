@@ -41,6 +41,7 @@ import type {
   OperationalNoteStatus,
   OperationalPoster,
   OperationalPosterFormat,
+  OperationalPosterLayoutConfig,
   OperationalPosterTone,
   OperationalSupportPriority,
   OperationalStatusRecord,
@@ -2024,6 +2025,7 @@ export interface OperationalPosterInput {
   description_size: number
   price_size: number
   sale_unit_size: number
+  layout_config: OperationalPosterLayoutConfig | null
   tone: OperationalPosterTone
   format: OperationalPosterFormat
 }
@@ -2504,6 +2506,7 @@ export async function createOperationalPoster(
       description_size: Math.max(10, Number(input.description_size) || 18),
       price_size: Math.max(20, Number(input.price_size) || 72),
       sale_unit_size: Math.max(8, Number(input.sale_unit_size) || 18),
+      layout_config: input.layout_config ?? null,
       tone: input.tone,
       format: input.format,
     })
@@ -2594,6 +2597,8 @@ export async function updateOperationalPoster(
       input.sale_unit_size === undefined
         ? previous.sale_unit_size ?? 18
         : Math.max(8, Number(input.sale_unit_size) || 18),
+    layout_config:
+      input.layout_config === undefined ? previous.layout_config ?? null : input.layout_config,
     tone: input.tone ?? previous.tone,
     format: input.format ?? previous.format,
     active: input.active ?? previous.active,

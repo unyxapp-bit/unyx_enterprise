@@ -478,6 +478,17 @@ export interface OperationalFormResponse {
 
 export type OperationalPosterTone = "neutral" | "info" | "attention" | "urgent" | "success"
 export type OperationalPosterFormat = "a2" | "a3" | "a4" | "a5" | "a6" | "thermal"
+export type OperationalPosterLayoutField =
+  | "subtitle"
+  | "product"
+  | "description"
+  | "price"
+  | "unit"
+  | "footer"
+
+export type OperationalPosterLayoutConfig = Partial<
+  Record<OperationalPosterLayoutField, { x?: number | null; y?: number | null }>
+>
 
 export interface OperationalPoster {
   id: string
@@ -498,6 +509,7 @@ export interface OperationalPoster {
   description_size: number
   price_size: number
   sale_unit_size: number
+  layout_config: OperationalPosterLayoutConfig | null
   tone: OperationalPosterTone
   format: OperationalPosterFormat
   active: boolean

@@ -4,6 +4,7 @@ import {
   Edit3,
   ImageIcon,
   Megaphone,
+  Move,
   Plus,
   Printer,
   Trash2,
@@ -37,6 +38,8 @@ import { useAppStore } from "@/store/useAppStore"
 import type {
   OperationalPoster,
   OperationalPosterFormat,
+  OperationalPosterLayoutConfig,
+  OperationalPosterLayoutField,
   OperationalPosterTone,
 } from "@/types/domain"
 
@@ -86,6 +89,17 @@ const paperAspectByFormat: Record<OperationalPosterFormat, string> = {
 
 const saleUnits = ["unid", "kg", "g", "cx", "pct", "lt", "ml", "m", "dz"]
 
+type PosterPositionAxis = "x" | "y"
+
+const positionFields: Array<{ field: OperationalPosterLayoutField; label: string }> = [
+  { field: "subtitle", label: "Chamada superior" },
+  { field: "product", label: "Produto" },
+  { field: "description", label: "Descricao" },
+  { field: "price", label: "Valor" },
+  { field: "unit", label: "Forma de venda" },
+  { field: "footer", label: "Rodape" },
+]
+
 type PosterArea = {
   left: string
   top: string
@@ -100,10 +114,12 @@ type PosterTemplate = {
   file: string | null
   aspectRatio: string
   layout: {
+    subtitle: PosterArea
     product: PosterArea
     description: PosterArea
     price: PosterArea
     unit: PosterArea
+    footer: PosterArea
   }
   textColor?: string
   priceColor?: string
@@ -123,29 +139,36 @@ type PosterCanvasData = {
   description_size: number
   price_size: number
   sale_unit_size: number
+  layout_config: OperationalPosterLayoutConfig | null
   tone: OperationalPosterTone
   format: OperationalPosterFormat
 }
 
 const centeredLayout: PosterTemplate["layout"] = {
+  subtitle: { top: "10%", left: "8%", width: "84%" },
   product: { top: "42%", left: "8%", width: "84%" },
   description: { top: "53%", left: "10%", width: "80%" },
   price: { top: "65%", left: "8%", width: "84%" },
   unit: { top: "77%", left: "18%", width: "64%" },
+  footer: { top: "94%", left: "8%", width: "84%" },
 }
 
 const lowOfferLayout: PosterTemplate["layout"] = {
+  subtitle: { top: "12%", left: "8%", width: "84%" },
   product: { top: "50%", left: "9%", width: "82%" },
   description: { top: "59%", left: "12%", width: "76%" },
   price: { top: "72%", left: "8%", width: "84%" },
   unit: { top: "84%", left: "18%", width: "64%" },
+  footer: { top: "94%", left: "8%", width: "84%" },
 }
 
 const highNoticeLayout: PosterTemplate["layout"] = {
+  subtitle: { top: "10%", left: "8%", width: "84%" },
   product: { top: "32%", left: "9%", width: "82%" },
   description: { top: "46%", left: "10%", width: "80%" },
   price: { top: "61%", left: "8%", width: "84%" },
   unit: { top: "75%", left: "18%", width: "64%" },
+  footer: { top: "92%", left: "8%", width: "84%" },
 }
 
 const posterTemplates: PosterTemplate[] = [
@@ -246,11 +269,38 @@ const emptyForm = {
   description_size: "18",
   price_size: "76",
   sale_unit_size: "20",
+  subtitle_x: "",
+  subtitle_y: "",
+  product_x: "",
+  product_y: "",
+  description_x: "",
+  description_y: "",
+  price_x: "",
+  price_y: "",
+  unit_x: "",
+  unit_y: "",
+  footer_x: "",
+  footer_y: "",
   tone: "attention" as OperationalPosterTone,
   format: "a4" as OperationalPosterFormat,
 }
 
 type PosterForm = typeof emptyForm
+
+const positionFormKeys = {
+  subtitle: { x: "subtitle_x", y: "subtitle_y" },
+  product: { x: "product_x", y: "product_y" },
+  description: { x: "description_x", y: "description_y" },
+  price: { x: "price_x", y: "price_y" },
+  unit: { x: "unit_x", y: "unit_y" },
+  footer: { x: "footer_x", y: "footer_y" },
+} as const satisfies Record<
+  OperationalPosterLayoutField,
+  Record<PosterPositionAxis, keyof PosterForm>
+>
+
+type PositionFormKey =
+  (typeof positionFormKeys)[OperationalPosterLayoutField][PosterPositionAxis]
 
 function templateUrl(template: PosterTemplate) {
   return template.file
@@ -276,6 +326,145 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)
 }
 
+function percentNumber(value: unknown) {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? clamp(value, 0, 100) : null
+  }
+  if (typeof value === "string") {
+    const parsed = Number(value.replace("%", "").trim())
+    return Number.isFinite(parsed) ? clamp(parsed, 0, 100) : null
+  }
+  return null
+}
+
+function formatPercentValue(value: number) {
+  return String(Math.round(clamp(value, 0, 100) * 10) / 10)
+}
+
+function areaPercent(area: PosterArea, axis: PosterPositionAxis) {
+  return percentNumber(axis === "x" ? area.left : area.top) ?? 0
+}
+
+function cssPercent(value: number) {
+  return `${formatPercentValue(value)}%`
+}
+
+function layoutPositionValue(
+  layoutConfig: OperationalPosterLayoutConfig | null | undefined,
+  field: OperationalPosterLayoutField,
+  axis: PosterPositionAxis,
+  fallbackArea: PosterArea
+) {
+  return formatPercentValue(
+    percentNumber(layoutConfig?.[field]?.[axis]) ?? areaPercent(fallbackArea, axis)
+  )
+}
+
+function normalizeLayoutConfig(
+  value: OperationalPosterLayoutConfig | null | undefined
+): OperationalPosterLayoutConfig | null {
+  const next: OperationalPosterLayoutConfig = {}
+
+  for (const { field } of positionFields) {
+    const x = percentNumber(value?.[field]?.x)
+    const y = percentNumber(value?.[field]?.y)
+    if (x !== null || y !== null) {
+      next[field] = {
+        ...(x !== null ? { x } : {}),
+        ...(y !== null ? { y } : {}),
+      }
+    }
+  }
+
+  return Object.keys(next).length > 0 ? next : null
+}
+
+function areaWithPosition(
+  area: PosterArea,
+  layoutConfig: OperationalPosterLayoutConfig | null,
+  field: OperationalPosterLayoutField
+): PosterArea {
+  return {
+    ...area,
+    left: cssPercent(percentNumber(layoutConfig?.[field]?.x) ?? areaPercent(area, "x")),
+    top: cssPercent(percentNumber(layoutConfig?.[field]?.y) ?? areaPercent(area, "y")),
+  }
+}
+
+function resolveTemplateLayout(
+  layout: PosterTemplate["layout"],
+  layoutConfig: OperationalPosterLayoutConfig | null
+): PosterTemplate["layout"] {
+  return {
+    subtitle: areaWithPosition(layout.subtitle, layoutConfig, "subtitle"),
+    product: areaWithPosition(layout.product, layoutConfig, "product"),
+    description: areaWithPosition(layout.description, layoutConfig, "description"),
+    price: areaWithPosition(layout.price, layoutConfig, "price"),
+    unit: areaWithPosition(layout.unit, layoutConfig, "unit"),
+    footer: areaWithPosition(layout.footer, layoutConfig, "footer"),
+  }
+}
+
+function buildLayoutConfigFromForm(form: PosterForm): OperationalPosterLayoutConfig {
+  const template = getPosterTemplate(form.template_key)
+  const next: OperationalPosterLayoutConfig = {}
+
+  for (const { field } of positionFields) {
+    const xKey = positionFormKeys[field].x
+    const yKey = positionFormKeys[field].y
+    const area = template.layout[field]
+    next[field] = {
+      x: percentNumber(form[xKey]) ?? areaPercent(area, "x"),
+      y: percentNumber(form[yKey]) ?? areaPercent(area, "y"),
+    }
+  }
+
+  return next
+}
+
+function getFormPositionValue(
+  form: PosterForm,
+  field: OperationalPosterLayoutField,
+  axis: PosterPositionAxis
+) {
+  const value = form[positionFormKeys[field][axis]]
+  if (value !== "") return value
+
+  const template = getPosterTemplate(form.template_key)
+  return layoutPositionValue(null, field, axis, template.layout[field])
+}
+
+function formPositionsFromLayoutConfig(
+  layoutConfig: OperationalPosterLayoutConfig | null,
+  templateKey: string | null
+): Record<PositionFormKey, string> {
+  const template = getPosterTemplate(templateKey)
+  return {
+    subtitle_x: layoutPositionValue(layoutConfig, "subtitle", "x", template.layout.subtitle),
+    subtitle_y: layoutPositionValue(layoutConfig, "subtitle", "y", template.layout.subtitle),
+    product_x: layoutPositionValue(layoutConfig, "product", "x", template.layout.product),
+    product_y: layoutPositionValue(layoutConfig, "product", "y", template.layout.product),
+    description_x: layoutPositionValue(
+      layoutConfig,
+      "description",
+      "x",
+      template.layout.description
+    ),
+    description_y: layoutPositionValue(
+      layoutConfig,
+      "description",
+      "y",
+      template.layout.description
+    ),
+    price_x: layoutPositionValue(layoutConfig, "price", "x", template.layout.price),
+    price_y: layoutPositionValue(layoutConfig, "price", "y", template.layout.price),
+    unit_x: layoutPositionValue(layoutConfig, "unit", "x", template.layout.unit),
+    unit_y: layoutPositionValue(layoutConfig, "unit", "y", template.layout.unit),
+    footer_x: layoutPositionValue(layoutConfig, "footer", "x", template.layout.footer),
+    footer_y: layoutPositionValue(layoutConfig, "footer", "y", template.layout.footer),
+  }
+}
+
 function formToCanvasData(form: PosterForm): PosterCanvasData {
   const productName = form.product_name.trim()
   const productDescription = form.product_description.trim()
@@ -294,6 +483,7 @@ function formToCanvasData(form: PosterForm): PosterCanvasData {
     description_size: toNumber(form.description_size, 18),
     price_size: toNumber(form.price_size, 76),
     sale_unit_size: toNumber(form.sale_unit_size, 20),
+    layout_config: buildLayoutConfigFromForm(form),
     tone: form.tone,
     format: form.format,
   }
@@ -314,6 +504,7 @@ function posterToCanvasData(poster: OperationalPoster): PosterCanvasData {
     description_size: poster.description_size ?? 18,
     price_size: poster.price_size ?? 76,
     sale_unit_size: poster.sale_unit_size ?? 20,
+    layout_config: normalizeLayoutConfig(poster.layout_config),
     tone: poster.tone,
     format: poster.format,
   }
@@ -370,6 +561,9 @@ function PosterCanvas({
   const scale = print ? printScaleByFormat[data.format] : compact ? 0.36 : 0.5
   const textColor = template.textColor ?? "#111827"
   const priceColor = template.priceColor ?? textColor
+  const layout = resolveTemplateLayout(template.layout, data.layout_config)
+  const subtitleText =
+    data.subtitle || (!hasTemplate && showPlaceholders ? "OFERTA" : "")
   const productName =
     data.product_name || data.title || (showPlaceholders ? "NOME DO PRODUTO" : "")
   const productDescription =
@@ -395,16 +589,24 @@ function PosterCanvas({
         />
       ) : null}
 
-      {!hasTemplate ? (
-        <div className="absolute inset-x-[8%] top-[7%] z-10 border-b-4 border-current pb-3 text-center text-sm font-black uppercase text-slate-900">
-          {data.subtitle || "OFERTA"}
+      {subtitleText ? (
+        <div
+          style={{
+            ...areaStyle(layout.subtitle, Math.max(data.sale_unit_size, 18), scale, textColor, 900),
+            zIndex: 2,
+            borderBottom: !hasTemplate ? "4px solid currentColor" : undefined,
+            paddingBottom: !hasTemplate ? "0.35rem" : undefined,
+            lineHeight: 1.05,
+          }}
+        >
+          {subtitleText}
         </div>
       ) : null}
 
       {productName ? (
         <div
           style={areaStyle(
-            template.layout.product,
+            layout.product,
             data.product_name_size,
             scale,
             textColor,
@@ -419,7 +621,7 @@ function PosterCanvas({
         <div
           style={{
             ...areaStyle(
-              template.layout.description,
+              layout.description,
               data.description_size,
               scale,
               textColor,
@@ -435,7 +637,7 @@ function PosterCanvas({
       {priceText ? (
         <div
           style={{
-            ...areaStyle(template.layout.price, data.price_size, scale, priceColor, 900),
+            ...areaStyle(layout.price, data.price_size, scale, priceColor, 900),
             lineHeight: 0.92,
           }}
         >
@@ -446,7 +648,7 @@ function PosterCanvas({
       {unitText ? (
         <div
           style={areaStyle(
-            template.layout.unit,
+            layout.unit,
             data.sale_unit_size,
             scale,
             textColor,
@@ -459,13 +661,9 @@ function PosterCanvas({
 
       {data.footer ? (
         <div
-          className="absolute inset-x-[8%] bottom-[4%] text-center font-bold uppercase text-slate-900"
           style={{
-            zIndex: 1,
-            fontSize: `${clamp(data.sale_unit_size * scale * 0.72, 7, 36)}px`,
-            letterSpacing: 0,
+            ...areaStyle(layout.footer, data.sale_unit_size, scale, textColor, 900),
             lineHeight: 1.15,
-            textShadow: "0 1px 2px rgba(255,255,255,0.72)",
           }}
         >
           {data.footer}
@@ -510,6 +708,77 @@ function SizeControl({
         onChange={(event) => onChange(event.target.value)}
       />
     </label>
+  )
+}
+
+function PositionAxisControl({
+  label,
+  value,
+  onChange,
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+}) {
+  return (
+    <label className="space-y-1">
+      <div className="flex items-center justify-between gap-2 text-xs">
+        <span className="font-medium">{label}</span>
+        <span className="text-muted-foreground">{value}%</span>
+      </div>
+      <input
+        className={rangeClass}
+        max={100}
+        min={0}
+        step={1}
+        type="range"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      <Input
+        max={100}
+        min={0}
+        step={1}
+        type="number"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </label>
+  )
+}
+
+function PositionControl({
+  label,
+  x,
+  y,
+  onChange,
+}: {
+  label: string
+  x: string
+  y: string
+  onChange: (axis: PosterPositionAxis, value: string) => void
+}) {
+  return (
+    <div className="rounded-lg border bg-white p-2.5">
+      <div className="mb-2 flex items-center justify-between gap-2 text-sm font-medium">
+        <span>{label}</span>
+        <span className="text-xs text-muted-foreground">
+          X {x}% / Y {y}%
+        </span>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <PositionAxisControl
+          label="X"
+          value={x}
+          onChange={(value) => onChange("x", value)}
+        />
+        <PositionAxisControl
+          label="Y"
+          value={y}
+          onChange={(value) => onChange("y", value)}
+        />
+      </div>
+    </div>
   )
 }
 
@@ -567,11 +836,13 @@ export function OperationalPostersPage() {
   }
 
   function openEdit(poster: OperationalPoster) {
+    const templateKey = poster.template_key ?? "blank"
+    const layoutConfig = normalizeLayoutConfig(poster.layout_config)
     setEditing(poster)
     setForm({
       branch_id: poster.branch_id ?? "",
       sector_id: poster.sector_id ?? "",
-      template_key: poster.template_key ?? "blank",
+      template_key: templateKey,
       title: poster.title,
       subtitle: poster.subtitle ?? "",
       body: poster.body,
@@ -584,6 +855,7 @@ export function OperationalPostersPage() {
       description_size: String(poster.description_size ?? 18),
       price_size: String(poster.price_size ?? 76),
       sale_unit_size: String(poster.sale_unit_size ?? 20),
+      ...formPositionsFromLayoutConfig(layoutConfig, templateKey),
       tone: poster.tone,
       format: poster.format,
     })
@@ -614,6 +886,7 @@ export function OperationalPostersPage() {
       description_size: toNumber(form.description_size, 18),
       price_size: toNumber(form.price_size, 76),
       sale_unit_size: toNumber(form.sale_unit_size, 20),
+      layout_config: buildLayoutConfigFromForm(form),
       tone: form.tone,
       format: form.format,
     }
@@ -631,6 +904,15 @@ export function OperationalPostersPage() {
   function removePoster(poster: OperationalPoster) {
     if (!window.confirm(`Excluir o cartaz "${poster.title}"?`)) return
     void deletePoster.mutateAsync(poster.id)
+  }
+
+  function updatePosition(
+    field: OperationalPosterLayoutField,
+    axis: PosterPositionAxis,
+    value: string
+  ) {
+    const key = positionFormKeys[field][axis]
+    setForm((current) => ({ ...current, [key]: value }))
   }
 
   const isSaving = createPoster.isPending || updatePoster.isPending
@@ -866,6 +1148,24 @@ export function OperationalPostersPage() {
                           setForm((current) => ({ ...current, sale_unit_size: value }))
                         }
                       />
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border bg-slate-50 p-3">
+                    <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
+                      <Move className="size-4" />
+                      Posicao dos dados
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {positionFields.map(({ field, label }) => (
+                        <PositionControl
+                          key={field}
+                          label={label}
+                          x={getFormPositionValue(form, field, "x")}
+                          y={getFormPositionValue(form, field, "y")}
+                          onChange={(axis, value) => updatePosition(field, axis, value)}
+                        />
+                      ))}
                     </div>
                   </div>
 

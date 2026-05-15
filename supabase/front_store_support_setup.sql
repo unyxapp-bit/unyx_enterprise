@@ -102,6 +102,7 @@ create table if not exists public.operational_posters (
   description_size integer not null default 18,
   price_size integer not null default 72,
   sale_unit_size integer not null default 18,
+  layout_config jsonb,
   tone text not null default 'attention'
     check (tone in ('neutral', 'info', 'attention', 'urgent', 'success')),
   format text not null default 'a4'
@@ -120,7 +121,8 @@ alter table public.operational_posters
   add column if not exists product_name_size integer not null default 32,
   add column if not exists description_size integer not null default 18,
   add column if not exists price_size integer not null default 72,
-  add column if not exists sale_unit_size integer not null default 18;
+  add column if not exists sale_unit_size integer not null default 18,
+  add column if not exists layout_config jsonb;
 
 alter table public.operational_posters
   drop constraint if exists operational_posters_format_check;
