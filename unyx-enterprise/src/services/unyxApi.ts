@@ -2030,6 +2030,52 @@ export interface OperationalPosterInput {
   format: OperationalPosterFormat
 }
 
+export type AiAgentSeverity = "normal" | "medio" | "alto" | "critico"
+export type AiAgentPriority = "baixa" | "media" | "alta"
+export type AiAgentProvider = "openai" | "fallback"
+
+export interface AiAgentRisk {
+  title: string
+  severity: AiAgentSeverity
+  reason: string
+  evidence: string
+  action: string
+  confidence: number
+}
+
+export interface AiAgentRecommendation {
+  title: string
+  description: string
+  owner: string
+  priority: AiAgentPriority
+  requires_confirmation: boolean
+}
+
+export interface AiAgentNextAction {
+  title: string
+  description: string
+  can_execute: boolean
+  tool_name: string | null
+}
+
+export interface AiAgentInsight {
+  summary: string
+  overall_severity: AiAgentSeverity
+  risks: AiAgentRisk[]
+  recommendations: AiAgentRecommendation[]
+  next_action: AiAgentNextAction
+  chat_answer: string
+  tools_used: string[]
+  provider?: AiAgentProvider
+  model?: string
+  warning?: string
+}
+
+export interface AiAgentInput {
+  branch_id: string | null
+  question?: string | null
+}
+
 const operationalNoteSelect =
   "*, branches(name), sectors(name), user_profiles!created_by(name)"
 
@@ -2469,6 +2515,20 @@ export async function listOperationalPosters(branchId?: string | null) {
   raise(error)
 
   return (data ?? []) as OperationalPoster[]
+}
+
+export async function runAiAgent(input: AiAgentInput) {
+  const { data, error } = await supabase.functions.invoke<AiAgentInsight>("ai-agent", {
+    body: input,
+  })
+
+  if (error) throw new Error(error.message)
+  if (!data) throw new Error("O agente de IA nao retornou dados.")
+
+  const maybeError = data as AiAgentInsight & { error?: string }
+  if (maybeError.error) throw new Error(maybeError.error)
+
+  return data
 }
 
 export async function createOperationalPoster(

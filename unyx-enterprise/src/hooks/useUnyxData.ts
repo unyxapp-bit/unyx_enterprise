@@ -106,6 +106,7 @@ import {
   cancelInvitation,
   markCommsPostRead,
   recordOperationalEvent,
+  runAiAgent,
   saveOperationalSettings,
   setTrainingProgress,
   submitOperationalFormResponse,
@@ -131,6 +132,7 @@ import {
   verifyPosOperator,
 } from "@/services/unyxApi"
 import type {
+  AiAgentInput,
   BulkImportResult,
   ChecklistProcedureInput,
   CompleteSaleInput,
@@ -482,6 +484,21 @@ export function useOperationalPosters() {
     queryKey: ["operational-posters", profile?.organization_id, selectedBranchId],
     queryFn: () => listOperationalPosters(selectedBranchId),
     enabled: Boolean(profile),
+  })
+}
+
+export function useAiAgent() {
+  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
+
+  return useMutation({
+    mutationFn: (input?: Partial<AiAgentInput>) =>
+      runAiAgent({
+        branch_id: input?.branch_id ?? selectedBranchId ?? null,
+        question: input?.question ?? null,
+      }),
+    onError: (error) => {
+      toast.error(error.message)
+    },
   })
 }
 
