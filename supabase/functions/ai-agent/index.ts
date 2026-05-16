@@ -2054,6 +2054,7 @@ Deno.serve(async (request) => {
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")
     const openaiKey = Deno.env.get("OPENAI_API_KEY")
     const openaiModel = Deno.env.get("OPENAI_MODEL") || "gpt-5.4-mini"
+    const aiProviderMode = (Deno.env.get("AI_PROVIDER_MODE") || "local").toLowerCase()
     const authHeader = request.headers.get("Authorization") ?? ""
     const token = authHeader.replace("Bearer ", "")
 
@@ -2116,6 +2117,7 @@ Deno.serve(async (request) => {
       )
       return jsonResponse(responseBody)
     }
+    const directAnswer = buildDirectLookupAnswer(context)
 
     if (intent === "act") {
       const actionExecution = await executeAgentAction(supabase, context, question, requestedAction)
@@ -2130,6 +2132,22 @@ Deno.serve(async (request) => {
           actionExecution.action_result
         ),
         provider: "local",
+      })
+    }
+
+    if (directAnswer) {
+      return insightResponse({
+        ...fallbackInsight(context, question, intent, target),
+        provider: "local",
+        ai_mode: "direct_lookup",
+      })
+    }
+
+    if (aiProviderMode === "local" || aiProviderMode === "off") {
+      return insightResponse({
+        ...fallbackInsight(context, question, intent, target),
+        provider: "local",
+        ai_mode: aiProviderMode,
       })
     }
 
