@@ -35,6 +35,14 @@ O deploy usa `--use-api`, entao nao depende do Docker para publicar a Edge Funct
 - A funcao valida o JWT do usuario.
 - A funcao respeita permissao `ai` e escopo de filial.
 - A funcao busca dados operacionais no Supabase com RLS.
+- O contexto do agente e compacto e inclui, quando disponivel:
+  - estrutura da organizacao: filiais, setores e configuracoes operacionais;
+  - operacao do dia: dashboard, status, escalas, eventos de presenca, colaboradores, postos e alocacoes;
+  - suporte de loja: checklists, anotacoes, formularios, respostas, cartazes e comunicados;
+  - entregas e clientes: pedidos recentes, prioridades, status, clientes recentes e bloqueados;
+  - PDV e retaguarda: caixas, vendas do dia, pedidos de producao, documentos fiscais, produtos com estoque baixo e categorias;
+  - gestao: treinamentos ativos e auditoria recente.
+- O modelo recebe resumos, contagens e amostras recentes para evitar estourar limite de tokens; a funcao mantem dados completos suficientes para relatorios e acoes locais.
 - A intencao `analyze` gera riscos, recomendacoes e proxima acao.
 - A intencao `resolve` gera um plano assistido para prioridade alta/critica.
 - A intencao `act` executa ferramentas permitidas pelo backend.

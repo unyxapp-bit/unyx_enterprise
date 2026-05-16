@@ -322,6 +322,35 @@ function compactRows(rows: unknown[], maxRows: number) {
   return rows.slice(0, maxRows)
 }
 
+function todayStartInSaoPauloISO(today: string) {
+  return `${today}T00:00:00-03:00`
+}
+
+function optionalRows<T>(result: { data?: T[] | null; error?: { message?: string } | null }) {
+  return result.error ? [] : result.data ?? []
+}
+
+function optionalError(label: string, result: { error?: { message?: string } | null }) {
+  return result.error?.message ? `${label}: ${result.error.message}` : null
+}
+
+function countRows<T>(rows: T[], predicate: (row: T) => boolean) {
+  return rows.filter(predicate).length
+}
+
+function numericValue(value: unknown) {
+  if (typeof value === "number") return value
+  if (typeof value === "string") {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : 0
+  }
+  return 0
+}
+
+function sumRows(rows: Record<string, unknown>[], key: string) {
+  return rows.reduce((total, row) => total + numericValue(row[key]), 0)
+}
+
 function emptyActionArguments(): Required<AgentActionArguments> {
   return {
     branch_id: null,
@@ -446,7 +475,11 @@ async function fetchContext(
   branchId: string | null
 ) {
   const today = todayInSaoPaulo()
+  const todayStart = todayStartInSaoPauloISO(today)
   const recentSince = thirtyDaysAgoISO()
+  const branchScoped = (query: any) => (branchId ? query.eq("branch_id", branchId) : query)
+  const nullableBranchScoped = (query: any) =>
+    branchId ? query.or(`branch_id.is.null,branch_id.eq.${branchId}`) : query
 
   let statusesQuery = supabase
     .from("operational_status")
@@ -505,6 +538,158 @@ async function fetchContext(
     .order("started_at", { ascending: false })
     .limit(200)
 
+  let branchesQuery = supabase
+    .from("branches")
+    .select("id, name, city, state, active")
+    .eq("organization_id", profile.organization_id)
+    .order("active", { ascending: false })
+    .order("name")
+    .limit(80)
+
+  let sectorsQuery = supabase
+    .from("sectors")
+    .select("id, branch_id, name, active, branches(name)")
+    .eq("organization_id", profile.organization_id)
+    .order("active", { ascending: false })
+    .order("name")
+    .limit(160)
+
+  let settingsQuery = supabase
+    .from("operational_settings")
+    .select("branch_id, mode, late_tolerance_minutes, break_tolerance_minutes, require_cashier_cash_count, require_coverage_before_break, block_break_on_peak_hours, require_responsible_presence")
+    .eq("organization_id", profile.organization_id)
+    .limit(80)
+
+  let dashboardQuery = supabase
+    .from("v_operational_dashboard")
+    .select("*")
+    .eq("organization_id", profile.organization_id)
+    .eq("work_date", today)
+    .order("priority_level", { ascending: false })
+    .order("start_time", { ascending: true, nullsFirst: false })
+    .limit(160)
+
+  let notesQuery = supabase
+    .from("operational_notes")
+    .select("id, branch_id, sector_id, title, category, priority, status, due_at, created_at, updated_at, branches(name), sectors(name)")
+    .eq("organization_id", profile.organization_id)
+    .eq("active", true)
+    .in("status", ["open", "in_review"])
+    .order("created_at", { ascending: false })
+    .limit(80)
+
+  let formsQuery = supabase
+    .from("operational_forms")
+    .select("id, branch_id, sector_id, title, category, active, created_at, branches(name), sectors(name)")
+    .eq("organization_id", profile.organization_id)
+    .eq("active", true)
+    .order("created_at", { ascending: false })
+    .limit(80)
+
+  let formResponsesQuery = supabase
+    .from("operational_form_responses")
+    .select("id, form_id, branch_id, notes, submitted_at, branches(name), operational_forms(title, category)")
+    .eq("organization_id", profile.organization_id)
+    .gte("submitted_at", recentSince)
+    .order("submitted_at", { ascending: false })
+    .limit(80)
+
+  let postersQuery = supabase
+    .from("operational_posters")
+    .select("id, branch_id, sector_id, title, tone, format, product_name, price_text, active, updated_at, branches(name), sectors(name)")
+    .eq("organization_id", profile.organization_id)
+    .eq("active", true)
+    .order("updated_at", { ascending: false })
+    .limit(50)
+
+  let commsPostsQuery = supabase
+    .from("comms_posts")
+    .select("id, branch_id, sector_id, title, content, pinned, created_at, branches(name), sectors(name)")
+    .eq("organization_id", profile.organization_id)
+    .gte("created_at", recentSince)
+    .order("pinned", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(60)
+
+  const trainingItemsQuery = supabase
+    .from("training_items")
+    .select("id, title, type, duration_minutes, active, created_at")
+    .eq("organization_id", profile.organization_id)
+    .eq("active", true)
+    .order("created_at", { ascending: false })
+    .limit(80)
+
+  let deliveriesQuery = supabase
+    .from("delivery_orders")
+    .select("id, branch_id, assigned_employee_id, source, status, priority, customer_name, neighborhood, city, total_amount, payment_status, scheduled_for, estimated_delivery_at, dispatched_at, delivered_at, created_at, branches(name), employees(name)")
+    .eq("organization_id", profile.organization_id)
+    .gte("created_at", recentSince)
+    .order("created_at", { ascending: false })
+    .limit(120)
+
+  let customersQuery = supabase
+    .from("customers")
+    .select("id, branch_id, customer_code, name, status, city, neighborhood, marketing_opt_in, created_at, updated_at, branches(name)")
+    .eq("organization_id", profile.organization_id)
+    .order("updated_at", { ascending: false })
+    .limit(120)
+
+  let cashSessionsQuery = supabase
+    .from("cash_sessions")
+    .select("id, branch_id, post_id, user_profile_id, employee_id, opened_at, closed_at, expected_amount, final_amount, difference_amount, status, branches(name), operational_posts(name), employees(name)")
+    .eq("organization_id", profile.organization_id)
+    .gte("opened_at", recentSince)
+    .order("opened_at", { ascending: false })
+    .limit(80)
+
+  let salesTodayQuery = supabase
+    .from("sales")
+    .select("id, branch_id, cash_session_id, post_id, employee_id, customer_name, subtotal, discount_amount, total_amount, status, sale_mode, sold_at, branches(name), employees(name)")
+    .eq("organization_id", profile.organization_id)
+    .gte("sold_at", todayStart)
+    .order("sold_at", { ascending: false })
+    .limit(120)
+
+  let productionOrdersQuery = supabase
+    .from("production_orders")
+    .select("id, branch_id, order_code, customer_name, status, priority, ordered_at, promised_at, created_at, branches(name)")
+    .eq("organization_id", profile.organization_id)
+    .gte("created_at", recentSince)
+    .order("created_at", { ascending: false })
+    .limit(100)
+
+  let fiscalDocumentsQuery = supabase
+    .from("fiscal_documents")
+    .select("id, branch_id, sale_id, doc_type, status, operation_mode, series, number, sefaz_rejection_reason, issued_at, cancelled_at, branches(name)")
+    .eq("organization_id", profile.organization_id)
+    .gte("issued_at", recentSince)
+    .order("issued_at", { ascending: false })
+    .limit(100)
+
+  let productsQuery = supabase
+    .from("products")
+    .select("id, branch_id, category_id, name, product_kind, category, brand, price, stock_quantity, min_stock_quantity, track_inventory, active, branches(name), product_categories(name)")
+    .eq("organization_id", profile.organization_id)
+    .eq("active", true)
+    .order("stock_quantity", { ascending: true })
+    .limit(120)
+
+  let productCategoriesQuery = supabase
+    .from("product_categories")
+    .select("id, branch_id, name, segment, active, branches(name)")
+    .eq("organization_id", profile.organization_id)
+    .eq("active", true)
+    .order("name")
+    .limit(80)
+
+  let auditLogsQuery = supabase
+    .from("audit_logs")
+    .select("id, branch_id, user_id, action, entity_type, entity_id, created_at, branches(name)")
+    .eq("organization_id", profile.organization_id)
+    .gte("created_at", recentSince)
+    .order("created_at", { ascending: false })
+    .limit(120)
+
   if (branchId) {
     statusesQuery = statusesQuery.eq("branch_id", branchId)
     eventsQuery = eventsQuery.eq("branch_id", branchId)
@@ -513,9 +698,54 @@ async function fetchContext(
     employeesQuery = employeesQuery.eq("branch_id", branchId)
     postsQuery = postsQuery.eq("branch_id", branchId)
     allocationsQuery = allocationsQuery.eq("branch_id", branchId)
+    branchesQuery = branchesQuery.eq("id", branchId)
+    sectorsQuery = sectorsQuery.eq("branch_id", branchId)
+    settingsQuery = settingsQuery.or(`branch_id.is.null,branch_id.eq.${branchId}`)
+    dashboardQuery = dashboardQuery.eq("branch_id", branchId)
+    notesQuery = nullableBranchScoped(notesQuery)
+    formsQuery = nullableBranchScoped(formsQuery)
+    formResponsesQuery = nullableBranchScoped(formResponsesQuery)
+    postersQuery = nullableBranchScoped(postersQuery)
+    commsPostsQuery = nullableBranchScoped(commsPostsQuery)
+    deliveriesQuery = branchScoped(deliveriesQuery)
+    customersQuery = nullableBranchScoped(customersQuery)
+    cashSessionsQuery = branchScoped(cashSessionsQuery)
+    salesTodayQuery = branchScoped(salesTodayQuery)
+    productionOrdersQuery = branchScoped(productionOrdersQuery)
+    fiscalDocumentsQuery = branchScoped(fiscalDocumentsQuery)
+    productsQuery = nullableBranchScoped(productsQuery)
+    productCategoriesQuery = nullableBranchScoped(productCategoriesQuery)
+    auditLogsQuery = nullableBranchScoped(auditLogsQuery)
   }
 
-  const [statuses, events, schedules, checklistRuns, employees, posts, allocations] = await Promise.all([
+  const [
+    statuses,
+    events,
+    schedules,
+    checklistRuns,
+    employees,
+    posts,
+    allocations,
+    branches,
+    sectors,
+    settings,
+    dashboardRows,
+    notes,
+    forms,
+    formResponses,
+    posters,
+    commsPosts,
+    trainingItems,
+    deliveries,
+    customers,
+    cashSessions,
+    salesToday,
+    productionOrders,
+    fiscalDocuments,
+    products,
+    productCategories,
+    auditLogs,
+  ] = await Promise.all([
     statusesQuery,
     eventsQuery,
     schedulesQuery,
@@ -523,9 +753,37 @@ async function fetchContext(
     employeesQuery,
     postsQuery,
     allocationsQuery,
+    branchesQuery,
+    sectorsQuery,
+    settingsQuery,
+    dashboardQuery,
+    notesQuery,
+    formsQuery,
+    formResponsesQuery,
+    postersQuery,
+    commsPostsQuery,
+    trainingItemsQuery,
+    deliveriesQuery,
+    customersQuery,
+    cashSessionsQuery,
+    salesTodayQuery,
+    productionOrdersQuery,
+    fiscalDocumentsQuery,
+    productsQuery,
+    productCategoriesQuery,
+    auditLogsQuery,
   ])
 
-  const errors = [statuses.error, events.error, schedules.error, checklistRuns.error, employees.error]
+  const errors = [
+    statuses.error,
+    events.error,
+    schedules.error,
+    checklistRuns.error,
+    employees.error,
+    branches.error,
+    sectors.error,
+    settings.error,
+  ]
     .filter(Boolean)
     .map((error) => error?.message)
 
@@ -537,6 +795,29 @@ async function fetchContext(
     (item: { schedules?: { work_date?: string | null } | null }) =>
       item.schedules?.work_date === today
   )
+  const dashboardData = optionalRows(dashboardRows)
+  const notesData = optionalRows(notes)
+  const formsData = optionalRows(forms)
+  const formResponsesData = optionalRows(formResponses)
+  const postersData = optionalRows(posters)
+  const commsPostsData = optionalRows(commsPosts)
+  const trainingItemsData = optionalRows(trainingItems)
+  const deliveriesData = optionalRows(deliveries)
+  const customersData = optionalRows(customers)
+  const cashSessionsData = optionalRows(cashSessions)
+  const salesTodayData = optionalRows(salesToday)
+  const productionOrdersData = optionalRows(productionOrders)
+  const fiscalDocumentsData = optionalRows(fiscalDocuments)
+  const productsData = optionalRows(products)
+  const productCategoriesData = optionalRows(productCategories)
+  const auditLogsData = optionalRows(auditLogs)
+  const salesRows = salesTodayData.map((row) => row as Record<string, unknown>)
+  const openDeliveryStatuses = ["pending", "preparing", "ready_for_dispatch", "out_for_delivery"]
+  const openProductionStatuses = ["pending", "in_production"]
+  const lowStockProducts = productsData.filter((item) => {
+    const row = item as Record<string, unknown>
+    return Boolean(row.track_inventory) && numericValue(row.stock_quantity) <= numericValue(row.min_stock_quantity)
+  })
 
   return {
     branch_id: branchId,
@@ -563,7 +844,70 @@ async function fetchContext(
       total: employees.data?.length ?? 0,
       active: (employees.data ?? []).filter((item) => item.active).length,
     },
+    organization_counts: {
+      branches: branches.data?.length ?? 0,
+      active_branches: (branches.data ?? []).filter((item) => item.active).length,
+      sectors: sectors.data?.length ?? 0,
+      active_sectors: (sectors.data ?? []).filter((item) => item.active).length,
+    },
+    dashboard_counts: {
+      rows: dashboardData.length,
+      critical: countRows(
+        dashboardData,
+        (item: any) => item.current_status === "alerta_critico" || numericValue(item.priority_level) >= 70
+      ),
+      delayed: countRows(dashboardData, (item: any) => numericValue(item.delay_minutes) > 0),
+      waiting: countRows(dashboardData, (item: any) => item.current_status === "aguardando_evento"),
+    },
+    support_counts: {
+      open_notes: countRows(notesData, (item: any) => item.status === "open"),
+      urgent_notes: countRows(notesData, (item: any) => item.priority === "urgent"),
+      active_forms: formsData.length,
+      recent_form_responses: formResponsesData.length,
+      active_posters: postersData.length,
+      recent_comms_posts: commsPostsData.length,
+      pinned_comms_posts: countRows(commsPostsData, (item: any) => Boolean(item.pinned)),
+      active_training_items: trainingItemsData.length,
+      recent_audit_logs: auditLogsData.length,
+    },
+    delivery_counts: {
+      total_recent: deliveriesData.length,
+      open: countRows(deliveriesData, (item: any) => openDeliveryStatuses.includes(item.status)),
+      pending: countRows(deliveriesData, (item: any) => item.status === "pending"),
+      out_for_delivery: countRows(deliveriesData, (item: any) => item.status === "out_for_delivery"),
+      urgent: countRows(deliveriesData, (item: any) => item.priority === "urgent"),
+      failed: countRows(deliveriesData, (item: any) => item.status === "failed"),
+    },
+    customer_counts: {
+      sampled: customersData.length,
+      active: countRows(customersData, (item: any) => item.status === "active"),
+      blocked: countRows(customersData, (item: any) => item.status === "blocked"),
+      inactive: countRows(customersData, (item: any) => item.status === "inactive"),
+    },
+    pos_counts: {
+      open_cash_sessions: countRows(cashSessionsData, (item: any) => item.status === "open"),
+      cash_sessions_recent: cashSessionsData.length,
+      sales_today: salesTodayData.length,
+      sales_total_today: Number(sumRows(salesRows, "total_amount").toFixed(2)),
+      cancelled_sales_today: countRows(salesTodayData, (item: any) => item.status === "cancelled"),
+      production_open: countRows(productionOrdersData, (item: any) => openProductionStatuses.includes(item.status)),
+      production_urgent: countRows(productionOrdersData, (item: any) => item.priority === "urgent"),
+      fiscal_pending: countRows(
+        fiscalDocumentsData,
+        (item: any) =>
+          item.status !== "cancelled" &&
+          (item.status === "draft" ||
+            item.operation_mode === "sefaz_pending" ||
+            item.operation_mode === "sefaz_rejected")
+      ),
+      low_stock_products: lowStockProducts.length,
+      active_product_categories: productCategoriesData.length,
+    },
     tools: {
+      branches: compactRows(branches.data ?? [], 40),
+      sectors: compactRows(sectors.data ?? [], 80),
+      operational_settings: compactRows(settings.data ?? [], 20),
+      dashboard_today: compactRows(dashboardData, 60),
       operational_status: compactRows(currentStatuses, 30),
       recent_events: compactRows(events.data ?? [], 50),
       schedules_today: compactRows(schedules.data ?? [], 50),
@@ -571,10 +915,42 @@ async function fetchContext(
       employees: compactRows(employees.data ?? [], 60),
       operational_posts: compactRows(posts.error ? [] : posts.data ?? [], 80),
       active_allocations: compactRows(allocations.error ? [] : allocations.data ?? [], 80),
+      operational_notes: compactRows(notesData, 40),
+      operational_forms: compactRows(formsData, 40),
+      operational_form_responses: compactRows(formResponsesData, 30),
+      operational_posters: compactRows(postersData, 30),
+      comms_posts: compactRows(commsPostsData, 30),
+      training_items: compactRows(trainingItemsData, 30),
+      delivery_orders: compactRows(deliveriesData, 50),
+      customers: compactRows(customersData, 50),
+      cash_sessions: compactRows(cashSessionsData, 30),
+      sales_today: compactRows(salesTodayData, 50),
+      production_orders: compactRows(productionOrdersData, 40),
+      fiscal_documents: compactRows(fiscalDocumentsData, 40),
+      products_low_stock_first: compactRows(productsData, 50),
+      product_categories: compactRows(productCategoriesData, 30),
+      audit_logs: compactRows(auditLogsData, 50),
     },
-    optional_errors: [posts.error, allocations.error]
-      .filter(Boolean)
-      .map((error) => error?.message),
+    optional_errors: [
+      optionalError("operational_posts", posts),
+      optionalError("post_allocations", allocations),
+      optionalError("v_operational_dashboard", dashboardRows),
+      optionalError("operational_notes", notes),
+      optionalError("operational_forms", forms),
+      optionalError("operational_form_responses", formResponses),
+      optionalError("operational_posters", posters),
+      optionalError("comms_posts", commsPosts),
+      optionalError("training_items", trainingItems),
+      optionalError("delivery_orders", deliveries),
+      optionalError("customers", customers),
+      optionalError("cash_sessions", cashSessions),
+      optionalError("sales", salesToday),
+      optionalError("production_orders", productionOrders),
+      optionalError("fiscal_documents", fiscalDocuments),
+      optionalError("products", products),
+      optionalError("product_categories", productCategories),
+      optionalError("audit_logs", auditLogs),
+    ].filter(Boolean),
   }
 }
 
@@ -588,6 +964,14 @@ function asRow(value: unknown): DataRow {
 function readString(row: DataRow, key: string) {
   const value = row[key]
   return typeof value === "string" ? value : null
+}
+
+function readNumber(row: DataRow, key: string) {
+  return numericValue(row[key])
+}
+
+function readBoolean(row: DataRow, key: string) {
+  return typeof row[key] === "boolean" ? row[key] : false
 }
 
 function relationName(row: DataRow, key: string) {
@@ -609,12 +993,31 @@ function trimText(value: string | null, maxLength = 140) {
 }
 
 function buildModelContext(context: AgentContext) {
+  const branches = (context.tools.branches as unknown[]).map(asRow)
+  const sectors = (context.tools.sectors as unknown[]).map(asRow)
+  const settings = (context.tools.operational_settings as unknown[]).map(asRow)
+  const dashboard = (context.tools.dashboard_today as unknown[]).map(asRow)
   const statuses = (context.tools.operational_status as unknown[]).map(asRow)
   const events = (context.tools.recent_events as unknown[]).map(asRow)
   const schedules = (context.tools.schedules_today as unknown[]).map(asRow)
   const checklists = (context.tools.checklist_runs as unknown[]).map(asRow)
   const posts = (context.tools.operational_posts as unknown[]).map(asRow)
   const allocations = (context.tools.active_allocations as unknown[]).map(asRow)
+  const notes = (context.tools.operational_notes as unknown[]).map(asRow)
+  const forms = (context.tools.operational_forms as unknown[]).map(asRow)
+  const formResponses = (context.tools.operational_form_responses as unknown[]).map(asRow)
+  const posters = (context.tools.operational_posters as unknown[]).map(asRow)
+  const commsPosts = (context.tools.comms_posts as unknown[]).map(asRow)
+  const trainingItems = (context.tools.training_items as unknown[]).map(asRow)
+  const deliveries = (context.tools.delivery_orders as unknown[]).map(asRow)
+  const customers = (context.tools.customers as unknown[]).map(asRow)
+  const cashSessions = (context.tools.cash_sessions as unknown[]).map(asRow)
+  const salesToday = (context.tools.sales_today as unknown[]).map(asRow)
+  const productionOrders = (context.tools.production_orders as unknown[]).map(asRow)
+  const fiscalDocuments = (context.tools.fiscal_documents as unknown[]).map(asRow)
+  const products = (context.tools.products_low_stock_first as unknown[]).map(asRow)
+  const productCategories = (context.tools.product_categories as unknown[]).map(asRow)
+  const auditLogs = (context.tools.audit_logs as unknown[]).map(asRow)
 
   return {
     branch_id: context.branch_id,
@@ -624,6 +1027,12 @@ function buildModelContext(context: AgentContext) {
     status_counts: context.status_counts,
     recent_event_counts: context.recent_event_counts,
     employee_counts: context.employee_counts,
+    organization_counts: context.organization_counts,
+    dashboard_counts: context.dashboard_counts,
+    support_counts: context.support_counts,
+    delivery_counts: context.delivery_counts,
+    customer_counts: context.customer_counts,
+    pos_counts: context.pos_counts,
     action_capabilities: [
       {
         tool_name: "generate_delay_report",
@@ -637,6 +1046,46 @@ function buildModelContext(context: AgentContext) {
       },
     ],
     tools: {
+      branches: branches.slice(0, 12).map((branch) => ({
+        id: readString(branch, "id"),
+        name: readString(branch, "name"),
+        city: readString(branch, "city"),
+        state: readString(branch, "state"),
+        active: readBoolean(branch, "active"),
+      })),
+      sectors: sectors.slice(0, 20).map((sector) => ({
+        id: readString(sector, "id"),
+        branch_id: readString(sector, "branch_id"),
+        name: readString(sector, "name"),
+        branch: relationName(sector, "branches"),
+        active: readBoolean(sector, "active"),
+      })),
+      operational_settings: settings.slice(0, 8).map((setting) => ({
+        branch_id: readString(setting, "branch_id"),
+        mode: readString(setting, "mode"),
+        late_tolerance_minutes: readNumber(setting, "late_tolerance_minutes"),
+        break_tolerance_minutes: readNumber(setting, "break_tolerance_minutes"),
+        require_cashier_cash_count: readBoolean(setting, "require_cashier_cash_count"),
+        require_coverage_before_break: readBoolean(setting, "require_coverage_before_break"),
+        block_break_on_peak_hours: readBoolean(setting, "block_break_on_peak_hours"),
+        require_responsible_presence: readBoolean(setting, "require_responsible_presence"),
+      })),
+      dashboard_today: dashboard.slice(0, 18).map((row) => ({
+        branch_id: readString(row, "branch_id"),
+        employee_id: readString(row, "employee_id"),
+        employee: readString(row, "employee_name"),
+        employee_role: readString(row, "employee_role"),
+        sector: readString(row, "sector_name"),
+        branch: readString(row, "branch_name"),
+        status: readString(row, "current_status"),
+        priority: readNumber(row, "priority_level"),
+        delay: readNumber(row, "delay_minutes"),
+        start_time: readString(row, "start_time"),
+        break_start: readString(row, "break_start"),
+        break_end: readString(row, "break_end"),
+        end_time: readString(row, "end_time"),
+        reason: trimText(readString(row, "status_reason"), 100),
+      })),
       operational_status: statuses.slice(0, 12).map((status) => ({
         id: readString(status, "id"),
         branch_id: readString(status, "branch_id"),
@@ -689,6 +1138,163 @@ function buildModelContext(context: AgentContext) {
         status: readString(allocation, "status"),
         post: relationName(allocation, "operational_posts"),
         employee: relationName(allocation, "employees"),
+      })),
+      operational_notes: notes.slice(0, 12).map((note) => ({
+        id: readString(note, "id"),
+        branch_id: readString(note, "branch_id"),
+        title: trimText(readString(note, "title"), 90),
+        category: readString(note, "category"),
+        priority: readString(note, "priority"),
+        status: readString(note, "status"),
+        due_at: readString(note, "due_at"),
+        branch: relationName(note, "branches"),
+        sector: relationName(note, "sectors"),
+        created_at: readString(note, "created_at"),
+      })),
+      operational_forms: forms.slice(0, 10).map((form) => ({
+        id: readString(form, "id"),
+        branch_id: readString(form, "branch_id"),
+        title: trimText(readString(form, "title"), 90),
+        category: readString(form, "category"),
+        branch: relationName(form, "branches"),
+        sector: relationName(form, "sectors"),
+        created_at: readString(form, "created_at"),
+      })),
+      operational_form_responses: formResponses.slice(0, 8).map((response) => ({
+        form_id: readString(response, "form_id"),
+        branch_id: readString(response, "branch_id"),
+        form: relationName(response, "operational_forms") ?? readString(asRow(response.operational_forms), "title"),
+        branch: relationName(response, "branches"),
+        submitted_at: readString(response, "submitted_at"),
+        notes: trimText(readString(response, "notes"), 100),
+      })),
+      operational_posters: posters.slice(0, 8).map((poster) => ({
+        id: readString(poster, "id"),
+        branch_id: readString(poster, "branch_id"),
+        title: trimText(readString(poster, "title"), 90),
+        tone: readString(poster, "tone"),
+        format: readString(poster, "format"),
+        product_name: trimText(readString(poster, "product_name"), 70),
+        price_text: readString(poster, "price_text"),
+        branch: relationName(poster, "branches"),
+        sector: relationName(poster, "sectors"),
+      })),
+      comms_posts: commsPosts.slice(0, 8).map((post) => ({
+        id: readString(post, "id"),
+        branch_id: readString(post, "branch_id"),
+        title: trimText(readString(post, "title"), 90),
+        content: trimText(readString(post, "content"), 140),
+        pinned: readBoolean(post, "pinned"),
+        branch: relationName(post, "branches"),
+        sector: relationName(post, "sectors"),
+        created_at: readString(post, "created_at"),
+      })),
+      training_items: trainingItems.slice(0, 8).map((item) => ({
+        id: readString(item, "id"),
+        title: trimText(readString(item, "title"), 90),
+        type: readString(item, "type"),
+        duration_minutes: readNumber(item, "duration_minutes"),
+      })),
+      delivery_orders: deliveries.slice(0, 14).map((delivery) => ({
+        id: readString(delivery, "id"),
+        branch_id: readString(delivery, "branch_id"),
+        status: readString(delivery, "status"),
+        priority: readString(delivery, "priority"),
+        source: readString(delivery, "source"),
+        customer: trimText(readString(delivery, "customer_name"), 80),
+        neighborhood: readString(delivery, "neighborhood"),
+        city: readString(delivery, "city"),
+        total_amount: readNumber(delivery, "total_amount"),
+        payment_status: readString(delivery, "payment_status"),
+        scheduled_for: readString(delivery, "scheduled_for"),
+        estimated_delivery_at: readString(delivery, "estimated_delivery_at"),
+        dispatched_at: readString(delivery, "dispatched_at"),
+        delivered_at: readString(delivery, "delivered_at"),
+        branch: relationName(delivery, "branches"),
+        assigned_employee: relationName(delivery, "employees"),
+      })),
+      customers: customers.slice(0, 10).map((customer) => ({
+        id: readString(customer, "id"),
+        branch_id: readString(customer, "branch_id"),
+        code: readString(customer, "customer_code"),
+        name: trimText(readString(customer, "name"), 80),
+        status: readString(customer, "status"),
+        city: readString(customer, "city"),
+        neighborhood: readString(customer, "neighborhood"),
+        branch: relationName(customer, "branches"),
+        updated_at: readString(customer, "updated_at"),
+      })),
+      cash_sessions: cashSessions.slice(0, 8).map((session) => ({
+        id: readString(session, "id"),
+        branch_id: readString(session, "branch_id"),
+        status: readString(session, "status"),
+        opened_at: readString(session, "opened_at"),
+        closed_at: readString(session, "closed_at"),
+        expected_amount: readNumber(session, "expected_amount"),
+        final_amount: readNumber(session, "final_amount"),
+        difference_amount: readNumber(session, "difference_amount"),
+        branch: relationName(session, "branches"),
+        post: relationName(session, "operational_posts"),
+        employee: relationName(session, "employees"),
+      })),
+      sales_today: salesToday.slice(0, 12).map((sale) => ({
+        id: readString(sale, "id"),
+        branch_id: readString(sale, "branch_id"),
+        status: readString(sale, "status"),
+        sale_mode: readString(sale, "sale_mode"),
+        total_amount: readNumber(sale, "total_amount"),
+        sold_at: readString(sale, "sold_at"),
+        branch: relationName(sale, "branches"),
+        employee: relationName(sale, "employees"),
+      })),
+      production_orders: productionOrders.slice(0, 10).map((order) => ({
+        id: readString(order, "id"),
+        branch_id: readString(order, "branch_id"),
+        code: readString(order, "order_code"),
+        customer: trimText(readString(order, "customer_name"), 80),
+        status: readString(order, "status"),
+        priority: readString(order, "priority"),
+        ordered_at: readString(order, "ordered_at"),
+        promised_at: readString(order, "promised_at"),
+        branch: relationName(order, "branches"),
+      })),
+      fiscal_documents: fiscalDocuments.slice(0, 10).map((document) => ({
+        id: readString(document, "id"),
+        branch_id: readString(document, "branch_id"),
+        doc_type: readString(document, "doc_type"),
+        status: readString(document, "status"),
+        operation_mode: readString(document, "operation_mode"),
+        number: readNumber(document, "number"),
+        rejection: trimText(readString(document, "sefaz_rejection_reason"), 100),
+        issued_at: readString(document, "issued_at"),
+        branch: relationName(document, "branches"),
+      })),
+      products_low_stock_first: products.slice(0, 14).map((product) => ({
+        id: readString(product, "id"),
+        branch_id: readString(product, "branch_id"),
+        name: trimText(readString(product, "name"), 80),
+        kind: readString(product, "product_kind"),
+        category: relationName(product, "product_categories") ?? readString(product, "category"),
+        brand: readString(product, "brand"),
+        price: readNumber(product, "price"),
+        stock_quantity: readNumber(product, "stock_quantity"),
+        min_stock_quantity: readNumber(product, "min_stock_quantity"),
+        track_inventory: readBoolean(product, "track_inventory"),
+        branch: relationName(product, "branches"),
+      })),
+      product_categories: productCategories.slice(0, 10).map((category) => ({
+        id: readString(category, "id"),
+        branch_id: readString(category, "branch_id"),
+        name: readString(category, "name"),
+        segment: readString(category, "segment"),
+        branch: relationName(category, "branches"),
+      })),
+      audit_logs: auditLogs.slice(0, 12).map((log) => ({
+        action: readString(log, "action"),
+        entity_type: readString(log, "entity_type"),
+        entity_id: readString(log, "entity_id"),
+        branch: relationName(log, "branches"),
+        created_at: readString(log, "created_at"),
       })),
     },
     compacted: true,
@@ -979,42 +1585,124 @@ function fallbackInsight(
   const critical = context.status_counts.critical
   const delays = context.recent_event_counts.delays
   const absences = context.recent_event_counts.absences
+  const urgentNotes = context.support_counts.urgent_notes
+  const openDeliveries = context.delivery_counts.open
+  const urgentDeliveries = context.delivery_counts.urgent
+  const openProduction = context.pos_counts.production_open
+  const fiscalPending = context.pos_counts.fiscal_pending
+  const lowStockProducts = context.pos_counts.low_stock_products
   const severity: AgentSeverity =
-    critical > 0 ? "critico" : delays >= 3 || absences >= 2 ? "alto" : delays > 0 ? "medio" : "normal"
+    critical > 0
+      ? "critico"
+      : urgentNotes > 0 || urgentDeliveries > 0 || delays >= 3 || absences >= 2
+        ? "alto"
+        : delays > 0 || openDeliveries > 0 || openProduction > 0 || lowStockProducts > 0
+          ? "medio"
+          : "normal"
   const targetSeverity = target?.severity ?? severity
   const plannedAction =
     actionPlan.mode === "none" && delays > 0
       ? buildDelayReportActionPlan(context)
       : actionPlan
+  const risks = [
+    {
+      title: "Risco operacional atual",
+      severity,
+      reason:
+        critical > 0
+          ? "Ha status criticos ou prioridade elevada no painel operacional."
+          : "Nao foram encontrados status criticos nos dados atuais.",
+      evidence: `${critical} status critico(s), ${delays} atraso(s), ${absences} falta(s), ${urgentNotes} anotacao(oes) urgente(s), ${openDeliveries} entrega(s) aberta(s) e ${openProduction} pedido(s) de producao aberto(s).`,
+      action:
+        critical > 0
+          ? "Validar os status criticos e acionar o responsavel da filial."
+          : "Manter acompanhamento e revisar recorrencias no fim do turno.",
+      confidence: 0.72,
+    },
+    ...(urgentNotes > 0
+      ? [
+          {
+            title: "Anotacoes urgentes abertas",
+            severity: "alto" as AgentSeverity,
+            reason: "Existem pendencias de frente de loja classificadas como urgentes.",
+            evidence: `${urgentNotes} anotacao(oes) urgente(s) em aberto ou revisao.`,
+            action: "Abrir anotacoes operacionais e definir responsavel antes do proximo pico.",
+            confidence: 0.7,
+          },
+        ]
+      : []),
+    ...(urgentDeliveries > 0 || openDeliveries > 0
+      ? [
+          {
+            title: "Fila de entregas",
+            severity: urgentDeliveries > 0 ? "alto" as AgentSeverity : "medio" as AgentSeverity,
+            reason: "Ha pedidos de entrega recentes ainda em fluxo.",
+            evidence: `${openDeliveries} entrega(s) aberta(s), ${urgentDeliveries} urgente(s).`,
+            action: "Conferir preparo, despacho e entregador alocado para pedidos pendentes.",
+            confidence: 0.68,
+          },
+        ]
+      : []),
+    ...(lowStockProducts > 0
+      ? [
+          {
+            title: "Produtos com estoque baixo",
+            severity: "medio" as AgentSeverity,
+            reason: "A lista de produtos ativos mostra itens no minimo ou abaixo do minimo configurado.",
+            evidence: `${lowStockProducts} produto(s) no limite de estoque.`,
+            action: "Validar reposicao ou ajustar disponibilidade antes de novas vendas.",
+            confidence: 0.66,
+          },
+        ]
+      : []),
+  ]
+  const passiveActionTitle =
+    critical > 0
+      ? "Atuar nos status criticos"
+      : urgentNotes > 0
+        ? "Priorizar anotacoes urgentes"
+        : openDeliveries > 0
+          ? "Revisar fila de entregas"
+          : openProduction > 0
+            ? "Acompanhar producao"
+            : fiscalPending > 0
+              ? "Conferir documentos fiscais"
+              : "Acompanhar operacao"
+  const passiveActionDescription =
+    critical > 0
+      ? "Abra o painel operacional e confirme a acao para cada alerta critico."
+      : urgentNotes > 0
+        ? "Abra as anotacoes urgentes e defina responsavel para cada pendencia."
+        : openDeliveries > 0
+          ? "Confira pedidos pendentes, preparo, despacho e responsavel pela entrega."
+          : openProduction > 0
+            ? "Confira pedidos em producao e promessas de entrega."
+            : fiscalPending > 0
+              ? "Confira documentos em rascunho, pendentes ou rejeitados antes do fechamento."
+              : "Continue monitorando atrasos, checklists, entregas e caixa."
 
   return {
     summary:
       critical > 0
         ? `Existem ${critical} risco(s) critico(s) ativos na operacao.`
-        : "A operacao nao apresenta risco critico ativo neste momento.",
+        : severity === "normal"
+          ? "A operacao nao apresenta risco critico ativo neste momento."
+          : "A operacao tem pontos de atencao fora do painel de presenca.",
     overall_severity: severity,
-    risks: [
-      {
-        title: "Risco operacional atual",
-        severity,
-        reason:
-          critical > 0
-            ? "Ha status criticos ou prioridade elevada no painel operacional."
-            : "Nao foram encontrados status criticos nos dados atuais.",
-        evidence: `${critical} status critico(s), ${delays} atraso(s) e ${absences} falta(s) nos ultimos 30 dias.`,
-        action:
-          critical > 0
-            ? "Validar os status criticos e acionar o responsavel da filial."
-            : "Manter acompanhamento e revisar recorrencias no fim do turno.",
-        confidence: 0.72,
-      },
-    ],
+    risks: risks.slice(0, 6),
     recommendations: [
       {
         title: "Revisar cobertura do turno",
-        description: "Confira escala, presença real e setores com prioridade alta antes do proximo pico.",
+        description: "Confira escala, presenca real e setores com prioridade alta antes do proximo pico.",
         owner: "Gestor da filial",
         priority: severity === "normal" ? "baixa" : "alta",
+        requires_confirmation: false,
+      },
+      {
+        title: "Cruzar operacao com entregas e caixa",
+        description: "Confira entregas abertas, pedidos de producao, caixa aberto e produtos com estoque baixo.",
+        owner: "Gestor da filial",
+        priority: openDeliveries > 0 || openProduction > 0 || lowStockProducts > 0 ? "media" : "baixa",
         requires_confirmation: false,
       },
     ],
@@ -1022,15 +1710,11 @@ function fallbackInsight(
       title:
         plannedAction.mode !== "none"
           ? plannedAction.title
-          : critical > 0
-            ? "Atuar nos status criticos"
-            : "Acompanhar operacao",
+          : passiveActionTitle,
       description:
         plannedAction.mode !== "none"
           ? plannedAction.description
-          : critical > 0
-            ? "Abra o painel operacional e confirme a acao para cada alerta critico."
-            : "Continue monitorando atrasos e checklists pendentes.",
+          : passiveActionDescription,
       can_execute: plannedAction.mode !== "none" && plannedAction.tool_name !== null,
       tool_name: plannedAction.tool_name,
     },
@@ -1041,9 +1725,13 @@ function fallbackInsight(
         ? buildFallbackResolution(context, targetSeverity, target)
         : emptyResolution(),
     chat_answer: question
-      ? `Com os dados atuais, minha leitura e: ${critical} risco(s) critico(s), ${delays} atraso(s) e ${absences} falta(s) recentes.`
+      ? `Com os dados atuais, minha leitura e: ${critical} risco(s) critico(s), ${delays} atraso(s), ${absences} falta(s), ${openDeliveries} entrega(s) aberta(s), ${openProduction} pedido(s) em producao e ${lowStockProducts} produto(s) em estoque baixo.`
       : "Clique em perguntar ao agente para aprofundar um ponto especifico.",
     tools_used: [
+      "branches",
+      "sectors",
+      "operational_settings",
+      "dashboard_today",
       "operational_status",
       "recent_events",
       "schedules_today",
@@ -1051,6 +1739,21 @@ function fallbackInsight(
       "employees",
       "operational_posts",
       "active_allocations",
+      "operational_notes",
+      "operational_forms",
+      "operational_form_responses",
+      "operational_posters",
+      "comms_posts",
+      "training_items",
+      "delivery_orders",
+      "customers",
+      "cash_sessions",
+      "sales_today",
+      "production_orders",
+      "fiscal_documents",
+      "products_low_stock_first",
+      "product_categories",
+      "audit_logs",
     ],
   }
 }
@@ -1197,7 +1900,7 @@ Deno.serve(async (request) => {
           {
             role: "system",
             content:
-              "Voce e o Unyx AI Agent, um agente operacional para varejo, food service e equipes de loja. Analise apenas os dados fornecidos. Seja objetivo, pratico e conservador. Nao invente dados. Para action_plan use apenas generate_delay_report ou allocate_post. Relatorio de atrasos pode ser executado automaticamente; alocacao exige confirmacao humana. Nao diga que executou acoes quando intent nao for act. Quando intent for resolve, gere uma proposta aplicavel para o gestor revisar e registrar como tarefa operacional. Quando intent for analyze, deixe resolution.status como none. Responda em portugues do Brasil sem acentos problematicos quando possivel.",
+              "Voce e o Unyx AI Agent, um agente operacional para varejo, food service e equipes de loja. Analise apenas os dados fornecidos. Considere colaboradores, horarios, dashboard, notas, formularios, comunicados, entregas, clientes, caixa/PDV, producao, fiscal, estoque, auditoria e configuracoes quando vierem no contexto. Seja objetivo, pratico e conservador. Nao invente dados. Para action_plan use apenas generate_delay_report ou allocate_post. Relatorio de atrasos pode ser executado automaticamente; alocacao exige confirmacao humana. Nao diga que executou acoes quando intent nao for act. Quando intent for resolve, gere uma proposta aplicavel para o gestor revisar e registrar como tarefa operacional. Quando intent for analyze, deixe resolution.status como none. Responda em portugues do Brasil sem acentos problematicos quando possivel.",
           },
           {
             role: "user",
