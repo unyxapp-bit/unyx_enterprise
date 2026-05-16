@@ -37,6 +37,9 @@ O deploy usa `--use-api`, entao nao depende do Docker para publicar a Edge Funct
 - A funcao busca dados operacionais no Supabase com RLS.
 - A intencao `analyze` gera riscos, recomendacoes e proxima acao.
 - A intencao `resolve` gera um plano assistido para prioridade alta/critica.
+- A intencao `act` executa ferramentas permitidas pelo backend.
+- A ferramenta `generate_delay_report` gera relatorio de atrasos automaticamente.
+- A ferramenta `allocate_post` prepara uma alocacao e so grava apos confirmacao humana.
 - O botao "Aplicar como tarefa" registra o plano como anotacao operacional em revisao.
 - A chave da OpenAI nunca fica no React.
 - Se `OPENAI_API_KEY` nao estiver configurada, a funcao retorna um fallback local.

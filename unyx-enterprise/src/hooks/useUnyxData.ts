@@ -488,6 +488,7 @@ export function useOperationalPosters() {
 }
 
 export function useAiAgent() {
+  const queryClient = useQueryClient()
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
 
   return useMutation({
@@ -497,7 +498,19 @@ export function useAiAgent() {
         intent: input?.intent ?? "analyze",
         target: input?.target ?? null,
         question: input?.question ?? null,
+        action: input?.action ?? null,
       }),
+    onSuccess: async (data) => {
+      if (data.action_result.status !== "executed") return
+
+      await queryClient.invalidateQueries({ queryKey: ["post-allocations"] })
+      await queryClient.invalidateQueries({ queryKey: ["allocation-history"] })
+      await queryClient.invalidateQueries({ queryKey: ["operational-posts"] })
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success(data.action_result.title || "Acao executada.")
+    },
     onError: (error) => {
       toast.error(error.message)
     },

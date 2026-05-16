@@ -2032,8 +2032,20 @@ export interface OperationalPosterInput {
 
 export type AiAgentSeverity = "normal" | "medio" | "alto" | "critico"
 export type AiAgentPriority = "baixa" | "media" | "alta"
-export type AiAgentProvider = "openai" | "fallback"
-export type AiAgentIntent = "analyze" | "resolve"
+export type AiAgentProvider = "openai" | "fallback" | "local"
+export type AiAgentIntent = "analyze" | "resolve" | "act"
+export type AiAgentActionTool = "generate_delay_report" | "allocate_post"
+export type AiAgentActionMode =
+  | "none"
+  | "suggest"
+  | "execute_with_confirmation"
+  | "execute_auto"
+export type AiAgentActionStatus =
+  | "none"
+  | "executed"
+  | "pending_confirmation"
+  | "blocked"
+  | "failed"
 
 export interface AiAgentRisk {
   title: string
@@ -2057,6 +2069,40 @@ export interface AiAgentNextAction {
   description: string
   can_execute: boolean
   tool_name: string | null
+}
+
+export interface AiAgentActionArguments {
+  branch_id: string | null
+  post_id: string | null
+  employee_id: string | null
+  schedule_id: string | null
+  notes: string | null
+  period_days: number | null
+}
+
+export interface AiAgentActionRequest {
+  tool_name: AiAgentActionTool
+  arguments?: Partial<AiAgentActionArguments> | null
+  confirmed?: boolean | null
+}
+
+export interface AiAgentActionPlan {
+  mode: AiAgentActionMode
+  tool_name: AiAgentActionTool | null
+  title: string
+  description: string
+  confidence: number
+  confirmation_required: boolean
+  arguments: AiAgentActionArguments
+  arguments_summary: string
+}
+
+export interface AiAgentActionResult {
+  status: AiAgentActionStatus
+  tool_name: AiAgentActionTool | null
+  title: string
+  message: string
+  artifact_markdown: string
 }
 
 export interface AiAgentTarget {
@@ -2094,6 +2140,8 @@ export interface AiAgentInsight {
   risks: AiAgentRisk[]
   recommendations: AiAgentRecommendation[]
   next_action: AiAgentNextAction
+  action_plan: AiAgentActionPlan
+  action_result: AiAgentActionResult
   resolution: AiAgentResolution
   chat_answer: string
   tools_used: string[]
@@ -2107,6 +2155,7 @@ export interface AiAgentInput {
   intent?: AiAgentIntent | null
   target?: AiAgentTarget | null
   question?: string | null
+  action?: AiAgentActionRequest | null
 }
 
 const operationalNoteSelect =

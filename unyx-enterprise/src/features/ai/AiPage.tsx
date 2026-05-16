@@ -7,11 +7,14 @@ import {
   CheckCircle2,
   ClipboardCheck,
   Clock,
+  FileText,
   Lightbulb,
+  PlayCircle,
   RefreshCw,
   Send,
   ShieldAlert,
   Sparkles,
+  UserPlus,
 } from "lucide-react"
 
 import { BentoGrid } from "@/components/bento/BentoGrid"
@@ -35,7 +38,12 @@ import {
 } from "@/hooks/useUnyxData"
 import { formatDateTimeBR } from "@/lib/format"
 import { statusMeta } from "@/lib/status"
-import type { AiAgentSeverity, AiAgentTarget } from "@/services/unyxApi"
+import type {
+  AiAgentActionArguments,
+  AiAgentActionTool,
+  AiAgentSeverity,
+  AiAgentTarget,
+} from "@/services/unyxApi"
 import type { OperationalStatusRecord } from "@/types/domain"
 
 function isRecent(dateISO: string, days: number) {
@@ -216,6 +224,43 @@ export function AiPage() {
     })
   }
 
+  function runActiveAction(
+    toolName: AiAgentActionTool,
+    confirmed = false,
+    actionArguments?: Partial<AiAgentActionArguments> | null
+  ) {
+    setResolutionTarget(null)
+    aiAgent.mutate({
+      intent: "act",
+      question:
+        toolName === "generate_delay_report"
+          ? "Gerar relatorio de atrasos recente."
+          : "Propor alocacao operacional segura.",
+      action: {
+        tool_name: toolName,
+        arguments: actionArguments ?? null,
+        confirmed,
+      },
+    })
+  }
+
+  function runSuggestedAction() {
+    const plan = aiAgent.data?.action_plan
+    if (!plan?.tool_name) return
+
+    runActiveAction(
+      plan.tool_name,
+      plan.tool_name === "generate_delay_report",
+      plan.arguments
+    )
+  }
+
+  function confirmPendingAction() {
+    const plan = aiAgent.data?.action_plan
+    if (!plan?.tool_name) return
+    runActiveAction(plan.tool_name, true, plan.arguments)
+  }
+
   async function applyResolutionAsNote() {
     const resolution = aiAgent.data?.resolution
     if (!resolution || resolution.status !== "drafted") return
@@ -243,14 +288,34 @@ export function AiPage() {
         title="Unyx AI"
         description="Leitura automatica dos dados operacionais para antecipar riscos e sugerir acoes."
         action={
-          <Button
-            type="button"
-            onClick={() => runAgent(null)}
-            disabled={isDataLoading || aiAgent.isPending}
-          >
-            <RefreshCw className={`size-4 ${aiAgent.isPending ? "animate-spin" : ""}`} />
-            {aiAgent.isPending ? "Analisando..." : "Executar agente"}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => runActiveAction("generate_delay_report", true)}
+              disabled={isDataLoading || aiAgent.isPending}
+            >
+              <FileText className="size-4" />
+              Relatorio de atrasos
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => runActiveAction("allocate_post", false)}
+              disabled={isDataLoading || aiAgent.isPending}
+            >
+              <UserPlus className="size-4" />
+              Propor alocacao
+            </Button>
+            <Button
+              type="button"
+              onClick={() => runAgent(null)}
+              disabled={isDataLoading || aiAgent.isPending}
+            >
+              <RefreshCw className={`size-4 ${aiAgent.isPending ? "animate-spin" : ""}`} />
+              {aiAgent.isPending ? "Analisando..." : "Executar agente"}
+            </Button>
+          </div>
         }
       />
 
@@ -287,7 +352,11 @@ export function AiPage() {
                   <div className="flex flex-wrap gap-2">
                     {aiAgent.data?.provider ? (
                       <Badge variant="secondary">
-                        {aiAgent.data.provider === "openai" ? "OpenAI" : "Fallback"}
+                        {aiAgent.data.provider === "openai"
+                          ? "OpenAI"
+                          : aiAgent.data.provider === "local"
+                            ? "Local"
+                            : "Fallback"}
                       </Badge>
                     ) : null}
                     {aiAgent.data?.overall_severity ? (
@@ -453,13 +522,107 @@ export function AiPage() {
                     </div>
 
                     <div className="rounded-lg border bg-slate-50 p-3">
-                      <div className="text-sm font-semibold">
-                        {aiAgent.data.next_action.title}
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-semibold">
+                            {aiAgent.data.next_action.title}
+                          </div>
+                          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                            {aiAgent.data.next_action.description}
+                          </p>
+                        </div>
+                        {aiAgent.data.next_action.can_execute &&
+                        aiAgent.data.action_plan.tool_name ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={runSuggestedAction}
+                            disabled={aiAgent.isPending}
+                          >
+                            <PlayCircle className="size-4" />
+                            Executar acao
+                          </Button>
+                        ) : null}
                       </div>
-                      <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                        {aiAgent.data.next_action.description}
-                      </p>
                     </div>
+
+                    {aiAgent.data.action_plan.mode !== "none" ? (
+                      <div className="rounded-lg border border-sky-200 bg-sky-50/70 p-3">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <div className="flex items-center gap-2 text-sm font-semibold text-sky-950">
+                              <Sparkles className="size-4" />
+                              Plano ativo
+                            </div>
+                            <p className="mt-2 text-sm leading-6 text-sky-900">
+                              {aiAgent.data.action_plan.description}
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Badge variant="outline">
+                              {aiAgent.data.action_plan.tool_name}
+                            </Badge>
+                            <Badge variant="outline">
+                              {Math.round(aiAgent.data.action_plan.confidence * 100)}%
+                            </Badge>
+                            {aiAgent.data.action_plan.confirmation_required ? (
+                              <Badge variant="destructive">Confirmacao</Badge>
+                            ) : null}
+                          </div>
+                        </div>
+                        {aiAgent.data.action_plan.arguments_summary ? (
+                          <div className="mt-3 rounded-lg border bg-white p-3 text-sm text-muted-foreground">
+                            {aiAgent.data.action_plan.arguments_summary}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+
+                    {aiAgent.data.action_result.status !== "none" ? (
+                      <div className="rounded-lg border border-indigo-200 bg-indigo-50/70 p-3">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <div className="flex items-center gap-2 text-sm font-semibold text-indigo-950">
+                              <ClipboardCheck className="size-4" />
+                              Resultado da acao
+                            </div>
+                            <p className="mt-2 text-sm leading-6 text-indigo-900">
+                              {aiAgent.data.action_result.message}
+                            </p>
+                          </div>
+                          <Badge
+                            variant={
+                              aiAgent.data.action_result.status === "failed" ||
+                              aiAgent.data.action_result.status === "blocked"
+                                ? "destructive"
+                                : "outline"
+                            }
+                          >
+                            {aiAgent.data.action_result.status}
+                          </Badge>
+                        </div>
+
+                        {aiAgent.data.action_result.artifact_markdown ? (
+                          <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap rounded-lg border bg-white p-3 text-xs leading-5 text-slate-700">
+                            {aiAgent.data.action_result.artifact_markdown}
+                          </pre>
+                        ) : null}
+
+                        {aiAgent.data.action_result.status === "pending_confirmation" &&
+                        aiAgent.data.action_plan.tool_name ? (
+                          <div className="mt-3 flex justify-end">
+                            <Button
+                              type="button"
+                              onClick={confirmPendingAction}
+                              disabled={aiAgent.isPending}
+                            >
+                              <CheckCircle2 className="size-4" />
+                              Confirmar acao
+                            </Button>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
 
                     {aiAgent.data.resolution.status === "drafted" ? (
                       <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 p-3">
