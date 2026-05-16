@@ -533,6 +533,11 @@ async function fetchContext(
     throw new Error(errors.join(" | "))
   }
 
+  const currentStatuses = (statuses.data ?? []).filter(
+    (item: { schedules?: { work_date?: string | null } | null }) =>
+      item.schedules?.work_date === today
+  )
+
   return {
     branch_id: branchId,
     generated_at: new Date().toISOString(),
@@ -542,12 +547,12 @@ async function fetchContext(
       role: profile.role,
     },
     status_counts: {
-      total: statuses.data?.length ?? 0,
-      critical: (statuses.data ?? []).filter(
+      total: currentStatuses.length,
+      critical: currentStatuses.filter(
         (item) => item.current_status === "alerta_critico" || item.priority_level >= 70
       ).length,
-      working: (statuses.data ?? []).filter((item) => item.current_status === "trabalhando").length,
-      delayed: (statuses.data ?? []).filter((item) => item.delay_minutes > 0).length,
+      working: currentStatuses.filter((item) => item.current_status === "trabalhando").length,
+      delayed: currentStatuses.filter((item) => item.delay_minutes > 0).length,
     },
     recent_event_counts: {
       total: events.data?.length ?? 0,
@@ -559,7 +564,7 @@ async function fetchContext(
       active: (employees.data ?? []).filter((item) => item.active).length,
     },
     tools: {
-      operational_status: compactRows(statuses.data ?? [], 30),
+      operational_status: compactRows(currentStatuses, 30),
       recent_events: compactRows(events.data ?? [], 50),
       schedules_today: compactRows(schedules.data ?? [], 50),
       checklist_runs: compactRows(checklistRuns.data ?? [], 30),

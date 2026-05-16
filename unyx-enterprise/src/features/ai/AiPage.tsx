@@ -39,7 +39,7 @@ import {
   useOperationalStatuses,
   useReportEvents,
 } from "@/hooks/useUnyxData"
-import { formatDateTimeBR } from "@/lib/format"
+import { formatDateTimeBR, todayISO } from "@/lib/format"
 import { supabase } from "@/lib/supabase"
 import { statusMeta } from "@/lib/status"
 import { useAppStore } from "@/store/useAppStore"
@@ -213,6 +213,10 @@ export function AiPage() {
   }, [profile, queryClient, selectedBranchId])
 
   const insights = useMemo(() => {
+    const today = todayISO()
+    const currentStatuses = (statuses.data ?? []).filter(
+      (status) => status.schedules?.work_date === today
+    )
     const recentEvents = (events.data ?? []).filter((event) =>
       isRecent(event.event_time, 30)
     )
@@ -222,7 +226,7 @@ export function AiPage() {
     const absences = recentEvents.filter(
       (event) => event.event_type === "falta_detectada"
     )
-    const critical = (statuses.data ?? []).filter(
+    const critical = currentStatuses.filter(
       (status) =>
         status.current_status === "alerta_critico" || status.priority_level >= 70
     )
@@ -230,7 +234,7 @@ export function AiPage() {
       .slice()
       .sort((a, b) => b.priority_level - a.priority_level)
       .slice(0, 6)
-    const working = (statuses.data ?? []).filter(
+    const working = currentStatuses.filter(
       (status) => status.current_status === "trabalhando"
     )
     const breakCandidate = working
