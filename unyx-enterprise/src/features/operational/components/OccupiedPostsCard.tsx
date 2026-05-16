@@ -69,7 +69,7 @@ export const OccupiedPostsCard = React.memo(
         >
           <CardTitle className="flex items-center gap-2">
             <MapPinned className="size-5" />
-            <span className="flex-1">Postos ocupados</span>
+            <span className="flex-1">Alocados trabalhando</span>
             <Badge variant="outline">{allocations.length}</Badge>
             <ChevronDown
               className={`size-4 text-muted-foreground transition-transform duration-200 ${
@@ -94,7 +94,11 @@ export const OccupiedPostsCard = React.memo(
                 className="min-h-32"
               />
             ) : allocations.length === 0 ? (
-              <StateBlock title="Nenhum posto ocupado" className="min-h-32" />
+              <StateBlock
+                title="Nenhum colaborador alocado trabalhando"
+                description="Alocacoes aparecem aqui somente quando o colaborador esta em status ativo de trabalho."
+                className="min-h-32"
+              />
             ) : (
               <div className="space-y-2">
                 {allocations.map((allocation) => {

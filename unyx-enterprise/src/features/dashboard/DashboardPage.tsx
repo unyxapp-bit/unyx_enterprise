@@ -83,6 +83,20 @@ const STATUS_COLORS: Record<string, string> = {
 
 const ACTIVE_STATUSES: OperationalStatus[] = ["trabalhando", "voltou"]
 
+const ACTIVE_ALLOCATION_STATUSES = new Set<PostAllocation["status"]>([
+  "alocado",
+  "aguardando_troca",
+  "em_troca",
+])
+
+const REAL_WORKING_STATUSES = new Set<OperationalStatus>([
+  "trabalhando",
+  "voltou",
+  "aguardando_sangria",
+  "troca_de_caixa",
+  "deve_sair",
+])
+
 const RISK_STATUSES: OperationalStatus[] = [
   "alerta_critico",
   "deve_sair",
@@ -230,8 +244,38 @@ function getPendingGroup(status: OperationalStatus) {
   return groups[status] ?? statusMeta[status].label
 }
 
-function getAllocationDate(allocation: PostAllocation) {
-  return allocation.schedules?.work_date ?? allocation.started_at.slice(0, 10)
+function allocationBelongsToDate(allocation: PostAllocation, date: string) {
+  if (allocation.schedules?.work_date) {
+    return allocation.schedules.work_date === date
+  }
+
+  return allocation.started_at.slice(0, 10) === date
+}
+
+function allocationMatchesDashboardFilters(
+  allocation: PostAllocation,
+  sectorFilter: string,
+  searchText: string
+) {
+  if (
+    sectorFilter &&
+    allocation.employees?.sectors?.name !== sectorFilter &&
+    allocation.operational_posts?.sectors?.name !== sectorFilter
+  ) {
+    return false
+  }
+
+  const query = normalize(searchText)
+  if (!query) return true
+
+  return [
+    allocation.employees?.name,
+    allocation.employees?.role,
+    allocation.employees?.sectors?.name,
+    allocation.operational_posts?.name,
+    allocation.operational_posts?.sectors?.name,
+    allocation.operational_posts?.branches?.name,
+  ].some((value) => normalize(value).includes(query))
 }
 
 function getPostLabel(allocation?: PostAllocation) {
@@ -474,9 +518,45 @@ export function DashboardPage() {
   )
   const activePostAllocations = useMemo(() => {
     return (postAllocations.data ?? []).filter(
-      (allocation) => getAllocationDate(allocation) === date
+      (allocation) =>
+        !allocation.ended_at &&
+        ACTIVE_ALLOCATION_STATUSES.has(allocation.status) &&
+        allocationBelongsToDate(allocation, date)
     )
   }, [date, postAllocations.data])
+
+  const statusByScheduleId = useMemo(() => {
+    const map = new Map<string, OperationalStatusRecord>()
+    for (const status of liveStatuses) {
+      if (status.schedule_id && status.schedules?.work_date === date) {
+        map.set(status.schedule_id, status)
+      }
+    }
+    return map
+  }, [date, liveStatuses])
+
+  const statusByEmployeeId = useMemo(() => {
+    const map = new Map<string, OperationalStatusRecord>()
+    for (const status of liveStatuses) {
+      if (status.schedules?.work_date && status.schedules.work_date !== date) {
+        continue
+      }
+      map.set(status.employee_id, status)
+    }
+    return map
+  }, [date, liveStatuses])
+
+  const realWorkingPostAllocations = useMemo(() => {
+    return activePostAllocations.filter((allocation) => {
+      const status =
+        (allocation.schedule_id
+          ? statusByScheduleId.get(allocation.schedule_id)
+          : undefined) ?? statusByEmployeeId.get(allocation.employee_id)
+
+      return status && REAL_WORKING_STATUSES.has(status.current_status)
+    })
+  }, [activePostAllocations, statusByEmployeeId, statusByScheduleId])
+
   const allocationByEmployeeId = useMemo(() => {
     return new Map(
       activePostAllocations.map((allocation) => [
@@ -501,11 +581,10 @@ export function DashboardPage() {
     return sortDashboardRowsByMode(mode, list)
   }, [mode, rows, searchText, sectorFilter, statusFilter])
   const postAllocationsInScope = useMemo(() => {
-    const employeeIds = new Set(filteredRows.map((row) => row.employee_id))
-    return activePostAllocations.filter((allocation) =>
-      employeeIds.has(allocation.employee_id)
+    return realWorkingPostAllocations.filter((allocation) =>
+      allocationMatchesDashboardFilters(allocation, sectorFilter, searchText)
     )
-  }, [activePostAllocations, filteredRows])
+  }, [realWorkingPostAllocations, searchText, sectorFilter])
 
   const filteredSchedules = useMemo(() => {
     return scheduledToday.filter((schedule) => {
@@ -570,6 +649,9 @@ export function DashboardPage() {
   const liveDelayCount = liveRows.filter((row) => row.delay_minutes > 0).length
   const occupiedPostCount = new Set(
     postAllocationsInScope.map((allocation) => allocation.post_id)
+  ).size
+  const allocatedWorkingCount = new Set(
+    postAllocationsInScope.map((allocation) => allocation.employee_id)
   ).size
 
   const statusSource = useMemo((): StatusCount[] => {
@@ -648,9 +730,7 @@ export function DashboardPage() {
       }).format(new Date(dashboard.dataUpdatedAt))
     : null
 
-  const workingCount = statusSource.filter((r) =>
-    ACTIVE_STATUSES.includes(r.current_status)
-  ).length
+  const workingCount = allocatedWorkingCount
   const scheduledCount = filteredSchedules.length || filteredRows.length
   const presencePct =
     scheduledCount > 0 ? Math.round((workingCount / scheduledCount) * 100) : 0
@@ -797,7 +877,7 @@ export function DashboardPage() {
                         {presencePct}%
                       </p>
                       <p className="text-xs font-medium text-slate-400">
-                        Equipe ativa
+                        Alocados ativos
                       </p>
                     </div>
                   </div>
@@ -813,7 +893,7 @@ export function DashboardPage() {
                       </div>
                       <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-3">
                         <p className="text-[11px] font-medium text-emerald-500">
-                          Trabalhando
+                          Alocados trab.
                         </p>
                         <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-800">
                           {workingCount}
@@ -829,7 +909,7 @@ export function DashboardPage() {
                         {Math.max(0, scheduledCount - workingCount)}
                       </p>
                       <p className="mt-1 text-xs text-indigo-600">
-                        Escalados que ainda nao aparecem como equipe ativa.
+                        Escalados que ainda nao aparecem como alocados trabalhando.
                       </p>
                     </div>
 
@@ -1247,7 +1327,7 @@ export function DashboardPage() {
                     </p>
                   </div>
                   <div className="rounded-lg border border-sky-100 bg-sky-50 p-3">
-                    <p className="text-[11px] font-medium text-sky-500">Postos ocupados</p>
+                    <p className="text-[11px] font-medium text-sky-500">Alocados trab.</p>
                     <p className="mt-1 text-2xl font-bold tabular-nums text-sky-800">
                       {occupiedPostCount}
                     </p>
@@ -1351,8 +1431,23 @@ export function DashboardPage() {
             }
             const entry = branchMap.get(key)!
             entry.total++
-            if (["trabalhando", "voltou"].includes(row.current_status)) entry.working++
             if (row.current_status === "alerta_critico") entry.critical++
+          }
+          for (const allocation of realWorkingPostAllocations) {
+            const key =
+              allocation.branch_id ??
+              allocation.operational_posts?.branch_id ??
+              allocation.operational_posts?.branches?.name ??
+              "â€“"
+            if (!branchMap.has(key)) {
+              branchMap.set(key, {
+                name: allocation.operational_posts?.branches?.name ?? key,
+                working: 0,
+                critical: 0,
+                total: 0,
+              })
+            }
+            branchMap.get(key)!.working++
           }
           if (branchMap.size <= 1) return null
           return (
@@ -1376,7 +1471,7 @@ export function DashboardPage() {
                     >
                       <p className="font-semibold text-slate-800">{branch.name}</p>
                       <div className="mt-1.5 flex gap-3 text-sm text-muted-foreground">
-                        <span>{branch.working} trabalhando</span>
+                        <span>{branch.working} alocados trab.</span>
                         <span>{branch.total} total</span>
                         {branch.critical > 0 ? (
                           <span className="font-medium text-red-600">

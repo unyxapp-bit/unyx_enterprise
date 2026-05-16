@@ -97,6 +97,8 @@ export function OperationsPage() {
     allPosts,
     activePosts,
     occupiedPostIds,
+    allocationByScheduleId,
+    allocationByEmployeeId,
     occupiedPostAllocations,
     refetch,
   } = useOperationalData(date, sectorFilter, searchText, sortBy, activeTab)
@@ -274,7 +276,7 @@ export function OperationsPage() {
               <DropdownMenuTrigger asChild>
                 <Button type="button" variant="outline" size="sm">
                   <MapPinned className="size-3.5" />
-                  Postos ocupados
+                  Alocados trabalhando
                   <Badge variant="outline" className="ml-1 h-5 px-1.5">
                     {occupiedPostAllocations.length}
                   </Badge>
@@ -412,6 +414,8 @@ export function OperationsPage() {
             <OperationalGrid
               schedules={activeList}
               statusByScheduleId={statusByScheduleId}
+              allocationByScheduleId={allocationByScheduleId}
+              allocationByEmployeeId={allocationByEmployeeId}
               currentMinutes={now}
               activeTab={activeTab}
               pageIndex={pageIndex}

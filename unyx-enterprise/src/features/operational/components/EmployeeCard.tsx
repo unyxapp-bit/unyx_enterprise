@@ -3,11 +3,15 @@
  */
 
 import React, { useMemo } from "react"
-import { Coffee, LogIn, LogOut, Timer } from "lucide-react"
+import { Coffee, LogIn, LogOut, MapPinned, Timer } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { StatusBadge } from "@/components/bento/StatusBadge"
-import type { OperationalStatusRecord, ScheduleWithRelations } from "@/types/domain"
+import type {
+  OperationalStatusRecord,
+  PostAllocation,
+  ScheduleWithRelations,
+} from "@/types/domain"
 import {
   avatarClassByStatus,
   canReturnFromBreak,
@@ -32,6 +36,7 @@ import type { OperationalTab } from "../utils"
 interface EmployeeCardProps {
   schedule: ScheduleWithRelations
   statusRecord: OperationalStatusRecord | undefined
+  postAllocation?: PostAllocation
   currentMinutes: number
   activeTab: OperationalTab
   isPending: boolean
@@ -46,6 +51,7 @@ export const EmployeeCard = React.memo(
   ({
     schedule,
     statusRecord,
+    postAllocation,
     currentMinutes,
     activeTab,
     isPending,
@@ -155,6 +161,26 @@ export const EmployeeCard = React.memo(
             </>
           ) : null}
         </div>
+
+        {postAllocation ? (
+          <div className="mt-2 flex items-center gap-1.5 rounded-md border border-sky-100 bg-sky-50 px-2.5 py-1.5 text-xs text-sky-700">
+            <MapPinned className="size-3.5 shrink-0" />
+            <span className="truncate">
+              {postAllocation.operational_posts?.name ?? "Posto alocado"}
+            </span>
+            <Badge
+              variant="outline"
+              className="ml-auto h-5 shrink-0 border-sky-200 bg-white px-1.5 text-[10px] text-sky-700"
+            >
+              alocado
+            </Badge>
+          </div>
+        ) : activeTab === "em_turno" ? (
+          <div className="mt-2 flex items-center gap-1.5 rounded-md border border-amber-100 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-700">
+            <MapPinned className="size-3.5 shrink-0" />
+            <span className="truncate">Sem posto alocado</span>
+          </div>
+        ) : null}
 
         {/* Break progress bar */}
         {isOnBreak && breakProgress ? (

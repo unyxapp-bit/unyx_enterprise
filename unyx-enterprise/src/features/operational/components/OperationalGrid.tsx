@@ -6,7 +6,11 @@ import React from "react"
 import { StateBlock } from "@/components/shared/StateBlock"
 import { EmployeeCard } from "./EmployeeCard"
 import { OperationalPagination } from "./OperationalPagination"
-import type { OperationalStatusRecord, ScheduleWithRelations } from "@/types/domain"
+import type {
+  OperationalStatusRecord,
+  PostAllocation,
+  ScheduleWithRelations,
+} from "@/types/domain"
 import type { OperationalTab } from "../utils"
 
 const PAGE_SIZE = 12
@@ -14,6 +18,8 @@ const PAGE_SIZE = 12
 interface OperationalGridProps {
   schedules: ScheduleWithRelations[]
   statusByScheduleId: Map<string, OperationalStatusRecord>
+  allocationByScheduleId: Map<string, PostAllocation>
+  allocationByEmployeeId: Map<string, PostAllocation>
   currentMinutes: number
   activeTab: OperationalTab
   pageIndex: number
@@ -33,6 +39,8 @@ export const OperationalGrid = React.memo(
   ({
     schedules,
     statusByScheduleId,
+    allocationByScheduleId,
+    allocationByEmployeeId,
     currentMinutes,
     activeTab,
     pageIndex,
@@ -92,6 +100,10 @@ export const OperationalGrid = React.memo(
               key={schedule.id}
               schedule={schedule}
               statusRecord={statusByScheduleId.get(schedule.id)}
+              postAllocation={
+                allocationByScheduleId.get(schedule.id) ??
+                allocationByEmployeeId.get(schedule.employee_id)
+              }
               currentMinutes={currentMinutes}
               activeTab={activeTab}
               isPending={isPending}

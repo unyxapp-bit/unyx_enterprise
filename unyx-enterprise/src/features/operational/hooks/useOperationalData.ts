@@ -3,7 +3,11 @@
  */
 
 import { useMemo } from "react"
-import type { OperationalStatusRecord } from "@/types/domain"
+import type {
+  OperationalStatus,
+  OperationalStatusRecord,
+  PostAllocation,
+} from "@/types/domain"
 import {
   useAttendanceEvents,
   useOperationalPosts,
@@ -25,6 +29,28 @@ const NON_OPERATIONAL_SCHEDULE_STATUSES = new Set([
   "cancelled",
 ])
 
+const ACTIVE_ALLOCATION_STATUSES = new Set<PostAllocation["status"]>([
+  "alocado",
+  "aguardando_troca",
+  "em_troca",
+])
+
+const REAL_WORKING_STATUSES = new Set<OperationalStatus>([
+  "trabalhando",
+  "voltou",
+  "aguardando_sangria",
+  "troca_de_caixa",
+  "deve_sair",
+])
+
+function allocationBelongsToDate(allocation: PostAllocation, date: string) {
+  if (allocation.schedules?.work_date) {
+    return allocation.schedules.work_date === date
+  }
+
+  return allocation.started_at.slice(0, 10) === date
+}
+
 export function useOperationalData(
   date: string,
   sectorFilter: string,
@@ -39,7 +65,7 @@ export function useOperationalData(
   const organization = useOrganization()
   const operationalSettings = useOperationalSettings()
   const operationalPosts = useOperationalPosts()
-  const postAllocations = usePostAllocations(null, true)
+  const postAllocations = usePostAllocations()
 
   const mode = getOperationalMode(
     operationalSettings.data?.mode ?? organization.data?.segment
@@ -53,6 +79,17 @@ export function useOperationalData(
     }
     return map
   }, [statuses.data])
+
+  const statusByEmployeeId = useMemo(() => {
+    const map = new Map<string, OperationalStatusRecord>()
+    for (const status of statuses.data ?? []) {
+      if (status.schedules?.work_date && status.schedules.work_date !== date) {
+        continue
+      }
+      map.set(status.employee_id, status)
+    }
+    return map
+  }, [date, statuses.data])
 
   // Filter and sort schedules
   const sortedSchedules = useMemo(() => {
@@ -153,32 +190,66 @@ export function useOperationalData(
     () =>
       new Set(
         (postAllocations.data ?? [])
-          .filter((a) => !a.ended_at)
-          .map((a) => a.post_id)
+          .filter(
+            (allocation) =>
+              !allocation.ended_at &&
+              ACTIVE_ALLOCATION_STATUSES.has(allocation.status) &&
+              allocationBelongsToDate(allocation, date)
+          )
+          .map((allocation) => allocation.post_id)
       ),
-    [postAllocations.data]
+    [date, postAllocations.data]
   )
 
-  const employeeByAllocation = useMemo(() => {
-    const byEmpId = new Map<string, string>()
-    for (const s of schedules.data ?? []) {
-      if (s.employee_id && s.employees?.name)
-        byEmpId.set(s.employee_id, s.employees.name)
+  const activePostAllocations = useMemo(
+    () =>
+      (postAllocations.data ?? []).filter(
+        (allocation) =>
+          !allocation.ended_at &&
+          ACTIVE_ALLOCATION_STATUSES.has(allocation.status) &&
+          allocationBelongsToDate(allocation, date)
+      ),
+    [date, postAllocations.data]
+  )
+
+  const allocationByScheduleId = useMemo(() => {
+    const map = new Map<string, PostAllocation>()
+    for (const allocation of activePostAllocations) {
+      if (allocation.schedule_id) map.set(allocation.schedule_id, allocation)
     }
+    return map
+  }, [activePostAllocations])
+
+  const allocationByEmployeeId = useMemo(() => {
+    const map = new Map<string, PostAllocation>()
+    for (const allocation of activePostAllocations) {
+      map.set(allocation.employee_id, allocation)
+    }
+    return map
+  }, [activePostAllocations])
+
+  const employeeByAllocation = useMemo(() => {
     const byPostId = new Map<string, string>()
-    for (const a of postAllocations.data ?? []) {
-      if (!a.ended_at) {
-        const name = byEmpId.get(a.employee_id)
-        if (name) byPostId.set(a.post_id, name)
-      }
+    for (const allocation of activePostAllocations) {
+      const name =
+        allocation.employees?.name ??
+        schedules.data?.find((schedule) => schedule.employee_id === allocation.employee_id)
+          ?.employees?.name
+      if (name) byPostId.set(allocation.post_id, name)
     }
     return byPostId
-  }, [postAllocations.data, schedules.data])
+  }, [activePostAllocations, schedules.data])
 
   const occupiedPostAllocations = useMemo(
     () =>
-      (postAllocations.data ?? [])
-        .filter((a) => !a.ended_at)
+      activePostAllocations
+        .filter((allocation) => {
+          const status =
+            (allocation.schedule_id
+              ? statusByScheduleId.get(allocation.schedule_id)
+              : undefined) ?? statusByEmployeeId.get(allocation.employee_id)
+          return status && REAL_WORKING_STATUSES.has(status.current_status)
+        })
         .slice()
         .sort((a, b) => {
           const sectorA = a.operational_posts?.sectors?.name ?? ""
@@ -190,7 +261,7 @@ export function useOperationalData(
             )
           )
         }),
-    [postAllocations.data]
+    [activePostAllocations, statusByEmployeeId, statusByScheduleId]
   )
 
   const postsBySector = useMemo(() => {
@@ -225,6 +296,8 @@ export function useOperationalData(
     activePosts,
     occupiedPostIds,
     employeeByAllocation,
+    allocationByScheduleId,
+    allocationByEmployeeId,
     occupiedPostAllocations,
     postsBySector,
 
@@ -232,6 +305,8 @@ export function useOperationalData(
     refetch: () => {
       schedules.refetch()
       statuses.refetch()
+      operationalPosts.refetch()
+      postAllocations.refetch()
     },
   }
 }
