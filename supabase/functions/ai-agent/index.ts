@@ -598,6 +598,100 @@ function relationName(row: DataRow, key: string) {
   return null
 }
 
+function trimText(value: string | null, maxLength = 140) {
+  if (!value) return null
+  return value.length > maxLength ? `${value.slice(0, maxLength - 3)}...` : value
+}
+
+function buildModelContext(context: AgentContext) {
+  const statuses = (context.tools.operational_status as unknown[]).map(asRow)
+  const events = (context.tools.recent_events as unknown[]).map(asRow)
+  const schedules = (context.tools.schedules_today as unknown[]).map(asRow)
+  const checklists = (context.tools.checklist_runs as unknown[]).map(asRow)
+  const posts = (context.tools.operational_posts as unknown[]).map(asRow)
+  const allocations = (context.tools.active_allocations as unknown[]).map(asRow)
+
+  return {
+    branch_id: context.branch_id,
+    generated_at: context.generated_at,
+    work_date: context.work_date,
+    profile: context.profile,
+    status_counts: context.status_counts,
+    recent_event_counts: context.recent_event_counts,
+    employee_counts: context.employee_counts,
+    action_capabilities: [
+      {
+        tool_name: "generate_delay_report",
+        mode: "execute_auto",
+        description: "Gera relatorio de atrasos recentes sem mudar dados operacionais.",
+      },
+      {
+        tool_name: "allocate_post",
+        mode: "execute_with_confirmation",
+        description: "Prepara alocacao de colaborador em posto; gravacao exige confirmacao humana.",
+      },
+    ],
+    tools: {
+      operational_status: statuses.slice(0, 12).map((status) => ({
+        id: readString(status, "id"),
+        branch_id: readString(status, "branch_id"),
+        employee_id: readString(status, "employee_id"),
+        schedule_id: readString(status, "schedule_id"),
+        status: readString(status, "current_status"),
+        priority: status.priority_level,
+        delay: status.delay_minutes,
+        reason: trimText(readString(status, "status_reason")),
+        branch: relationName(status, "branches"),
+        employee: relationName(status, "employees"),
+        updated_at: readString(status, "updated_at"),
+      })),
+      recent_events: events.slice(0, 18).map((event) => ({
+        type: readString(event, "event_type"),
+        time: readString(event, "event_time"),
+        branch: relationName(event, "branches"),
+        employee: relationName(event, "employees"),
+        notes: trimText(readString(event, "notes"), 100),
+      })),
+      schedules_today: schedules.slice(0, 18).map((schedule) => ({
+        id: readString(schedule, "id"),
+        employee_id: readString(schedule, "employee_id"),
+        status: readString(schedule, "status"),
+        start_time: readString(schedule, "start_time"),
+        break_start: readString(schedule, "break_start"),
+        break_end: readString(schedule, "break_end"),
+        end_time: readString(schedule, "end_time"),
+        branch: relationName(schedule, "branches"),
+        employee: relationName(schedule, "employees"),
+      })),
+      checklist_runs: checklists.slice(0, 8).map((run) => ({
+        status: readString(run, "status"),
+        branch: relationName(run, "branches"),
+        created_at: readString(run, "created_at"),
+        completed_at: readString(run, "completed_at"),
+      })),
+      operational_posts: posts.slice(0, 18).map((post) => ({
+        id: readString(post, "id"),
+        branch_id: readString(post, "branch_id"),
+        name: readString(post, "name"),
+        type: readString(post, "type"),
+        branch: relationName(post, "branches"),
+        sector: relationName(post, "sectors"),
+      })),
+      active_allocations: allocations.slice(0, 18).map((allocation) => ({
+        id: readString(allocation, "id"),
+        post_id: readString(allocation, "post_id"),
+        employee_id: readString(allocation, "employee_id"),
+        status: readString(allocation, "status"),
+        post: relationName(allocation, "operational_posts"),
+        employee: relationName(allocation, "employees"),
+      })),
+    },
+    compacted: true,
+    omitted_rows_note:
+      "Contexto enviado ao modelo foi resumido para evitar limite de tokens; a funcao mantem dados completos para acoes locais.",
+  }
+}
+
 function actionArgs(args?: AgentActionArguments | null): Required<AgentActionArguments> {
   return {
     ...emptyActionArguments(),
@@ -1046,9 +1140,11 @@ Deno.serve(async (request) => {
       })
     }
 
+    const modelContext = buildModelContext(context)
     const response = await fetch("https://api.openai.com/v1/responses", {
       body: JSON.stringify({
         model: openaiModel,
+        max_output_tokens: 2200,
         input: [
           {
             role: "system",
@@ -1065,7 +1161,7 @@ Deno.serve(async (request) => {
               intent,
               target,
               question,
-              context,
+              context: modelContext,
             }),
           },
         ],
