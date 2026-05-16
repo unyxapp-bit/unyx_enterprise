@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import type { FormEvent } from "react"
 import {
   AlertTriangle,
@@ -29,6 +29,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import { useAuth } from "@/app/providers/auth-context"
 import {
   useAiAgent,
   useAllEmployees,
@@ -38,13 +39,55 @@ import {
 } from "@/hooks/useUnyxData"
 import { formatDateTimeBR } from "@/lib/format"
 import { statusMeta } from "@/lib/status"
+import { useAppStore } from "@/store/useAppStore"
 import type {
   AiAgentActionArguments,
   AiAgentActionTool,
+  AiAgentInsight,
   AiAgentSeverity,
   AiAgentTarget,
 } from "@/services/unyxApi"
 import type { OperationalStatusRecord } from "@/types/domain"
+
+const AI_AGENT_CACHE_VERSION = 1
+
+type CachedAiAgentInsight = {
+  version: number
+  saved_at: string
+  data: AiAgentInsight
+}
+
+function aiAgentCacheKey(organizationId: string | null | undefined, branchId: string | null) {
+  return `unyx-ai-agent:v${AI_AGENT_CACHE_VERSION}:${organizationId ?? "anon"}:${branchId ?? "all"}`
+}
+
+function readCachedAiAgentInsight(key: string) {
+  try {
+    const raw = window.localStorage.getItem(key)
+    if (!raw) return null
+
+    const parsed = JSON.parse(raw) as Partial<CachedAiAgentInsight>
+    if (parsed.version !== AI_AGENT_CACHE_VERSION || !parsed.data) return null
+    return parsed.data
+  } catch {
+    return null
+  }
+}
+
+function writeCachedAiAgentInsight(key: string, data: AiAgentInsight) {
+  try {
+    window.localStorage.setItem(
+      key,
+      JSON.stringify({
+        version: AI_AGENT_CACHE_VERSION,
+        saved_at: new Date().toISOString(),
+        data,
+      } satisfies CachedAiAgentInsight)
+    )
+  } catch {
+    // Cache local e descartavel; se o navegador bloquear storage, o agente segue normal.
+  }
+}
 
 function isRecent(dateISO: string, days: number) {
   const date = new Date(dateISO)
@@ -98,6 +141,8 @@ function targetFromStatus(status: OperationalStatusRecord): AiAgentTarget {
 }
 
 export function AiPage() {
+  const { profile } = useAuth()
+  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
   const statuses = useOperationalStatuses()
   const events = useReportEvents()
   const employees = useAllEmployees()
@@ -105,6 +150,27 @@ export function AiPage() {
   const createNote = useCreateOperationalNote()
   const [question, setQuestion] = useState("")
   const [resolutionTarget, setResolutionTarget] = useState<AiAgentTarget | null>(null)
+  const cacheKey = useMemo(
+    () => aiAgentCacheKey(profile?.organization_id, selectedBranchId),
+    [profile?.organization_id, selectedBranchId]
+  )
+  const [cachedAgentInsight, setCachedAgentInsight] = useState<{
+    cacheKey: string
+    data: AiAgentInsight
+  } | null>(null)
+  const agentInsight =
+    aiAgent.data ?? (cachedAgentInsight?.cacheKey === cacheKey ? cachedAgentInsight.data : null)
+
+  useEffect(() => {
+    const cached = readCachedAiAgentInsight(cacheKey)
+    setCachedAgentInsight(cached ? { cacheKey, data: cached } : null)
+  }, [cacheKey])
+
+  useEffect(() => {
+    if (!aiAgent.data) return
+    writeCachedAiAgentInsight(cacheKey, aiAgent.data)
+    setCachedAgentInsight({ cacheKey, data: aiAgent.data })
+  }, [aiAgent.data, cacheKey])
 
   const insights = useMemo(() => {
     const recentEvents = (events.data ?? []).filter((event) =>
@@ -245,7 +311,7 @@ export function AiPage() {
   }
 
   function runSuggestedAction() {
-    const plan = aiAgent.data?.action_plan
+    const plan = agentInsight?.action_plan
     if (!plan?.tool_name) return
 
     runActiveAction(
@@ -256,13 +322,13 @@ export function AiPage() {
   }
 
   function confirmPendingAction() {
-    const plan = aiAgent.data?.action_plan
+    const plan = agentInsight?.action_plan
     if (!plan?.tool_name) return
     runActiveAction(plan.tool_name, true, plan.arguments)
   }
 
   async function applyResolutionAsNote() {
-    const resolution = aiAgent.data?.resolution
+    const resolution = agentInsight?.resolution
     if (!resolution || resolution.status !== "drafted") return
 
     await createNote.mutateAsync({
@@ -350,35 +416,35 @@ export function AiPage() {
                     Agente operacional
                   </CardTitle>
                   <div className="flex flex-wrap gap-2">
-                    {aiAgent.data?.provider ? (
+                    {agentInsight?.provider ? (
                       <Badge variant="secondary">
-                        {aiAgent.data.provider === "openai"
+                        {agentInsight.provider === "openai"
                           ? "OpenAI"
-                          : aiAgent.data.provider === "local"
+                          : agentInsight.provider === "local"
                             ? "Local"
                             : "Fallback"}
                       </Badge>
                     ) : null}
-                    {aiAgent.data?.overall_severity ? (
-                      <Badge variant={severityBadgeVariant(aiAgent.data.overall_severity)}>
-                        {aiAgent.data.overall_severity}
+                    {agentInsight?.overall_severity ? (
+                      <Badge variant={severityBadgeVariant(agentInsight.overall_severity)}>
+                        {agentInsight.overall_severity}
                       </Badge>
                     ) : null}
                   </div>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                {aiAgent.data ? (
+                {agentInsight ? (
                   <>
-                    {aiAgent.data.warning ? (
+                    {agentInsight.warning ? (
                       <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                        {aiAgent.data.warning}
+                        {agentInsight.warning}
                       </div>
                     ) : null}
                     <div className="rounded-lg border bg-slate-50 p-3">
                       <div className="text-sm font-medium">Resumo do agente</div>
                       <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                        {aiAgent.data.summary}
+                        {agentInsight.summary}
                       </p>
                     </div>
 
@@ -448,8 +514,8 @@ export function AiPage() {
                     <div className="grid gap-3 lg:grid-cols-2">
                       <div className="space-y-3">
                         <div className="text-sm font-semibold">Riscos detectados</div>
-                        {aiAgent.data.risks.length > 0 ? (
-                          aiAgent.data.risks.map((risk) => (
+                        {agentInsight.risks.length > 0 ? (
+                          agentInsight.risks.map((risk) => (
                             <div key={`${risk.title}-${risk.evidence}`} className="rounded-lg border p-3">
                               <div className="flex flex-wrap items-center justify-between gap-2">
                                 <div className="font-medium">{risk.title}</div>
@@ -499,7 +565,7 @@ export function AiPage() {
 
                       <div className="space-y-3">
                         <div className="text-sm font-semibold">Recomendacoes</div>
-                        {aiAgent.data.recommendations.map((recommendation) => (
+                        {agentInsight.recommendations.map((recommendation) => (
                           <div key={recommendation.title} className="rounded-lg border p-3">
                             <div className="flex flex-wrap items-center justify-between gap-2">
                               <div className="font-medium">{recommendation.title}</div>
@@ -525,14 +591,14 @@ export function AiPage() {
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <div className="text-sm font-semibold">
-                            {aiAgent.data.next_action.title}
+                            {agentInsight.next_action.title}
                           </div>
                           <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                            {aiAgent.data.next_action.description}
+                            {agentInsight.next_action.description}
                           </p>
                         </div>
-                        {aiAgent.data.next_action.can_execute &&
-                        aiAgent.data.action_plan.tool_name ? (
+                        {agentInsight.next_action.can_execute &&
+                        agentInsight.action_plan.tool_name ? (
                           <Button
                             type="button"
                             variant="outline"
@@ -546,7 +612,7 @@ export function AiPage() {
                       </div>
                     </div>
 
-                    {aiAgent.data.action_plan.mode !== "none" ? (
+                    {agentInsight.action_plan.mode !== "none" ? (
                       <div className="rounded-lg border border-sky-200 bg-sky-50/70 p-3">
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
@@ -555,30 +621,30 @@ export function AiPage() {
                               Plano ativo
                             </div>
                             <p className="mt-2 text-sm leading-6 text-sky-900">
-                              {aiAgent.data.action_plan.description}
+                              {agentInsight.action_plan.description}
                             </p>
                           </div>
                           <div className="flex flex-wrap gap-2">
                             <Badge variant="outline">
-                              {aiAgent.data.action_plan.tool_name}
+                              {agentInsight.action_plan.tool_name}
                             </Badge>
                             <Badge variant="outline">
-                              {Math.round(aiAgent.data.action_plan.confidence * 100)}%
+                              {Math.round(agentInsight.action_plan.confidence * 100)}%
                             </Badge>
-                            {aiAgent.data.action_plan.confirmation_required ? (
+                            {agentInsight.action_plan.confirmation_required ? (
                               <Badge variant="destructive">Confirmacao</Badge>
                             ) : null}
                           </div>
                         </div>
-                        {aiAgent.data.action_plan.arguments_summary ? (
+                        {agentInsight.action_plan.arguments_summary ? (
                           <div className="mt-3 rounded-lg border bg-white p-3 text-sm text-muted-foreground">
-                            {aiAgent.data.action_plan.arguments_summary}
+                            {agentInsight.action_plan.arguments_summary}
                           </div>
                         ) : null}
                       </div>
                     ) : null}
 
-                    {aiAgent.data.action_result.status !== "none" ? (
+                    {agentInsight.action_result.status !== "none" ? (
                       <div className="rounded-lg border border-indigo-200 bg-indigo-50/70 p-3">
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
@@ -587,29 +653,29 @@ export function AiPage() {
                               Resultado da acao
                             </div>
                             <p className="mt-2 text-sm leading-6 text-indigo-900">
-                              {aiAgent.data.action_result.message}
+                              {agentInsight.action_result.message}
                             </p>
                           </div>
                           <Badge
                             variant={
-                              aiAgent.data.action_result.status === "failed" ||
-                              aiAgent.data.action_result.status === "blocked"
+                              agentInsight.action_result.status === "failed" ||
+                              agentInsight.action_result.status === "blocked"
                                 ? "destructive"
                                 : "outline"
                             }
                           >
-                            {aiAgent.data.action_result.status}
+                            {agentInsight.action_result.status}
                           </Badge>
                         </div>
 
-                        {aiAgent.data.action_result.artifact_markdown ? (
+                        {agentInsight.action_result.artifact_markdown ? (
                           <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap rounded-lg border bg-white p-3 text-xs leading-5 text-slate-700">
-                            {aiAgent.data.action_result.artifact_markdown}
+                            {agentInsight.action_result.artifact_markdown}
                           </pre>
                         ) : null}
 
-                        {aiAgent.data.action_result.status === "pending_confirmation" &&
-                        aiAgent.data.action_plan.tool_name ? (
+                        {agentInsight.action_result.status === "pending_confirmation" &&
+                        agentInsight.action_plan.tool_name ? (
                           <div className="mt-3 flex justify-end">
                             <Button
                               type="button"
@@ -624,7 +690,7 @@ export function AiPage() {
                       </div>
                     ) : null}
 
-                    {aiAgent.data.resolution.status === "drafted" ? (
+                    {agentInsight.resolution.status === "drafted" ? (
                       <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 p-3">
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
@@ -633,14 +699,14 @@ export function AiPage() {
                               Plano de resolucao
                             </div>
                             <p className="mt-2 text-sm leading-6 text-emerald-900">
-                              {aiAgent.data.resolution.diagnosis}
+                              {agentInsight.resolution.diagnosis}
                             </p>
                           </div>
                           <div className="flex flex-wrap gap-2">
-                            <Badge variant={severityBadgeVariant(aiAgent.data.resolution.severity)}>
-                              {aiAgent.data.resolution.severity}
+                            <Badge variant={severityBadgeVariant(agentInsight.resolution.severity)}>
+                              {agentInsight.resolution.severity}
                             </Badge>
-                            {aiAgent.data.resolution.confirmation_required ? (
+                            {agentInsight.resolution.confirmation_required ? (
                               <Badge variant="outline">Confirmar antes de concluir</Badge>
                             ) : null}
                           </div>
@@ -650,7 +716,7 @@ export function AiPage() {
                           <div className="rounded-lg border bg-white p-3">
                             <div className="text-sm font-medium">Passos imediatos</div>
                             <ol className="mt-2 list-decimal space-y-1 pl-4 text-sm leading-6 text-muted-foreground">
-                              {aiAgent.data.resolution.immediate_steps.map((step) => (
+                              {agentInsight.resolution.immediate_steps.map((step) => (
                                 <li key={step}>{step}</li>
                               ))}
                             </ol>
@@ -658,16 +724,16 @@ export function AiPage() {
                           <div className="rounded-lg border bg-white p-3">
                             <div className="text-sm font-medium">Mensagem pronta</div>
                             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                              {aiAgent.data.resolution.recommended_message}
+                              {agentInsight.resolution.recommended_message}
                             </p>
                           </div>
                         </div>
 
-                        {aiAgent.data.resolution.preventive_actions.length > 0 ? (
+                        {agentInsight.resolution.preventive_actions.length > 0 ? (
                           <div className="mt-3 rounded-lg border bg-white p-3">
                             <div className="text-sm font-medium">Prevencao</div>
                             <div className="mt-2 flex flex-wrap gap-2">
-                              {aiAgent.data.resolution.preventive_actions.map((action) => (
+                              {agentInsight.resolution.preventive_actions.map((action) => (
                                 <Badge key={action} variant="outline">
                                   {action}
                                 </Badge>
@@ -722,9 +788,9 @@ export function AiPage() {
                   </Button>
                 </form>
 
-                {aiAgent.data?.chat_answer ? (
+                {agentInsight?.chat_answer ? (
                   <div className="rounded-lg border bg-white p-3 text-sm leading-6">
-                    {aiAgent.data.chat_answer}
+                    {agentInsight.chat_answer}
                   </div>
                 ) : null}
               </CardContent>
