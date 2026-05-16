@@ -1061,6 +1061,37 @@ function sanitizeOpenAiError(value: unknown) {
     .slice(0, 260)
 }
 
+async function saveAgentSnapshot(
+  supabase: ReturnType<typeof createClient>,
+  profile: UserProfile,
+  branchId: string | null,
+  intent: AgentIntent,
+  question: string | null,
+  target: AgentTarget | null,
+  insight: Record<string, unknown>
+) {
+  const actionResult = asRow(insight.action_result)
+  const { error } = await supabase
+    .from("ai_agent_snapshots")
+    .insert({
+      organization_id: profile.organization_id,
+      branch_id: branchId,
+      created_by: profile.id,
+      intent,
+      question,
+      target,
+      result: insight,
+      provider: readString(insight, "provider"),
+      model: readString(insight, "model"),
+      action_tool: readString(actionResult, "tool_name"),
+      action_status: readString(actionResult, "status"),
+    })
+
+  if (error) {
+    console.warn("[ai-agent] snapshot not saved", error.message)
+  }
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders })
@@ -1115,11 +1146,23 @@ Deno.serve(async (request) => {
       payload.intent === "resolve" ? "resolve" : payload.intent === "act" ? "act" : "analyze"
     const target = payload.target ?? null
     const requestedAction = payload.action ?? null
+    const insightResponse = async (body: Record<string, unknown>) => {
+      await saveAgentSnapshot(
+        supabase,
+        profile as UserProfile,
+        branchId,
+        intent,
+        question,
+        target,
+        body
+      )
+      return jsonResponse(body)
+    }
 
     if (intent === "act") {
       const actionExecution = await executeAgentAction(supabase, context, question, requestedAction)
 
-      return jsonResponse({
+      return insightResponse({
         ...fallbackInsight(
           context,
           question,
@@ -1133,7 +1176,7 @@ Deno.serve(async (request) => {
     }
 
     if (!openaiKey) {
-      return jsonResponse({
+      return insightResponse({
         ...fallbackInsight(context, question, intent, target),
         provider: "fallback",
         warning: "OPENAI_API_KEY nao configurada. Usando regras locais.",
@@ -1188,7 +1231,7 @@ Deno.serve(async (request) => {
     if (!response.ok) {
       console.error("[ai-agent] OpenAI error", openaiData)
       const reason = sanitizeOpenAiError(openaiData)
-      return jsonResponse({
+      return insightResponse({
         ...fallbackInsight(context, question, intent, target),
         provider: "fallback",
         warning: `OpenAI retornou erro (${reason}). Usando regras locais.`,
@@ -1204,14 +1247,14 @@ Deno.serve(async (request) => {
           ?.join("")
 
     if (!outputText) {
-      return jsonResponse({
+      return insightResponse({
         ...fallbackInsight(context, question, intent, target),
         provider: "fallback",
         warning: "Resposta vazia da OpenAI. Usando regras locais.",
       })
     }
 
-    return jsonResponse({
+    return insightResponse({
       ...JSON.parse(outputText),
       provider: "openai",
       model: openaiModel,

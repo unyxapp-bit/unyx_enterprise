@@ -40,6 +40,8 @@ O deploy usa `--use-api`, entao nao depende do Docker para publicar a Edge Funct
 - A intencao `act` executa ferramentas permitidas pelo backend.
 - A ferramenta `generate_delay_report` gera relatorio de atrasos automaticamente.
 - A ferramenta `allocate_post` prepara uma alocacao e so grava apos confirmacao humana.
+- Cada execucao salva um snapshot em `ai_agent_snapshots`.
+- Ao abrir a tela, o app carrega o ultimo snapshot da organizacao/filial e usa realtime para refletir novas execucoes em outros computadores.
 - O botao "Aplicar como tarefa" registra o plano como anotacao operacional em revisao.
 - A chave da OpenAI nunca fica no React.
 - Se `OPENAI_API_KEY` nao estiver configurada, a funcao retorna um fallback local.

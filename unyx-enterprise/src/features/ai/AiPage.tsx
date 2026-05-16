@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import type { FormEvent } from "react"
+import { useQueryClient } from "@tanstack/react-query"
 import {
   AlertTriangle,
   Bot,
@@ -34,10 +35,12 @@ import {
   useAiAgent,
   useAllEmployees,
   useCreateOperationalNote,
+  useLatestAiAgentSnapshot,
   useOperationalStatuses,
   useReportEvents,
 } from "@/hooks/useUnyxData"
 import { formatDateTimeBR } from "@/lib/format"
+import { supabase } from "@/lib/supabase"
 import { statusMeta } from "@/lib/status"
 import { useAppStore } from "@/store/useAppStore"
 import type {
@@ -142,11 +145,13 @@ function targetFromStatus(status: OperationalStatusRecord): AiAgentTarget {
 
 export function AiPage() {
   const { profile } = useAuth()
+  const queryClient = useQueryClient()
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
   const statuses = useOperationalStatuses()
   const events = useReportEvents()
   const employees = useAllEmployees()
   const aiAgent = useAiAgent()
+  const latestSnapshot = useLatestAiAgentSnapshot()
   const createNote = useCreateOperationalNote()
   const [question, setQuestion] = useState("")
   const [resolutionTarget, setResolutionTarget] = useState<AiAgentTarget | null>(null)
@@ -158,8 +163,11 @@ export function AiPage() {
     cacheKey: string
     data: AiAgentInsight
   } | null>(null)
+  const latestAgentInsight = latestSnapshot.data?.result ?? null
   const agentInsight =
-    aiAgent.data ?? (cachedAgentInsight?.cacheKey === cacheKey ? cachedAgentInsight.data : null)
+    aiAgent.data ??
+    latestAgentInsight ??
+    (cachedAgentInsight?.cacheKey === cacheKey ? cachedAgentInsight.data : null)
 
   useEffect(() => {
     const cached = readCachedAiAgentInsight(cacheKey)
@@ -167,10 +175,42 @@ export function AiPage() {
   }, [cacheKey])
 
   useEffect(() => {
+    if (!latestAgentInsight) return
+    writeCachedAiAgentInsight(cacheKey, latestAgentInsight)
+    setCachedAgentInsight({ cacheKey, data: latestAgentInsight })
+  }, [cacheKey, latestAgentInsight, latestSnapshot.data?.id])
+
+  useEffect(() => {
     if (!aiAgent.data) return
     writeCachedAiAgentInsight(cacheKey, aiAgent.data)
     setCachedAgentInsight({ cacheKey, data: aiAgent.data })
   }, [aiAgent.data, cacheKey])
+
+  useEffect(() => {
+    if (!profile) return
+
+    const channel = supabase
+      .channel(`ai-agent-snapshots:${profile.organization_id}:${selectedBranchId ?? "all"}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "ai_agent_snapshots",
+          filter: `organization_id=eq.${profile.organization_id}`,
+        },
+        (payload) => {
+          const snapshot = payload.new as { branch_id?: string | null }
+          if ((snapshot.branch_id ?? null) !== (selectedBranchId ?? null)) return
+          void queryClient.invalidateQueries({ queryKey: ["ai-agent-snapshot"] })
+        }
+      )
+      .subscribe()
+
+    return () => {
+      void supabase.removeChannel(channel)
+    }
+  }, [profile, queryClient, selectedBranchId])
 
   const insights = useMemo(() => {
     const recentEvents = (events.data ?? []).filter((event) =>

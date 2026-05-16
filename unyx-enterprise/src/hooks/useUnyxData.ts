@@ -53,6 +53,7 @@ import {
   importProductCatalog,
   importSchedules,
   getCurrentCashSession,
+  getLatestAiAgentSnapshot,
   listAllocationHistory,
   listCashSessions,
   listCustomers,
@@ -487,6 +488,19 @@ export function useOperationalPosters() {
   })
 }
 
+export function useLatestAiAgentSnapshot() {
+  const { profile } = useAuth()
+  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
+
+  return useQuery({
+    queryKey: ["ai-agent-snapshot", profile?.organization_id, selectedBranchId],
+    queryFn: () =>
+      getLatestAiAgentSnapshot(selectedBranchId ?? null, profile!.organization_id),
+    enabled: Boolean(profile),
+    refetchInterval: 30_000,
+  })
+}
+
 export function useAiAgent() {
   const queryClient = useQueryClient()
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
@@ -501,6 +515,8 @@ export function useAiAgent() {
         action: input?.action ?? null,
       }),
     onSuccess: async (data) => {
+      await queryClient.invalidateQueries({ queryKey: ["ai-agent-snapshot"] })
+
       if (data.action_result.status !== "executed") return
 
       await queryClient.invalidateQueries({ queryKey: ["post-allocations"] })

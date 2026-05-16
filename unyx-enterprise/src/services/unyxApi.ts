@@ -181,6 +181,22 @@ function checklistFeatureMessage() {
   return "Modulo de checklists e procedimentos ainda nao instalado. Rode supabase/checklists_procedures.sql no SQL Editor do Supabase e recarregue o app."
 }
 
+function isMissingAiAgentSnapshotFeature(error: { code?: string; message: string } | null) {
+  if (!error) return false
+  const message = error.message.toLowerCase()
+  return (
+    message.includes("ai_agent_snapshots") &&
+    (
+      error.code === "42P01" ||
+      error.code === "PGRST204" ||
+      error.code === "PGRST205" ||
+      message.includes("schema cache") ||
+      message.includes("does not exist") ||
+      message.includes("could not find")
+    )
+  )
+}
+
 function isMissingFrontStoreFeature(error: { code?: string; message: string } | null) {
   if (!error) return false
   const message = error.message.toLowerCase()
@@ -2158,6 +2174,22 @@ export interface AiAgentInput {
   action?: AiAgentActionRequest | null
 }
 
+export interface AiAgentSnapshot {
+  id: string
+  organization_id: string
+  branch_id: string | null
+  created_by: string | null
+  intent: AiAgentIntent
+  question: string | null
+  target: AiAgentTarget | null
+  result: AiAgentInsight
+  provider: AiAgentProvider | null
+  model: string | null
+  action_tool: AiAgentActionTool | null
+  action_status: AiAgentActionStatus | null
+  created_at: string
+}
+
 const operationalNoteSelect =
   "*, branches(name), sectors(name), user_profiles!created_by(name)"
 
@@ -2611,6 +2643,26 @@ export async function runAiAgent(input: AiAgentInput) {
   if (maybeError.error) throw new Error(maybeError.error)
 
   return data
+}
+
+export async function getLatestAiAgentSnapshot(
+  branchId?: string | null,
+  organizationId?: string | null
+) {
+  let query = supabase
+    .from("ai_agent_snapshots")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(1)
+
+  if (organizationId) query = query.eq("organization_id", organizationId)
+  query = branchId ? query.eq("branch_id", branchId) : query.is("branch_id", null)
+
+  const { data, error } = await query
+  if (isMissingAiAgentSnapshotFeature(error)) return null
+  raise(error)
+
+  return ((data ?? [])[0] ?? null) as AiAgentSnapshot | null
 }
 
 export async function createOperationalPoster(
