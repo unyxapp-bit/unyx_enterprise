@@ -3,9 +3,10 @@
  */
 
 import { useCallback } from "react"
-import type { ScheduleWithRelations } from "@/types/domain"
+import type { PostAllocation, ScheduleWithRelations } from "@/types/domain"
 import {
   useAllocatePost,
+  useConfirmCashMovement,
   useRecordOperationalEvent,
   useUpdateSchedule,
 } from "@/hooks/useUnyxData"
@@ -16,6 +17,7 @@ export function useOperationalActions() {
   const recordEvent = useRecordOperationalEvent()
   const updateSchedule = useUpdateSchedule()
   const allocatePost = useAllocatePost()
+  const confirmCashMovement = useConfirmCashMovement()
 
   const fireAction = useCallback(
     async (schedule: ScheduleWithRelations, eventType: "entrada_confirmada" | "retorno_confirmado" | "saida_confirmada") => {
@@ -170,6 +172,32 @@ export function useOperationalActions() {
     [recordEvent, updateSchedule]
   )
 
+  const handleCashMovementConfirm = useCallback(
+    async (allocation: PostAllocation) => {
+      await confirmCashMovement.mutateAsync({
+        allocation_id: allocation.id,
+        movement_type: "sangria_confirmada",
+        notes: allocation.operational_posts?.name
+          ? `Sangria confirmada em ${allocation.operational_posts.name}`
+          : "Sangria confirmada",
+      })
+    },
+    [confirmCashMovement]
+  )
+
+  const handleCashierSwapConfirm = useCallback(
+    async (schedule: ScheduleWithRelations) => {
+      await recordEvent.mutateAsync({
+        branch_id: schedule.branch_id,
+        employee_id: schedule.employee_id,
+        schedule_id: schedule.id,
+        event_type: "troca_caixa_confirmada",
+        notes: eventLabel["troca_caixa_confirmada"],
+      })
+    },
+    [recordEvent]
+  )
+
   const handleReturnAnswer = useCallback(
     async (schedule: ScheduleWithRelations, returned: boolean, isCafe: boolean) => {
       const n = new Date()
@@ -241,9 +269,15 @@ export function useOperationalActions() {
     handleEntryConfirm,
     handleBreakConfirm,
     handleBreakAlreadyDone,
+    handleCashMovementConfirm,
+    handleCashierSwapConfirm,
     handleCafeStart,
     handleReturnAnswer,
     handleOccurrenceSubmit,
-    isPending: recordEvent.isPending || updateSchedule.isPending || allocatePost.isPending,
+    isPending:
+      recordEvent.isPending ||
+      updateSchedule.isPending ||
+      allocatePost.isPending ||
+      confirmCashMovement.isPending,
   }
 }

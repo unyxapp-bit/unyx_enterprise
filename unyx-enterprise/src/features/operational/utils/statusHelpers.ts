@@ -62,7 +62,13 @@ export function canStartCafe(status: OperationalStatus | null | undefined): bool
 }
 
 export function canStartExit(status: OperationalStatus | null | undefined): boolean {
-  return !!status && ENTERED_STATUSES.has(status) && status !== "em_intervalo"
+  return (
+    !!status &&
+    ENTERED_STATUSES.has(status) &&
+    status !== "em_intervalo" &&
+    status !== "aguardando_sangria" &&
+    status !== "troca_de_caixa"
+  )
 }
 
 export function isCafeBreak(notes: string | null | undefined): boolean {

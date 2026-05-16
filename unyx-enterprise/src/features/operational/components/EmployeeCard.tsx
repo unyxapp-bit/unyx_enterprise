@@ -3,7 +3,16 @@
  */
 
 import React, { useMemo } from "react"
-import { CheckCircle2, Coffee, LogIn, LogOut, MapPinned, Timer } from "lucide-react"
+import {
+  ArrowRightLeft,
+  Banknote,
+  CheckCircle2,
+  Coffee,
+  LogIn,
+  LogOut,
+  MapPinned,
+  Timer,
+} from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { StatusBadge } from "@/components/bento/StatusBadge"
@@ -43,6 +52,8 @@ interface EmployeeCardProps {
   onEntry: () => void
   onBreak: () => void
   onBreakAlreadyDone: () => void
+  onCashMovement: () => void
+  onCashierSwap: () => void
   onReturn: () => void
   onCafe: () => void
   onExit: () => void
@@ -59,6 +70,8 @@ export const EmployeeCard = React.memo(
     onEntry,
     onBreak,
     onBreakAlreadyDone,
+    onCashMovement,
+    onCashierSwap,
     onReturn,
     onCafe,
     onExit,
@@ -81,6 +94,8 @@ export const EmployeeCard = React.memo(
     }, [schedule.break_start, currentMinutes, breakDone])
 
     const isOnBreak = currentStatus === "em_intervalo"
+    const isAwaitingCashMovement = currentStatus === "aguardando_sangria"
+    const isAwaitingCashierSwap = currentStatus === "troca_de_caixa"
     const isCafe = isCafeBreak(schedule.notes)
     const cardIsDone = isDone(currentStatus)
     const lunchAlreadyDone =
@@ -307,6 +322,30 @@ export const EmployeeCard = React.memo(
                   <LogIn className="size-3.5" />
                   Retorno
                 </Button>
+              ) : isAwaitingCashMovement ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="flex flex-col gap-0.5 h-auto py-2 text-xs border-orange-300 text-orange-700 hover:bg-orange-50"
+                  disabled={isPending || !postAllocation}
+                  onClick={onCashMovement}
+                  aria-label="Confirmar sangria"
+                >
+                  <Banknote className="size-3.5" />
+                  Sangria
+                </Button>
+              ) : isAwaitingCashierSwap ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="flex flex-col gap-0.5 h-auto py-2 text-xs border-sky-300 text-sky-700 hover:bg-sky-50"
+                  disabled={isPending}
+                  onClick={onCashierSwap}
+                  aria-label="Confirmar troca de caixa"
+                >
+                  <ArrowRightLeft className="size-3.5" />
+                  Troca
+                </Button>
               ) : (
                 <>
                   <Button
@@ -367,6 +406,8 @@ export const EmployeeCard = React.memo(
     // Custom comparison to avoid unnecessary re-renders
     return (
       prev.schedule.id === next.schedule.id &&
+      prev.schedule.notes === next.schedule.notes &&
+      prev.postAllocation?.id === next.postAllocation?.id &&
       prev.statusRecord?.current_status === next.statusRecord?.current_status &&
       prev.currentMinutes === next.currentMinutes &&
       prev.activeTab === next.activeTab &&

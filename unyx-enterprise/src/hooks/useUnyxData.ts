@@ -1232,6 +1232,7 @@ export function useConfirmCashMovement() {
     }) => confirmCashMovement(input),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["cash-movements"] })
+      await queryClient.invalidateQueries({ queryKey: ["operational-status"] })
       await queryClient.invalidateQueries({ queryKey: ["attendance-events"] })
       await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
       await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })

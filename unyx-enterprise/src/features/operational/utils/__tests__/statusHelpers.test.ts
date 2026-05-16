@@ -90,6 +90,11 @@ describe("statusHelpers", () => {
       expect(canStartExit("em_intervalo")).toBe(false)
     })
 
+    it("disallows exit while cashier flow is pending", () => {
+      expect(canStartExit("aguardando_sangria")).toBe(false)
+      expect(canStartExit("troca_de_caixa")).toBe(false)
+    })
+
     it("disallows exit from waiting", () => {
       expect(canStartExit(null)).toBe(false)
       expect(canStartExit("aguardando_evento")).toBe(false)

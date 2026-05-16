@@ -31,6 +31,11 @@ interface OperationalGridProps {
   onEntry: (schedule: ScheduleWithRelations) => void
   onBreak: (schedule: ScheduleWithRelations) => void
   onBreakAlreadyDone: (schedule: ScheduleWithRelations) => void
+  onCashMovement: (
+    schedule: ScheduleWithRelations,
+    allocation: PostAllocation | undefined
+  ) => void
+  onCashierSwap: (schedule: ScheduleWithRelations) => void
   onReturn: (schedule: ScheduleWithRelations) => void
   onCafe: (schedule: ScheduleWithRelations) => void
   onExit: (schedule: ScheduleWithRelations) => void
@@ -53,6 +58,8 @@ export const OperationalGrid = React.memo(
     onEntry,
     onBreak,
     onBreakAlreadyDone,
+    onCashMovement,
+    onCashierSwap,
     onReturn,
     onCafe,
     onExit,
@@ -97,26 +104,31 @@ export const OperationalGrid = React.memo(
     return (
       <>
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {pagedSchedules.map((schedule) => (
-            <EmployeeCard
-              key={schedule.id}
-              schedule={schedule}
-              statusRecord={statusByScheduleId.get(schedule.id)}
-              postAllocation={
-                allocationByScheduleId.get(schedule.id) ??
-                allocationByEmployeeId.get(schedule.employee_id)
-              }
-              currentMinutes={currentMinutes}
-              activeTab={activeTab}
-              isPending={isPending}
-              onEntry={() => onEntry(schedule)}
-              onBreak={() => onBreak(schedule)}
-              onBreakAlreadyDone={() => onBreakAlreadyDone(schedule)}
-              onReturn={() => onReturn(schedule)}
-              onCafe={() => onCafe(schedule)}
-              onExit={() => onExit(schedule)}
-            />
-          ))}
+          {pagedSchedules.map((schedule) => {
+            const postAllocation =
+              allocationByScheduleId.get(schedule.id) ??
+              allocationByEmployeeId.get(schedule.employee_id)
+
+            return (
+              <EmployeeCard
+                key={schedule.id}
+                schedule={schedule}
+                statusRecord={statusByScheduleId.get(schedule.id)}
+                postAllocation={postAllocation}
+                currentMinutes={currentMinutes}
+                activeTab={activeTab}
+                isPending={isPending}
+                onEntry={() => onEntry(schedule)}
+                onBreak={() => onBreak(schedule)}
+                onBreakAlreadyDone={() => onBreakAlreadyDone(schedule)}
+                onCashMovement={() => onCashMovement(schedule, postAllocation)}
+                onCashierSwap={() => onCashierSwap(schedule)}
+                onReturn={() => onReturn(schedule)}
+                onCafe={() => onCafe(schedule)}
+                onExit={() => onExit(schedule)}
+              />
+            )
+          })}
         </div>
 
         {pageCount > 1 ? (

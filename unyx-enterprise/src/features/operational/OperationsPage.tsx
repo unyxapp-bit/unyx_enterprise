@@ -145,6 +145,8 @@ export function OperationsPage() {
     handleEntryConfirm,
     handleBreakConfirm,
     handleBreakAlreadyDone,
+    handleCashMovementConfirm,
+    handleCashierSwapConfirm,
     handleCafeStart,
     handleReturnAnswer,
     handleOccurrenceSubmit,
@@ -183,6 +185,29 @@ export function OperationsPage() {
       await handleBreakAlreadyDone(schedule)
     } catch (error) {
       console.error("Erro ao marcar intervalo feito:", error)
+    }
+  }
+
+  const handleCashMovementClick = async (
+    schedule: ScheduleWithRelations,
+    allocation: PostAllocation | undefined
+  ) => {
+    if (!allocation) {
+      console.error("Alocacao ativa nao encontrada para confirmar sangria:", schedule.id)
+      return
+    }
+    try {
+      await handleCashMovementConfirm(allocation)
+    } catch (error) {
+      console.error("Erro ao confirmar sangria:", error)
+    }
+  }
+
+  const handleCashierSwapClick = async (schedule: ScheduleWithRelations) => {
+    try {
+      await handleCashierSwapConfirm(schedule)
+    } catch (error) {
+      console.error("Erro ao confirmar troca de caixa:", error)
     }
   }
 
@@ -443,6 +468,8 @@ export function OperationsPage() {
               onEntry={handleOpenEntryDialog}
               onBreak={(s) => dialogs.openBreakDialog(s)}
               onBreakAlreadyDone={handleBreakAlreadyDoneClick}
+              onCashMovement={handleCashMovementClick}
+              onCashierSwap={handleCashierSwapClick}
               onReturn={(s) => handleReturnClick(s, true)}
               onCafe={handleCafeClick}
               onExit={(s) => {
