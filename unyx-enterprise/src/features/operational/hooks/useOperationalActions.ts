@@ -31,36 +31,80 @@ export function useOperationalActions() {
       })
 
       if (eventType === "entrada_confirmada") {
-        updateSchedule.mutate({ scheduleId: schedule.id, values: { status: "working" } })
+        await updateSchedule.mutateAsync({ scheduleId: schedule.id, values: { status: "working" } })
       }
 
       if (eventType === "retorno_confirmado") {
         const notes = addNoteMarker(schedule.notes, "lunch_done")
-        updateSchedule.mutate({
+        await updateSchedule.mutateAsync({
           scheduleId: schedule.id,
           values: { status: "returned", break_end: nowTime, notes },
         })
       }
 
       if (eventType === "saida_confirmada") {
-        updateSchedule.mutate({ scheduleId: schedule.id, values: { status: "finished" } })
+        await updateSchedule.mutateAsync({ scheduleId: schedule.id, values: { status: "finished" } })
       }
     },
     [recordEvent, updateSchedule]
   )
 
+  const handleBreakAlreadyDone = useCallback(
+    async (schedule: ScheduleWithRelations) => {
+      const notes = addNoteMarker(schedule.notes, "lunch_done")
+      const breakLabel =
+        schedule.break_start && schedule.break_end
+          ? `${schedule.break_start} - ${schedule.break_end}`
+          : "horario planejado"
+
+      await recordEvent.mutateAsync({
+        branch_id: schedule.branch_id,
+        employee_id: schedule.employee_id,
+        schedule_id: schedule.id,
+        event_type: "intervalo_iniciado",
+        notes: `Intervalo ja realizado no ${breakLabel}.`,
+      })
+
+      await recordEvent.mutateAsync({
+        branch_id: schedule.branch_id,
+        employee_id: schedule.employee_id,
+        schedule_id: schedule.id,
+        event_type: "retorno_confirmado",
+        notes: "Intervalo ja feito confirmado pelo gestor.",
+      })
+
+      await updateSchedule.mutateAsync({
+        scheduleId: schedule.id,
+        values: {
+          status: "returned",
+          break_start: schedule.break_start,
+          break_end: schedule.break_end,
+          notes,
+        },
+      })
+    },
+    [recordEvent, updateSchedule]
+  )
+
   const handleEntryConfirm = useCallback(
-    async (schedule: ScheduleWithRelations, selectedPostId: string | null) => {
+    async (
+      schedule: ScheduleWithRelations,
+      selectedPostId: string | null,
+      breakAlreadyDone = false
+    ) => {
       await fireAction(schedule, "entrada_confirmada")
       if (selectedPostId) {
-        allocatePost.mutate({
+        await allocatePost.mutateAsync({
           post_id: selectedPostId,
           employee_id: schedule.employee_id,
           schedule_id: schedule.id,
         })
       }
+      if (breakAlreadyDone) {
+        await handleBreakAlreadyDone(schedule)
+      }
     },
-    [fireAction, allocatePost]
+    [allocatePost, fireAction, handleBreakAlreadyDone]
   )
 
   const handleBreakConfirm = useCallback(
@@ -196,9 +240,10 @@ export function useOperationalActions() {
     fireAction,
     handleEntryConfirm,
     handleBreakConfirm,
+    handleBreakAlreadyDone,
     handleCafeStart,
     handleReturnAnswer,
     handleOccurrenceSubmit,
-    isPending: recordEvent.isPending || updateSchedule.isPending,
+    isPending: recordEvent.isPending || updateSchedule.isPending || allocatePost.isPending,
   }
 }

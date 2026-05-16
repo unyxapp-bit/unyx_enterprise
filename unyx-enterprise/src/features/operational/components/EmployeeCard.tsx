@@ -3,7 +3,7 @@
  */
 
 import React, { useMemo } from "react"
-import { Coffee, LogIn, LogOut, MapPinned, Timer } from "lucide-react"
+import { CheckCircle2, Coffee, LogIn, LogOut, MapPinned, Timer } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { StatusBadge } from "@/components/bento/StatusBadge"
@@ -42,6 +42,7 @@ interface EmployeeCardProps {
   isPending: boolean
   onEntry: () => void
   onBreak: () => void
+  onBreakAlreadyDone: () => void
   onReturn: () => void
   onCafe: () => void
   onExit: () => void
@@ -57,6 +58,7 @@ export const EmployeeCard = React.memo(
     isPending,
     onEntry,
     onBreak,
+    onBreakAlreadyDone,
     onReturn,
     onCafe,
     onExit,
@@ -81,6 +83,8 @@ export const EmployeeCard = React.memo(
     const isOnBreak = currentStatus === "em_intervalo"
     const isCafe = isCafeBreak(schedule.notes)
     const cardIsDone = isDone(currentStatus)
+    const lunchAlreadyDone =
+      schedule.notes?.includes("lunch_done") || currentStatus === "voltou"
 
     const breakProgress = useMemo(() => {
       if (!isOnBreak) return null
@@ -96,6 +100,16 @@ export const EmployeeCard = React.memo(
       currentMinutes > startMin &&
       (!currentStatus || currentStatus === "aguardando_evento")
     const lateMinutes = isLate ? currentMinutes - (startMin ?? 0) : 0
+    const breakEndMin = timeToMinutes(schedule.break_end)
+    const shouldOfferBreakAlreadyDone =
+      activeTab === "em_turno" &&
+      !isOnBreak &&
+      !lunchAlreadyDone &&
+      breakEndMin !== null &&
+      currentMinutes > breakEndMin &&
+      ["trabalhando", "deve_sair", "aguardando_sangria", "troca_de_caixa"].includes(
+        currentStatus ?? ""
+      )
 
     const cardBorderClass = isLate
       ? "border-orange-300 bg-orange-50/40"
@@ -294,17 +308,32 @@ export const EmployeeCard = React.memo(
                   Retorno
                 </Button>
               ) : (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="flex flex-col gap-0.5 h-auto py-2 text-xs"
-                  disabled={!canIntervalo || isPending}
-                  onClick={onBreak}
-                  aria-label="Iniciar intervalo"
-                >
-                  <Timer className="size-3.5" />
-                  Intervalo
-                </Button>
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="flex flex-col gap-0.5 h-auto py-2 text-xs"
+                    disabled={!canIntervalo || isPending}
+                    onClick={onBreak}
+                    aria-label="Iniciar intervalo"
+                  >
+                    <Timer className="size-3.5" />
+                    Intervalo
+                  </Button>
+                  {shouldOfferBreakAlreadyDone ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex flex-col gap-0.5 h-auto py-2 text-xs border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                      disabled={isPending}
+                      onClick={onBreakAlreadyDone}
+                      aria-label="Marcar intervalo ja feito"
+                    >
+                      <CheckCircle2 className="size-3.5" />
+                      Int. feito
+                    </Button>
+                  ) : null}
+                </>
               )}
               <Button
                 size="sm"

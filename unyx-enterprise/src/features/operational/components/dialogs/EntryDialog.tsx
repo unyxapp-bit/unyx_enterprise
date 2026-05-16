@@ -3,7 +3,7 @@
  */
 
 import React, { useMemo } from "react"
-import { MapPin } from "lucide-react"
+import { CheckCircle2, Clock3, MapPin } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -22,13 +22,18 @@ interface EntryDialogProps {
   employeeRole: string | null | undefined
   employeeSector: string | null | undefined
   startTime: string | null | undefined
+  breakStartTime: string | null | undefined
+  breakEndTime: string | null | undefined
   endTime: string | null | undefined
+  shouldAskBreakAlreadyDone: boolean
+  breakAlreadyDone: boolean | null
+  onBreakAlreadyDoneChange: (value: boolean | null) => void
   availablePosts: OperationalPost[]
   occupiedPostIds: Set<string>
   selectedPostId: string | null
   onSelectedPostIdChange: (postId: string | null) => void
   isPending: boolean
-  onConfirm: (withPost: boolean) => void
+  onConfirm: (withPost: boolean, breakAlreadyDone: boolean) => void
 }
 
 export const EntryDialog = React.memo(
@@ -39,7 +44,12 @@ export const EntryDialog = React.memo(
     employeeRole,
     employeeSector,
     startTime,
+    breakStartTime,
+    breakEndTime,
     endTime,
+    shouldAskBreakAlreadyDone,
+    breakAlreadyDone,
+    onBreakAlreadyDoneChange,
     availablePosts,
     occupiedPostIds,
     selectedPostId,
@@ -70,6 +80,7 @@ export const EntryDialog = React.memo(
       }
       return map
     }, [freePosts])
+    const canConfirm = !shouldAskBreakAlreadyDone || breakAlreadyDone !== null
 
     return (
       <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -89,6 +100,43 @@ export const EntryDialog = React.memo(
               {startTime} → {endTime}
             </div>
           </div>
+
+          {shouldAskBreakAlreadyDone ? (
+            <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <div className="flex items-start gap-2 text-sm text-amber-900">
+                <Clock3 className="mt-0.5 size-4 shrink-0" />
+                <div>
+                  <p className="font-semibold">Intervalo previsto ja passou</p>
+                  <p className="mt-0.5 text-amber-800">
+                    Antes de confirmar a entrada/alocacao, informe se o colaborador ja realizou o intervalo
+                    {breakStartTime && breakEndTime
+                      ? ` (${breakStartTime} - ${breakEndTime})`
+                      : ""}.
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  type="button"
+                  variant={breakAlreadyDone === true ? "default" : "outline"}
+                  className="h-auto flex-col gap-1 py-3"
+                  onClick={() => onBreakAlreadyDoneChange(true)}
+                >
+                  <CheckCircle2 className="size-4" />
+                  <span>Sim, ja fez</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant={breakAlreadyDone === false ? "default" : "outline"}
+                  className="h-auto flex-col gap-1 py-3"
+                  onClick={() => onBreakAlreadyDoneChange(false)}
+                >
+                  <Clock3 className="size-4" />
+                  <span>Ainda nao fez</span>
+                </Button>
+              </div>
+            </div>
+          ) : null}
 
           {/* Post selection */}
           <div>
@@ -151,14 +199,14 @@ export const EntryDialog = React.memo(
             <Button
               variant="ghost"
               className="text-slate-500"
-              onClick={() => onConfirm(false)}
-              disabled={isPending}
+              onClick={() => onConfirm(false, breakAlreadyDone === true)}
+              disabled={isPending || !canConfirm}
             >
               Entrar sem posto
             </Button>
             <Button
-              disabled={isPending}
-              onClick={() => onConfirm(!!selectedPostId)}
+              disabled={isPending || !canConfirm}
+              onClick={() => onConfirm(!!selectedPostId, breakAlreadyDone === true)}
             >
               {isPending
                 ? "Confirmando..."

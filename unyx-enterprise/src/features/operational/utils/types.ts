@@ -11,6 +11,7 @@ export type BreakDialogMode = "question" | "late_input"
 export interface EntryDialogState {
   schedule: ScheduleWithRelations | null
   selectedPostId: string | null
+  breakAlreadyDone: boolean | null
 }
 
 export interface BreakDialogState {

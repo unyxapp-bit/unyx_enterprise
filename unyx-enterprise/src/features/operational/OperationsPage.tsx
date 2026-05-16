@@ -144,6 +144,7 @@ export function OperationsPage() {
   const {
     handleEntryConfirm,
     handleBreakConfirm,
+    handleBreakAlreadyDone,
     handleCafeStart,
     handleReturnAnswer,
     handleOccurrenceSubmit,
@@ -159,14 +160,29 @@ export function OperationsPage() {
     dialogs.openEntryDialog(schedule)
   }
 
-  const handleEntryDialogConfirm = async (withPost: boolean) => {
+  const handleEntryDialogConfirm = async (
+    withPost: boolean,
+    breakAlreadyDone: boolean
+  ) => {
     const { schedule, selectedPostId } = dialogs.entry
     if (!schedule) return
     try {
-      await handleEntryConfirm(schedule, withPost ? selectedPostId : null)
+      await handleEntryConfirm(
+        schedule,
+        withPost ? selectedPostId : null,
+        breakAlreadyDone
+      )
       dialogs.closeEntryDialog()
     } catch (error) {
       console.error("Erro ao confirmar entrada:", error)
+    }
+  }
+
+  const handleBreakAlreadyDoneClick = async (schedule: ScheduleWithRelations) => {
+    try {
+      await handleBreakAlreadyDone(schedule)
+    } catch (error) {
+      console.error("Erro ao marcar intervalo feito:", error)
     }
   }
 
@@ -426,6 +442,7 @@ export function OperationsPage() {
               isPending={isPending}
               onEntry={handleOpenEntryDialog}
               onBreak={(s) => dialogs.openBreakDialog(s)}
+              onBreakAlreadyDone={handleBreakAlreadyDoneClick}
               onReturn={(s) => handleReturnClick(s, true)}
               onCafe={handleCafeClick}
               onExit={(s) => {
@@ -447,7 +464,17 @@ export function OperationsPage() {
         employeeRole={dialogs.entry.schedule?.employees?.role}
         employeeSector={dialogs.entry.schedule?.employees?.sectors?.name}
         startTime={dialogs.entry.schedule?.start_time}
+        breakStartTime={dialogs.entry.schedule?.break_start}
+        breakEndTime={dialogs.entry.schedule?.break_end}
         endTime={dialogs.entry.schedule?.end_time}
+        shouldAskBreakAlreadyDone={(() => {
+          const schedule = dialogs.entry.schedule
+          if (!schedule || schedule.notes?.includes("lunch_done")) return false
+          const breakEnd = timeToMinutes(schedule.break_end)
+          return breakEnd !== null && now > breakEnd
+        })()}
+        breakAlreadyDone={dialogs.entry.breakAlreadyDone}
+        onBreakAlreadyDoneChange={(value) => dialogs.setEntryBreakAlreadyDone(value)}
         availablePosts={activePosts}
         occupiedPostIds={occupiedPostIds}
         selectedPostId={dialogs.entry.selectedPostId}

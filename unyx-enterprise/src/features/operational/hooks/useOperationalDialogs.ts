@@ -10,6 +10,7 @@ export function useOperationalDialogs() {
   const [entry, setEntry] = useState<OperationalDialogStates["entry"]>({
     schedule: null,
     selectedPostId: null,
+    breakAlreadyDone: null,
   })
 
   const [breakDialog, setBreakDialog] = useState<OperationalDialogStates["break"]>({
@@ -31,15 +32,19 @@ export function useOperationalDialogs() {
 
   // Entry dialog actions
   const openEntryDialog = (schedule: ScheduleWithRelations) => {
-    setEntry({ schedule, selectedPostId: null })
+    setEntry({ schedule, selectedPostId: null, breakAlreadyDone: null })
   }
 
   const closeEntryDialog = () => {
-    setEntry({ schedule: null, selectedPostId: null })
+    setEntry({ schedule: null, selectedPostId: null, breakAlreadyDone: null })
   }
 
   const setSelectedPost = (postId: string | null) => {
     setEntry((prev) => ({ ...prev, selectedPostId: postId }))
+  }
+
+  const setEntryBreakAlreadyDone = (value: boolean | null) => {
+    setEntry((prev) => ({ ...prev, breakAlreadyDone: value }))
   }
 
   // Break dialog actions
@@ -98,6 +103,7 @@ export function useOperationalDialogs() {
     openEntryDialog,
     closeEntryDialog,
     setSelectedPost,
+    setEntryBreakAlreadyDone,
 
     // Break
     breakDialog,

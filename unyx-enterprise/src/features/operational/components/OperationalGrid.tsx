@@ -30,6 +30,7 @@ interface OperationalGridProps {
   isPending: boolean
   onEntry: (schedule: ScheduleWithRelations) => void
   onBreak: (schedule: ScheduleWithRelations) => void
+  onBreakAlreadyDone: (schedule: ScheduleWithRelations) => void
   onReturn: (schedule: ScheduleWithRelations) => void
   onCafe: (schedule: ScheduleWithRelations) => void
   onExit: (schedule: ScheduleWithRelations) => void
@@ -51,6 +52,7 @@ export const OperationalGrid = React.memo(
     isPending,
     onEntry,
     onBreak,
+    onBreakAlreadyDone,
     onReturn,
     onCafe,
     onExit,
@@ -109,6 +111,7 @@ export const OperationalGrid = React.memo(
               isPending={isPending}
               onEntry={() => onEntry(schedule)}
               onBreak={() => onBreak(schedule)}
+              onBreakAlreadyDone={() => onBreakAlreadyDone(schedule)}
               onReturn={() => onReturn(schedule)}
               onCafe={() => onCafe(schedule)}
               onExit={() => onExit(schedule)}

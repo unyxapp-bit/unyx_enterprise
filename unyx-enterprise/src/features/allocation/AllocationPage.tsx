@@ -70,6 +70,7 @@ import {
   SEGMENT_POST_TYPES,
 } from "@/lib/segmentConfig"
 import { formatDateTimeBR, formatTime, todayISO } from "@/lib/format"
+import { addNoteMarker } from "@/features/operational/utils"
 import { useAppStore } from "@/store/useAppStore"
 import type {
   CashMovementType,
@@ -268,6 +269,20 @@ function getEmployeeSubtitle(employee: EmployeeWithRelations) {
   return [employee.role, employee.sectors?.name].filter(Boolean).join(" - ")
 }
 
+function needsIntervalDoneAnswer(schedule: ScheduleWithRelations | null) {
+  if (!schedule) return false
+  if (schedule.notes?.includes("lunch_done") || schedule.status === "returned") {
+    return false
+  }
+
+  const breakEnd = timeToMinutes(schedule.break_end)
+  if (breakEnd === null) return false
+
+  const now = new Date()
+  const nowMin = now.getHours() * 60 + now.getMinutes()
+  return nowMin > breakEnd
+}
+
 function sectorOptionsForBranch(sectors: Sector[], branchId: string) {
   return sectors.filter((sector) => sector.branch_id === branchId && sector.active)
 }
@@ -303,6 +318,7 @@ export function AllocationPage() {
     employee_id: "",
     schedule_id: "",
     notes: "",
+    interval_done: null as boolean | null,
   })
   const [allocationError, setAllocationError] = useState<string | null>(null)
   const [cashAction, setCashAction] = useState<PostAllocation | null>(null)
@@ -499,6 +515,41 @@ export function AllocationPage() {
       employee_id: "",
       schedule_id: "",
       notes: "",
+      interval_done: null,
+    })
+  }
+
+  async function markIntervalAlreadyDone(schedule: ScheduleWithRelations) {
+    const notes = addNoteMarker(schedule.notes, "lunch_done")
+    const breakLabel =
+      schedule.break_start && schedule.break_end
+        ? `${schedule.break_start} - ${schedule.break_end}`
+        : "horario planejado"
+
+    await recordEvent.mutateAsync({
+      branch_id: schedule.branch_id,
+      employee_id: schedule.employee_id,
+      schedule_id: schedule.id,
+      event_type: "intervalo_iniciado",
+      notes: `Intervalo ja realizado no ${breakLabel}.`,
+    })
+
+    await recordEvent.mutateAsync({
+      branch_id: schedule.branch_id,
+      employee_id: schedule.employee_id,
+      schedule_id: schedule.id,
+      event_type: "retorno_confirmado",
+      notes: "Intervalo ja feito confirmado na alocacao.",
+    })
+
+    await updateSchedule.mutateAsync({
+      scheduleId: schedule.id,
+      values: {
+        status: "returned",
+        break_start: schedule.break_start,
+        break_end: schedule.break_end,
+        notes,
+      },
     })
   }
 
@@ -542,6 +593,15 @@ export function AllocationPage() {
       return
     }
 
+    const linkedSchedule = allocationForm.schedule_id
+      ? scheduleById.get(allocationForm.schedule_id)
+      : scheduleByEmployeeId.get(allocationForm.employee_id)
+    const mustAnswerInterval = needsIntervalDoneAnswer(linkedSchedule ?? null)
+    if (mustAnswerInterval && allocationForm.interval_done === null) {
+      setAllocationError("Informe se o colaborador ja realizou o intervalo.")
+      return
+    }
+
     try {
       if (allocationAction.type === "allocate") {
         await allocate.mutateAsync({
@@ -559,11 +619,9 @@ export function AllocationPage() {
         })
       }
 
-      // If employee was on break or returned, restore schedule to "working"
-      const linkedSchedule = allocationForm.schedule_id
-        ? scheduleById.get(allocationForm.schedule_id)
-        : scheduleByEmployeeId.get(allocationForm.employee_id)
-      if (linkedSchedule && ["returned", "on_break"].includes(linkedSchedule.status)) {
+      if (linkedSchedule && allocationForm.interval_done === true) {
+        await markIntervalAlreadyDone(linkedSchedule)
+      } else if (linkedSchedule && linkedSchedule.status === "on_break") {
         try {
           await updateSchedule.mutateAsync({
             scheduleId: linkedSchedule.id,
@@ -954,6 +1012,8 @@ export function AllocationPage() {
                         const breakAlreadyDone =
                           (employeeSchedule?.notes?.includes("lunch_done") ?? false) ||
                           employeeSchedule?.status === "returned"
+                        const shouldMarkBreakDone =
+                          !breakAlreadyDone && needsIntervalDoneAnswer(employeeSchedule)
                         // Coffee done: marked in notes when employee returns from coffee in BreakRoomPage
                         const coffeeWasDone =
                           employeeSchedule?.notes?.includes("cafe_done") ?? false
@@ -1065,14 +1125,27 @@ export function AllocationPage() {
                                       Intervalo feito
                                     </Button>
                                   ) : (
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() => handleBreakClick(allocation, employeeSchedule)}
-                                    >
-                                      <Clock className="size-4" />
-                                      Intervalo
-                                    </Button>
+                                    <>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => handleBreakClick(allocation, employeeSchedule)}
+                                      >
+                                        <Clock className="size-4" />
+                                        Intervalo
+                                      </Button>
+                                      {shouldMarkBreakDone && employeeSchedule ? (
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                                          onClick={() => void markIntervalAlreadyDone(employeeSchedule)}
+                                        >
+                                          <CheckCircle2 className="size-4" />
+                                          Intervalo ja feito
+                                        </Button>
+                                      ) : null}
+                                    </>
                                   )}
                                   {isAtendimentoFiscal ? (
                                     <>
@@ -1448,6 +1521,7 @@ export function AllocationPage() {
                     ...current,
                     employee_id: empId,
                     schedule_id: autoSchedule?.id ?? "",
+                    interval_done: null,
                   }))
                 }}
                 required
@@ -1486,6 +1560,7 @@ export function AllocationPage() {
                   setAllocationForm((current) => ({
                     ...current,
                     schedule_id: event.target.value,
+                    interval_done: null,
                   }))
                 }
               >
@@ -1506,7 +1581,7 @@ export function AllocationPage() {
               if (empSched?.status === "returned") {
                 return (
                   <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-700">
-                    Este colaborador ja realizou o intervalo hoje. Ao confirmar, a escala volta automaticamente para &quot;trabalhando&quot;.
+                    Este colaborador ja realizou o intervalo hoje.
                   </div>
                 )
               }
@@ -1518,6 +1593,60 @@ export function AllocationPage() {
                 )
               }
               return null
+            })()}
+
+            {(() => {
+              const linkedSchedule = allocationForm.schedule_id
+                ? scheduleById.get(allocationForm.schedule_id)
+                : allocationForm.employee_id
+                  ? scheduleByEmployeeId.get(allocationForm.employee_id)
+                  : null
+              if (!needsIntervalDoneAnswer(linkedSchedule ?? null)) return null
+
+              return (
+                <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                  <div className="text-sm text-amber-900">
+                    <p className="font-semibold">Intervalo previsto ja passou</p>
+                    <p className="mt-0.5">
+                      Informe se o colaborador ja realizou o intervalo
+                      {linkedSchedule?.break_start && linkedSchedule.break_end
+                        ? ` (${linkedSchedule.break_start} - ${linkedSchedule.break_end})`
+                        : ""}{" "}
+                      antes de concluir a alocacao.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      type="button"
+                      variant={allocationForm.interval_done === true ? "default" : "outline"}
+                      className="h-auto flex-col gap-1 py-3"
+                      onClick={() =>
+                        setAllocationForm((current) => ({
+                          ...current,
+                          interval_done: true,
+                        }))
+                      }
+                    >
+                      <CheckCircle2 className="size-4" />
+                      <span>Sim, ja fez</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={allocationForm.interval_done === false ? "default" : "outline"}
+                      className="h-auto flex-col gap-1 py-3"
+                      onClick={() =>
+                        setAllocationForm((current) => ({
+                          ...current,
+                          interval_done: false,
+                        }))
+                      }
+                    >
+                      <Clock className="size-4" />
+                      <span>Ainda nao fez</span>
+                    </Button>
+                  </div>
+                </div>
+              )
             })()}
 
             <label className="space-y-1 text-sm">
