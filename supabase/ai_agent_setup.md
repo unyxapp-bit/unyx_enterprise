@@ -43,6 +43,7 @@ O deploy usa `--use-api`, entao nao depende do Docker para publicar a Edge Funct
   - PDV e retaguarda: caixas, vendas do dia, pedidos de producao, documentos fiscais, produtos com estoque baixo e categorias;
   - gestao: treinamentos ativos e auditoria recente.
 - O modelo recebe resumos, contagens e amostras recentes para evitar estourar limite de tokens; a funcao mantem dados completos suficientes para relatorios e acoes locais.
+- Perguntas com horario ou posto/caixa, como "quem entra hoje as 11:20?" ou "quem esta no caixa 101?", ativam uma consulta direta em `schedules`, `operational_posts`, `post_allocations` e `cash_sessions`; essa resposta nao depende da amostra enviada ao modelo.
 - A intencao `analyze` gera riscos, recomendacoes e proxima acao.
 - A intencao `resolve` gera um plano assistido para prioridade alta/critica.
 - A intencao `act` executa ferramentas permitidas pelo backend.

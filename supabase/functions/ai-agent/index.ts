@@ -326,6 +326,40 @@ function todayStartInSaoPauloISO(today: string) {
   return `${today}T00:00:00-03:00`
 }
 
+function normalizeText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+}
+
+function parseQuestionTime(question?: string | null) {
+  if (!question) return null
+  const normalized = normalizeText(question)
+  const match = normalized.match(/\b([01]?\d|2[0-3])\s*(?::|h)\s*([0-5]\d)\b/)
+  if (!match) return null
+
+  const hour = match[1].padStart(2, "0")
+  const minute = match[2]
+  return {
+    display: `${hour}:${minute}`,
+    value: `${hour}:${minute}:00`,
+  }
+}
+
+function parsePostQuestion(question?: string | null) {
+  if (!question) return null
+  const normalized = normalizeText(question)
+  const match = normalized.match(/\b(caixa|pdv|posto|checkout|balcao)\s*(?:numero|n\.?|#)?\s*([a-z0-9][a-z0-9-]*)\b/)
+  if (!match) return null
+
+  return {
+    kind: match[1],
+    term: match[2],
+    label: `${match[1]} ${match[2]}`,
+  }
+}
+
 function optionalRows<T>(result: { data?: T[] | null; error?: { message?: string } | null }) {
   return result.error ? [] : result.data ?? []
 }
@@ -472,7 +506,8 @@ function buildFallbackResolution(
 async function fetchContext(
   supabase: ReturnType<typeof createClient>,
   profile: UserProfile,
-  branchId: string | null
+  branchId: string | null,
+  question?: string | null
 ) {
   const today = todayInSaoPaulo()
   const todayStart = todayStartInSaoPauloISO(today)
@@ -480,6 +515,8 @@ async function fetchContext(
   const branchScoped = (query: any) => (branchId ? query.eq("branch_id", branchId) : query)
   const nullableBranchScoped = (query: any) =>
     branchId ? query.or(`branch_id.is.null,branch_id.eq.${branchId}`) : query
+  const requestedTime = parseQuestionTime(question)
+  const requestedPost = parsePostQuestion(question)
 
   let statusesQuery = supabase
     .from("operational_status")
@@ -690,6 +727,28 @@ async function fetchContext(
     .order("created_at", { ascending: false })
     .limit(120)
 
+  let directScheduleQuery = requestedTime
+    ? supabase
+        .from("schedules")
+        .select("id, branch_id, employee_id, work_date, start_time, break_start, break_end, end_time, status, notes, branches(name), employees(name, role, sectors(name))")
+        .eq("organization_id", profile.organization_id)
+        .eq("work_date", today)
+        .eq("start_time", requestedTime.value)
+        .order("start_time", { ascending: true, nullsFirst: false })
+        .limit(50)
+    : null
+
+  let directPostsQuery = requestedPost
+    ? supabase
+        .from("operational_posts")
+        .select("id, branch_id, sector_id, name, type, active, branches(name), sectors(name)")
+        .eq("organization_id", profile.organization_id)
+        .eq("active", true)
+        .ilike("name", `%${requestedPost.term}%`)
+        .order("name")
+        .limit(20)
+    : null
+
   if (branchId) {
     statusesQuery = statusesQuery.eq("branch_id", branchId)
     eventsQuery = eventsQuery.eq("branch_id", branchId)
@@ -716,6 +775,8 @@ async function fetchContext(
     productsQuery = nullableBranchScoped(productsQuery)
     productCategoriesQuery = nullableBranchScoped(productCategoriesQuery)
     auditLogsQuery = nullableBranchScoped(auditLogsQuery)
+    directScheduleQuery = directScheduleQuery?.eq("branch_id", branchId) ?? null
+    directPostsQuery = directPostsQuery?.eq("branch_id", branchId) ?? null
   }
 
   const [
@@ -745,6 +806,8 @@ async function fetchContext(
     products,
     productCategories,
     auditLogs,
+    directSchedules,
+    directPosts,
   ] = await Promise.all([
     statusesQuery,
     eventsQuery,
@@ -772,6 +835,8 @@ async function fetchContext(
     productsQuery,
     productCategoriesQuery,
     auditLogsQuery,
+    directScheduleQuery ?? Promise.resolve({ data: [], error: null }),
+    directPostsQuery ?? Promise.resolve({ data: [], error: null }),
   ])
 
   const errors = [
@@ -811,6 +876,40 @@ async function fetchContext(
   const productsData = optionalRows(products)
   const productCategoriesData = optionalRows(productCategories)
   const auditLogsData = optionalRows(auditLogs)
+  const directSchedulesData = optionalRows(directSchedules)
+  const directPostsData = optionalRows(directPosts)
+  const directPostIds = directPostsData
+    .map((item: any) => item.id)
+    .filter((id: unknown): id is string => typeof id === "string")
+  const directAllocations =
+    directPostIds.length > 0
+      ? await branchScoped(
+          supabase
+            .from("post_allocations")
+            .select("id, branch_id, post_id, employee_id, schedule_id, status, started_at, ended_at, operational_posts(name, type), employees(name, role, sectors(name)), schedules(work_date, start_time, break_start, break_end, end_time)")
+            .eq("organization_id", profile.organization_id)
+            .in("post_id", directPostIds)
+            .is("ended_at", null)
+            .in("status", ["alocado", "aguardando_troca", "em_troca"])
+            .order("started_at", { ascending: false })
+            .limit(20)
+        )
+      : { data: [], error: null }
+  const directCashSessions =
+    directPostIds.length > 0
+      ? await branchScoped(
+          supabase
+            .from("cash_sessions")
+            .select("id, branch_id, post_id, employee_id, user_profile_id, opened_at, expected_amount, status, operational_posts(name, type), employees(name, role, sectors(name)), user_profiles(name)")
+            .eq("organization_id", profile.organization_id)
+            .in("post_id", directPostIds)
+            .eq("status", "open")
+            .order("opened_at", { ascending: false })
+            .limit(20)
+        )
+      : { data: [], error: null }
+  const directAllocationsData = optionalRows(directAllocations)
+  const directCashSessionsData = optionalRows(directCashSessions)
   const salesRows = salesTodayData.map((row) => row as Record<string, unknown>)
   const openDeliveryStatuses = ["pending", "preparing", "ready_for_dispatch", "out_for_delivery"]
   const openProductionStatuses = ["pending", "in_production"]
@@ -903,6 +1002,14 @@ async function fetchContext(
       low_stock_products: lowStockProducts.length,
       active_product_categories: productCategoriesData.length,
     },
+    direct_lookup_counts: {
+      requested_time: requestedTime?.display ?? null,
+      schedule_matches: directSchedulesData.length,
+      requested_post: requestedPost?.label ?? null,
+      post_matches: directPostsData.length,
+      active_allocations: directAllocationsData.length,
+      open_cash_sessions: directCashSessionsData.length,
+    },
     tools: {
       branches: compactRows(branches.data ?? [], 40),
       sectors: compactRows(sectors.data ?? [], 80),
@@ -930,6 +1037,14 @@ async function fetchContext(
       products_low_stock_first: compactRows(productsData, 50),
       product_categories: compactRows(productCategoriesData, 30),
       audit_logs: compactRows(auditLogsData, 50),
+      direct_lookup: {
+        requested_time: requestedTime?.display ?? null,
+        requested_post: requestedPost,
+        schedule_entries_at_time: compactRows(directSchedulesData, 30),
+        posts_matching_request: compactRows(directPostsData, 20),
+        active_post_allocations: compactRows(directAllocationsData, 20),
+        open_cash_sessions: compactRows(directCashSessionsData, 20),
+      },
     },
     optional_errors: [
       optionalError("operational_posts", posts),
@@ -950,6 +1065,10 @@ async function fetchContext(
       optionalError("products", products),
       optionalError("product_categories", productCategories),
       optionalError("audit_logs", auditLogs),
+      optionalError("direct_schedules", directSchedules),
+      optionalError("direct_posts", directPosts),
+      optionalError("direct_post_allocations", directAllocations),
+      optionalError("direct_cash_sessions", directCashSessions),
     ].filter(Boolean),
   }
 }
@@ -972,6 +1091,11 @@ function readNumber(row: DataRow, key: string) {
 
 function readBoolean(row: DataRow, key: string) {
   return typeof row[key] === "boolean" ? row[key] : false
+}
+
+function readArray(row: DataRow, key: string) {
+  const value = row[key]
+  return Array.isArray(value) ? value : []
 }
 
 function relationName(row: DataRow, key: string) {
@@ -1018,6 +1142,11 @@ function buildModelContext(context: AgentContext) {
   const products = (context.tools.products_low_stock_first as unknown[]).map(asRow)
   const productCategories = (context.tools.product_categories as unknown[]).map(asRow)
   const auditLogs = (context.tools.audit_logs as unknown[]).map(asRow)
+  const directLookup = asRow(context.tools.direct_lookup)
+  const directSchedules = readArray(directLookup, "schedule_entries_at_time").map(asRow)
+  const directPosts = readArray(directLookup, "posts_matching_request").map(asRow)
+  const directAllocations = readArray(directLookup, "active_post_allocations").map(asRow)
+  const directCashSessions = readArray(directLookup, "open_cash_sessions").map(asRow)
 
   return {
     branch_id: context.branch_id,
@@ -1033,6 +1162,7 @@ function buildModelContext(context: AgentContext) {
     delivery_counts: context.delivery_counts,
     customer_counts: context.customer_counts,
     pos_counts: context.pos_counts,
+    direct_lookup_counts: context.direct_lookup_counts,
     action_capabilities: [
       {
         tool_name: "generate_delay_report",
@@ -1296,6 +1426,48 @@ function buildModelContext(context: AgentContext) {
         branch: relationName(log, "branches"),
         created_at: readString(log, "created_at"),
       })),
+      direct_lookup: {
+        requested_time: readString(directLookup, "requested_time"),
+        requested_post: directLookup.requested_post ?? null,
+        schedule_entries_at_time: directSchedules.slice(0, 20).map((schedule) => ({
+          id: readString(schedule, "id"),
+          branch_id: readString(schedule, "branch_id"),
+          employee_id: readString(schedule, "employee_id"),
+          status: readString(schedule, "status"),
+          start_time: readString(schedule, "start_time"),
+          break_start: readString(schedule, "break_start"),
+          break_end: readString(schedule, "break_end"),
+          end_time: readString(schedule, "end_time"),
+          branch: relationName(schedule, "branches"),
+          employee: relationName(schedule, "employees"),
+        })),
+        posts_matching_request: directPosts.slice(0, 10).map((post) => ({
+          id: readString(post, "id"),
+          branch_id: readString(post, "branch_id"),
+          name: readString(post, "name"),
+          type: readString(post, "type"),
+          branch: relationName(post, "branches"),
+          sector: relationName(post, "sectors"),
+        })),
+        active_post_allocations: directAllocations.slice(0, 10).map((allocation) => ({
+          id: readString(allocation, "id"),
+          post_id: readString(allocation, "post_id"),
+          employee_id: readString(allocation, "employee_id"),
+          status: readString(allocation, "status"),
+          started_at: readString(allocation, "started_at"),
+          post: relationName(allocation, "operational_posts"),
+          employee: relationName(allocation, "employees"),
+        })),
+        open_cash_sessions: directCashSessions.slice(0, 10).map((session) => ({
+          id: readString(session, "id"),
+          post_id: readString(session, "post_id"),
+          employee_id: readString(session, "employee_id"),
+          status: readString(session, "status"),
+          opened_at: readString(session, "opened_at"),
+          post: relationName(session, "operational_posts"),
+          employee: relationName(session, "employees") ?? relationName(session, "user_profiles"),
+        })),
+      },
     },
     compacted: true,
     omitted_rows_note:
@@ -1574,6 +1746,71 @@ async function executeAgentAction(
   }
 }
 
+function buildDirectLookupAnswer(context: AgentContext) {
+  const lookup = asRow(context.tools.direct_lookup)
+  const requestedTime = readString(lookup, "requested_time")
+  const requestedPost = asRow(lookup.requested_post)
+  const scheduleEntries = readArray(lookup, "schedule_entries_at_time").map(asRow)
+  const posts = readArray(lookup, "posts_matching_request").map(asRow)
+  const allocations = readArray(lookup, "active_post_allocations").map(asRow)
+  const cashSessions = readArray(lookup, "open_cash_sessions").map(asRow)
+
+  if (requestedTime) {
+    if (scheduleEntries.length === 0) {
+      return `Nao encontrei nenhum colaborador com entrada marcada hoje as ${requestedTime}.`
+    }
+
+    const people = scheduleEntries
+      .map((schedule) => {
+        const employee = relationName(schedule, "employees") ?? "Colaborador"
+        const branch = relationName(schedule, "branches")
+        const role = readString(asRow(schedule.employees), "role")
+        const details = [role, branch].filter(Boolean).join(" - ")
+        return details ? `${employee} (${details})` : employee
+      })
+      .join(", ")
+
+    return `Hoje as ${requestedTime} entra(m): ${people}.`
+  }
+
+  if (readString(requestedPost, "label")) {
+    const label = readString(requestedPost, "label")
+    if (posts.length === 0) {
+      return `Nao encontrei posto cadastrado para ${label}.`
+    }
+
+    const allocationPeople = allocations.map((allocation) => ({
+      source: "alocacao",
+      employee: relationName(allocation, "employees"),
+      post: relationName(allocation, "operational_posts"),
+      since: readString(allocation, "started_at"),
+    }))
+    const cashPeople = cashSessions.map((session) => ({
+      source: "caixa aberto",
+      employee: relationName(session, "employees") ?? relationName(session, "user_profiles"),
+      post: relationName(session, "operational_posts"),
+      since: readString(session, "opened_at"),
+    }))
+    const people = [...allocationPeople, ...cashPeople].filter((item) => item.employee)
+
+    if (people.length === 0) {
+      const postNames = posts.map((post) => readString(post, "name")).filter(Boolean).join(", ")
+      return `Encontrei ${postNames || label}, mas nao ha alocacao ativa nem caixa aberto vinculado agora.`
+    }
+
+    const details = people
+      .map((item) => {
+        const since = item.since ? ` desde ${item.since}` : ""
+        return `${item.employee} em ${item.post ?? label} (${item.source}${since})`
+      })
+      .join(", ")
+
+    return `No ${label}, encontrei: ${details}.`
+  }
+
+  return null
+}
+
 function fallbackInsight(
   context: AgentContext,
   question: string | null,
@@ -1604,6 +1841,7 @@ function fallbackInsight(
     actionPlan.mode === "none" && delays > 0
       ? buildDelayReportActionPlan(context)
       : actionPlan
+  const directAnswer = question ? buildDirectLookupAnswer(context) : null
   const risks = [
     {
       title: "Risco operacional atual",
@@ -1725,7 +1963,8 @@ function fallbackInsight(
         ? buildFallbackResolution(context, targetSeverity, target)
         : emptyResolution(),
     chat_answer: question
-      ? `Com os dados atuais, minha leitura e: ${critical} risco(s) critico(s), ${delays} atraso(s), ${absences} falta(s), ${openDeliveries} entrega(s) aberta(s), ${openProduction} pedido(s) em producao e ${lowStockProducts} produto(s) em estoque baixo.`
+      ? directAnswer ??
+        `Com os dados atuais, minha leitura e: ${critical} risco(s) critico(s), ${delays} atraso(s), ${absences} falta(s), ${openDeliveries} entrega(s) aberta(s), ${openProduction} pedido(s) em producao e ${lowStockProducts} produto(s) em estoque baixo.`
       : "Clique em perguntar ao agente para aprofundar um ponto especifico.",
     tools_used: [
       "branches",
@@ -1754,6 +1993,7 @@ function fallbackInsight(
       "products_low_stock_first",
       "product_categories",
       "audit_logs",
+      "direct_lookup",
     ],
   }
 }
@@ -1847,14 +2087,24 @@ Deno.serve(async (request) => {
       return jsonResponse({ error: "Sem permissao para usar o agente de IA." }, 403)
     }
 
-    const branchId = scopedBranchId(profile as UserProfile, payload.branch_id)
-    const context = await fetchContext(supabase, profile as UserProfile, branchId)
     const question = payload.question?.trim() || null
+    const branchId = scopedBranchId(profile as UserProfile, payload.branch_id)
+    const context = await fetchContext(supabase, profile as UserProfile, branchId, question)
     const intent: AgentIntent =
       payload.intent === "resolve" ? "resolve" : payload.intent === "act" ? "act" : "analyze"
     const target = payload.target ?? null
     const requestedAction = payload.action ?? null
     const insightResponse = async (body: Record<string, unknown>) => {
+      const directAnswer = buildDirectLookupAnswer(context)
+      const responseBody = directAnswer
+        ? {
+            ...body,
+            chat_answer: directAnswer,
+            tools_used: Array.from(
+              new Set([...(Array.isArray(body.tools_used) ? body.tools_used : []), "direct_lookup"])
+            ),
+          }
+        : body
       await saveAgentSnapshot(
         supabase,
         profile as UserProfile,
@@ -1862,9 +2112,9 @@ Deno.serve(async (request) => {
         intent,
         question,
         target,
-        body
+        responseBody
       )
-      return jsonResponse(body)
+      return jsonResponse(responseBody)
     }
 
     if (intent === "act") {
@@ -1900,7 +2150,7 @@ Deno.serve(async (request) => {
           {
             role: "system",
             content:
-              "Voce e o Unyx AI Agent, um agente operacional para varejo, food service e equipes de loja. Analise apenas os dados fornecidos. Considere colaboradores, horarios, dashboard, notas, formularios, comunicados, entregas, clientes, caixa/PDV, producao, fiscal, estoque, auditoria e configuracoes quando vierem no contexto. Seja objetivo, pratico e conservador. Nao invente dados. Para action_plan use apenas generate_delay_report ou allocate_post. Relatorio de atrasos pode ser executado automaticamente; alocacao exige confirmacao humana. Nao diga que executou acoes quando intent nao for act. Quando intent for resolve, gere uma proposta aplicavel para o gestor revisar e registrar como tarefa operacional. Quando intent for analyze, deixe resolution.status como none. Responda em portugues do Brasil sem acentos problematicos quando possivel.",
+              "Voce e o Unyx AI Agent, um agente operacional para varejo, food service e equipes de loja. Analise apenas os dados fornecidos. Considere colaboradores, horarios, dashboard, notas, formularios, comunicados, entregas, clientes, caixa/PDV, producao, fiscal, estoque, auditoria e configuracoes quando vierem no contexto. Se context.tools.direct_lookup trouxer resultado para horario, posto, PDV ou caixa perguntado pelo gestor, priorize essa consulta direta na resposta e nao responda por amostragem. Seja objetivo, pratico e conservador. Nao invente dados. Para action_plan use apenas generate_delay_report ou allocate_post. Relatorio de atrasos pode ser executado automaticamente; alocacao exige confirmacao humana. Nao diga que executou acoes quando intent nao for act. Quando intent for resolve, gere uma proposta aplicavel para o gestor revisar e registrar como tarefa operacional. Quando intent for analyze, deixe resolution.status como none. Responda em portugues do Brasil sem acentos problematicos quando possivel.",
           },
           {
             role: "user",
