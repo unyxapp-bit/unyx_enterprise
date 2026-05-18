@@ -67,7 +67,7 @@ const navGroups = [
     items: [
       { to: "/app",            label: "Dashboard", icon: LayoutDashboard, perm: "dashboard"  as PermissionKey },
       { to: "/app/operations", label: "Operacao",  icon: Activity,        perm: "operations" as PermissionKey },
-      { to: "/app/allocation", label: "Alocacao",  icon: MapPinned,       perm: "operations" as PermissionKey },
+      { to: "/app/allocation", label: "Postos",    icon: MapPinned,       perm: "operations" as PermissionKey },
       { to: "/app/break-room", label: "Intervalos", icon: Coffee,         perm: "operations" as PermissionKey },
       { to: "/app/alerts",     label: "Alertas",   icon: BellRing,        perm: "alerts"     as PermissionKey },
       { to: "/app/schedules",  label: "Escalas",   icon: CalendarDays,    perm: "schedules"  as PermissionKey },

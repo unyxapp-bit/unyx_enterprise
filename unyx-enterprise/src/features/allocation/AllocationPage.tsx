@@ -2,6 +2,7 @@ import { useMemo, useState } from "react"
 import type { FormEvent } from "react"
 import { useNavigate } from "react-router-dom"
 import {
+  Activity,
   AlertCircle,
   ArrowRightLeft,
   Banknote,
@@ -381,6 +382,21 @@ export function AllocationPage() {
       movement.confirmed_at.slice(0, 10) === date &&
       movement.movement_type === "sangria_confirmada"
   ).length
+  const cashMovementRequired =
+    coffeeSettings.data?.require_cashier_cash_count ?? false
+  const coverageMetrics = [
+    { label: "Postos ativos", value: activePosts.length, Icon: Store, extra: "" },
+    { label: "Cobertos", value: coveredPosts.length, Icon: CheckCircle2, extra: "" },
+    {
+      label: "Sem cobertura",
+      value: uncoveredPosts.length,
+      Icon: ShieldAlert,
+      extra: uncoveredPosts.length > 0 ? "border-red-200 bg-red-50" : "",
+    },
+    ...(cashMovementRequired
+      ? [{ label: "Sangrias hoje", value: sangriasToday, Icon: Banknote, extra: "" }]
+      : []),
+  ]
   const activePostsByType = useMemo(() => {
     const map = new Map<OperationalPostType, typeof activePosts>()
     for (const post of activePosts) {
@@ -739,7 +755,7 @@ export function AllocationPage() {
         })
       }
       setCoffeeAction(null)
-      navigate("/app/intervals")
+      navigate("/app/break-room")
     } catch {
       // errors handled by mutation toasts
     }
@@ -768,7 +784,7 @@ export function AllocationPage() {
         })
       }
       setBreakAction(null)
-      navigate("/app/intervals")
+      navigate("/app/break-room")
     } catch {
       // errors surfaced by mutation toasts
     }
@@ -791,10 +807,17 @@ export function AllocationPage() {
   return (
     <>
       <PageHeader
-        title="Unyx Allocation"
-        description="Postos, PDVs, cobertura, trocas e sangrias."
+        title="Mapa de postos"
+        description="Cobertura por posto, trocas e movimentos de caixa."
         action={
           <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() => navigate("/app/operations")}
+            >
+              <Activity className="size-4" />
+              Operacao
+            </Button>
             <Input
               className="w-40"
               type="date"
@@ -831,27 +854,17 @@ export function AllocationPage() {
 
       <div className="space-y-6 p-6">
         {isLoading ? (
-          <StateBlock type="loading" title="Carregando alocacao operacional" />
+          <StateBlock type="loading" title="Carregando mapa de postos" />
         ) : pageError ? (
           <StateBlock
             type="error"
-            title="Erro ao carregar Unyx Allocation"
+            title="Erro ao carregar mapa de postos"
             description={`${pageError.message}. Rode supabase/onboarding_first_access.sql no SQL Editor se o modulo ainda nao existir.`}
           />
         ) : (
           <>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              {[
-                { label: "Postos ativos", value: activePosts.length, Icon: Store, extra: "" },
-                { label: "Cobertos", value: coveredPosts.length, Icon: CheckCircle2, extra: "" },
-                {
-                  label: "Sem cobertura",
-                  value: uncoveredPosts.length,
-                  Icon: ShieldAlert,
-                  extra: uncoveredPosts.length > 0 ? "border-red-200 bg-red-50" : "",
-                },
-                { label: "Sangrias hoje", value: sangriasToday, Icon: Banknote, extra: "" },
-              ].map(({ label, value, Icon, extra }) => (
+              {coverageMetrics.map(({ label, value, Icon, extra }) => (
                 <div
                   key={label}
                   className={`flex items-center gap-3 rounded-lg border bg-white px-4 py-3 shadow-sm ${extra}`}
@@ -1162,7 +1175,7 @@ export function AllocationPage() {
                                         Checklists
                                       </Button>
                                     </>
-                                  ) : (
+                                  ) : cashMovementRequired ? (
                                     <Button
                                       size="sm"
                                       variant="outline"
@@ -1171,7 +1184,7 @@ export function AllocationPage() {
                                       <Banknote className="size-4" />
                                       Sangria
                                     </Button>
-                                  )}
+                                  ) : null}
                                   <Button
                                     size="sm"
                                     variant="destructive"
