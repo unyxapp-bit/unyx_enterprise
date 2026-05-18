@@ -98,6 +98,43 @@ const planLabel: Record<SubscriptionPlan, string> = {
   enterprise: planConfig.enterprise.label,
 }
 
+const operationalRuleOptions = [
+  {
+    key: "require_cashier_cash_count",
+    label: "Exigir sangria antes do intervalo",
+    description:
+      "Ative apenas para empresas que precisam confirmar sangria antes de liberar o intervalo de operadores de caixa.",
+  },
+  {
+    key: "require_coverage_before_break",
+    label: "Exigir cobertura antes do intervalo",
+    description:
+      "Mantem o alerta de cobertura para evitar posto descoberto durante o intervalo.",
+  },
+  {
+    key: "block_break_on_peak_hours",
+    label: "Proteger intervalo em horario de pico",
+    description:
+      "Ajuda a evitar liberacao de intervalo nos horarios mais sensiveis da operacao.",
+  },
+  {
+    key: "require_responsible_presence",
+    label: "Exigir responsavel presente",
+    description:
+      "Usado em operacoes que dependem de supervisor, responsavel tecnico ou gerente no turno.",
+  },
+] as const satisfies ReadonlyArray<{
+  key: keyof Pick<
+    OperationalSettingsFormValues,
+    | "require_cashier_cash_count"
+    | "require_coverage_before_break"
+    | "block_break_on_peak_hours"
+    | "require_responsible_presence"
+  >
+  label: string
+  description: string
+}>
+
 function canManageSettings(profile: UserProfile | null) {
   return Boolean(profile && adminRoles.includes(profile.role))
 }
@@ -394,28 +431,29 @@ function OperationalSettingsEditor({
       </div>
 
       <div className="grid gap-2 sm:grid-cols-2">
-        {[
-          ["require_cashier_cash_count", "Exigir sangria no caixa"],
-          ["require_coverage_before_break", "Exigir cobertura antes do intervalo"],
-          ["block_break_on_peak_hours", "Proteger intervalo em horario de pico"],
-          ["require_responsible_presence", "Exigir responsavel presente"],
-        ].map(([key, label]) => (
+        {operationalRuleOptions.map((option) => (
           <label
-            key={key}
-            className="flex items-center gap-2 rounded-lg border bg-slate-50 p-3 text-sm"
+            key={option.key}
+            className="flex items-start gap-2 rounded-lg border bg-slate-50 p-3 text-sm"
           >
             <input
               disabled={disabled}
               type="checkbox"
-              checked={Boolean(form[key as keyof typeof form])}
+              className="mt-1"
+              checked={Boolean(form[option.key])}
               onChange={(event) =>
                 setForm((current) => ({
                   ...current,
-                  [key]: event.target.checked,
+                  [option.key]: event.target.checked,
                 }))
               }
             />
-            {label}
+            <span>
+              <span className="font-medium">{option.label}</span>
+              <span className="mt-0.5 block text-xs text-muted-foreground">
+                {option.description}
+              </span>
+            </span>
           </label>
         ))}
       </div>

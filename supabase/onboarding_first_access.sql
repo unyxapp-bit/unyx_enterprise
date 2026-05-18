@@ -482,7 +482,7 @@ select
     else 10
   end,
   10,
-  organizations.segment = 'supermarket',
+  false,
   true,
   organizations.segment = 'restaurant',
   organizations.segment = 'pharmacy'

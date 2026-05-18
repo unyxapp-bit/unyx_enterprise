@@ -26,7 +26,7 @@ export const operationalModeNames: Record<OperationalMode, string> = {
 
 export const operationalModeDescriptions: Record<OperationalMode, string> = {
   supermarket:
-    "Prioriza frente de caixa, sangria, cobertura, intervalos e atrasos criticos.",
+    "Prioriza frente de caixa, cobertura, intervalos e atrasos criticos.",
   retail_store:
     "Prioriza cobertura por setor, faltas, atrasos por area e realocacao.",
   restaurant:
@@ -43,7 +43,7 @@ export const operationalModeDefaults: Record<
   supermarket: {
     late_tolerance_minutes: 10,
     break_tolerance_minutes: 10,
-    require_cashier_cash_count: true,
+    require_cashier_cash_count: false,
     require_coverage_before_break: true,
     block_break_on_peak_hours: false,
     require_responsible_presence: false,
