@@ -36,7 +36,8 @@ describe("operationalCalculations", () => {
     })
 
     it("handles hours overflow", () => {
-      expect(minutesToTime(1500)).toBe("00:00") // 24h + 0 min
+      expect(minutesToTime(1440)).toBe("00:00") // 24h + 0 min
+      expect(minutesToTime(1500)).toBe("01:00") // 25h + 0 min
     })
   })
 

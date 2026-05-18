@@ -159,31 +159,24 @@ export function AiPage() {
     () => aiAgentCacheKey(profile?.organization_id, selectedBranchId),
     [profile?.organization_id, selectedBranchId]
   )
-  const [cachedAgentInsight, setCachedAgentInsight] = useState<{
-    cacheKey: string
-    data: AiAgentInsight
-  } | null>(null)
   const latestAgentInsight = latestSnapshot.data?.result ?? null
+  const cachedAgentInsight = useMemo(
+    () => readCachedAiAgentInsight(cacheKey),
+    [cacheKey]
+  )
   const agentInsight =
     aiAgent.data ??
     latestAgentInsight ??
-    (cachedAgentInsight?.cacheKey === cacheKey ? cachedAgentInsight.data : null)
-
-  useEffect(() => {
-    const cached = readCachedAiAgentInsight(cacheKey)
-    setCachedAgentInsight(cached ? { cacheKey, data: cached } : null)
-  }, [cacheKey])
+    cachedAgentInsight
 
   useEffect(() => {
     if (!latestAgentInsight) return
     writeCachedAiAgentInsight(cacheKey, latestAgentInsight)
-    setCachedAgentInsight({ cacheKey, data: latestAgentInsight })
   }, [cacheKey, latestAgentInsight, latestSnapshot.data?.id])
 
   useEffect(() => {
     if (!aiAgent.data) return
     writeCachedAiAgentInsight(cacheKey, aiAgent.data)
-    setCachedAgentInsight({ cacheKey, data: aiAgent.data })
   }, [aiAgent.data, cacheKey])
 
   useEffect(() => {

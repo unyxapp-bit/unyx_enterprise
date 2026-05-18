@@ -1,38 +1,104 @@
+import { lazy, Suspense } from "react"
 import { BrowserRouter, Navigate, Outlet, Route, Routes } from "react-router-dom"
 
 import { AppLayout } from "@/app/layout/AppLayout"
 import { useAuth } from "@/app/providers/auth-context"
 import { StateBlock } from "@/components/shared/StateBlock"
 import { canAccessUser, type PermissionKey } from "@/lib/permissions"
-import { AlertsPage } from "@/features/alerts/AlertsPage"
-import { AccessChoicePage } from "@/features/auth/AccessChoicePage"
-import { AcademyPage } from "@/features/academy/AcademyPage"
-import { AiPage } from "@/features/ai/AiPage"
-import { AuditPage } from "@/features/audit/AuditPage"
-import { BranchesPage } from "@/features/branches/BranchesPage"
-import { ChecklistsPage } from "@/features/checklists/ChecklistsPage"
-import { CommsPage } from "@/features/comms/CommsPage"
-import { CustomersPage } from "@/features/customers/CustomersPage"
-import { DashboardPage } from "@/features/dashboard/DashboardPage"
-import { DeliveriesPage } from "@/features/deliveries/DeliveriesPage"
-import { EmployeesPage } from "@/features/employees/EmployeesPage"
-import { OperationalFormsPage } from "@/features/frontstore/OperationalFormsPage"
-import { OperationalNotesPage } from "@/features/frontstore/OperationalNotesPage"
-import { OperationalPostersPage } from "@/features/frontstore/OperationalPostersPage"
-import { GamePage } from "@/features/game/GamePage"
-import { LoginPage } from "@/features/auth/LoginPage"
-import { LandingPage } from "@/features/landing/LandingPage"
-import { OperationsPage } from "@/features/operational/OperationsPage"
-import { ReportsPage } from "@/features/reports/ReportsPage"
-import { SchedulesPage } from "@/features/schedules/SchedulesPage"
-import { SettingsPage } from "@/features/settings/SettingsPage"
-import { UsersPage } from "@/features/users/UsersPage"
-import { PosProductsPage } from "@/features/pos/PosProductsPage"
-import { PosCashPage } from "@/features/pos/PosCashPage"
-import { FiscalDocumentsPage } from "@/features/pos/FiscalDocumentsPage"
-import { PosSellPage } from "@/features/pos/PosSellPage"
-import { PosSalesPage } from "@/features/pos/PosSalesPage"
-import { ProductionOrdersPage } from "@/features/pos/ProductionOrdersPage"
+
+const AccessChoicePage = lazy(() =>
+  import("@/features/auth/AccessChoicePage").then((m) => ({ default: m.AccessChoicePage }))
+)
+const AcademyPage = lazy(() =>
+  import("@/features/academy/AcademyPage").then((m) => ({ default: m.AcademyPage }))
+)
+const AiPage = lazy(() =>
+  import("@/features/ai/AiPage").then((m) => ({ default: m.AiPage }))
+)
+const AlertsPage = lazy(() =>
+  import("@/features/alerts/AlertsPage").then((m) => ({ default: m.AlertsPage }))
+)
+const AllocationPage = lazy(() =>
+  import("@/features/allocation/AllocationPage").then((m) => ({ default: m.AllocationPage }))
+)
+const AuditPage = lazy(() =>
+  import("@/features/audit/AuditPage").then((m) => ({ default: m.AuditPage }))
+)
+const BranchesPage = lazy(() =>
+  import("@/features/branches/BranchesPage").then((m) => ({ default: m.BranchesPage }))
+)
+const BreakRoomPage = lazy(() =>
+  import("@/features/allocation/BreakRoomPage").then((m) => ({ default: m.BreakRoomPage }))
+)
+const ChecklistsPage = lazy(() =>
+  import("@/features/checklists/ChecklistsPage").then((m) => ({ default: m.ChecklistsPage }))
+)
+const CommsPage = lazy(() =>
+  import("@/features/comms/CommsPage").then((m) => ({ default: m.CommsPage }))
+)
+const CustomersPage = lazy(() =>
+  import("@/features/customers/CustomersPage").then((m) => ({ default: m.CustomersPage }))
+)
+const DashboardPage = lazy(() =>
+  import("@/features/dashboard/DashboardPage").then((m) => ({ default: m.DashboardPage }))
+)
+const DeliveriesPage = lazy(() =>
+  import("@/features/deliveries/DeliveriesPage").then((m) => ({ default: m.DeliveriesPage }))
+)
+const EmployeesPage = lazy(() =>
+  import("@/features/employees/EmployeesPage").then((m) => ({ default: m.EmployeesPage }))
+)
+const FiscalDocumentsPage = lazy(() =>
+  import("@/features/pos/FiscalDocumentsPage").then((m) => ({ default: m.FiscalDocumentsPage }))
+)
+const GamePage = lazy(() =>
+  import("@/features/game/GamePage").then((m) => ({ default: m.GamePage }))
+)
+const LandingPage = lazy(() =>
+  import("@/features/landing/LandingPage").then((m) => ({ default: m.LandingPage }))
+)
+const LoginPage = lazy(() =>
+  import("@/features/auth/LoginPage").then((m) => ({ default: m.LoginPage }))
+)
+const OperationalFormsPage = lazy(() =>
+  import("@/features/frontstore/OperationalFormsPage").then((m) => ({ default: m.OperationalFormsPage }))
+)
+const OperationalNotesPage = lazy(() =>
+  import("@/features/frontstore/OperationalNotesPage").then((m) => ({ default: m.OperationalNotesPage }))
+)
+const OperationalPostersPage = lazy(() =>
+  import("@/features/frontstore/OperationalPostersPage").then((m) => ({ default: m.OperationalPostersPage }))
+)
+const OperationsPage = lazy(() =>
+  import("@/features/operational/OperationsPage").then((m) => ({ default: m.OperationsPage }))
+)
+const PosCashPage = lazy(() =>
+  import("@/features/pos/PosCashPage").then((m) => ({ default: m.PosCashPage }))
+)
+const PosProductsPage = lazy(() =>
+  import("@/features/pos/PosProductsPage").then((m) => ({ default: m.PosProductsPage }))
+)
+const PosSalesPage = lazy(() =>
+  import("@/features/pos/PosSalesPage").then((m) => ({ default: m.PosSalesPage }))
+)
+const PosSellPage = lazy(() =>
+  import("@/features/pos/PosSellPage").then((m) => ({ default: m.PosSellPage }))
+)
+const ProductionOrdersPage = lazy(() =>
+  import("@/features/pos/ProductionOrdersPage").then((m) => ({ default: m.ProductionOrdersPage }))
+)
+const ReportsPage = lazy(() =>
+  import("@/features/reports/ReportsPage").then((m) => ({ default: m.ReportsPage }))
+)
+const SchedulesPage = lazy(() =>
+  import("@/features/schedules/SchedulesPage").then((m) => ({ default: m.SchedulesPage }))
+)
+const SettingsPage = lazy(() =>
+  import("@/features/settings/SettingsPage").then((m) => ({ default: m.SettingsPage }))
+)
+const UsersPage = lazy(() =>
+  import("@/features/users/UsersPage").then((m) => ({ default: m.UsersPage }))
+)
 
 function ProtectedRoute() {
   const { loading, session } = useAuth()
@@ -58,6 +124,14 @@ function RequirePermission({ perm }: { perm: PermissionKey }) {
   return <Outlet />
 }
 
+function RouteFallback() {
+  return (
+    <main className="min-h-screen bg-slate-50 p-6">
+      <StateBlock type="loading" title="Carregando modulo" />
+    </main>
+  )
+}
+
 export function AppRouter() {
   const basename =
     import.meta.env.BASE_URL === "/"
@@ -66,16 +140,19 @@ export function AppRouter() {
 
   return (
     <BrowserRouter basename={basename}>
-      <Routes>
-        <Route path="/" element={<LandingPage />} />
-        <Route path="/login" element={<LoginPage />} />
-        <Route element={<ProtectedRoute />}>
-          <Route path="/access" element={<AccessChoicePage />} />
-          <Route path="/app" element={<AppLayout />}>
-            <Route index element={<DashboardPage />} />
+      <Suspense fallback={<RouteFallback />}>
+        <Routes>
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route element={<ProtectedRoute />}>
+            <Route path="/access" element={<AccessChoicePage />} />
+            <Route path="/app" element={<AppLayout />}>
+              <Route index element={<DashboardPage />} />
 
             <Route element={<RequirePermission perm="operations" />}>
               <Route path="operations" element={<OperationsPage />} />
+              <Route path="allocation" element={<AllocationPage />} />
+              <Route path="break-room" element={<BreakRoomPage />} />
             </Route>
             <Route element={<RequirePermission perm="alerts" />}>
               <Route path="alerts" element={<AlertsPage />} />
@@ -153,10 +230,11 @@ export function AppRouter() {
             <Route element={<RequirePermission perm="ai" />}>
               <Route path="ai" element={<AiPage />} />
             </Route>
+            </Route>
           </Route>
-        </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
     </BrowserRouter>
   )
 }
