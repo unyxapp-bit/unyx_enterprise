@@ -29,6 +29,7 @@ import { Input } from "@/components/ui/input"
 import { PageHeader } from "@/components/shared/PageHeader"
 import { modeUiConfig } from "@/features/ops/modes/modeUiConfig"
 import { operationalModeNames } from "@/features/ops/modes/operationalModes"
+import { MissingSchedulesPrompt } from "@/features/schedules/components/MissingSchedulesPrompt"
 import { useFinalizePostAllocation } from "@/hooks/useUnyxData"
 
 import {
@@ -420,6 +421,13 @@ export function OperationsPage() {
       />
 
       <div className="grid gap-4 p-6">
+        <MissingSchedulesPrompt
+          date={date}
+          currentScheduleCount={schedules.data?.length ?? 0}
+          isLoading={schedules.isLoading}
+          onCopied={() => refetch()}
+        />
+
         {/* ── Main Panel ── */}
         <Card className="border bg-white shadow-sm">
           <CardHeader>

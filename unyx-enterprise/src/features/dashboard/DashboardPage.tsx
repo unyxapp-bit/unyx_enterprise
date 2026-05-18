@@ -40,6 +40,7 @@ import {
   getOperationalMode,
   operationalModeNames,
 } from "@/features/ops/modes/operationalModes"
+import { MissingSchedulesPrompt } from "@/features/schedules/components/MissingSchedulesPrompt"
 import {
   getPriorityByMode,
   isCashierContext,
@@ -835,6 +836,15 @@ export function DashboardPage() {
       />
 
       <div className="space-y-5 p-6">
+        <MissingSchedulesPrompt
+          date={date}
+          currentScheduleCount={scheduledToday.length}
+          isLoading={schedules.isLoading}
+          onCopied={() => {
+            void schedules.refetch()
+            void dashboard.refetch()
+          }}
+        />
 
         {/* Row 1: Hero gauge + status breakdown */}
         <div className="grid gap-4 xl:grid-cols-[1.5fr_1fr]">

@@ -255,7 +255,11 @@ export function useSchedules(workDate: string, branchId?: string | null) {
   })
 }
 
-export function useSchedulesRange(dateFrom: string, dateTo: string) {
+export function useSchedulesRange(
+  dateFrom: string,
+  dateTo: string,
+  options?: { enabled?: boolean }
+) {
   const { profile } = useAuth()
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
 
@@ -263,7 +267,11 @@ export function useSchedulesRange(dateFrom: string, dateTo: string) {
     queryKey: ["schedules", profile?.organization_id, selectedBranchId, dateFrom, dateTo],
     queryFn: () =>
       listSchedulesRange(dateFrom, dateTo, selectedBranchId, profile!.organization_id),
-    enabled: Boolean(profile) && Boolean(dateFrom) && Boolean(dateTo),
+    enabled:
+      Boolean(profile) &&
+      Boolean(dateFrom) &&
+      Boolean(dateTo) &&
+      (options?.enabled ?? true),
   })
 }
 

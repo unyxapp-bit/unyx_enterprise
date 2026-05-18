@@ -1828,10 +1828,13 @@ function fallbackInsight(
   const openProduction = context.pos_counts.production_open
   const fiscalPending = context.pos_counts.fiscal_pending
   const lowStockProducts = context.pos_counts.low_stock_products
+  const scheduleCount = readArray(context.tools.schedules_today).length
+  const activeEmployees = context.employee_counts.active
+  const missingSchedulesToday = scheduleCount === 0 && activeEmployees > 0
   const severity: AgentSeverity =
     critical > 0
       ? "critico"
-      : urgentNotes > 0 || urgentDeliveries > 0 || delays >= 3 || absences >= 2
+      : missingSchedulesToday || urgentNotes > 0 || urgentDeliveries > 0 || delays >= 3 || absences >= 2
         ? "alto"
         : delays > 0 || openDeliveries > 0 || openProduction > 0 || lowStockProducts > 0
           ? "medio"
@@ -1857,6 +1860,18 @@ function fallbackInsight(
           : "Manter acompanhamento e revisar recorrencias no fim do turno.",
       confidence: 0.72,
     },
+    ...(missingSchedulesToday
+      ? [
+          {
+            title: "Escala do dia ausente",
+            severity: "alto" as AgentSeverity,
+            reason: "Nao ha escala cadastrada para hoje no contexto operacional.",
+            evidence: `0 escala(s) para hoje e ${activeEmployees} colaborador(es) ativo(s).`,
+            action: "Copiar a ultima escala valida ou importar a escala do dia antes de avaliar atrasos e cobertura.",
+            confidence: 0.86,
+          },
+        ]
+      : []),
     ...(urgentNotes > 0
       ? [
           {
@@ -1895,7 +1910,9 @@ function fallbackInsight(
       : []),
   ]
   const passiveActionTitle =
-    critical > 0
+    missingSchedulesToday
+      ? "Gerar escala do dia"
+      : critical > 0
       ? "Atuar nos status criticos"
       : urgentNotes > 0
         ? "Priorizar anotacoes urgentes"
@@ -1905,9 +1922,11 @@ function fallbackInsight(
             ? "Acompanhar producao"
             : fiscalPending > 0
               ? "Conferir documentos fiscais"
-              : "Acompanhar operacao"
+            : "Acompanhar operacao"
   const passiveActionDescription =
-    critical > 0
+    missingSchedulesToday
+      ? "Copie a ultima escala valida ou importe a escala de hoje para corrigir Dashboard, Operacoes e leitura da IA."
+      : critical > 0
       ? "Abra o painel operacional e confirme a acao para cada alerta critico."
       : urgentNotes > 0
         ? "Abra as anotacoes urgentes e defina responsavel para cada pendencia."
@@ -1921,7 +1940,9 @@ function fallbackInsight(
 
   return {
     summary:
-      critical > 0
+      missingSchedulesToday
+        ? "Nao ha escala cadastrada para hoje; a leitura operacional fica incompleta."
+        : critical > 0
         ? `Existem ${critical} risco(s) critico(s) ativos na operacao.`
         : severity === "normal"
           ? "A operacao nao apresenta risco critico ativo neste momento."
@@ -1929,6 +1950,17 @@ function fallbackInsight(
     overall_severity: severity,
     risks: risks.slice(0, 6),
     recommendations: [
+      ...(missingSchedulesToday
+        ? [
+            {
+              title: "Criar escala do dia",
+              description: "Copie a ultima escala valida ou importe a escala de hoje antes de analisar atrasos e cobertura.",
+              owner: "Gestor da filial",
+              priority: "alta",
+              requires_confirmation: false,
+            },
+          ]
+        : []),
       {
         title: "Revisar cobertura do turno",
         description: "Confira escala, presenca real e setores com prioridade alta antes do proximo pico.",
@@ -1964,7 +1996,9 @@ function fallbackInsight(
         : emptyResolution(),
     chat_answer: question
       ? directAnswer ??
-        `Com os dados atuais, minha leitura e: ${critical} risco(s) critico(s), ${delays} atraso(s), ${absences} falta(s), ${openDeliveries} entrega(s) aberta(s), ${openProduction} pedido(s) em producao e ${lowStockProducts} produto(s) em estoque baixo.`
+        (missingSchedulesToday
+          ? `Nao ha escala cadastrada para hoje. Com ${activeEmployees} colaborador(es) ativo(s), preciso da escala do dia para responder com seguranca sobre entradas, atrasos, cobertura e alocacoes.`
+          : `Com os dados atuais, minha leitura e: ${critical} risco(s) critico(s), ${delays} atraso(s), ${absences} falta(s), ${openDeliveries} entrega(s) aberta(s), ${openProduction} pedido(s) em producao e ${lowStockProducts} produto(s) em estoque baixo.`)
       : "Clique em perguntar ao agente para aprofundar um ponto especifico.",
     tools_used: [
       "branches",
