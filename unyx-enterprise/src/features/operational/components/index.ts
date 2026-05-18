@@ -10,6 +10,7 @@ export { EmployeeCard } from "./EmployeeCard"
 export { OperationalGrid } from "./OperationalGrid"
 export { OperationalMetrics } from "./OperationalMetrics"
 export { OperationalAlerts } from "./OperationalAlerts"
+export { OperationalPendingPanel } from "./OperationalPendingPanel"
 export { OccupiedPostsCard } from "./OccupiedPostsCard"
 export { OperationalPostsManagerCard } from "./OperationalPostsManagerCard"
 

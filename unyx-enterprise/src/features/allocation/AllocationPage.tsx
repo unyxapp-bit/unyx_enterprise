@@ -5,7 +5,6 @@ import {
   Activity,
   AlertCircle,
   ArrowRightLeft,
-  Banknote,
   CheckCircle2,
   ChevronDown,
   ClipboardCheck,
@@ -45,8 +44,6 @@ import {
   useAllocatePost,
   useAllocationHistory,
   useBranches,
-  useCashMovements,
-  useConfirmCashMovement,
   useCreateOperationalPost,
   useEmployees,
   useFinalizePostAllocation,
@@ -74,7 +71,6 @@ import { formatDateTimeBR, formatTime, todayISO } from "@/lib/format"
 import { addNoteMarker } from "@/features/operational/utils"
 import { useAppStore } from "@/store/useAppStore"
 import type {
-  CashMovementType,
   EmployeeWithRelations,
   OperationalPost,
   OperationalPostType,
@@ -220,13 +216,6 @@ const postTypeLabel: Record<OperationalPostType, string> = {
   other: "Outro",
 }
 
-const cashMovementLabel: Record<CashMovementType, string> = {
-  sangria_confirmada: "Sangria confirmada",
-  abertura_caixa: "Abertura de caixa",
-  fechamento_caixa: "Fechamento de caixa",
-  troco_reforco: "Reforco de troco",
-}
-
 type PostFormState = {
   branch_id: string
   sector_id: string
@@ -296,7 +285,6 @@ export function AllocationPage() {
   const posts = useOperationalPosts()
   const allocations = usePostAllocations()
   const history = useAllocationHistory()
-  const cashMovements = useCashMovements()
   const [date, setDate] = useState(todayISO())
   const schedules = useSchedules(date, null)
   const coffeeSettings = useOperationalSettings(null)
@@ -307,7 +295,6 @@ export function AllocationPage() {
   const allocate = useAllocatePost()
   const transfer = useTransferPostAllocation()
   const finalize = useFinalizePostAllocation()
-  const confirmCash = useConfirmCashMovement()
 
   const [postOpen, setPostOpen] = useState(false)
   const [editingPost, setEditingPost] = useState<OperationalPost | null>(null)
@@ -322,18 +309,11 @@ export function AllocationPage() {
     interval_done: null as boolean | null,
   })
   const [allocationError, setAllocationError] = useState<string | null>(null)
-  const [cashAction, setCashAction] = useState<PostAllocation | null>(null)
-  const [cashForm, setCashForm] = useState({
-    movement_type: "sangria_confirmada" as CashMovementType,
-    notes: "",
-  })
-  const [cashError, setCashError] = useState<string | null>(null)
   const [finalizeAction, setFinalizeAction] = useState<PostAllocation | null>(null)
   const [finalizeNote, setFinalizeNote] = useState("")
   const [finalizeError, setFinalizeError] = useState<string | null>(null)
   const [setupOpen, setSetupOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
-  const [cashMovOpen, setCashMovOpen] = useState(false)
   const [postsOpen, setPostsOpen] = useState(false)
   const [activePostType, setActivePostType] = useState<OperationalPostType | null>(null)
   const [breakAction, setBreakAction] = useState<{
@@ -377,13 +357,6 @@ export function AllocationPage() {
   const uncoveredPosts = activePosts.filter(
     (post) => !allocationByPostId.has(post.id)
   )
-  const sangriasToday = (cashMovements.data ?? []).filter(
-    (movement) =>
-      movement.confirmed_at.slice(0, 10) === date &&
-      movement.movement_type === "sangria_confirmada"
-  ).length
-  const cashMovementRequired =
-    coffeeSettings.data?.require_cashier_cash_count ?? false
   const coverageMetrics = [
     { label: "Postos ativos", value: activePosts.length, Icon: Store, extra: "" },
     { label: "Cobertos", value: coveredPosts.length, Icon: CheckCircle2, extra: "" },
@@ -393,9 +366,6 @@ export function AllocationPage() {
       Icon: ShieldAlert,
       extra: uncoveredPosts.length > 0 ? "border-red-200 bg-red-50" : "",
     },
-    ...(cashMovementRequired
-      ? [{ label: "Sangrias hoje", value: sangriasToday, Icon: Banknote, extra: "" }]
-      : []),
   ]
   const activePostsByType = useMemo(() => {
     const map = new Map<OperationalPostType, typeof activePosts>()
@@ -656,24 +626,6 @@ export function AllocationPage() {
     }
   }
 
-  async function handleCashSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (!cashAction) return
-    setCashError(null)
-
-    try {
-      await confirmCash.mutateAsync({
-        allocation_id: cashAction.id,
-        movement_type: cashForm.movement_type,
-        notes: cashForm.notes.trim() || null,
-      })
-      setCashAction(null)
-      setCashForm({ movement_type: "sangria_confirmada", notes: "" })
-    } catch (error) {
-      setCashError(error instanceof Error ? error.message : "Nao foi possivel confirmar.")
-    }
-  }
-
   async function handleFinalizeAll() {
     for (const allocation of overdueAllocations) {
       try {
@@ -830,7 +782,6 @@ export function AllocationPage() {
               onClick={() => {
                 void posts.refetch()
                 void allocations.refetch()
-                void cashMovements.refetch()
               }}
               aria-label="Atualizar alocacao"
             >
@@ -1175,15 +1126,6 @@ export function AllocationPage() {
                                         Checklists
                                       </Button>
                                     </>
-                                  ) : cashMovementRequired ? (
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() => setCashAction(allocation)}
-                                    >
-                                      <Banknote className="size-4" />
-                                      Sangria
-                                    </Button>
                                   ) : null}
                                   <Button
                                     size="sm"
@@ -1247,38 +1189,6 @@ export function AllocationPage() {
                             <div className="mt-1 text-sm text-muted-foreground">
                               {item.employees?.name ?? "Colaborador"} -{" "}
                               {formatDateTimeBR(item.started_at)}
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </CardContent>
-                  ) : null}
-                </Card>
-
-                <Card className="border bg-white shadow-sm">
-                  <CardHeader
-                    className="cursor-pointer select-none"
-                    onClick={() => setCashMovOpen((v) => !v)}
-                  >
-                    <CardTitle className="flex items-center gap-2">
-                      <Banknote className="size-5" />
-                      <span className="flex-1">Movimentos de caixa</span>
-                      <ChevronDown className={`size-4 text-muted-foreground transition-transform duration-200 ${cashMovOpen ? "rotate-180" : ""}`} />
-                    </CardTitle>
-                  </CardHeader>
-                  {cashMovOpen ? (
-                    <CardContent className="space-y-3">
-                      {(cashMovements.data ?? []).slice(0, 5).length === 0 ? (
-                        <StateBlock title="Sem movimentos registrados" />
-                      ) : (
-                        (cashMovements.data ?? []).slice(0, 5).map((movement) => (
-                          <div key={movement.id} className="rounded-lg border p-3">
-                            <div className="font-medium">
-                              {cashMovementLabel[movement.movement_type]}
-                            </div>
-                            <div className="mt-1 text-sm text-muted-foreground">
-                              {movement.operational_posts?.name ?? "Posto"} -{" "}
-                              {movement.employees?.name ?? "Colaborador"}
                             </div>
                           </div>
                         ))
@@ -1686,62 +1596,6 @@ export function AllocationPage() {
                 {allocationAction?.type === "transfer"
                   ? "Confirmar troca"
                   : "Confirmar alocacao"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={Boolean(cashAction)}
-        onOpenChange={(open) => {
-          if (!open) { setCashAction(null); setCashError(null) }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Registrar movimento de caixa</DialogTitle>
-          </DialogHeader>
-          <form className="space-y-4" onSubmit={handleCashSubmit}>
-            <label className="space-y-1 text-sm">
-              <span className="font-medium">Movimento</span>
-              <select
-                className={fieldClass}
-                value={cashForm.movement_type}
-                onChange={(event) =>
-                  setCashForm((current) => ({
-                    ...current,
-                    movement_type: event.target.value as CashMovementType,
-                  }))
-                }
-              >
-                {Object.entries(cashMovementLabel).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="space-y-1 text-sm">
-              <span className="font-medium">Observacao</span>
-              <Input
-                value={cashForm.notes}
-                onChange={(event) =>
-                  setCashForm((current) => ({
-                    ...current,
-                    notes: event.target.value,
-                  }))
-                }
-              />
-            </label>
-            {cashError ? (
-              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                {cashError}
-              </div>
-            ) : null}
-            <DialogFooter>
-              <Button type="submit" disabled={confirmCash.isPending}>
-                Confirmar movimento
               </Button>
             </DialogFooter>
           </form>

@@ -36,6 +36,7 @@ import {
   BreakDialog,
   EntryDialog,
   OperationalGrid,
+  OperationalPendingPanel,
   OperationalPostsManagerCard,
   OperationalTabs,
   OccupiedPostsCard,
@@ -426,6 +427,16 @@ export function OperationsPage() {
           currentScheduleCount={schedules.data?.length ?? 0}
           isLoading={schedules.isLoading}
           onCopied={() => refetch()}
+        />
+
+        <OperationalPendingPanel
+          schedulesToArrive={aChegar}
+          schedulesInTurn={emTurno}
+          statusByScheduleId={statusByScheduleId}
+          activePosts={activePosts}
+          occupiedPostIds={occupiedPostIds}
+          activeAllocations={occupiedPostAllocations}
+          currentMinutes={now}
         />
 
         {/* ── Main Panel ── */}

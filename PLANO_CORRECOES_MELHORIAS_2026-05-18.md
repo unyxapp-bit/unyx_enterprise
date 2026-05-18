@@ -115,10 +115,16 @@ Prioridade continua.
 
 ## Proximo bloco recomendado
 
-Implementar a Fase 1:
+Status do bloco anterior: concluido em 2026-05-18.
 
-1. Detectar dia sem escala no Dashboard e Operacoes.
-2. Mostrar chamada clara para copiar/gerar escala.
-3. Criar uma acao segura para copiar a ultima escala valida para hoje.
-4. Atualizar IA para avisar explicitamente quando nao houver escala no dia.
-5. Adicionar testes para esse comportamento.
+- Detectado dia sem escala no Dashboard e Operacoes.
+- Chamada para copiar a ultima escala valida foi criada.
+- IA passou a avisar explicitamente quando falta escala do dia.
+- Tela Alocacao foi reposicionada como Mapa de postos, evitando duplicacao com Operacao.
+
+Proximo bloco em andamento:
+
+1. Consolidar pendencias operacionais na tela Operacao.
+2. Remover acoes de sangria da tela Postos e manter sangria no fluxo de Operacao.
+3. Ampliar o painel de pendencias com dados de caixa, entregas e producao.
+4. Padronizar os eventos operacionais e cobrir os fluxos principais com testes.
