@@ -211,7 +211,7 @@ export function useBranches() {
 
   return useQuery({
     queryKey: ["branches", profile?.organization_id],
-    queryFn: listBranches,
+    queryFn: () => listBranches(profile!.organization_id),
     enabled: Boolean(profile),
   })
 }
@@ -224,7 +224,7 @@ export function useSectors(branchId?: string | null) {
 
   return useQuery({
     queryKey: ["sectors", profile?.organization_id, effectiveBranchId],
-    queryFn: () => listSectors(effectiveBranchId),
+    queryFn: () => listSectors(effectiveBranchId, profile!.organization_id),
     enabled: Boolean(profile),
   })
 }
@@ -237,7 +237,7 @@ export function useEmployees(branchId?: string | null) {
 
   return useQuery({
     queryKey: ["employees", profile?.organization_id, effectiveBranchId],
-    queryFn: () => listEmployees(effectiveBranchId),
+    queryFn: () => listEmployees(effectiveBranchId, profile!.organization_id),
     enabled: Boolean(profile),
   })
 }
@@ -335,7 +335,7 @@ export function useOperationalPosts(branchId?: string | null) {
 
   return useQuery({
     queryKey: ["operational-posts", profile?.organization_id, effectiveBranchId],
-    queryFn: () => listOperationalPosts(effectiveBranchId),
+    queryFn: () => listOperationalPosts(effectiveBranchId, profile!.organization_id),
     enabled: Boolean(profile),
   })
 }
@@ -384,7 +384,7 @@ export function useCashMovements(branchId?: string | null) {
 
   return useQuery({
     queryKey: ["cash-movements", profile?.organization_id, effectiveBranchId],
-    queryFn: () => listCashMovements(effectiveBranchId),
+    queryFn: () => listCashMovements(effectiveBranchId, profile!.organization_id),
     enabled: Boolean(profile),
     refetchInterval: 45_000,
   })
@@ -396,7 +396,7 @@ export function useCommsPosts() {
 
   return useQuery({
     queryKey: ["comms-posts", profile?.organization_id, selectedBranchId],
-    queryFn: () => listCommsPosts(selectedBranchId),
+    queryFn: () => listCommsPosts(selectedBranchId, profile!.organization_id),
     enabled: Boolean(profile),
   })
 }
@@ -416,7 +416,7 @@ export function useTrainingItems() {
 
   return useQuery({
     queryKey: ["training-items", profile?.organization_id],
-    queryFn: listTrainingItems,
+    queryFn: () => listTrainingItems(profile!.organization_id),
     enabled: Boolean(profile),
   })
 }
@@ -436,7 +436,7 @@ export function useChecklistProcedures() {
 
   return useQuery({
     queryKey: ["checklist-procedures", profile?.organization_id, selectedBranchId],
-    queryFn: () => listChecklistProcedures(selectedBranchId),
+    queryFn: () => listChecklistProcedures(selectedBranchId, profile!.organization_id),
     enabled: Boolean(profile),
   })
 }
@@ -447,7 +447,7 @@ export function useChecklistRuns(since?: string | null) {
 
   return useQuery({
     queryKey: ["checklist-runs", profile?.organization_id, selectedBranchId, since],
-    queryFn: () => listChecklistRuns(selectedBranchId, since),
+    queryFn: () => listChecklistRuns(selectedBranchId, since, profile!.organization_id),
     enabled: Boolean(profile),
   })
 }
@@ -458,7 +458,8 @@ export function useOperationalNotes(status?: OperationalNoteStatus | "all") {
 
   return useQuery({
     queryKey: ["operational-notes", profile?.organization_id, selectedBranchId, status],
-    queryFn: () => listOperationalNotes(selectedBranchId, status),
+    queryFn: () =>
+      listOperationalNotes(selectedBranchId, status, profile!.organization_id),
     enabled: Boolean(profile),
   })
 }
@@ -469,7 +470,7 @@ export function useOperationalForms() {
 
   return useQuery({
     queryKey: ["operational-forms", profile?.organization_id, selectedBranchId],
-    queryFn: () => listOperationalForms(selectedBranchId),
+    queryFn: () => listOperationalForms(selectedBranchId, profile!.organization_id),
     enabled: Boolean(profile),
   })
 }
@@ -480,7 +481,8 @@ export function useOperationalFormResponses() {
 
   return useQuery({
     queryKey: ["operational-form-responses", profile?.organization_id, selectedBranchId],
-    queryFn: () => listOperationalFormResponses(selectedBranchId),
+    queryFn: () =>
+      listOperationalFormResponses(selectedBranchId, profile!.organization_id),
     enabled: Boolean(profile),
   })
 }
@@ -491,7 +493,7 @@ export function useOperationalPosters() {
 
   return useQuery({
     queryKey: ["operational-posters", profile?.organization_id, selectedBranchId],
-    queryFn: () => listOperationalPosters(selectedBranchId),
+    queryFn: () => listOperationalPosters(selectedBranchId, profile!.organization_id),
     enabled: Boolean(profile),
   })
 }
@@ -547,7 +549,7 @@ export function useAuditLogs() {
 
   return useQuery({
     queryKey: ["audit-logs", profile?.organization_id, selectedBranchId],
-    queryFn: () => listAuditLogs(selectedBranchId),
+    queryFn: () => listAuditLogs(selectedBranchId, profile!.organization_id),
     enabled: Boolean(profile),
   })
 }
@@ -1428,7 +1430,7 @@ export function useAllEmployees() {
 
   return useQuery({
     queryKey: ["employees-all", profile?.organization_id],
-    queryFn: () => listEmployees(null),
+    queryFn: () => listEmployees(null, profile!.organization_id),
     enabled: Boolean(profile),
   })
 }
@@ -1439,7 +1441,7 @@ export function useAllAuditLogs() {
 
   return useQuery({
     queryKey: ["audit-logs-all", profile?.organization_id, selectedBranchId],
-    queryFn: () => listAllAuditLogs(selectedBranchId),
+    queryFn: () => listAllAuditLogs(selectedBranchId, profile!.organization_id),
     enabled: Boolean(profile),
   })
 }
@@ -1450,7 +1452,7 @@ export function useReportEvents() {
 
   return useQuery({
     queryKey: ["report-events", profile?.organization_id, selectedBranchId],
-    queryFn: () => listReportEvents(selectedBranchId),
+    queryFn: () => listReportEvents(selectedBranchId, profile!.organization_id),
     enabled: Boolean(profile),
   })
 }
@@ -1529,7 +1531,7 @@ export function useUserProfiles() {
 
   return useQuery({
     queryKey: ["user-profiles", profile?.organization_id],
-    queryFn: listUserProfiles,
+    queryFn: () => listUserProfiles(profile!.organization_id),
     enabled: Boolean(profile),
   })
 }
@@ -1694,7 +1696,7 @@ export function useInvitations() {
   const { profile } = useAuth()
   return useQuery({
     queryKey: ["invitations", profile?.organization_id],
-    queryFn: listInvitations,
+    queryFn: () => listInvitations(profile!.organization_id),
     enabled: Boolean(profile),
   })
 }
@@ -1732,7 +1734,7 @@ export function useProducts(branchId?: string | null) {
   const effectiveBranchId = arguments.length > 0 ? branchId ?? null : selectedBranchId
   return useQuery({
     queryKey: ["pos-products", profile?.organization_id, effectiveBranchId],
-    queryFn: () => listProducts(effectiveBranchId),
+    queryFn: () => listProducts(effectiveBranchId, profile!.organization_id),
     enabled: Boolean(profile),
   })
 }
@@ -1743,7 +1745,7 @@ export function useProductCategories(branchId?: string | null) {
   const effectiveBranchId = arguments.length > 0 ? branchId ?? null : selectedBranchId
   return useQuery({
     queryKey: ["pos-categories", profile?.organization_id, effectiveBranchId],
-    queryFn: () => listProductCategories(effectiveBranchId),
+    queryFn: () => listProductCategories(effectiveBranchId, profile!.organization_id),
     enabled: Boolean(profile),
   })
 }
@@ -1752,7 +1754,7 @@ export function useProductVariants() {
   const { profile } = useAuth()
   return useQuery({
     queryKey: ["pos-product-variants", profile?.organization_id],
-    queryFn: () => listProductVariants(),
+    queryFn: () => listProductVariants(profile!.organization_id),
     enabled: Boolean(profile),
   })
 }
@@ -1762,7 +1764,8 @@ export function useProductionOrders(date?: string | null, status?: ProductionOrd
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
   return useQuery({
     queryKey: ["production-orders", profile?.organization_id, selectedBranchId, date, status],
-    queryFn: () => listProductionOrders(selectedBranchId, date, status),
+    queryFn: () =>
+      listProductionOrders(selectedBranchId, date, status, profile!.organization_id),
     enabled: Boolean(profile),
     refetchInterval: 30_000,
   })
@@ -1786,7 +1789,7 @@ export function useCashSessions(branchId?: string | null) {
   const effectiveBranchId = arguments.length > 0 ? branchId ?? null : selectedBranchId
   return useQuery({
     queryKey: ["pos-sessions", profile?.organization_id, effectiveBranchId],
-    queryFn: () => listCashSessions(effectiveBranchId),
+    queryFn: () => listCashSessions(effectiveBranchId, profile!.organization_id),
     enabled: Boolean(profile),
     refetchInterval: 30_000,
   })
@@ -1807,7 +1810,7 @@ export function useSales(branchId?: string | null, date?: string | null) {
   const effectiveBranchId = arguments.length > 0 ? branchId ?? null : selectedBranchId
   return useQuery({
     queryKey: ["pos-sales", profile?.organization_id, effectiveBranchId, date],
-    queryFn: () => listSales(effectiveBranchId, date),
+    queryFn: () => listSales(effectiveBranchId, date, profile!.organization_id),
     enabled: Boolean(profile),
   })
 }
@@ -1836,7 +1839,7 @@ export function useFiscalDocuments(branchId?: string | null, date?: string | nul
   const effectiveBranchId = arguments.length > 0 ? branchId ?? null : selectedBranchId
   return useQuery({
     queryKey: ["fiscal-documents", profile?.organization_id, effectiveBranchId, date],
-    queryFn: () => listFiscalDocuments(effectiveBranchId, date),
+    queryFn: () => listFiscalDocuments(effectiveBranchId, date, profile!.organization_id),
     enabled: Boolean(profile),
   })
 }
@@ -1882,7 +1885,7 @@ export function useDeliveryOrders(branchId?: string | null) {
   const effectiveBranchId = arguments.length > 0 ? branchId ?? null : selectedBranchId
   return useQuery({
     queryKey: ["delivery-orders", profile?.organization_id, effectiveBranchId],
-    queryFn: () => listDeliveryOrders(effectiveBranchId),
+    queryFn: () => listDeliveryOrders(effectiveBranchId, profile!.organization_id),
     enabled: Boolean(profile),
     refetchInterval: 45_000,
   })
@@ -1897,7 +1900,7 @@ export function useCustomers(
   const effectiveBranchId = branchId === undefined ? selectedBranchId : branchId
   return useQuery({
     queryKey: ["customers", profile?.organization_id, effectiveBranchId, options.optional],
-    queryFn: () => listCustomers(effectiveBranchId, options),
+    queryFn: () => listCustomers(effectiveBranchId, options, profile!.organization_id),
     enabled: Boolean(profile),
   })
 }

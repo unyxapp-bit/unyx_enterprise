@@ -831,10 +831,11 @@ export async function saveOperationalSettings(
   return data as OperationalSettings
 }
 
-export async function listBranches() {
+export async function listBranches(organizationId: string) {
   const { data, error } = await supabase
     .from("branches")
     .select("*")
+    .eq("organization_id", organizationId)
     .order("name")
 
   raise(error)
@@ -860,12 +861,16 @@ export async function createBranch(
   return data as Branch
 }
 
-export async function listSectors(branchId?: string | null) {
+export async function listSectors(
+  branchId?: string | null,
+  organizationId?: string | null
+) {
   let query = supabase
     .from("sectors")
     .select("*, branches(name)")
     .order("name")
 
+  if (organizationId) query = query.eq("organization_id", organizationId)
   if (branchId) query = query.eq("branch_id", branchId)
 
   const { data, error } = await query
@@ -894,13 +899,17 @@ export async function createSector(
   return data as Sector
 }
 
-export async function listEmployees(branchId?: string | null) {
+export async function listEmployees(
+  branchId?: string | null,
+  organizationId?: string | null
+) {
   let query = supabase
     .from("employees")
     .select("*, branches(name), sectors(name)")
     .order("active", { ascending: false })
     .order("name")
 
+  if (organizationId) query = query.eq("organization_id", organizationId)
   if (branchId) query = query.eq("branch_id", branchId)
 
   const { data, error } = await query
@@ -1465,13 +1474,17 @@ export async function listAttendanceEvents(
   return (data ?? []) as AttendanceEvent[]
 }
 
-export async function listOperationalPosts(branchId?: string | null) {
+export async function listOperationalPosts(
+  branchId?: string | null,
+  organizationId?: string | null
+) {
   let query = supabase
     .from("operational_posts")
     .select("*, branches(name), sectors(name)")
     .order("active", { ascending: false })
     .order("name")
 
+  if (organizationId) query = query.eq("organization_id", organizationId)
   if (branchId) query = query.eq("branch_id", branchId)
 
   const { data, error } = await query
@@ -1579,13 +1592,17 @@ export async function listAllocationHistory(
   return listPostAllocations(branchId, false, organizationId)
 }
 
-export async function listCashMovements(branchId?: string | null) {
+export async function listCashMovements(
+  branchId?: string | null,
+  organizationId?: string | null
+) {
   let query = supabase
     .from("cash_movements")
     .select("*, operational_posts(name, type), employees(name)")
     .order("confirmed_at", { ascending: false })
     .limit(300)
 
+  if (organizationId) query = query.eq("organization_id", organizationId)
   if (branchId) query = query.eq("branch_id", branchId)
 
   const { data, error } = await query
@@ -1676,7 +1693,10 @@ export async function setupSegmentDefaults(input: {
   return data as { sectors_created: number; posts_created: number }
 }
 
-export async function listCommsPosts(branchId?: string | null) {
+export async function listCommsPosts(
+  branchId?: string | null,
+  organizationId?: string | null
+) {
   let query = supabase
     .from("comms_posts")
     .select("*, user_profiles!author_id(name), branches(name), sectors(name)")
@@ -1684,6 +1704,7 @@ export async function listCommsPosts(branchId?: string | null) {
     .order("created_at", { ascending: false })
     .limit(80)
 
+  if (organizationId) query = query.eq("organization_id", organizationId)
   if (branchId) query = query.or(`branch_id.is.null,branch_id.eq.${branchId}`)
 
   const { data, error } = await query
@@ -1765,13 +1786,16 @@ export async function createCommsPostComment(
   return data as CommsPostComment
 }
 
-export async function listTrainingItems() {
-  const { data, error } = await supabase
+export async function listTrainingItems(organizationId?: string | null) {
+  let query = supabase
     .from("training_items")
     .select("*")
     .eq("active", true)
     .order("created_at", { ascending: false })
 
+  if (organizationId) query = query.eq("organization_id", organizationId)
+
+  const { data, error } = await query
   raise(error)
   return (data ?? []) as TrainingItem[]
 }
@@ -1843,13 +1867,17 @@ export interface ChecklistProcedureInput {
   checklist_items: string[]
 }
 
-export async function listChecklistProcedures(branchId?: string | null) {
+export async function listChecklistProcedures(
+  branchId?: string | null,
+  organizationId?: string | null
+) {
   let query = supabase
     .from("checklist_procedures")
     .select("*, branches(name), sectors(name), user_profiles!created_by(name)")
     .eq("active", true)
     .order("created_at", { ascending: false })
 
+  if (organizationId) query = query.eq("organization_id", organizationId)
   if (branchId) query = query.or(`branch_id.is.null,branch_id.eq.${branchId}`)
 
   const { data, error } = await query
@@ -1910,7 +1938,8 @@ export async function createChecklistProcedure(
 
 export async function listChecklistRuns(
   branchId?: string | null,
-  since?: string | null
+  since?: string | null,
+  organizationId?: string | null
 ) {
   let query = supabase
     .from("checklist_runs")
@@ -1918,6 +1947,7 @@ export async function listChecklistRuns(
     .order("created_at", { ascending: false })
     .limit(120)
 
+  if (organizationId) query = query.eq("organization_id", organizationId)
   if (branchId) query = query.or(`branch_id.is.null,branch_id.eq.${branchId}`)
   if (since) query = query.gte("created_at", since)
 
@@ -2222,7 +2252,8 @@ function normalizeOperationalQuestions(questions: string[]) {
 
 export async function listOperationalNotes(
   branchId?: string | null,
-  status?: OperationalNoteStatus | "all"
+  status?: OperationalNoteStatus | "all",
+  organizationId?: string | null
 ) {
   let query = supabase
     .from("operational_notes")
@@ -2231,6 +2262,7 @@ export async function listOperationalNotes(
     .order("created_at", { ascending: false })
     .limit(160)
 
+  if (organizationId) query = query.eq("organization_id", organizationId)
   if (branchId) query = query.or(`branch_id.is.null,branch_id.eq.${branchId}`)
   if (status && status !== "all") query = query.eq("status", status)
 
@@ -2383,7 +2415,10 @@ export async function deleteOperationalNote(profile: UserProfile, noteId: string
   })
 }
 
-export async function listOperationalForms(branchId?: string | null) {
+export async function listOperationalForms(
+  branchId?: string | null,
+  organizationId?: string | null
+) {
   let query = supabase
     .from("operational_forms")
     .select(operationalFormSelect)
@@ -2391,6 +2426,7 @@ export async function listOperationalForms(branchId?: string | null) {
     .order("created_at", { ascending: false })
     .limit(120)
 
+  if (organizationId) query = query.eq("organization_id", organizationId)
   if (branchId) query = query.or(`branch_id.is.null,branch_id.eq.${branchId}`)
 
   const { data, error } = await query
@@ -2541,13 +2577,17 @@ export async function deleteOperationalForm(profile: UserProfile, formId: string
   })
 }
 
-export async function listOperationalFormResponses(branchId?: string | null) {
+export async function listOperationalFormResponses(
+  branchId?: string | null,
+  organizationId?: string | null
+) {
   let query = supabase
     .from("operational_form_responses")
     .select(operationalFormResponseSelect)
     .order("submitted_at", { ascending: false })
     .limit(120)
 
+  if (organizationId) query = query.eq("organization_id", organizationId)
   if (branchId) query = query.or(`branch_id.is.null,branch_id.eq.${branchId}`)
 
   const { data, error } = await query
@@ -2614,7 +2654,10 @@ export async function submitOperationalFormResponse(
   return data as OperationalFormResponse
 }
 
-export async function listOperationalPosters(branchId?: string | null) {
+export async function listOperationalPosters(
+  branchId?: string | null,
+  organizationId?: string | null
+) {
   let query = supabase
     .from("operational_posters")
     .select(operationalPosterSelect)
@@ -2622,6 +2665,7 @@ export async function listOperationalPosters(branchId?: string | null) {
     .order("created_at", { ascending: false })
     .limit(120)
 
+  if (organizationId) query = query.eq("organization_id", organizationId)
   if (branchId) query = query.or(`branch_id.is.null,branch_id.eq.${branchId}`)
 
   const { data, error } = await query
@@ -2961,13 +3005,17 @@ export async function recordOperationalEvent(
   return event as AttendanceEvent
 }
 
-export async function listAuditLogs(branchId?: string | null) {
+export async function listAuditLogs(
+  branchId?: string | null,
+  organizationId?: string | null
+) {
   let query = supabase
     .from("audit_logs")
     .select("*")
     .order("created_at", { ascending: false })
     .limit(40)
 
+  if (organizationId) query = query.eq("organization_id", organizationId)
   if (branchId) query = query.eq("branch_id", branchId)
 
   const { data, error } = await query
@@ -2975,13 +3023,17 @@ export async function listAuditLogs(branchId?: string | null) {
   return (data ?? []) as AuditLog[]
 }
 
-export async function listAllAuditLogs(branchId?: string | null) {
+export async function listAllAuditLogs(
+  branchId?: string | null,
+  organizationId?: string | null
+) {
   let query = supabase
     .from("audit_logs")
     .select("*, user_profiles!user_id(name)")
     .order("created_at", { ascending: false })
     .limit(500)
 
+  if (organizationId) query = query.eq("organization_id", organizationId)
   if (branchId) query = query.eq("branch_id", branchId)
 
   const { data, error } = await query
@@ -2989,13 +3041,17 @@ export async function listAllAuditLogs(branchId?: string | null) {
   return (data ?? []) as AuditLog[]
 }
 
-export async function listReportEvents(branchId?: string | null) {
+export async function listReportEvents(
+  branchId?: string | null,
+  organizationId?: string | null
+) {
   let query = supabase
     .from("attendance_events")
     .select("*, employees(name, sectors(name)), branches(name)")
     .order("event_time", { ascending: false })
     .limit(1000)
 
+  if (organizationId) query = query.eq("organization_id", organizationId)
   if (branchId) query = query.eq("branch_id", branchId)
 
   const { data, error } = await query
@@ -3096,12 +3152,15 @@ export async function toggleSectorActive(sectorId: string, active: boolean) {
   return data as Sector
 }
 
-export async function listUserProfiles() {
-  const { data, error } = await supabase
+export async function listUserProfiles(organizationId?: string | null) {
+  let query = supabase
     .from("user_profiles")
     .select("*, branches(name)")
     .order("name")
 
+  if (organizationId) query = query.eq("organization_id", organizationId)
+
+  const { data, error } = await query
   raise(error)
   return (data ?? []) as UserProfile[]
 }
@@ -3145,12 +3204,15 @@ export async function removeUserFromOrg(profileId: string) {
   raise(error)
 }
 
-export async function listInvitations() {
-  const { data, error } = await supabase
+export async function listInvitations(organizationId?: string | null) {
+  let query = supabase
     .from("invitations")
     .select("*, branches(name), user_profiles!invited_by(name)")
     .order("created_at", { ascending: false })
 
+  if (organizationId) query = query.eq("organization_id", organizationId)
+
+  const { data, error } = await query
   raise(error)
   return (data ?? []) as Invitation[]
 }
@@ -3567,7 +3629,8 @@ function normalizeCustomerInput(input: CustomerInput) {
 
 export async function listCustomers(
   branchId?: string | null,
-  options: { optional?: boolean } = {}
+  options: { optional?: boolean } = {},
+  organizationId?: string | null
 ) {
   let query = supabase
     .from("customers")
@@ -3575,6 +3638,7 @@ export async function listCustomers(
     .order("customer_code", { ascending: true })
     .limit(1000)
 
+  if (organizationId) query = query.eq("organization_id", organizationId)
   if (branchId) query = query.or(`branch_id.is.null,branch_id.eq.${branchId}`)
 
   const { data, error } = await query
@@ -4277,12 +4341,16 @@ export async function importProductCatalog(
   return { created, updated, skipped, errors }
 }
 
-export async function listProducts(branchId?: string | null) {
+export async function listProducts(
+  branchId?: string | null,
+  organizationId?: string | null
+) {
   let query = supabase
     .from("products")
     .select("*")
     .order("active", { ascending: false })
     .order("name")
+  if (organizationId) query = query.eq("organization_id", organizationId)
   if (branchId) query = query.or(`branch_id.is.null,branch_id.eq.${branchId}`)
   const { data, error } = await query
   if (isMissingPosFeature(error)) return []
@@ -4290,13 +4358,17 @@ export async function listProducts(branchId?: string | null) {
   return (data ?? []) as Product[]
 }
 
-export async function listProductCategories(branchId?: string | null) {
+export async function listProductCategories(
+  branchId?: string | null,
+  organizationId?: string | null
+) {
   let query = supabase
     .from("product_categories")
     .select("*")
     .order("active", { ascending: false })
     .order("name")
 
+  if (organizationId) query = query.eq("organization_id", organizationId)
   if (branchId) query = query.or(`branch_id.is.null,branch_id.eq.${branchId}`)
 
   const { data, error } = await query
@@ -4422,13 +4494,16 @@ export async function deleteProductCategory(
   }
 }
 
-export async function listProductVariants() {
-  const { data, error } = await supabase
+export async function listProductVariants(organizationId?: string | null) {
+  let query = supabase
     .from("product_variants")
     .select("*, products(name, branch_id, track_inventory)")
     .order("sort_order")
     .order("name")
 
+  if (organizationId) query = query.eq("organization_id", organizationId)
+
+  const { data, error } = await query
   if (isMissingPosFeature(error)) throw new Error(posFeatureMessage())
   raise(error)
 
@@ -4628,7 +4703,8 @@ function normalizeProductionOrderInput(input: ProductionOrderInput) {
 export async function listProductionOrders(
   branchId?: string | null,
   date?: string | null,
-  status?: ProductionOrderStatus | "all"
+  status?: ProductionOrderStatus | "all",
+  organizationId?: string | null
 ) {
   let query = supabase
     .from("production_orders")
@@ -4636,6 +4712,7 @@ export async function listProductionOrders(
     .order("created_at", { ascending: false })
     .limit(200)
 
+  if (organizationId) query = query.eq("organization_id", organizationId)
   if (branchId) query = query.eq("branch_id", branchId)
   if (status && status !== "all") query = query.eq("status", status)
   if (date) {
@@ -4834,12 +4911,16 @@ export async function getCurrentCashSession(
   return data as CashSession | null
 }
 
-export async function listCashSessions(branchId?: string | null) {
+export async function listCashSessions(
+  branchId?: string | null,
+  organizationId?: string | null
+) {
   let query = supabase
     .from("cash_sessions")
     .select("*, operational_posts(name, type), user_profiles!user_profile_id(name), employees(name)")
     .order("opened_at", { ascending: false })
     .limit(50)
+  if (organizationId) query = query.eq("organization_id", organizationId)
   if (branchId) query = query.eq("branch_id", branchId)
   const { data, error } = await query
   if (isMissingPosFeature(error)) return []
@@ -4957,12 +5038,17 @@ export async function listPosCashMovements(sessionId: string) {
   return (data ?? []) as PosCashMovement[]
 }
 
-export async function listSales(branchId?: string | null, date?: string | null) {
+export async function listSales(
+  branchId?: string | null,
+  date?: string | null,
+  organizationId?: string | null
+) {
   let query = supabase
     .from("sales")
     .select("*, operational_posts(name, type), user_profiles!user_profile_id(name), customers(customer_code, name, phone)")
     .order("sold_at", { ascending: false })
     .limit(200)
+  if (organizationId) query = query.eq("organization_id", organizationId)
   if (branchId) query = query.eq("branch_id", branchId)
   if (date) query = query.gte("sold_at", `${date}T00:00:00`).lte("sold_at", `${date}T23:59:59`)
   const { data, error } = await query
@@ -4993,13 +5079,18 @@ export async function listSalePayments(saleId: string) {
   return (data ?? []) as SalePayment[]
 }
 
-export async function listFiscalDocuments(branchId?: string | null, date?: string | null) {
+export async function listFiscalDocuments(
+  branchId?: string | null,
+  date?: string | null,
+  organizationId?: string | null
+) {
   let query = supabase
     .from("fiscal_documents")
     .select("*, branches(name), sales(id, customer_name, total_amount, sold_at), user_profiles!created_by(name)")
     .order("issued_at", { ascending: false })
     .limit(200)
 
+  if (organizationId) query = query.eq("organization_id", organizationId)
   if (branchId) query = query.eq("branch_id", branchId)
   if (date) query = query.gte("issued_at", `${date}T00:00:00`).lte("issued_at", `${date}T23:59:59`)
 
@@ -5089,13 +5180,17 @@ export async function cancelFiscalDocument(
   return data as FiscalDocument
 }
 
-export async function listDeliveryOrders(branchId?: string | null) {
+export async function listDeliveryOrders(
+  branchId?: string | null,
+  organizationId?: string | null
+) {
   let query = supabase
     .from("delivery_orders")
     .select("*, branches(name), customers(name, phone), employees!assigned_employee_id(name), user_profiles!created_by(name)")
     .order("created_at", { ascending: false })
     .limit(300)
 
+  if (organizationId) query = query.eq("organization_id", organizationId)
   if (branchId) query = query.eq("branch_id", branchId)
 
   const { data, error } = await query

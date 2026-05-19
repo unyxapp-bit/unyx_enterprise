@@ -1,3 +1,4 @@
+import { useEffect } from "react"
 import { Building2 } from "lucide-react"
 
 import { useBranches } from "@/hooks/useUnyxData"
@@ -8,6 +9,13 @@ export function BranchSelector() {
   const { data: branches = [], isLoading } = useBranches()
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
   const setSelectedBranchId = useAppStore((state) => state.setSelectedBranchId)
+
+  useEffect(() => {
+    if (isLoading || !selectedBranchId) return
+    if (branches.some((branch) => branch.id === selectedBranchId)) return
+
+    setSelectedBranchId(null)
+  }, [branches, isLoading, selectedBranchId, setSelectedBranchId])
 
   return (
     <label className="flex min-w-56 items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm">
