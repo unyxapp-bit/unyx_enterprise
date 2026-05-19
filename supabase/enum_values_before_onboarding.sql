@@ -7,6 +7,9 @@
 
 alter type public.operational_status_type add value if not exists 'aguardando_evento';
 alter type public.operational_status_type add value if not exists 'finalizado';
+alter type public.operational_status_type add value if not exists 'pico';
+alter type public.operational_status_type add value if not exists 'apoio_operacional';
+alter type public.operational_status_type add value if not exists 'fechamento';
 alter type public.schedule_status add value if not exists 'banked_hours';
 
 notify pgrst, 'reload schema';

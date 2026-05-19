@@ -27,6 +27,9 @@ export const avatarClassByStatus: Partial<Record<OperationalStatus, string>> = {
   troca_de_caixa: "bg-sky-100 text-sky-700",
   em_intervalo: "bg-violet-100 text-violet-700",
   voltou: "bg-teal-100 text-teal-700",
+  pico: "bg-red-100 text-red-700",
+  apoio_operacional: "bg-blue-100 text-blue-700",
+  fechamento: "bg-indigo-100 text-indigo-700",
   folga: "bg-zinc-200 text-zinc-600",
   finalizado: "bg-neutral-200 text-neutral-600",
   alerta_critico: "bg-red-100 text-red-700",
@@ -38,6 +41,8 @@ export const postTypeLabel: Record<string, string> = {
   counter: "Balcão",
   service_desk: "Atendimento",
   delivery: "Delivery",
+  support: "Apoio",
+  closing: "Fechamento",
   stock: "Estoque",
   kitchen: "Cozinha",
 }

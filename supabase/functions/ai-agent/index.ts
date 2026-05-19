@@ -413,6 +413,9 @@ const ENTERED_STATUSES_FOR_PENDING = new Set([
   "aguardando_sangria",
   "troca_de_caixa",
   "deve_sair",
+  "pico",
+  "apoio_operacional",
+  "fechamento",
   "saida_registrada",
 ])
 
@@ -428,6 +431,9 @@ const REAL_WORKING_STATUSES_FOR_PENDING = new Set([
   "aguardando_sangria",
   "troca_de_caixa",
   "deve_sair",
+  "pico",
+  "apoio_operacional",
+  "fechamento",
 ])
 
 function nowInSaoPauloMinutes() {
@@ -509,6 +515,7 @@ function buildOperationalPendingSummary(params: {
   cashSessions: unknown[]
   deliveries: unknown[]
   productionOrders: unknown[]
+  queueSignals: unknown[]
 }) {
   const currentMinutes = nowInSaoPauloMinutes()
   const schedules = params.schedules
@@ -582,9 +589,20 @@ function buildOperationalPendingSummary(params: {
       !lunchDone &&
       breakStart !== null &&
       currentMinutes > breakStart + DEFAULT_BREAK_TOLERANCE_MINUTES &&
-      ["trabalhando", "deve_sair", "aguardando_sangria", "troca_de_caixa"].includes(status ?? "")
+      [
+        "trabalhando",
+        "deve_sair",
+        "aguardando_sangria",
+        "troca_de_caixa",
+        "pico",
+        "apoio_operacional",
+        "fechamento",
+      ].includes(status ?? "")
     )
   })
+  const openQueueSignals = params.queueSignals
+    .map(asRow)
+    .filter((signal) => ["open", "monitoring"].includes(readString(signal, "status") ?? ""))
   const uncoveredPosts = params.posts
     .map(asRow)
     .filter((post) => !occupiedPostIds.has(readString(post, "id") ?? ""))
@@ -643,6 +661,17 @@ function buildOperationalPendingSummary(params: {
       breaksWaitingRelease.map(
         (schedule) =>
           `${relationName(schedule, "employees") ?? "Colaborador"} - previsto ${readString(schedule, "break_start") ?? "sem horario"}`
+      )
+    ),
+    buildPendingGroup(
+      "queue-signals",
+      "Filas operacionais",
+      openQueueSignals.length,
+      true,
+      "Nenhuma fila operacional aberta.",
+      openQueueSignals.map(
+        (signal) =>
+          `${readString(signal, "title") ?? "Fila"} - ${readNumber(signal, "customer_count") ?? 0} cliente(s), ${readNumber(signal, "wait_minutes") ?? 0}min`
       )
     ),
     buildPendingGroup(
@@ -922,6 +951,14 @@ async function fetchContext(
     .order("started_at", { ascending: false })
     .limit(200)
 
+  let queueSignalsQuery = supabase
+    .from("operational_queue")
+    .select("id, branch_id, post_id, sector_id, queue_type, severity, status, title, customer_count, wait_minutes, required_posts, active_posts, notes, created_at, resolved_at, operational_posts(name, type), sectors(name)")
+    .eq("organization_id", profile.organization_id)
+    .in("status", ["open", "monitoring"])
+    .order("created_at", { ascending: false })
+    .limit(80)
+
   let branchesQuery = supabase
     .from("branches")
     .select("id, name, city, state, active")
@@ -940,7 +977,7 @@ async function fetchContext(
 
   let settingsQuery = supabase
     .from("operational_settings")
-    .select("branch_id, mode, late_tolerance_minutes, break_tolerance_minutes, require_cashier_cash_count, require_coverage_before_break, block_break_on_peak_hours, require_responsible_presence")
+    .select("branch_id, mode, late_tolerance_minutes, break_tolerance_minutes, require_cashier_cash_count, require_coverage_before_break, block_break_on_peak_hours, require_responsible_presence, queue_attention_threshold, queue_critical_threshold, cash_count_alert_amount")
     .eq("organization_id", profile.organization_id)
     .limit(80)
 
@@ -1104,6 +1141,7 @@ async function fetchContext(
     employeesQuery = employeesQuery.eq("branch_id", branchId)
     postsQuery = postsQuery.eq("branch_id", branchId)
     allocationsQuery = allocationsQuery.eq("branch_id", branchId)
+    queueSignalsQuery = queueSignalsQuery.eq("branch_id", branchId)
     branchesQuery = branchesQuery.eq("id", branchId)
     sectorsQuery = sectorsQuery.eq("branch_id", branchId)
     settingsQuery = settingsQuery.or(`branch_id.is.null,branch_id.eq.${branchId}`)
@@ -1134,6 +1172,7 @@ async function fetchContext(
     employees,
     posts,
     allocations,
+    queueSignals,
     branches,
     sectors,
     settings,
@@ -1164,6 +1203,7 @@ async function fetchContext(
     employeesQuery,
     postsQuery,
     allocationsQuery,
+    queueSignalsQuery,
     branchesQuery,
     sectorsQuery,
     settingsQuery,
@@ -1211,6 +1251,7 @@ async function fetchContext(
       return scheduleDate === today || (!scheduleDate && isSameDateInSaoPaulo(item.updated_at, today))
     }
   )
+  const queueSignalsData = optionalRows(queueSignals)
   const dashboardData = optionalRows(dashboardRows)
   const notesData = optionalRows(notes)
   const formsData = optionalRows(forms)
@@ -1288,6 +1329,7 @@ async function fetchContext(
     cashSessions: cashSessionsData,
     deliveries: deliveriesData,
     productionOrders: productionOrdersData,
+    queueSignals: queueSignalsData,
   })
 
   return {
@@ -1303,7 +1345,15 @@ async function fetchContext(
       critical: currentStatuses.filter(
         (item) => item.current_status === "alerta_critico" || item.priority_level >= 70
       ).length,
-      working: currentStatuses.filter((item) => item.current_status === "trabalhando").length,
+      working: currentStatuses.filter((item) =>
+        [
+          "trabalhando",
+          "voltou",
+          "pico",
+          "apoio_operacional",
+          "fechamento",
+        ].includes(item.current_status)
+      ).length,
       delayed: currentStatuses.filter((item) => item.delay_minutes > 0).length,
     },
     recent_event_counts: {
@@ -1347,6 +1397,8 @@ async function fetchContext(
       pinned_comms_posts: countRows(commsPostsData, (item: any) => Boolean(item.pinned)),
       active_training_items: trainingItemsData.length,
       recent_audit_logs: auditLogsData.length,
+      open_queue_signals: queueSignalsData.length,
+      critical_queue_signals: countRows(queueSignalsData, (item: any) => item.severity === "critical"),
     },
     delivery_counts: {
       total_recent: deliveriesData.length,
@@ -1403,6 +1455,7 @@ async function fetchContext(
       employees: compactRows(employees.data ?? [], 60),
       operational_posts: compactRows(posts.error ? [] : posts.data ?? [], 80),
       active_allocations: compactRows(allocations.error ? [] : allocations.data ?? [], 80),
+      operational_queue: compactRows(queueSignalsData, 50),
       operational_notes: compactRows(notesData, 40),
       operational_forms: compactRows(formsData, 40),
       operational_form_responses: compactRows(formResponsesData, 30),
@@ -1430,6 +1483,7 @@ async function fetchContext(
     optional_errors: [
       optionalError("operational_posts", posts),
       optionalError("post_allocations", allocations),
+      optionalError("operational_queue", queueSignals),
       optionalError("v_operational_dashboard", dashboardRows),
       optionalError("operational_notes", notes),
       optionalError("operational_forms", forms),
@@ -1515,6 +1569,7 @@ function buildModelContext(context: AgentContext) {
   const checklists = (context.tools.checklist_runs as unknown[]).map(asRow)
   const posts = (context.tools.operational_posts as unknown[]).map(asRow)
   const allocations = (context.tools.active_allocations as unknown[]).map(asRow)
+  const queueSignals = (context.tools.operational_queue as unknown[]).map(asRow)
   const notes = (context.tools.operational_notes as unknown[]).map(asRow)
   const forms = (context.tools.operational_forms as unknown[]).map(asRow)
   const formResponses = (context.tools.operational_form_responses as unknown[]).map(asRow)
@@ -1588,6 +1643,9 @@ function buildModelContext(context: AgentContext) {
         require_coverage_before_break: readBoolean(setting, "require_coverage_before_break"),
         block_break_on_peak_hours: readBoolean(setting, "block_break_on_peak_hours"),
         require_responsible_presence: readBoolean(setting, "require_responsible_presence"),
+        queue_attention_threshold: readNumber(setting, "queue_attention_threshold"),
+        queue_critical_threshold: readNumber(setting, "queue_critical_threshold"),
+        cash_count_alert_amount: readNumber(setting, "cash_count_alert_amount"),
       })),
       operational_pending_summary: {
         total_alerts: readNumber(pendingSummary, "total_alerts"),
@@ -1679,6 +1737,19 @@ function buildModelContext(context: AgentContext) {
         status: readString(allocation, "status"),
         post: relationName(allocation, "operational_posts"),
         employee: relationName(allocation, "employees"),
+      })),
+      operational_queue: queueSignals.slice(0, 18).map((signal) => ({
+        id: readString(signal, "id"),
+        branch_id: readString(signal, "branch_id"),
+        post_id: readString(signal, "post_id"),
+        queue_type: readString(signal, "queue_type"),
+        severity: readString(signal, "severity"),
+        status: readString(signal, "status"),
+        title: trimText(readString(signal, "title"), 90),
+        customer_count: readNumber(signal, "customer_count"),
+        wait_minutes: readNumber(signal, "wait_minutes"),
+        post: relationName(signal, "operational_posts"),
+        sector: relationName(signal, "sectors"),
       })),
       operational_notes: notes.slice(0, 12).map((note) => ({
         id: readString(note, "id"),
@@ -2696,7 +2767,7 @@ Deno.serve(async (request) => {
           {
             role: "system",
             content:
-              "Voce e o Unyx AI Agent, um agente operacional para varejo, food service e equipes de loja. Analise apenas os dados fornecidos. Considere colaboradores, horarios, dashboard, pendencias operacionais, notas, formularios, comunicados, entregas, clientes, caixa/PDV, producao, fiscal, estoque, auditoria e configuracoes quando vierem no contexto. Trate o fiscal como orquestrador da operacao: cobertura de PDVs, filas, intervalos, sangrias, trocas, apoio, redistribuicao, comunicacao e fechamento. Use context.tools.operational_pending_summary como resumo prioritario da tela Operacao: entradas atrasadas, intervalos a liberar, intervalos vencidos, postos sem cobertura, alocados sem escala, caixas abertos, entregas atrasadas e producao atrasada. Use context.schedule_scope para diferenciar falta de escala na organizacao de falta de escala apenas na filial selecionada; se houver escala em outra filial, diga isso explicitamente e recomende conferir a filial do topo. Se context.tools.direct_lookup trouxer resultado para horario, posto, PDV ou caixa perguntado pelo gestor, priorize essa consulta direta na resposta e nao responda por amostragem. Seja objetivo, pratico e conservador. Nao invente dados. Para action_plan use apenas generate_delay_report ou allocate_post. Relatorio de atrasos pode ser executado automaticamente; alocacao exige confirmacao humana e escala do dia em context.tools.schedules_today. Se nao houver escala do dia na filial selecionada, nao proponha allocate_post; recomende conferir a filial ou criar/copiar a escala primeiro. Nao diga que executou acoes quando intent nao for act. Quando intent for resolve, gere uma proposta aplicavel para o gestor revisar e registrar como tarefa operacional. Quando intent for analyze, deixe resolution.status como none. Responda em portugues do Brasil sem acentos problematicos quando possivel.",
+              "Voce e o Unyx AI Agent, um agente operacional para varejo, food service e equipes de loja. Analise apenas os dados fornecidos. Considere colaboradores, horarios, dashboard, pendencias operacionais, notas, formularios, comunicados, entregas, clientes, caixa/PDV, producao, fiscal, estoque, auditoria e configuracoes quando vierem no contexto. Trate o fiscal como orquestrador da operacao: cobertura de PDVs, filas, intervalos, sangrias, trocas, apoio, redistribuicao, comunicacao e fechamento. Use context.tools.operational_pending_summary como resumo prioritario da tela Operacao: entradas atrasadas, intervalos a liberar, intervalos vencidos, postos sem cobertura, alocados sem escala, caixas abertos, entregas atrasadas e producao atrasada. Use context.tools.operational_queue para filas, gargalos e pedidos de apoio registrados pelo fiscal. Use context.schedule_scope para diferenciar falta de escala na organizacao de falta de escala apenas na filial selecionada; se houver escala em outra filial, diga isso explicitamente e recomende conferir a filial do topo. Se context.tools.direct_lookup trouxer resultado para horario, posto, PDV ou caixa perguntado pelo gestor, priorize essa consulta direta na resposta e nao responda por amostragem. Seja objetivo, pratico e conservador. Nao invente dados. Para action_plan use apenas generate_delay_report ou allocate_post. Relatorio de atrasos pode ser executado automaticamente; alocacao exige confirmacao humana e escala do dia em context.tools.schedules_today. Se nao houver escala do dia na filial selecionada, nao proponha allocate_post; recomende conferir a filial ou criar/copiar a escala primeiro. Nao diga que executou acoes quando intent nao for act. Quando intent for resolve, gere uma proposta aplicavel para o gestor revisar e registrar como tarefa operacional. Quando intent for analyze, deixe resolution.status como none. Responda em portugues do Brasil sem acentos problematicos quando possivel.",
           },
           {
             role: "user",

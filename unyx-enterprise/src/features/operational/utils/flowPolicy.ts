@@ -37,6 +37,9 @@ export const FLOW_ENTERED_STATUSES = new Set<OperationalStatus>([
   "aguardando_sangria",
   "troca_de_caixa",
   "deve_sair",
+  "pico",
+  "apoio_operacional",
+  "fechamento",
   "alerta_critico",
 ])
 
@@ -46,6 +49,9 @@ export const FLOW_REAL_WORKING_STATUSES = new Set<OperationalStatus>([
   "aguardando_sangria",
   "troca_de_caixa",
   "deve_sair",
+  "pico",
+  "apoio_operacional",
+  "fechamento",
 ])
 
 const statusStage: Record<OperationalStatus, OperationalFlowStage> = {
@@ -56,6 +62,9 @@ const statusStage: Record<OperationalStatus, OperationalFlowStage> = {
   troca_de_caixa: "coverage_change",
   em_intervalo: "break",
   voltou: "returning",
+  pico: "working",
+  apoio_operacional: "working",
+  fechamento: "closing",
   folga: "done",
   finalizado: "done",
   alerta_critico: "alert",
@@ -67,6 +76,9 @@ const statusBasePriority: Record<OperationalStatus, number> = {
   troca_de_caixa: 82,
   deve_sair: 76,
   em_intervalo: 70,
+  pico: 86,
+  apoio_operacional: 62,
+  fechamento: 58,
   trabalhando: 30,
   voltou: 22,
   aguardando_evento: 10,
@@ -97,7 +109,13 @@ export function canFlowStartEntry(status: OperationalStatus | null | undefined) 
 }
 
 export function canFlowStartBreak(status: OperationalStatus | null | undefined) {
-  return status === "trabalhando" || status === "voltou" || status === "deve_sair"
+  return (
+    status === "trabalhando" ||
+    status === "voltou" ||
+    status === "deve_sair" ||
+    status === "apoio_operacional" ||
+    status === "fechamento"
+  )
 }
 
 export function canFlowReturnFromBreak(status: OperationalStatus | null | undefined) {
@@ -105,7 +123,11 @@ export function canFlowReturnFromBreak(status: OperationalStatus | null | undefi
 }
 
 export function canFlowStartCafe(status: OperationalStatus | null | undefined) {
-  return status === "voltou" || status === "trabalhando"
+  return (
+    status === "voltou" ||
+    status === "trabalhando" ||
+    status === "apoio_operacional"
+  )
 }
 
 export function canFlowStartExit(status: OperationalStatus | null | undefined) {
@@ -205,6 +227,33 @@ export function buildOperationalFlowSignals(params: {
       label: `${minutesWorking}min em operacao`,
       severity: "normal",
       score: Math.min(24, Math.floor(minutesWorking / 30)),
+    })
+  }
+
+  if (currentStatus === "pico") {
+    signals.push({
+      key: "peak-operation",
+      label: "atuando em horario de pico",
+      severity: "attention",
+      score: 32,
+    })
+  }
+
+  if (currentStatus === "apoio_operacional") {
+    signals.push({
+      key: "support-operation",
+      label: "em apoio operacional",
+      severity: "normal",
+      score: 18,
+    })
+  }
+
+  if (currentStatus === "fechamento") {
+    signals.push({
+      key: "closing-operation",
+      label: "em fechamento operacional",
+      severity: "attention",
+      score: 24,
     })
   }
 

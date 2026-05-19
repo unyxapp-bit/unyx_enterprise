@@ -14,6 +14,76 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_agent_snapshots: {
+        Row: {
+          action_status: string | null
+          action_tool: string | null
+          branch_id: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          intent: string
+          model: string | null
+          organization_id: string
+          provider: string | null
+          question: string | null
+          result: Json
+          target: Json | null
+        }
+        Insert: {
+          action_status?: string | null
+          action_tool?: string | null
+          branch_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          intent?: string
+          model?: string | null
+          organization_id: string
+          provider?: string | null
+          question?: string | null
+          result: Json
+          target?: Json | null
+        }
+        Update: {
+          action_status?: string | null
+          action_tool?: string | null
+          branch_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          intent?: string
+          model?: string | null
+          organization_id?: string
+          provider?: string | null
+          question?: string | null
+          result?: Json
+          target?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_agent_snapshots_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_agent_snapshots_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_agent_snapshots_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       attendance_events: {
         Row: {
           branch_id: string
@@ -1694,11 +1764,121 @@ export type Database = {
           },
         ]
       }
+      operational_queue: {
+        Row: {
+          active_posts: number | null
+          branch_id: string
+          created_at: string
+          created_by: string | null
+          customer_count: number
+          id: string
+          notes: string | null
+          organization_id: string
+          post_id: string | null
+          queue_type: string
+          required_posts: number | null
+          resolved_at: string | null
+          resolved_by: string | null
+          sector_id: string | null
+          severity: string
+          status: string
+          title: string
+          updated_at: string
+          wait_minutes: number
+        }
+        Insert: {
+          active_posts?: number | null
+          branch_id: string
+          created_at?: string
+          created_by?: string | null
+          customer_count?: number
+          id?: string
+          notes?: string | null
+          organization_id: string
+          post_id?: string | null
+          queue_type?: string
+          required_posts?: number | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          sector_id?: string | null
+          severity?: string
+          status?: string
+          title: string
+          updated_at?: string
+          wait_minutes?: number
+        }
+        Update: {
+          active_posts?: number | null
+          branch_id?: string
+          created_at?: string
+          created_by?: string | null
+          customer_count?: number
+          id?: string
+          notes?: string | null
+          organization_id?: string
+          post_id?: string | null
+          queue_type?: string
+          required_posts?: number | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          sector_id?: string | null
+          severity?: string
+          status?: string
+          title?: string
+          updated_at?: string
+          wait_minutes?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "operational_queue_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "operational_queue_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "operational_queue_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "operational_queue_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "operational_posts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "operational_queue_resolved_by_fkey"
+            columns: ["resolved_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "operational_queue_sector_id_fkey"
+            columns: ["sector_id"]
+            isOneToOne: false
+            referencedRelation: "sectors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       operational_settings: {
         Row: {
           block_break_on_peak_hours: boolean
           branch_id: string | null
           break_tolerance_minutes: number
+          cash_count_alert_amount: number
           coffee_break_duration_minutes: number
           coffee_break_enabled: boolean
           coffee_order: string | null
@@ -1711,6 +1891,8 @@ export type Database = {
           organization_id: string
           peak_hours_end: string | null
           peak_hours_start: string | null
+          queue_attention_threshold: number
+          queue_critical_threshold: number
           require_cashier_cash_count: boolean
           require_coverage_before_break: boolean
           require_responsible_presence: boolean
@@ -1720,6 +1902,7 @@ export type Database = {
           block_break_on_peak_hours?: boolean
           branch_id?: string | null
           break_tolerance_minutes?: number
+          cash_count_alert_amount?: number
           coffee_break_duration_minutes?: number
           coffee_break_enabled?: boolean
           coffee_order?: string | null
@@ -1732,6 +1915,8 @@ export type Database = {
           organization_id: string
           peak_hours_end?: string | null
           peak_hours_start?: string | null
+          queue_attention_threshold?: number
+          queue_critical_threshold?: number
           require_cashier_cash_count?: boolean
           require_coverage_before_break?: boolean
           require_responsible_presence?: boolean
@@ -1741,6 +1926,7 @@ export type Database = {
           block_break_on_peak_hours?: boolean
           branch_id?: string | null
           break_tolerance_minutes?: number
+          cash_count_alert_amount?: number
           coffee_break_duration_minutes?: number
           coffee_break_enabled?: boolean
           coffee_order?: string | null
@@ -1753,6 +1939,8 @@ export type Database = {
           organization_id?: string
           peak_hours_end?: string | null
           peak_hours_start?: string | null
+          queue_attention_threshold?: number
+          queue_critical_threshold?: number
           require_cashier_cash_count?: boolean
           require_coverage_before_break?: boolean
           require_responsible_presence?: boolean
@@ -3298,6 +3486,32 @@ export type Database = {
           employee_name: string
         }[]
       }
+      record_break_already_done: {
+        Args: {
+          p_branch_id: string
+          p_employee_id: string
+          p_notes?: string
+          p_schedule_id: string
+        }
+        Returns: {
+          branch_id: string
+          created_at: string
+          created_by: string | null
+          employee_id: string
+          event_time: string
+          event_type: Database["public"]["Enums"]["attendance_event_type"]
+          id: string
+          notes: string | null
+          organization_id: string
+          schedule_id: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "attendance_events"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       record_operational_action: {
         Args: {
           p_branch_id: string
@@ -3472,6 +3686,9 @@ export type Database = {
         | "alerta_critico"
         | "aguardando_evento"
         | "finalizado"
+        | "pico"
+        | "apoio_operacional"
+        | "fechamento"
       organization_status:
         | "active"
         | "inactive"
@@ -3699,6 +3916,9 @@ export const Constants = {
         "alerta_critico",
         "aguardando_evento",
         "finalizado",
+        "pico",
+        "apoio_operacional",
+        "fechamento",
       ],
       organization_status: [
         "active",

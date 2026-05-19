@@ -42,8 +42,13 @@ import type {
   OperationalPoster,
   OperationalPosterFormat,
   OperationalPosterLayoutConfig,
+  OperationalQueueSeverity,
+  OperationalQueueSignal,
+  OperationalQueueStatus,
+  OperationalQueueType,
   OperationalPosterTone,
   OperationalSupportPriority,
+  OperationalStatus,
   OperationalStatusRecord,
   Organization,
   PaymentMethod,
@@ -111,6 +116,20 @@ export interface OperationalPostInput {
   active?: boolean
 }
 
+export interface OperationalQueueInput {
+  branch_id: string
+  post_id?: string | null
+  sector_id?: string | null
+  queue_type: OperationalQueueType
+  severity: OperationalQueueSeverity
+  title: string
+  customer_count?: number
+  wait_minutes?: number
+  required_posts?: number | null
+  active_posts?: number | null
+  notes?: string | null
+}
+
 function raise(error: { message: string } | null) {
   if (error) throw new Error(error.message)
 }
@@ -144,6 +163,22 @@ function isMissingAllocationFeature(error: { code?: string; message: string } | 
     (
       error.code === "42P01" ||
       error.code === "PGRST202" ||
+      error.code === "PGRST204" ||
+      error.code === "PGRST205" ||
+      message.includes("schema cache") ||
+      message.includes("does not exist") ||
+      message.includes("could not find")
+    )
+  )
+}
+
+function isMissingFiscalFlowFeature(error: { code?: string; message: string } | null) {
+  if (!error) return false
+  const message = error.message.toLowerCase()
+  return (
+    message.includes("operational_queue") &&
+    (
+      error.code === "42P01" ||
       error.code === "PGRST204" ||
       error.code === "PGRST205" ||
       message.includes("schema cache") ||
@@ -736,6 +771,9 @@ export interface OperationalSettingsInput {
   require_coverage_before_break: boolean
   block_break_on_peak_hours: boolean
   require_responsible_presence: boolean
+  queue_attention_threshold: number
+  queue_critical_threshold: number
+  cash_count_alert_amount: number
   coffee_break_enabled: boolean
   coffee_break_duration_minutes: number
   coffee_window_start: string | null
@@ -1619,6 +1657,145 @@ export async function listCashMovements(
   if (isMissingAllocationFeature(error)) return []
   raise(error)
   return (data ?? []) as CashMovement[]
+}
+
+export async function listOperationalQueueSignals(
+  branchId?: string | null,
+  organizationId?: string | null,
+  openOnly = true
+) {
+  let query = supabase
+    .from("operational_queue")
+    .select("*, operational_posts(name, type), sectors(name), user_profiles!created_by(name)")
+    .order("severity", { ascending: true })
+    .order("created_at", { ascending: false })
+    .limit(200)
+
+  if (organizationId) query = query.eq("organization_id", organizationId)
+  if (branchId) query = query.eq("branch_id", branchId)
+  if (openOnly) query = query.in("status", ["open", "monitoring"])
+
+  const { data, error } = await query
+  if (isMissingFiscalFlowFeature(error)) return []
+  raise(error)
+  const severityOrder: Record<OperationalQueueSeverity, number> = {
+    critical: 0,
+    attention: 1,
+    normal: 2,
+  }
+  return ((data ?? []) as OperationalQueueSignal[]).sort((left, right) => {
+    const severityDiff = severityOrder[left.severity] - severityOrder[right.severity]
+    if (severityDiff !== 0) return severityDiff
+    return Date.parse(right.created_at) - Date.parse(left.created_at)
+  })
+}
+
+export async function createOperationalQueueSignal(
+  profile: UserProfile,
+  input: OperationalQueueInput
+) {
+  const title = input.title.trim()
+  if (!title) throw new Error("Informe o titulo do sinal operacional.")
+
+  const { data, error } = await supabase
+    .from("operational_queue")
+    .insert({
+      organization_id: profile.organization_id,
+      branch_id: input.branch_id,
+      post_id: input.post_id ?? null,
+      sector_id: input.sector_id ?? null,
+      created_by: profile.id,
+      queue_type: input.queue_type,
+      severity: input.severity,
+      status: "open",
+      title,
+      customer_count: input.customer_count ?? 0,
+      wait_minutes: input.wait_minutes ?? 0,
+      required_posts: input.required_posts ?? 0,
+      active_posts: input.active_posts ?? 0,
+      notes: input.notes?.trim() || null,
+    })
+    .select("*, operational_posts(name, type), sectors(name), user_profiles!created_by(name)")
+    .single()
+
+  if (isMissingFiscalFlowFeature(error)) {
+    throw new Error("Fluxo fiscal ainda nao instalado no Supabase. Rode supabase/operational_fiscal_flow_setup.sql.")
+  }
+  raise(error)
+  return data as OperationalQueueSignal
+}
+
+export async function resolveOperationalQueueSignal(
+  profile: UserProfile,
+  signalId: string,
+  status: OperationalQueueStatus = "resolved"
+) {
+  const { data, error } = await supabase
+    .from("operational_queue")
+    .update({
+      status,
+      resolved_by: profile.id,
+      resolved_at: new Date().toISOString(),
+    })
+    .eq("id", signalId)
+    .eq("organization_id", profile.organization_id)
+    .select("*, operational_posts(name, type), sectors(name), user_profiles!created_by(name)")
+    .single()
+
+  if (isMissingFiscalFlowFeature(error)) {
+    throw new Error("Fluxo fiscal ainda nao instalado no Supabase. Rode supabase/operational_fiscal_flow_setup.sql.")
+  }
+  raise(error)
+  return data as OperationalQueueSignal
+}
+
+export async function setOperationalFlowStatus(
+  profile: UserProfile,
+  input: {
+    branch_id: string
+    employee_id: string
+    schedule_id: string
+    status: OperationalStatus
+    priority_level: number
+    notes: string
+  }
+) {
+  const now = new Date().toISOString()
+  const payload = {
+    organization_id: profile.organization_id,
+    branch_id: input.branch_id,
+    employee_id: input.employee_id,
+    schedule_id: input.schedule_id,
+    current_status: input.status,
+    priority_level: input.priority_level,
+    delay_minutes: 0,
+    status_reason: input.notes,
+    updated_at: now,
+  }
+
+  const { data: status, error: statusError } = await supabase
+    .from("operational_status")
+    .upsert(payload, { onConflict: "employee_id,schedule_id" })
+    .select("*")
+    .single()
+
+  if (statusError?.message.includes("operational_status_type")) {
+    throw new Error("Novos status do fluxo fiscal ainda nao estao instalados no Supabase. Rode supabase/operational_fiscal_flow_setup.sql.")
+  }
+  raise(statusError)
+
+  const { error: eventError } = await supabase.from("attendance_events").insert({
+    organization_id: profile.organization_id,
+    branch_id: input.branch_id,
+    employee_id: input.employee_id,
+    schedule_id: input.schedule_id,
+    event_type: "ocorrencia_registrada",
+    created_by: profile.id,
+    notes: input.notes,
+  })
+
+  raise(eventError)
+  return status as OperationalStatusRecord
 }
 
 export async function allocatePost(input: {

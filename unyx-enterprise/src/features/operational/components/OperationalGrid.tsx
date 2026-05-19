@@ -38,6 +38,10 @@ interface OperationalGridProps {
   onCashierSwap: (schedule: ScheduleWithRelations) => void
   onReturn: (schedule: ScheduleWithRelations) => void
   onCafe: (schedule: ScheduleWithRelations) => void
+  onPeak: (schedule: ScheduleWithRelations) => void
+  onSupport: (schedule: ScheduleWithRelations) => void
+  onClosing: (schedule: ScheduleWithRelations) => void
+  onNormal: (schedule: ScheduleWithRelations) => void
   onExit: (schedule: ScheduleWithRelations) => void
 }
 
@@ -62,6 +66,10 @@ export const OperationalGrid = React.memo(
     onCashierSwap,
     onReturn,
     onCafe,
+    onPeak,
+    onSupport,
+    onClosing,
+    onNormal,
     onExit,
   }: OperationalGridProps) => {
     const pageCount = Math.ceil(schedules.length / PAGE_SIZE)
@@ -125,6 +133,10 @@ export const OperationalGrid = React.memo(
                 onCashierSwap={() => onCashierSwap(schedule)}
                 onReturn={() => onReturn(schedule)}
                 onCafe={() => onCafe(schedule)}
+                onPeak={() => onPeak(schedule)}
+                onSupport={() => onSupport(schedule)}
+                onClosing={() => onClosing(schedule)}
+                onNormal={() => onNormal(schedule)}
                 onExit={() => onExit(schedule)}
               />
             )

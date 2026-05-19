@@ -9,6 +9,7 @@
  */
 
 import { useEffect, useState } from "react"
+import type { FormEvent } from "react"
 import {
   Activity,
   ChevronDown,
@@ -32,14 +33,19 @@ import { operationalModeNames } from "@/features/ops/modes/operationalModes"
 import { MissingSchedulesPrompt } from "@/features/schedules/components/MissingSchedulesPrompt"
 import {
   useCashSessions,
+  useCreateOperationalQueueSignal,
   useDeliveryOrders,
   useFinalizePostAllocation,
+  useOperationalQueueSignals,
   useProductionOrders,
+  useResolveOperationalQueueSignal,
+  useSetOperationalFlowStatus,
 } from "@/hooks/useUnyxData"
 
 import {
   BreakDialog,
   EntryDialog,
+  FiscalFlowPanel,
   OperationalGrid,
   OperationalPendingPanel,
   OperationalPostsManagerCard,
@@ -64,10 +70,21 @@ import {
   timeToMinutes,
 } from "./utils"
 
-import type { PostAllocation, ScheduleWithRelations } from "@/types/domain"
+import type {
+  OperationalStatus,
+  PostAllocation,
+  ScheduleWithRelations,
+} from "@/types/domain"
 
 const fieldClass =
   "h-8 rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+
+const flowStatusPriority: Partial<Record<OperationalStatus, number>> = {
+  pico: 86,
+  apoio_operacional: 62,
+  fechamento: 58,
+  trabalhando: 30,
+}
 
 export function OperationsPage() {
   // ── Filters & Pagination ──
@@ -117,8 +134,18 @@ export function OperationsPage() {
   const breakToleranceMinutes =
     operationalSettings.data?.break_tolerance_minutes ??
     DEFAULT_BREAK_TOLERANCE_MINUTES
+  const queueAttentionThreshold =
+    operationalSettings.data?.queue_attention_threshold ?? 4
+  const queueCriticalThreshold =
+    operationalSettings.data?.queue_critical_threshold ?? 8
+  const cashCountAlertAmount =
+    operationalSettings.data?.cash_count_alert_amount ?? 500
   const finalizePostAllocation = useFinalizePostAllocation()
+  const createQueueSignal = useCreateOperationalQueueSignal()
+  const resolveQueueSignal = useResolveOperationalQueueSignal()
+  const setFlowStatus = useSetOperationalFlowStatus()
   const cashSessions = useCashSessions()
+  const queueSignals = useOperationalQueueSignals()
   const deliveryOrders = useDeliveryOrders()
   const productionOrders = useProductionOrders(date, "all")
   const [releasingAllocationId, setReleasingAllocationId] = useState<string | null>(
@@ -252,6 +279,34 @@ export function OperationsPage() {
     }
   }
 
+  const handleFlowStatusClick = async (
+    schedule: ScheduleWithRelations,
+    status: Extract<
+      OperationalStatus,
+      "pico" | "apoio_operacional" | "fechamento" | "trabalhando"
+    >
+  ) => {
+    const notes: Record<typeof status, string> = {
+      pico: "Fiscal marcou colaborador em operacao de pico.",
+      apoio_operacional: "Fiscal direcionou colaborador para apoio operacional.",
+      fechamento: "Fiscal iniciou fechamento operacional para o colaborador.",
+      trabalhando: "Fiscal retornou colaborador para operacao normal.",
+    }
+
+    try {
+      await setFlowStatus.mutateAsync({
+        branch_id: schedule.branch_id,
+        employee_id: schedule.employee_id,
+        schedule_id: schedule.id,
+        status,
+        priority_level: flowStatusPriority[status] ?? 30,
+        notes: notes[status],
+      })
+    } catch (error) {
+      console.error("Erro ao atualizar fluxo operacional:", error)
+    }
+  }
+
   const handleReturnClick = async (
     schedule: ScheduleWithRelations,
     returned: boolean
@@ -279,9 +334,7 @@ export function OperationsPage() {
     }
   }
 
-  const handleOccurrenceDialogSubmit = async (
-    event: React.FormEvent<HTMLFormElement>
-  ) => {
+  const handleOccurrenceDialogSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const { schedule, note } = dialogs.occurrence
     if (!schedule) return
@@ -449,6 +502,30 @@ export function OperationsPage() {
           onCopied={() => refetch()}
         />
 
+        <FiscalFlowPanel
+          activePosts={activePosts}
+          activeAllocations={occupiedPostAllocations}
+          queueSignals={queueSignals.data ?? []}
+          cashSessions={cashSessions.data ?? []}
+          schedulesInTurn={emTurno}
+          statusByScheduleId={statusByScheduleId}
+          currentMinutes={now}
+          breakToleranceMinutes={breakToleranceMinutes}
+          queueAttentionThreshold={queueAttentionThreshold}
+          queueCriticalThreshold={queueCriticalThreshold}
+          cashCountAlertAmount={cashCountAlertAmount}
+          isLoading={queueSignals.isLoading}
+          isPending={
+            createQueueSignal.isPending ||
+            resolveQueueSignal.isPending ||
+            setFlowStatus.isPending
+          }
+          onCreateQueueSignal={(input) => createQueueSignal.mutate(input)}
+          onResolveQueueSignal={(signalId) =>
+            resolveQueueSignal.mutate({ signalId })
+          }
+        />
+
         <OperationalPendingPanel
           schedulesToArrive={aChegar}
           schedulesInTurn={emTurno}
@@ -459,6 +536,7 @@ export function OperationsPage() {
           cashSessions={cashSessions.data ?? []}
           deliveryOrders={deliveryOrders.data ?? []}
           productionOrders={productionOrders.data ?? []}
+          queueSignals={queueSignals.data ?? []}
           currentMinutes={now}
           breakToleranceMinutes={breakToleranceMinutes}
         />
@@ -507,7 +585,7 @@ export function OperationsPage() {
               isLoading={schedules.isLoading || statuses.isLoading}
               isError={schedules.isError || statuses.isError}
               error={schedules.error || statuses.error}
-              isPending={isPending}
+              isPending={isPending || setFlowStatus.isPending}
               onEntry={handleOpenEntryDialog}
               onBreak={(s) => dialogs.openBreakDialog(s)}
               onBreakAlreadyDone={handleBreakAlreadyDoneClick}
@@ -515,6 +593,10 @@ export function OperationsPage() {
               onCashierSwap={handleCashierSwapClick}
               onReturn={(s) => handleReturnClick(s, true)}
               onCafe={handleCafeClick}
+              onPeak={(s) => handleFlowStatusClick(s, "pico")}
+              onSupport={(s) => handleFlowStatusClick(s, "apoio_operacional")}
+              onClosing={(s) => handleFlowStatusClick(s, "fechamento")}
+              onNormal={(s) => handleFlowStatusClick(s, "trabalhando")}
               onExit={(s) => {
                 fireAction(s, "saida_confirmada")
               }}

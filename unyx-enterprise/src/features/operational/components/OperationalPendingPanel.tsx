@@ -17,6 +17,7 @@ import type {
   CashSession,
   DeliveryOrder,
   OperationalPost,
+  OperationalQueueSignal,
   OperationalStatusRecord,
   PostAllocation,
   ProductionOrder,
@@ -35,6 +36,7 @@ interface OperationalPendingPanelProps {
   cashSessions: CashSession[]
   deliveryOrders: DeliveryOrder[]
   productionOrders: ProductionOrder[]
+  queueSignals: OperationalQueueSignal[]
   currentMinutes: number
   breakToleranceMinutes?: number
 }
@@ -89,6 +91,7 @@ export const OperationalPendingPanel = React.memo(
     cashSessions,
     deliveryOrders,
     productionOrders,
+    queueSignals,
     currentMinutes,
     breakToleranceMinutes = DEFAULT_BREAK_TOLERANCE_MINUTES,
   }: OperationalPendingPanelProps) => {
@@ -116,9 +119,15 @@ export const OperationalPendingPanel = React.memo(
           !lunchDone &&
           breakStart !== null &&
           currentMinutes > breakStart + breakToleranceMinutes &&
-          ["trabalhando", "deve_sair", "aguardando_sangria", "troca_de_caixa"].includes(
-            status ?? ""
-          )
+          [
+            "trabalhando",
+            "deve_sair",
+            "aguardando_sangria",
+            "troca_de_caixa",
+            "pico",
+            "apoio_operacional",
+            "fechamento",
+          ].includes(status ?? "")
         )
       })
 
@@ -144,6 +153,10 @@ export const OperationalPendingPanel = React.memo(
         if (["ready", "delivered", "cancelled"].includes(order.status)) return false
         return isPast(order.promised_at)
       })
+
+      const openQueueSignals = queueSignals.filter(
+        (signal) => signal.status === "open" || signal.status === "monitoring"
+      )
 
       return [
         {
@@ -189,6 +202,21 @@ export const OperationalPendingPanel = React.memo(
             .map(
               (schedule) =>
                 `${employeeLabel(schedule)} - previsto ${formatTime(schedule.break_start)}`
+            ),
+        },
+        {
+          key: "queue-signals",
+          title: "Filas operacionais",
+          count: openQueueSignals.length,
+          alert: true,
+          Icon: AlertTriangle,
+          tone: "text-red-700",
+          empty: "Nenhuma fila operacional aberta.",
+          items: openQueueSignals
+            .slice(0, 3)
+            .map(
+              (signal) =>
+                `${signal.title} - ${signal.customer_count} cliente(s), ${signal.wait_minutes}min`
             ),
         },
         {
@@ -251,6 +279,7 @@ export const OperationalPendingPanel = React.memo(
       deliveryOrders,
       occupiedPostIds,
       productionOrders,
+      queueSignals,
       schedulesInTurn,
       schedulesToArrive,
       statusByScheduleId,

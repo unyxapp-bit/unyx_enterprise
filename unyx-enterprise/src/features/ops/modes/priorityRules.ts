@@ -22,6 +22,9 @@ const priorityRules: Record<OperationalMode, Record<OperationalStatus, number>> 
     deve_sair: 65,
     aguardando_sangria: 60,
     troca_de_caixa: 55,
+    pico: 85,
+    apoio_operacional: 62,
+    fechamento: 58,
     trabalhando: 20,
     voltou: 15,
     finalizado: 0,
@@ -34,6 +37,9 @@ const priorityRules: Record<OperationalMode, Record<OperationalStatus, number>> 
     deve_sair: 55,
     aguardando_sangria: 35,
     troca_de_caixa: 35,
+    pico: 80,
+    apoio_operacional: 58,
+    fechamento: 54,
     trabalhando: 20,
     voltou: 15,
     finalizado: 0,
@@ -46,6 +52,9 @@ const priorityRules: Record<OperationalMode, Record<OperationalStatus, number>> 
     deve_sair: 50,
     aguardando_sangria: 35,
     troca_de_caixa: 35,
+    pico: 82,
+    apoio_operacional: 62,
+    fechamento: 56,
     trabalhando: 20,
     voltou: 15,
     finalizado: 0,
@@ -58,6 +67,9 @@ const priorityRules: Record<OperationalMode, Record<OperationalStatus, number>> 
     deve_sair: 50,
     aguardando_sangria: 30,
     troca_de_caixa: 30,
+    pico: 78,
+    apoio_operacional: 60,
+    fechamento: 52,
     trabalhando: 20,
     voltou: 15,
     finalizado: 0,
@@ -70,6 +82,9 @@ const priorityRules: Record<OperationalMode, Record<OperationalStatus, number>> 
     deve_sair: 50,
     aguardando_sangria: 40,
     troca_de_caixa: 35,
+    pico: 80,
+    apoio_operacional: 60,
+    fechamento: 54,
     trabalhando: 20,
     voltou: 15,
     finalizado: 0,
@@ -113,6 +128,7 @@ export function getPriorityByMode(
     if (status === "aguardando_sangria" || status === "troca_de_caixa") {
       priority += 15
     }
+    if (status === "pico" || status === "apoio_operacional") priority += 10
   }
 
   if (mode === "restaurant" && /cozinha|salao|delivery|caixa/.test(

@@ -39,6 +39,9 @@ export type OperationalStatus =
   | "troca_de_caixa"
   | "em_intervalo"
   | "voltou"
+  | "pico"
+  | "apoio_operacional"
+  | "fechamento"
   | "folga"
   | "finalizado"
   | "alerta_critico"
@@ -105,6 +108,9 @@ export interface OperationalSettings {
   require_coverage_before_break: boolean
   block_break_on_peak_hours: boolean
   require_responsible_presence: boolean
+  queue_attention_threshold?: number
+  queue_critical_threshold?: number
+  cash_count_alert_amount?: number
   coffee_break_enabled: boolean
   coffee_break_duration_minutes: number
   coffee_window_start: string | null
@@ -543,6 +549,47 @@ export interface Module {
   description: string | null
   active: boolean
   created_at: string
+}
+
+export type OperationalQueueType =
+  | "checkout"
+  | "service"
+  | "delivery"
+  | "self_checkout"
+  | "support"
+  | "closing"
+  | "other"
+
+export type OperationalQueueSeverity = "normal" | "attention" | "critical"
+export type OperationalQueueStatus =
+  | "open"
+  | "monitoring"
+  | "resolved"
+  | "cancelled"
+
+export interface OperationalQueueSignal {
+  id: string
+  organization_id: string
+  branch_id: string
+  post_id: string | null
+  sector_id: string | null
+  created_by: string | null
+  resolved_by: string | null
+  queue_type: OperationalQueueType
+  severity: OperationalQueueSeverity
+  status: OperationalQueueStatus
+  title: string
+  customer_count: number
+  wait_minutes: number
+  required_posts: number | null
+  active_posts: number | null
+  notes: string | null
+  resolved_at: string | null
+  created_at: string
+  updated_at: string
+  operational_posts?: Pick<OperationalPost, "name" | "type"> | null
+  sectors?: Pick<Sector, "name"> | null
+  user_profiles?: Pick<UserProfile, "name"> | null
 }
 
 export interface OrganizationModule {

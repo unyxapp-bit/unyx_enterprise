@@ -167,6 +167,12 @@ function buildOperationalSettingsForm(
     require_responsible_presence:
       settings?.require_responsible_presence ??
       defaults.require_responsible_presence,
+    queue_attention_threshold:
+      settings?.queue_attention_threshold ?? defaults.queue_attention_threshold,
+    queue_critical_threshold:
+      settings?.queue_critical_threshold ?? defaults.queue_critical_threshold,
+    cash_count_alert_amount:
+      settings?.cash_count_alert_amount ?? defaults.cash_count_alert_amount,
     coffee_break_enabled:
       settings?.coffee_break_enabled ?? defaults.coffee_break_enabled,
     coffee_break_duration_minutes:
@@ -460,6 +466,71 @@ function OperationalSettingsEditor({
 
       <div className="space-y-3 border-t pt-4">
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+          Fluxo fiscal
+        </p>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <label className="space-y-1 text-sm">
+            <span className="font-medium">Fila em atencao</span>
+            <Input
+              disabled={disabled}
+              type="number"
+              min={1}
+              max={99}
+              value={form.queue_attention_threshold}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  queue_attention_threshold: Number(event.target.value),
+                }))
+              }
+            />
+            <p className="text-xs text-muted-foreground">
+              Pessoas na fila para gerar alerta amarelo.
+            </p>
+          </label>
+          <label className="space-y-1 text-sm">
+            <span className="font-medium">Fila critica</span>
+            <Input
+              disabled={disabled}
+              type="number"
+              min={1}
+              max={999}
+              value={form.queue_critical_threshold}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  queue_critical_threshold: Number(event.target.value),
+                }))
+              }
+            />
+            <p className="text-xs text-muted-foreground">
+              Pessoas na fila para gerar alerta vermelho.
+            </p>
+          </label>
+          <label className="space-y-1 text-sm">
+            <span className="font-medium">Alerta de sangria</span>
+            <Input
+              disabled={disabled}
+              type="number"
+              min={0}
+              step={10}
+              value={form.cash_count_alert_amount}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  cash_count_alert_amount: Number(event.target.value),
+                }))
+              }
+            />
+            <p className="text-xs text-muted-foreground">
+              Valor estimado em caixa para destacar sangria.
+            </p>
+          </label>
+        </div>
+      </div>
+
+      <div className="space-y-3 border-t pt-4">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
           Pausa / Cafe
         </p>
         <label className="flex items-center gap-2 rounded-lg border bg-slate-50 p-3 text-sm">
@@ -538,13 +609,13 @@ function OperationalSettingsEditor({
                 }
               >
                 <option value="inverse">
-                  Inverso ao almoco — quem almoca mais tarde, toma cafe primeiro
+                  Inverso ao almoco - quem almoca mais tarde, toma cafe primeiro
                 </option>
                 <option value="same">
-                  Mesmo do almoco — quem almoca mais cedo, toma cafe primeiro
+                  Mesmo do almoco - quem almoca mais cedo, toma cafe primeiro
                 </option>
                 <option value="none">
-                  Sem ordenacao — distribui na ordem da escala
+                  Sem ordenacao - distribui na ordem da escala
                 </option>
               </select>
               <p className="text-xs text-muted-foreground">

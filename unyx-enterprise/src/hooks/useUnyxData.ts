@@ -27,6 +27,7 @@ import {
   createOperationalPoster,
   createOperationalNote,
   createOperationalPost,
+  createOperationalQueueSignal,
   createSchedule,
   createSector,
   createTrainingItem,
@@ -91,6 +92,7 @@ import {
   listOperationalNotes,
   listOperationalPosters,
   listOperationalPosts,
+  listOperationalQueueSignals,
   listOperationalStatuses,
   listPostAllocations,
   listReportEvents,
@@ -108,9 +110,11 @@ import {
   markCommsPostRead,
   recordBreakAlreadyDone,
   recordOperationalEvent,
+  resolveOperationalQueueSignal,
   runAiAgent,
   saveOperationalSettings,
   setTrainingProgress,
+  setOperationalFlowStatus,
   submitOperationalFormResponse,
   toggleBranchActive,
   toggleOperationalPost,
@@ -152,6 +156,7 @@ import type {
   OperationalFormResponseInput,
   OperationalNoteInput,
   OperationalPosterInput,
+  OperationalQueueInput,
   ScheduleImportInput,
 } from "@/services/unyxApi"
 import type {
@@ -163,6 +168,7 @@ import type {
   Invitation,
   OperationalPost,
   OperationalPostType,
+  OperationalStatus,
   OperationalSettings,
   OperationalNoteStatus,
   PaymentMethod,
@@ -388,6 +394,28 @@ export function useCashMovements(branchId?: string | null) {
     queryFn: () => listCashMovements(effectiveBranchId, profile!.organization_id),
     enabled: Boolean(profile),
     refetchInterval: 45_000,
+  })
+}
+
+export function useOperationalQueueSignals(openOnly = true) {
+  const { profile } = useAuth()
+  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
+
+  return useQuery({
+    queryKey: [
+      "operational-queue",
+      profile?.organization_id,
+      selectedBranchId,
+      openOnly,
+    ],
+    queryFn: () =>
+      listOperationalQueueSignals(
+        selectedBranchId,
+        profile!.organization_id,
+        openOnly
+      ),
+    enabled: Boolean(profile),
+    refetchInterval: 30_000,
   })
 }
 
@@ -1256,6 +1284,70 @@ export function useConfirmCashMovement() {
   })
 }
 
+export function useCreateOperationalQueueSignal() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: OperationalQueueInput) =>
+      createOperationalQueueSignal(profile, input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["operational-queue"] })
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      await queryClient.invalidateQueries({ queryKey: ["ai-agent-snapshot"] })
+      toast.success("Sinal operacional registrado.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useResolveOperationalQueueSignal() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: { signalId: string; status?: "resolved" | "cancelled" }) =>
+      resolveOperationalQueueSignal(profile, input.signalId, input.status ?? "resolved"),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["operational-queue"] })
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      await queryClient.invalidateQueries({ queryKey: ["ai-agent-snapshot"] })
+      toast.success("Sinal operacional atualizado.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useSetOperationalFlowStatus() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: {
+      branch_id: string
+      employee_id: string
+      schedule_id: string
+      status: OperationalStatus
+      priority_level: number
+      notes: string
+    }) => setOperationalFlowStatus(profile, input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["operational-status"] })
+      await queryClient.invalidateQueries({ queryKey: ["attendance-events"] })
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      await queryClient.invalidateQueries({ queryKey: ["ai-agent-snapshot"] })
+      toast.success("Fluxo operacional atualizado.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
 export function useSetupSegmentDefaults() {
   const queryClient = useQueryClient()
   useRequiredProfile()
@@ -1427,6 +1519,9 @@ export function useSaveOperationalSettings() {
       require_coverage_before_break: boolean
       block_break_on_peak_hours: boolean
       require_responsible_presence: boolean
+      queue_attention_threshold: number
+      queue_critical_threshold: number
+      cash_count_alert_amount: number
       coffee_break_enabled: boolean
       coffee_break_duration_minutes: number
       coffee_window_start: string | null

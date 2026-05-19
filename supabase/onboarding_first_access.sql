@@ -83,6 +83,9 @@ begin
     'troca_de_caixa',
     'em_intervalo',
     'voltou',
+    'pico',
+    'apoio_operacional',
+    'fechamento',
     'folga',
     'finalizado',
     'alerta_critico'
@@ -133,6 +136,9 @@ end $$;
 -- supabase/enum_values_before_onboarding.sql
 alter type public.operational_status_type add value if not exists 'aguardando_evento';
 alter type public.operational_status_type add value if not exists 'finalizado';
+alter type public.operational_status_type add value if not exists 'pico';
+alter type public.operational_status_type add value if not exists 'apoio_operacional';
+alter type public.operational_status_type add value if not exists 'fechamento';
 
 create or replace function public.set_updated_at()
 returns trigger
@@ -442,6 +448,9 @@ create table if not exists public.operational_settings (
   require_coverage_before_break boolean not null default true,
   block_break_on_peak_hours boolean not null default false,
   require_responsible_presence boolean not null default false,
+  queue_attention_threshold integer not null default 4,
+  queue_critical_threshold integer not null default 8,
+  cash_count_alert_amount numeric(12,2) not null default 500,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -471,7 +480,10 @@ insert into public.operational_settings (
   require_cashier_cash_count,
   require_coverage_before_break,
   block_break_on_peak_hours,
-  require_responsible_presence
+  require_responsible_presence,
+  queue_attention_threshold,
+  queue_critical_threshold,
+  cash_count_alert_amount
 )
 select
   organizations.id,
@@ -485,7 +497,17 @@ select
   false,
   true,
   organizations.segment = 'restaurant',
-  organizations.segment = 'pharmacy'
+  organizations.segment = 'pharmacy',
+  case organizations.segment
+    when 'pharmacy' then 3
+    else 4
+  end,
+  case organizations.segment
+    when 'restaurant' then 12
+    when 'pharmacy' then 6
+    else 8
+  end,
+  500
 from public.organizations
 where not exists (
   select 1
@@ -775,6 +797,46 @@ create trigger trg_operational_posts_updated_at
 before update on public.operational_posts
 for each row execute function public.set_updated_at();
 
+create table if not exists public.operational_queue (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  branch_id uuid not null references public.branches(id) on delete cascade,
+  post_id uuid references public.operational_posts(id) on delete set null,
+  sector_id uuid references public.sectors(id) on delete set null,
+  created_by uuid references public.user_profiles(id) on delete set null,
+  resolved_by uuid references public.user_profiles(id) on delete set null,
+  queue_type text not null default 'checkout'
+    check (queue_type in ('checkout', 'service', 'delivery', 'self_checkout', 'support', 'closing', 'other')),
+  severity text not null default 'attention'
+    check (severity in ('normal', 'attention', 'critical')),
+  status text not null default 'open'
+    check (status in ('open', 'monitoring', 'resolved', 'cancelled')),
+  title text not null,
+  customer_count integer not null default 0 check (customer_count >= 0),
+  wait_minutes integer not null default 0 check (wait_minutes >= 0),
+  required_posts integer check (required_posts is null or required_posts >= 0),
+  active_posts integer check (active_posts is null or active_posts >= 0),
+  notes text,
+  resolved_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_operational_queue_organization
+on public.operational_queue(organization_id, created_at desc);
+
+create index if not exists idx_operational_queue_branch_status
+on public.operational_queue(branch_id, status, severity, created_at desc);
+
+create index if not exists idx_operational_queue_post
+on public.operational_queue(post_id)
+where post_id is not null;
+
+drop trigger if exists trg_operational_queue_updated_at on public.operational_queue;
+create trigger trg_operational_queue_updated_at
+before update on public.operational_queue
+for each row execute function public.set_updated_at();
+
 create table if not exists public.post_allocations (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
@@ -945,6 +1007,7 @@ alter table public.organization_modules enable row level security;
 alter table public.subscriptions enable row level security;
 alter table public.operational_settings enable row level security;
 alter table public.operational_posts enable row level security;
+alter table public.operational_queue enable row level security;
 alter table public.post_allocations enable row level security;
 alter table public.cash_movements enable row level security;
 alter table public.comms_posts enable row level security;
@@ -1146,6 +1209,34 @@ drop policy if exists "Managers can manage operational posts from allowed branch
 create policy "Managers can manage operational posts from allowed branch"
 on public.operational_posts
 for all
+using (
+  organization_id = public.current_organization_id()
+  and public.can_manage_branch(branch_id)
+)
+with check (
+  organization_id = public.current_organization_id()
+  and public.can_manage_branch(branch_id)
+);
+
+drop policy if exists "Users can view operational queue from own organization" on public.operational_queue;
+create policy "Users can view operational queue from own organization"
+on public.operational_queue
+for select
+using (organization_id = public.current_organization_id());
+
+drop policy if exists "Managers can create operational queue from allowed branch" on public.operational_queue;
+create policy "Managers can create operational queue from allowed branch"
+on public.operational_queue
+for insert
+with check (
+  organization_id = public.current_organization_id()
+  and public.can_manage_branch(branch_id)
+);
+
+drop policy if exists "Managers can update operational queue from allowed branch" on public.operational_queue;
+create policy "Managers can update operational queue from allowed branch"
+on public.operational_queue
+for update
 using (
   organization_id = public.current_organization_id()
   and public.can_manage_branch(branch_id)
@@ -2411,6 +2502,7 @@ grant execute on function public.finalize_post_allocation(uuid, text) to authent
 grant execute on function public.confirm_cash_movement(uuid, public.cash_movement_type, text) to authenticated;
 
 grant select, insert, update, delete on table public.operational_posts to authenticated;
+grant select, insert, update on table public.operational_queue to authenticated;
 grant select, insert, update, delete on table public.post_allocations to authenticated;
 grant select, insert on table public.cash_movements to authenticated;
 
@@ -2803,7 +2895,10 @@ notify pgrst, 'reload schema';
 
 alter table public.operational_settings
   add column if not exists peak_hours_start time,
-  add column if not exists peak_hours_end   time;
+  add column if not exists peak_hours_end   time,
+  add column if not exists queue_attention_threshold integer not null default 4,
+  add column if not exists queue_critical_threshold integer not null default 8,
+  add column if not exists cash_count_alert_amount numeric(12,2) not null default 500;
 
 update public.operational_settings
 set

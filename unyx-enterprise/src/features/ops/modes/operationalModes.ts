@@ -9,6 +9,9 @@ export interface OperationalModeDefaults {
   require_coverage_before_break: boolean
   block_break_on_peak_hours: boolean
   require_responsible_presence: boolean
+  queue_attention_threshold: number
+  queue_critical_threshold: number
+  cash_count_alert_amount: number
   coffee_break_enabled: boolean
   coffee_break_duration_minutes: number
   coffee_window_start: string
@@ -47,6 +50,9 @@ export const operationalModeDefaults: Record<
     require_coverage_before_break: true,
     block_break_on_peak_hours: false,
     require_responsible_presence: false,
+    queue_attention_threshold: 4,
+    queue_critical_threshold: 8,
+    cash_count_alert_amount: 500,
     coffee_break_enabled: false,
     coffee_break_duration_minutes: 10,
     coffee_window_start: "15:00",
@@ -60,6 +66,9 @@ export const operationalModeDefaults: Record<
     require_coverage_before_break: true,
     block_break_on_peak_hours: false,
     require_responsible_presence: false,
+    queue_attention_threshold: 4,
+    queue_critical_threshold: 8,
+    cash_count_alert_amount: 500,
     coffee_break_enabled: false,
     coffee_break_duration_minutes: 10,
     coffee_window_start: "15:00",
@@ -73,6 +82,9 @@ export const operationalModeDefaults: Record<
     require_coverage_before_break: true,
     block_break_on_peak_hours: true,
     require_responsible_presence: false,
+    queue_attention_threshold: 6,
+    queue_critical_threshold: 12,
+    cash_count_alert_amount: 500,
     coffee_break_enabled: false,
     coffee_break_duration_minutes: 10,
     coffee_window_start: "15:00",
@@ -86,6 +98,9 @@ export const operationalModeDefaults: Record<
     require_coverage_before_break: true,
     block_break_on_peak_hours: false,
     require_responsible_presence: true,
+    queue_attention_threshold: 3,
+    queue_critical_threshold: 6,
+    cash_count_alert_amount: 500,
     coffee_break_enabled: false,
     coffee_break_duration_minutes: 10,
     coffee_window_start: "15:00",
@@ -99,6 +114,9 @@ export const operationalModeDefaults: Record<
     require_coverage_before_break: true,
     block_break_on_peak_hours: false,
     require_responsible_presence: false,
+    queue_attention_threshold: 4,
+    queue_critical_threshold: 8,
+    cash_count_alert_amount: 500,
     coffee_break_enabled: false,
     coffee_break_duration_minutes: 10,
     coffee_window_start: "15:00",

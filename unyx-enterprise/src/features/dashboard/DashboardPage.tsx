@@ -76,13 +76,22 @@ const STATUS_COLORS: Record<string, string> = {
   deve_sair:         "#f59e0b",
   em_intervalo:      "#8b5cf6",
   voltou:            "#14b8a6",
+  pico:              "#dc2626",
+  apoio_operacional: "#2563eb",
+  fechamento:        "#4f46e5",
   trabalhando:       "#22c55e",
   aguardando_evento: "#94a3b8",
   finalizado:        "#737373",
   folga:             "#a1a1aa",
 }
 
-const ACTIVE_STATUSES: OperationalStatus[] = ["trabalhando", "voltou"]
+const ACTIVE_STATUSES: OperationalStatus[] = [
+  "trabalhando",
+  "voltou",
+  "pico",
+  "apoio_operacional",
+  "fechamento",
+]
 
 const ACTIVE_ALLOCATION_STATUSES = new Set<PostAllocation["status"]>([
   "alocado",
@@ -96,6 +105,9 @@ const REAL_WORKING_STATUSES = new Set<OperationalStatus>([
   "aguardando_sangria",
   "troca_de_caixa",
   "deve_sair",
+  "pico",
+  "apoio_operacional",
+  "fechamento",
 ])
 
 const RISK_STATUSES: OperationalStatus[] = [
@@ -104,6 +116,9 @@ const RISK_STATUSES: OperationalStatus[] = [
   "em_intervalo",
   "aguardando_sangria",
   "troca_de_caixa",
+  "pico",
+  "apoio_operacional",
+  "fechamento",
 ]
 
 const NON_OPERATIONAL_SCHEDULE_STATUSES = new Set([
@@ -117,6 +132,9 @@ const SECONDARY_STATUSES: OperationalStatus[] = [
   "aguardando_sangria",
   "troca_de_caixa",
   "em_intervalo",
+  "pico",
+  "apoio_operacional",
+  "fechamento",
 ]
 
 function getInitials(name: string): string {
@@ -134,6 +152,9 @@ const avatarColorByStatus: Partial<Record<OperationalStatus, string>> = {
   troca_de_caixa:     "bg-sky-100 text-sky-700",
   em_intervalo:       "bg-violet-100 text-violet-700",
   voltou:             "bg-teal-100 text-teal-700",
+  pico:               "bg-red-100 text-red-700",
+  apoio_operacional:  "bg-blue-100 text-blue-700",
+  fechamento:         "bg-indigo-100 text-indigo-700",
   folga:              "bg-zinc-100 text-zinc-600",
   finalizado:         "bg-neutral-100 text-neutral-600",
   alerta_critico:     "bg-red-100 text-red-700",
@@ -225,6 +246,15 @@ function getNextAction(row: DashboardRow) {
   if (row.current_status === "em_intervalo") {
     return "Monitorar retorno"
   }
+  if (row.current_status === "pico") {
+    return "Reforcar cobertura"
+  }
+  if (row.current_status === "apoio_operacional") {
+    return "Reavaliar setor de apoio"
+  }
+  if (row.current_status === "fechamento") {
+    return "Concluir fechamento"
+  }
   if (row.current_status === "aguardando_evento") {
     return "Confirmar entrada"
   }
@@ -240,6 +270,9 @@ function getPendingGroup(status: OperationalStatus) {
     em_intervalo: "Intervalo",
     troca_de_caixa: "Troca",
     deve_sair: "Saida",
+    pico: "Pico",
+    apoio_operacional: "Apoio",
+    fechamento: "Fechamento",
   }
 
   return groups[status] ?? statusMeta[status].label
@@ -328,7 +361,7 @@ function buildMetric(key: DashboardMetricKey, data: MetricData) {
     (row) => row.current_status === "alerta_critico"
   ).length
   const working = statusSource.filter((row) =>
-    ["trabalhando", "voltou"].includes(row.current_status)
+    ACTIVE_STATUSES.includes(row.current_status)
   ).length
   const breaks = statusSource.filter(
     (row) => row.current_status === "em_intervalo"

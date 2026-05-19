@@ -8,9 +8,12 @@ import {
   Banknote,
   CheckCircle2,
   Coffee,
+  Flame,
+  Handshake,
   LogIn,
   LogOut,
   MapPinned,
+  Store,
   Timer,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
@@ -56,6 +59,10 @@ interface EmployeeCardProps {
   onCashierSwap: () => void
   onReturn: () => void
   onCafe: () => void
+  onPeak: () => void
+  onSupport: () => void
+  onClosing: () => void
+  onNormal: () => void
   onExit: () => void
 }
 
@@ -74,6 +81,10 @@ export const EmployeeCard = React.memo(
     onCashierSwap,
     onReturn,
     onCafe,
+    onPeak,
+    onSupport,
+    onClosing,
+    onNormal,
     onExit,
   }: EmployeeCardProps) => {
     const currentStatus = statusRecord?.current_status
@@ -96,6 +107,9 @@ export const EmployeeCard = React.memo(
     const isOnBreak = currentStatus === "em_intervalo"
     const isAwaitingCashMovement = currentStatus === "aguardando_sangria"
     const isAwaitingCashierSwap = currentStatus === "troca_de_caixa"
+    const isPeak = currentStatus === "pico"
+    const isSupport = currentStatus === "apoio_operacional"
+    const isClosing = currentStatus === "fechamento"
     const isCafe = isCafeBreak(schedule.notes)
     const cardIsDone = isDone(currentStatus)
     const lunchAlreadyDone =
@@ -122,9 +136,15 @@ export const EmployeeCard = React.memo(
       !lunchAlreadyDone &&
       breakEndMin !== null &&
       currentMinutes > breakEndMin &&
-      ["trabalhando", "deve_sair", "aguardando_sangria", "troca_de_caixa"].includes(
-        currentStatus ?? ""
-      )
+      [
+        "trabalhando",
+        "deve_sair",
+        "aguardando_sangria",
+        "troca_de_caixa",
+        "pico",
+        "apoio_operacional",
+        "fechamento",
+      ].includes(currentStatus ?? "")
 
     const cardBorderClass = isLate
       ? "border-orange-300 bg-orange-50/40"
@@ -135,6 +155,12 @@ export const EmployeeCard = React.memo(
     const canRetorno = canReturnFromBreak(currentStatus)
     const canCafeStart = canStartCafe(currentStatus)
     const canSaida = canStartExit(currentStatus)
+    const canFiscalFlow =
+      activeTab === "em_turno" &&
+      Boolean(currentStatus) &&
+      currentStatus !== "aguardando_evento" &&
+      !isOnBreak &&
+      !cardIsDone
 
     const avatarClass = avatarClassByStatus[currentStatus ?? "aguardando_evento"] ?? "bg-slate-200 text-slate-700"
 
@@ -298,6 +324,7 @@ export const EmployeeCard = React.memo(
               Confirmar entrada
             </Button>
           ) : (
+            <>
             <div className="grid grid-cols-2 gap-1.5">
               <Button
                 size="sm"
@@ -397,6 +424,58 @@ export const EmployeeCard = React.memo(
                 Saída
               </Button>
             </div>
+            {canFiscalFlow ? (
+              <div className="mt-1.5 grid grid-cols-4 gap-1.5">
+                <Button
+                  size="sm"
+                  variant={isPeak ? "default" : "outline"}
+                  className="h-8 px-1 text-xs"
+                  disabled={isPending || isPeak}
+                  onClick={onPeak}
+                  aria-label="Marcar pico operacional"
+                >
+                  <Flame className="size-3.5" />
+                  Pico
+                </Button>
+                <Button
+                  size="sm"
+                  variant={isSupport ? "default" : "outline"}
+                  className="h-8 px-1 text-xs"
+                  disabled={isPending || isSupport}
+                  onClick={onSupport}
+                  aria-label="Marcar apoio operacional"
+                >
+                  <Handshake className="size-3.5" />
+                  Apoio
+                </Button>
+                <Button
+                  size="sm"
+                  variant={isClosing ? "default" : "outline"}
+                  className="h-8 px-1 text-xs"
+                  disabled={isPending || isClosing}
+                  onClick={onClosing}
+                  aria-label="Marcar fechamento"
+                >
+                  <Store className="size-3.5" />
+                  Fech.
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 px-1 text-xs"
+                  disabled={
+                    isPending ||
+                    (!isPeak && !isSupport && !isClosing && currentStatus === "trabalhando")
+                  }
+                  onClick={onNormal}
+                  aria-label="Retornar para operacao normal"
+                >
+                  <CheckCircle2 className="size-3.5" />
+                  Normal
+                </Button>
+              </div>
+            ) : null}
+            </>
           )}
         </div>
       </div>
