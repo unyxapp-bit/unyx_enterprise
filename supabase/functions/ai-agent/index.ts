@@ -1450,6 +1450,10 @@ function readArray(row: DataRow, key: string) {
   return Array.isArray(value) ? value : []
 }
 
+function asArray(value: unknown) {
+  return Array.isArray(value) ? value : []
+}
+
 function relationName(row: DataRow, key: string) {
   const relation = row[key]
   if (Array.isArray(relation)) {
@@ -1992,9 +1996,13 @@ function buildAllocationCandidate(context: AgentContext, requestedArgs?: AgentAc
 }
 
 function buildAllocationActionPlan(context: AgentContext, requestedArgs?: AgentActionArguments | null) {
-  const scheduleCount = readArray(context.tools.schedules_today).length
+  const scheduleScope = asRow(context.schedule_scope)
+  const selectedBranchScheduleCount = readNumber(scheduleScope, "selected_branch_schedules")
+  const scheduleCount = Math.max(
+    asArray(context.tools.schedules_today).length,
+    selectedBranchScheduleCount
+  )
   if (scheduleCount === 0) {
-    const scheduleScope = asRow(context.schedule_scope)
     const otherBranchScheduleCount = readNumber(scheduleScope, "other_branches_schedules")
     const hasScheduleInOtherBranch = otherBranchScheduleCount > 0
     return {
@@ -2240,7 +2248,11 @@ function fallbackInsight(
   )
   const scheduleScope = asRow(context.schedule_scope)
   const otherBranchScheduleCount = readNumber(scheduleScope, "other_branches_schedules")
-  const scheduleCount = readArray(context.tools.schedules_today).length
+  const selectedBranchScheduleCount = readNumber(scheduleScope, "selected_branch_schedules")
+  const scheduleCount = Math.max(
+    asArray(context.tools.schedules_today).length,
+    selectedBranchScheduleCount
+  )
   const activeEmployees = context.employee_counts.active
   const missingSchedulesToday = scheduleCount === 0 && activeEmployees > 0
   const schedulesExistInOtherBranch = missingSchedulesToday && otherBranchScheduleCount > 0
