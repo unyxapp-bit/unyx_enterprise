@@ -31,6 +31,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { useAuth } from "@/app/providers/auth-context"
+import { MissingSchedulesPrompt } from "@/features/schedules/components/MissingSchedulesPrompt"
 import {
   useAiAgent,
   useAllEmployees,
@@ -38,6 +39,7 @@ import {
   useLatestAiAgentSnapshot,
   useOperationalStatuses,
   useReportEvents,
+  useSchedules,
 } from "@/hooks/useUnyxData"
 import { formatDateTimeBR, todayISO } from "@/lib/format"
 import { supabase } from "@/lib/supabase"
@@ -153,6 +155,8 @@ export function AiPage() {
   const aiAgent = useAiAgent()
   const latestSnapshot = useLatestAiAgentSnapshot()
   const createNote = useCreateOperationalNote()
+  const today = useMemo(() => todayISO(), [])
+  const schedulesToday = useSchedules(today)
   const [question, setQuestion] = useState("")
   const [resolutionTarget, setResolutionTarget] = useState<AiAgentTarget | null>(null)
   const cacheKey = useMemo(
@@ -206,7 +210,6 @@ export function AiPage() {
   }, [profile, queryClient, selectedBranchId])
 
   const insights = useMemo(() => {
-    const today = todayISO()
     const currentStatuses = (statuses.data ?? []).filter(
       (status) => status.schedules?.work_date === today
     )
@@ -306,7 +309,7 @@ export function AiPage() {
       priorityTargets,
       recommendations,
     }
-  }, [employees.data, events.data, statuses.data])
+  }, [employees.data, events.data, statuses.data, today])
 
   const isDataLoading = statuses.isLoading || events.isLoading || employees.isLoading
 
@@ -423,6 +426,16 @@ export function AiPage() {
       />
 
       <div className="space-y-6 p-6">
+        <MissingSchedulesPrompt
+          date={today}
+          currentScheduleCount={schedulesToday.data?.length ?? 0}
+          isLoading={schedulesToday.isLoading}
+          onCopied={() => {
+            void schedulesToday.refetch()
+            runAgent(null)
+          }}
+        />
+
         {isDataLoading ? (
           <StateBlock type="loading" title="Gerando insights" />
         ) : statuses.isError ? (

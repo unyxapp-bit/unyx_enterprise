@@ -284,19 +284,31 @@ function jsonResponse(body: unknown, status = 200) {
   })
 }
 
-function todayInSaoPaulo() {
+function dateInSaoPaulo(value: Date | string) {
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+
   const parts = new Intl.DateTimeFormat("en-CA", {
     day: "2-digit",
     month: "2-digit",
     timeZone: "America/Sao_Paulo",
     year: "numeric",
-  }).formatToParts(new Date())
+  }).formatToParts(date)
 
   const year = parts.find((part) => part.type === "year")?.value
   const month = parts.find((part) => part.type === "month")?.value
   const day = parts.find((part) => part.type === "day")?.value
+  if (!year || !month || !day) return null
 
   return `${year}-${month}-${day}`
+}
+
+function todayInSaoPaulo() {
+  return dateInSaoPaulo(new Date()) ?? new Date().toISOString().slice(0, 10)
+}
+
+function isSameDateInSaoPaulo(value: unknown, expectedDate: string) {
+  return typeof value === "string" && dateInSaoPaulo(value) === expectedDate
 }
 
 function thirtyDaysAgoISO() {
@@ -383,6 +395,303 @@ function numericValue(value: unknown) {
 
 function sumRows(rows: Record<string, unknown>[], key: string) {
   return rows.reduce((total, row) => total + numericValue(row[key]), 0)
+}
+
+const NON_OPERATIONAL_SCHEDULE_STATUSES = new Set([
+  "day_off",
+  "banked_hours",
+  "cancelled",
+])
+
+const ENTERED_STATUSES_FOR_PENDING = new Set([
+  "trabalhando",
+  "em_intervalo",
+  "intervalo_finalizado",
+  "voltou",
+  "aguardando_sangria",
+  "troca_de_caixa",
+  "deve_sair",
+  "saida_registrada",
+])
+
+const ACTIVE_ALLOCATION_STATUSES_FOR_PENDING = new Set([
+  "alocado",
+  "aguardando_troca",
+  "em_troca",
+])
+
+const REAL_WORKING_STATUSES_FOR_PENDING = new Set([
+  "trabalhando",
+  "voltou",
+  "aguardando_sangria",
+  "troca_de_caixa",
+  "deve_sair",
+])
+
+function nowInSaoPauloMinutes() {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    hour: "2-digit",
+    hour12: false,
+    minute: "2-digit",
+    timeZone: "America/Sao_Paulo",
+  }).formatToParts(new Date())
+
+  const hour = Number(parts.find((part) => part.type === "hour")?.value ?? "0")
+  const minute = Number(parts.find((part) => part.type === "minute")?.value ?? "0")
+  return (hour === 24 ? 0 : hour) * 60 + minute
+}
+
+function timeToMinutes(value: unknown) {
+  if (typeof value !== "string") return null
+  const match = value.match(/^(\d{1,2}):([0-5]\d)/)
+  if (!match) return null
+
+  const hour = Number(match[1])
+  const minute = Number(match[2])
+  if (!Number.isFinite(hour) || hour > 23) return null
+
+  return hour * 60 + minute
+}
+
+function isPastDateTime(value: unknown) {
+  if (typeof value !== "string" || value.length === 0) return false
+  const parsed = new Date(value).getTime()
+  return Number.isFinite(parsed) && parsed < Date.now()
+}
+
+function formatPendingDateTime(value: unknown) {
+  if (typeof value !== "string" || value.length === 0) return "sem horario"
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value.slice(0, 16)
+
+  return parsed.toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "America/Sao_Paulo",
+  })
+}
+
+function allocationBelongsToWorkDate(allocation: DataRow, workDate: string) {
+  const schedule = asRow(allocation.schedules)
+  const scheduleDate = readString(schedule, "work_date")
+  if (scheduleDate) return scheduleDate === workDate
+
+  const startedAt = readString(allocation, "started_at")
+  return isSameDateInSaoPaulo(startedAt, workDate)
+}
+
+function buildPendingGroup(
+  key: string,
+  title: string,
+  count: number,
+  alert: boolean,
+  empty: string,
+  examples: string[]
+) {
+  return {
+    key,
+    title,
+    count,
+    alert,
+    empty,
+    examples: examples.slice(0, 3),
+  }
+}
+
+function buildOperationalPendingSummary(params: {
+  workDate: string
+  schedules: unknown[]
+  statuses: unknown[]
+  posts: unknown[]
+  allocations: unknown[]
+  cashSessions: unknown[]
+  deliveries: unknown[]
+  productionOrders: unknown[]
+}) {
+  const currentMinutes = nowInSaoPauloMinutes()
+  const schedules = params.schedules
+    .map(asRow)
+    .filter((schedule) => !NON_OPERATIONAL_SCHEDULE_STATUSES.has(readString(schedule, "status") ?? ""))
+  const statuses = params.statuses.map(asRow)
+  const statusByScheduleId = new Map<string, DataRow>()
+  const statusByEmployeeId = new Map<string, DataRow>()
+
+  for (const status of statuses) {
+    const scheduleId = readString(status, "schedule_id")
+    const employeeId = readString(status, "employee_id")
+    if (scheduleId) statusByScheduleId.set(scheduleId, status)
+    if (employeeId) statusByEmployeeId.set(employeeId, status)
+  }
+
+  const schedulesToArrive = schedules.filter((schedule) => {
+    const scheduleId = readString(schedule, "id")
+    const status = scheduleId ? readString(statusByScheduleId.get(scheduleId) ?? {}, "current_status") : null
+    return !status || status === "aguardando_evento"
+  })
+  const schedulesInTurn = schedules.filter((schedule) => {
+    const scheduleId = readString(schedule, "id")
+    const status = scheduleId ? readString(statusByScheduleId.get(scheduleId) ?? {}, "current_status") : null
+    return Boolean(status && ENTERED_STATUSES_FOR_PENDING.has(status))
+  })
+  const activeAllocations = params.allocations
+    .map(asRow)
+    .filter(
+      (allocation) =>
+        !readString(allocation, "ended_at") &&
+        ACTIVE_ALLOCATION_STATUSES_FOR_PENDING.has(readString(allocation, "status") ?? "") &&
+        allocationBelongsToWorkDate(allocation, params.workDate)
+    )
+  const occupiedPostIds = new Set(
+    activeAllocations
+      .filter((allocation) => {
+        const scheduleId = readString(allocation, "schedule_id")
+        const employeeId = readString(allocation, "employee_id")
+        const status =
+          (scheduleId ? statusByScheduleId.get(scheduleId) : undefined) ??
+          (employeeId ? statusByEmployeeId.get(employeeId) : undefined)
+        const currentStatus = status ? readString(status, "current_status") : null
+        return Boolean(currentStatus && REAL_WORKING_STATUSES_FOR_PENDING.has(currentStatus))
+      })
+      .map((allocation) => readString(allocation, "post_id"))
+      .filter((postId): postId is string => Boolean(postId))
+  )
+
+  const lateArrivals = schedulesToArrive.filter((schedule) => {
+    const start = timeToMinutes(readString(schedule, "start_time"))
+    return start !== null && currentMinutes > start
+  })
+  const overdueBreaks = schedulesInTurn.filter((schedule) => {
+    const scheduleId = readString(schedule, "id")
+    const status = scheduleId ? readString(statusByScheduleId.get(scheduleId) ?? {}, "current_status") : null
+    const breakEnd = timeToMinutes(readString(schedule, "break_end"))
+    return status === "em_intervalo" && breakEnd !== null && currentMinutes > breakEnd
+  })
+  const uncoveredPosts = params.posts
+    .map(asRow)
+    .filter((post) => !occupiedPostIds.has(readString(post, "id") ?? ""))
+  const allocationsWithoutSchedule = activeAllocations.filter(
+    (allocation) => !readString(allocation, "schedule_id")
+  )
+  const openCashSessions = params.cashSessions
+    .map(asRow)
+    .filter((session) => readString(session, "status") === "open")
+  const overdueDeliveries = params.deliveries
+    .map(asRow)
+    .filter((order) => {
+      if (["delivered", "failed", "cancelled"].includes(readString(order, "status") ?? "")) {
+        return false
+      }
+      return isPastDateTime(readString(order, "estimated_delivery_at") ?? readString(order, "scheduled_for"))
+    })
+  const overdueProduction = params.productionOrders
+    .map(asRow)
+    .filter((order) => {
+      if (["ready", "delivered", "cancelled"].includes(readString(order, "status") ?? "")) {
+        return false
+      }
+      return isPastDateTime(readString(order, "promised_at"))
+    })
+
+  const groups = [
+    buildPendingGroup(
+      "late-arrivals",
+      "Entradas atrasadas",
+      lateArrivals.length,
+      true,
+      "Nenhum colaborador atrasado para entrada.",
+      lateArrivals.map(
+        (schedule) =>
+          `${relationName(schedule, "employees") ?? "Colaborador"} - entrada ${readString(schedule, "start_time") ?? "sem horario"}`
+      )
+    ),
+    buildPendingGroup(
+      "overdue-breaks",
+      "Intervalos vencidos",
+      overdueBreaks.length,
+      true,
+      "Nenhum intervalo vencido.",
+      overdueBreaks.map(
+        (schedule) =>
+          `${relationName(schedule, "employees") ?? "Colaborador"} - retorno ${readString(schedule, "break_end") ?? "sem horario"}`
+      )
+    ),
+    buildPendingGroup(
+      "uncovered-posts",
+      "Postos sem cobertura",
+      uncoveredPosts.length,
+      true,
+      "Todos os postos ativos estao cobertos.",
+      uncoveredPosts.map((post) =>
+        [readString(post, "name") ?? "Posto", relationName(post, "sectors")]
+          .filter(Boolean)
+          .join(" - ")
+      )
+    ),
+    buildPendingGroup(
+      "allocations-without-schedule",
+      "Alocados sem escala",
+      allocationsWithoutSchedule.length,
+      true,
+      "Todas as alocacoes ativas estao vinculadas a uma escala.",
+      allocationsWithoutSchedule.map((allocation) =>
+        [
+          relationName(allocation, "employees") ?? "Colaborador",
+          relationName(allocation, "operational_posts") ?? "Posto",
+        ].join(" - ")
+      )
+    ),
+    buildPendingGroup(
+      "open-cash-sessions",
+      "Caixas abertos",
+      openCashSessions.length,
+      false,
+      "Nenhum caixa aberto agora.",
+      openCashSessions.map((session) =>
+        [
+          relationName(session, "operational_posts") ?? "Caixa",
+          relationName(session, "employees") ?? relationName(session, "user_profiles"),
+        ]
+          .filter(Boolean)
+          .join(" - ")
+      )
+    ),
+    buildPendingGroup(
+      "overdue-deliveries",
+      "Entregas atrasadas",
+      overdueDeliveries.length,
+      true,
+      "Nenhuma entrega atrasada.",
+      overdueDeliveries.map((order) => {
+        const due = readString(order, "estimated_delivery_at") ?? readString(order, "scheduled_for")
+        return `${readString(order, "customer_name") ?? "Cliente"} - entrega ${formatPendingDateTime(due)}`
+      })
+    ),
+    buildPendingGroup(
+      "overdue-production",
+      "Producao atrasada",
+      overdueProduction.length,
+      true,
+      "Nenhum pedido de producao atrasado.",
+      overdueProduction.map(
+        (order) =>
+          `${readString(order, "order_code") ?? "Pedido"} - ${readString(order, "customer_name") ?? "Cliente"}`
+      )
+    ),
+  ]
+  const totalAlerts = groups.reduce(
+    (total, group) => total + (group.alert ? group.count : 0),
+    0
+  )
+
+  return {
+    generated_at: new Date().toISOString(),
+    work_date: params.workDate,
+    current_minutes: currentMinutes,
+    total_alerts: totalAlerts,
+    has_alerts: totalAlerts > 0,
+    groups,
+    counts: Object.fromEntries(groups.map((group) => [group.key, group.count])),
+  }
 }
 
 function emptyActionArguments(): Required<AgentActionArguments> {
@@ -857,8 +1166,10 @@ async function fetchContext(
   }
 
   const currentStatuses = (statuses.data ?? []).filter(
-    (item: { schedules?: { work_date?: string | null } | null }) =>
-      item.schedules?.work_date === today
+    (item: { schedules?: { work_date?: string | null } | null; updated_at?: string | null }) => {
+      const scheduleDate = item.schedules?.work_date
+      return scheduleDate === today || (!scheduleDate && isSameDateInSaoPaulo(item.updated_at, today))
+    }
   )
   const dashboardData = optionalRows(dashboardRows)
   const notesData = optionalRows(notes)
@@ -916,6 +1227,16 @@ async function fetchContext(
   const lowStockProducts = productsData.filter((item) => {
     const row = item as Record<string, unknown>
     return Boolean(row.track_inventory) && numericValue(row.stock_quantity) <= numericValue(row.min_stock_quantity)
+  })
+  const operationalPendingSummary = buildOperationalPendingSummary({
+    workDate: today,
+    schedules: schedules.data ?? [],
+    statuses: currentStatuses,
+    posts: posts.error ? [] : posts.data ?? [],
+    allocations: allocations.error ? [] : allocations.data ?? [],
+    cashSessions: cashSessionsData,
+    deliveries: deliveriesData,
+    productionOrders: productionOrdersData,
   })
 
   return {
@@ -1014,6 +1335,7 @@ async function fetchContext(
       branches: compactRows(branches.data ?? [], 40),
       sectors: compactRows(sectors.data ?? [], 80),
       operational_settings: compactRows(settings.data ?? [], 20),
+      operational_pending_summary: operationalPendingSummary,
       dashboard_today: compactRows(dashboardData, 60),
       operational_status: compactRows(currentStatuses, 30),
       recent_events: compactRows(events.data ?? [], 50),
@@ -1120,6 +1442,7 @@ function buildModelContext(context: AgentContext) {
   const branches = (context.tools.branches as unknown[]).map(asRow)
   const sectors = (context.tools.sectors as unknown[]).map(asRow)
   const settings = (context.tools.operational_settings as unknown[]).map(asRow)
+  const pendingSummary = asRow(context.tools.operational_pending_summary)
   const dashboard = (context.tools.dashboard_today as unknown[]).map(asRow)
   const statuses = (context.tools.operational_status as unknown[]).map(asRow)
   const events = (context.tools.recent_events as unknown[]).map(asRow)
@@ -1172,7 +1495,7 @@ function buildModelContext(context: AgentContext) {
       {
         tool_name: "allocate_post",
         mode: "execute_with_confirmation",
-        description: "Prepara alocacao de colaborador em posto; gravacao exige confirmacao humana.",
+        description: "Prepara alocacao de colaborador em posto quando houver escala do dia; gravacao exige confirmacao humana.",
       },
     ],
     tools: {
@@ -1200,6 +1523,20 @@ function buildModelContext(context: AgentContext) {
         block_break_on_peak_hours: readBoolean(setting, "block_break_on_peak_hours"),
         require_responsible_presence: readBoolean(setting, "require_responsible_presence"),
       })),
+      operational_pending_summary: {
+        total_alerts: readNumber(pendingSummary, "total_alerts"),
+        has_alerts: readBoolean(pendingSummary, "has_alerts"),
+        groups: readArray(pendingSummary, "groups").map((group) => {
+          const row = asRow(group)
+          return {
+            key: readString(row, "key"),
+            title: readString(row, "title"),
+            count: readNumber(row, "count"),
+            alert: readBoolean(row, "alert"),
+            examples: readArray(row, "examples").slice(0, 3),
+          }
+        }),
+      },
       dashboard_today: dashboard.slice(0, 18).map((row) => ({
         branch_id: readString(row, "branch_id"),
         employee_id: readString(row, "employee_id"),
@@ -1615,6 +1952,24 @@ function buildAllocationCandidate(context: AgentContext, requestedArgs?: AgentAc
 }
 
 function buildAllocationActionPlan(context: AgentContext, requestedArgs?: AgentActionArguments | null) {
+  const scheduleCount = readArray(context.tools.schedules_today).length
+  if (scheduleCount === 0) {
+    return {
+      mode: "suggest" as AgentActionMode,
+      tool_name: null as AgentActionTool | null,
+      title: "Criar escala do dia",
+      description:
+        "Nao ha escala cadastrada para hoje. Copie a ultima escala valida ou importe a escala do dia antes de propor alocacao.",
+      confidence: 0.9,
+      confirmation_required: false,
+      arguments: actionArgs({
+        branch_id: context.branch_id,
+        notes: "Escala do dia ausente; alocacao bloqueada ate a escala ser criada.",
+      }),
+      arguments_summary: "Sem escala do dia para vincular colaborador, horario e posto.",
+    }
+  }
+
   const candidate = buildAllocationCandidate(context, requestedArgs)
   const hasCandidate = Boolean(candidate.postId && candidate.employeeId)
   const args = actionArgs({
@@ -1692,7 +2047,9 @@ async function executeAgentAction(
         tool_name: "allocate_post" as AgentActionTool,
         title: "Alocacao bloqueada",
         message:
-          "Nao ha dados suficientes para alocar com seguranca. Cadastre postos, confirme presenca e tente novamente.",
+          plan.tool_name === null
+            ? plan.description
+            : "Nao ha dados suficientes para alocar com seguranca. Cadastre postos, confirme presenca e tente novamente.",
         artifact_markdown: "",
       },
     }
@@ -1828,15 +2185,21 @@ function fallbackInsight(
   const openProduction = context.pos_counts.production_open
   const fiscalPending = context.pos_counts.fiscal_pending
   const lowStockProducts = context.pos_counts.low_stock_products
+  const pendingSummary = asRow(context.tools.operational_pending_summary)
+  const pendingGroups = readArray(pendingSummary, "groups").map(asRow)
+  const pendingAlerts = readNumber(pendingSummary, "total_alerts")
+  const activePendingGroups = pendingGroups.filter(
+    (group) => readBoolean(group, "alert") && readNumber(group, "count") > 0
+  )
   const scheduleCount = readArray(context.tools.schedules_today).length
   const activeEmployees = context.employee_counts.active
   const missingSchedulesToday = scheduleCount === 0 && activeEmployees > 0
   const severity: AgentSeverity =
     critical > 0
       ? "critico"
-      : missingSchedulesToday || urgentNotes > 0 || urgentDeliveries > 0 || delays >= 3 || absences >= 2
+      : missingSchedulesToday || pendingAlerts >= 3 || urgentNotes > 0 || urgentDeliveries > 0 || delays >= 3 || absences >= 2
         ? "alto"
-        : delays > 0 || openDeliveries > 0 || openProduction > 0 || lowStockProducts > 0
+        : pendingAlerts > 0 || delays > 0 || openDeliveries > 0 || openProduction > 0 || lowStockProducts > 0
           ? "medio"
           : "normal"
   const targetSeverity = target?.severity ?? severity
@@ -1896,6 +2259,21 @@ function fallbackInsight(
           },
         ]
       : []),
+    ...(pendingAlerts > 0
+      ? [
+          {
+            title: "Pendencias operacionais",
+            severity: pendingAlerts >= 3 ? "alto" as AgentSeverity : "medio" as AgentSeverity,
+            reason: "O painel de Operacao encontrou pendencias acionaveis para o turno.",
+            evidence:
+              activePendingGroups
+                .map((group) => `${readString(group, "title")}: ${readNumber(group, "count")}`)
+                .join(", ") || `${pendingAlerts} pendencia(s) operacional(is).`,
+            action: "Abrir Operacao e tratar as pendencias por prioridade antes do proximo pico.",
+            confidence: 0.78,
+          },
+        ]
+      : []),
     ...(lowStockProducts > 0
       ? [
           {
@@ -1914,6 +2292,8 @@ function fallbackInsight(
       ? "Gerar escala do dia"
       : critical > 0
       ? "Atuar nos status criticos"
+      : pendingAlerts > 0
+        ? "Tratar pendencias operacionais"
       : urgentNotes > 0
         ? "Priorizar anotacoes urgentes"
         : openDeliveries > 0
@@ -1928,6 +2308,8 @@ function fallbackInsight(
       ? "Copie a ultima escala valida ou importe a escala de hoje para corrigir Dashboard, Operacoes e leitura da IA."
       : critical > 0
       ? "Abra o painel operacional e confirme a acao para cada alerta critico."
+      : pendingAlerts > 0
+        ? "Abra a tela Operacao e resolva entradas atrasadas, intervalos vencidos, postos descobertos ou filas atrasadas."
       : urgentNotes > 0
         ? "Abra as anotacoes urgentes e defina responsavel para cada pendencia."
         : openDeliveries > 0
@@ -1936,7 +2318,7 @@ function fallbackInsight(
             ? "Confira pedidos em producao e promessas de entrega."
             : fiscalPending > 0
               ? "Confira documentos em rascunho, pendentes ou rejeitados antes do fechamento."
-              : "Continue monitorando atrasos, checklists, entregas e caixa."
+              : "Continue monitorando atrasos, checklists, entregas, caixa e postos."
 
   return {
     summary:
@@ -1970,9 +2352,9 @@ function fallbackInsight(
       },
       {
         title: "Cruzar operacao com entregas e caixa",
-        description: "Confira entregas abertas, pedidos de producao, caixa aberto e produtos com estoque baixo.",
+        description: "Confira pendencias da Operacao, entregas abertas, pedidos de producao, caixa aberto e produtos com estoque baixo.",
         owner: "Gestor da filial",
-        priority: openDeliveries > 0 || openProduction > 0 || lowStockProducts > 0 ? "media" : "baixa",
+        priority: pendingAlerts > 0 || openDeliveries > 0 || openProduction > 0 || lowStockProducts > 0 ? "media" : "baixa",
         requires_confirmation: false,
       },
     ],
@@ -2004,6 +2386,7 @@ function fallbackInsight(
       "branches",
       "sectors",
       "operational_settings",
+      "operational_pending_summary",
       "dashboard_today",
       "operational_status",
       "recent_events",
@@ -2202,7 +2585,7 @@ Deno.serve(async (request) => {
           {
             role: "system",
             content:
-              "Voce e o Unyx AI Agent, um agente operacional para varejo, food service e equipes de loja. Analise apenas os dados fornecidos. Considere colaboradores, horarios, dashboard, notas, formularios, comunicados, entregas, clientes, caixa/PDV, producao, fiscal, estoque, auditoria e configuracoes quando vierem no contexto. Se context.tools.direct_lookup trouxer resultado para horario, posto, PDV ou caixa perguntado pelo gestor, priorize essa consulta direta na resposta e nao responda por amostragem. Seja objetivo, pratico e conservador. Nao invente dados. Para action_plan use apenas generate_delay_report ou allocate_post. Relatorio de atrasos pode ser executado automaticamente; alocacao exige confirmacao humana. Nao diga que executou acoes quando intent nao for act. Quando intent for resolve, gere uma proposta aplicavel para o gestor revisar e registrar como tarefa operacional. Quando intent for analyze, deixe resolution.status como none. Responda em portugues do Brasil sem acentos problematicos quando possivel.",
+              "Voce e o Unyx AI Agent, um agente operacional para varejo, food service e equipes de loja. Analise apenas os dados fornecidos. Considere colaboradores, horarios, dashboard, pendencias operacionais, notas, formularios, comunicados, entregas, clientes, caixa/PDV, producao, fiscal, estoque, auditoria e configuracoes quando vierem no contexto. Use context.tools.operational_pending_summary como resumo prioritario da tela Operacao: entradas atrasadas, intervalos vencidos, postos sem cobertura, alocados sem escala, caixas abertos, entregas atrasadas e producao atrasada. Se context.tools.direct_lookup trouxer resultado para horario, posto, PDV ou caixa perguntado pelo gestor, priorize essa consulta direta na resposta e nao responda por amostragem. Seja objetivo, pratico e conservador. Nao invente dados. Para action_plan use apenas generate_delay_report ou allocate_post. Relatorio de atrasos pode ser executado automaticamente; alocacao exige confirmacao humana e escala do dia em context.tools.schedules_today. Se nao houver escala do dia, nao proponha allocate_post; recomende criar/copiar a escala primeiro. Nao diga que executou acoes quando intent nao for act. Quando intent for resolve, gere uma proposta aplicavel para o gestor revisar e registrar como tarefa operacional. Quando intent for analyze, deixe resolution.status como none. Responda em portugues do Brasil sem acentos problematicos quando possivel.",
           },
           {
             role: "user",

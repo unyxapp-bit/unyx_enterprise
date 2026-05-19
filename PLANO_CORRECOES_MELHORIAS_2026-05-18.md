@@ -127,10 +127,13 @@ Status do bloco de pendencias: em andamento em 2026-05-19.
 - Consolidado painel de pendencias operacionais na tela Operacao.
 - Removidas acoes de sangria da tela Postos; sangria ficou no fluxo de Operacao.
 - Painel agora considera caixas abertos, entregas atrasadas e producao atrasada.
+- IA recebeu o mesmo atalho de copiar ultima escala quando nao houver escala do dia.
+- Agente bloqueia proposta de alocacao sem escala e orienta criar/copiar a escala primeiro.
+- IA agora recebe um resumo consolidado das pendencias da tela Operacao no contexto do agente.
 
 Proximo bloco recomendado:
 
 1. Padronizar os eventos operacionais e cobrir os fluxos principais com testes.
 2. Registrar motivo quando uma acao operacional for bloqueada.
 3. Melhorar confirmacoes visuais apos entrada, intervalo, retorno, saida e sangria.
-4. Conectar pendencias operacionais ao contexto da IA.
+4. Ampliar acoes sugeridas da IA a partir das pendencias ja detectadas.
