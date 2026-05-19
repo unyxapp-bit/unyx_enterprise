@@ -2,10 +2,17 @@ import { AlertTriangle, CalendarPlus, Copy } from "lucide-react"
 import { Link } from "react-router-dom"
 
 import { Button } from "@/components/ui/button"
-import { useCopySchedules, useSchedulesRange } from "@/hooks/useUnyxData"
+import {
+  useBranches,
+  useCopySchedules,
+  useSchedules,
+  useSchedulesRange,
+} from "@/hooks/useUnyxData"
+import { branchDisplayLabel } from "@/lib/branchLabels"
 import { formatDateBR } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { useAppStore } from "@/store/useAppStore"
+import type { Branch } from "@/types/domain"
 import {
   countSchedulesForDate,
   findLatestScheduleSourceDate,
@@ -29,6 +36,8 @@ export function MissingSchedulesPrompt({
 }: MissingSchedulesPromptProps) {
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
   const { dateFrom, dateTo } = getScheduleLookbackRange(date, 30)
+  const branches = useBranches()
+  const allSchedulesToday = useSchedules(date, null)
   const copySchedules = useCopySchedules()
   const shouldSearchPreviousSchedules = !isLoading && currentScheduleCount === 0
   const previousSchedules = useSchedulesRange(dateFrom, dateTo, {
@@ -36,6 +45,26 @@ export function MissingSchedulesPrompt({
   })
   const sourceDate = findLatestScheduleSourceDate(previousSchedules.data ?? [], date)
   const sourceCount = countSchedulesForDate(previousSchedules.data ?? [], sourceDate)
+  const selectedBranch = (branches.data ?? []).find(
+    (branch) => branch.id === selectedBranchId
+  )
+  const otherBranchSchedules = selectedBranchId
+    ? (allSchedulesToday.data ?? []).filter(
+        (schedule) => schedule.branch_id !== selectedBranchId
+      )
+    : []
+  const otherBranchIds = Array.from(
+    new Set(otherBranchSchedules.map((schedule) => schedule.branch_id))
+  )
+  const otherBranchLabels = otherBranchIds
+    .map((branchId) => (branches.data ?? []).find((branch) => branch.id === branchId))
+    .filter((branch): branch is Branch => Boolean(branch))
+    .map((branch) => branchDisplayLabel(branch, branches.data ?? []))
+    .slice(0, 3)
+  const hasSchedulesInOtherBranches =
+    Boolean(selectedBranchId) &&
+    currentScheduleCount === 0 &&
+    otherBranchSchedules.length > 0
   const showPrompt =
     shouldSearchPreviousSchedules &&
     !previousSchedules.isLoading
@@ -65,12 +94,20 @@ export function MissingSchedulesPrompt({
           <AlertTriangle className="mt-0.5 size-5 shrink-0 text-amber-600" />
           <div>
             <p className="font-semibold">
-              Nao ha escala cadastrada para {formatDateBR(date)}
+              {selectedBranch
+                ? `Nao ha escala cadastrada para ${formatDateBR(date)} em ${branchDisplayLabel(selectedBranch, branches.data ?? [])}`
+                : `Nao ha escala cadastrada para ${formatDateBR(date)}`}
             </p>
             <p className="mt-1 text-amber-800">
-              Sem escala do dia, Dashboard, Operacoes e IA ficam sem base completa
-              para calcular presenca, atrasos e cobertura.
+              Sem escala no escopo selecionado, Dashboard, Operacoes e IA ficam
+              sem base completa para calcular presenca, atrasos e cobertura.
             </p>
+            {hasSchedulesInOtherBranches ? (
+              <p className="mt-2 text-xs text-amber-700">
+                Encontrei {otherBranchSchedules.length} escala(s) hoje em outra(s)
+                filial(is): {otherBranchLabels.join(", ") || "filiais com outro cadastro"}.
+              </p>
+            ) : null}
             {sourceDate ? (
               <p className="mt-2 text-xs text-amber-700">
                 Ultima escala encontrada: {formatDateBR(sourceDate)} com {sourceCount} registro(s).

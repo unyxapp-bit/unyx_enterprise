@@ -1,6 +1,7 @@
 import { Building2 } from "lucide-react"
 
 import { useBranches } from "@/hooks/useUnyxData"
+import { branchDisplayLabel } from "@/lib/branchLabels"
 import { useAppStore } from "@/store/useAppStore"
 
 export function BranchSelector() {
@@ -20,7 +21,7 @@ export function BranchSelector() {
         <option value="">Todas as filiais</option>
         {branches.map((branch) => (
           <option key={branch.id} value={branch.id}>
-            {branch.name}
+            {branchDisplayLabel(branch, branches)}
           </option>
         ))}
       </select>

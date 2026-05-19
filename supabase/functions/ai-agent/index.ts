@@ -851,6 +851,14 @@ async function fetchContext(
     .order("start_time", { ascending: true, nullsFirst: false })
     .limit(120)
 
+  const schedulesAllBranchesQuery = supabase
+    .from("schedules")
+    .select("id, branch_id, employee_id, work_date, start_time, break_start, break_end, end_time, status, branches(name), employees(name)")
+    .eq("organization_id", profile.organization_id)
+    .eq("work_date", today)
+    .order("start_time", { ascending: true, nullsFirst: false })
+    .limit(200)
+
   let checklistRunsQuery = supabase
     .from("checklist_runs")
     .select("status, notes, started_at, completed_at, created_at, branches(name), checklist_procedures(title, category, frequency)")
@@ -1117,6 +1125,7 @@ async function fetchContext(
     auditLogs,
     directSchedules,
     directPosts,
+    schedulesAllBranches,
   ] = await Promise.all([
     statusesQuery,
     eventsQuery,
@@ -1146,6 +1155,7 @@ async function fetchContext(
     auditLogsQuery,
     directScheduleQuery ?? Promise.resolve({ data: [], error: null }),
     directPostsQuery ?? Promise.resolve({ data: [], error: null }),
+    schedulesAllBranchesQuery,
   ])
 
   const errors = [
@@ -1188,6 +1198,17 @@ async function fetchContext(
   const productCategoriesData = optionalRows(productCategories)
   const auditLogsData = optionalRows(auditLogs)
   const directSchedulesData = optionalRows(directSchedules)
+  const schedulesAllBranchesData = optionalRows(schedulesAllBranches)
+  const otherBranchScheduleRows = branchId
+    ? schedulesAllBranchesData.filter((schedule: any) => schedule.branch_id !== branchId)
+    : []
+  const otherBranchIds = Array.from(
+    new Set(
+      otherBranchScheduleRows
+        .map((schedule: any) => schedule.branch_id)
+        .filter((id: unknown): id is string => typeof id === "string")
+    )
+  )
   const directPostsData = optionalRows(directPosts)
   const directPostIds = directPostsData
     .map((item: any) => item.id)
@@ -1279,6 +1300,13 @@ async function fetchContext(
       delayed: countRows(dashboardData, (item: any) => numericValue(item.delay_minutes) > 0),
       waiting: countRows(dashboardData, (item: any) => item.current_status === "aguardando_evento"),
     },
+    schedule_scope: {
+      branch_id: branchId,
+      selected_branch_schedules: schedules.data?.length ?? 0,
+      all_branches_schedules: schedulesAllBranchesData.length,
+      other_branches_schedules: otherBranchScheduleRows.length,
+      other_branch_ids: otherBranchIds.slice(0, 8),
+    },
     support_counts: {
       open_notes: countRows(notesData, (item: any) => item.status === "open"),
       urgent_notes: countRows(notesData, (item: any) => item.priority === "urgent"),
@@ -1340,6 +1368,7 @@ async function fetchContext(
       operational_status: compactRows(currentStatuses, 30),
       recent_events: compactRows(events.data ?? [], 50),
       schedules_today: compactRows(schedules.data ?? [], 50),
+      schedules_today_all_branches: compactRows(schedulesAllBranchesData, 50),
       checklist_runs: compactRows(checklistRuns.data ?? [], 30),
       employees: compactRows(employees.data ?? [], 60),
       operational_posts: compactRows(posts.error ? [] : posts.data ?? [], 80),
@@ -1389,6 +1418,7 @@ async function fetchContext(
       optionalError("audit_logs", auditLogs),
       optionalError("direct_schedules", directSchedules),
       optionalError("direct_posts", directPosts),
+      optionalError("schedules_all_branches", schedulesAllBranches),
       optionalError("direct_post_allocations", directAllocations),
       optionalError("direct_cash_sessions", directCashSessions),
     ].filter(Boolean),
@@ -1447,6 +1477,7 @@ function buildModelContext(context: AgentContext) {
   const statuses = (context.tools.operational_status as unknown[]).map(asRow)
   const events = (context.tools.recent_events as unknown[]).map(asRow)
   const schedules = (context.tools.schedules_today as unknown[]).map(asRow)
+  const schedulesAllBranches = (context.tools.schedules_today_all_branches as unknown[]).map(asRow)
   const checklists = (context.tools.checklist_runs as unknown[]).map(asRow)
   const posts = (context.tools.operational_posts as unknown[]).map(asRow)
   const allocations = (context.tools.active_allocations as unknown[]).map(asRow)
@@ -1481,6 +1512,7 @@ function buildModelContext(context: AgentContext) {
     employee_counts: context.employee_counts,
     organization_counts: context.organization_counts,
     dashboard_counts: context.dashboard_counts,
+    schedule_scope: context.schedule_scope,
     support_counts: context.support_counts,
     delivery_counts: context.delivery_counts,
     customer_counts: context.customer_counts,
@@ -1581,6 +1613,14 @@ function buildModelContext(context: AgentContext) {
         break_start: readString(schedule, "break_start"),
         break_end: readString(schedule, "break_end"),
         end_time: readString(schedule, "end_time"),
+        branch: relationName(schedule, "branches"),
+        employee: relationName(schedule, "employees"),
+      })),
+      schedules_today_all_branches: schedulesAllBranches.slice(0, 18).map((schedule) => ({
+        id: readString(schedule, "id"),
+        branch_id: readString(schedule, "branch_id"),
+        status: readString(schedule, "status"),
+        start_time: readString(schedule, "start_time"),
         branch: relationName(schedule, "branches"),
         employee: relationName(schedule, "employees"),
       })),
@@ -1954,17 +1994,24 @@ function buildAllocationCandidate(context: AgentContext, requestedArgs?: AgentAc
 function buildAllocationActionPlan(context: AgentContext, requestedArgs?: AgentActionArguments | null) {
   const scheduleCount = readArray(context.tools.schedules_today).length
   if (scheduleCount === 0) {
+    const scheduleScope = asRow(context.schedule_scope)
+    const otherBranchScheduleCount = readNumber(scheduleScope, "other_branches_schedules")
+    const hasScheduleInOtherBranch = otherBranchScheduleCount > 0
     return {
       mode: "suggest" as AgentActionMode,
       tool_name: null as AgentActionTool | null,
-      title: "Criar escala do dia",
+      title: hasScheduleInOtherBranch ? "Conferir filial selecionada" : "Criar escala do dia",
       description:
-        "Nao ha escala cadastrada para hoje. Copie a ultima escala valida ou importe a escala do dia antes de propor alocacao.",
+        hasScheduleInOtherBranch
+          ? `Nao ha escala hoje na filial selecionada, mas existem ${otherBranchScheduleCount} escala(s) em outra(s) filial(is). Selecione a filial correta ou importe a escala para esta filial antes de propor alocacao.`
+          : "Nao ha escala cadastrada para hoje. Copie a ultima escala valida ou importe a escala do dia antes de propor alocacao.",
       confidence: 0.9,
       confirmation_required: false,
       arguments: actionArgs({
         branch_id: context.branch_id,
-        notes: "Escala do dia ausente; alocacao bloqueada ate a escala ser criada.",
+        notes: hasScheduleInOtherBranch
+          ? "Escala ausente na filial selecionada; alocacao bloqueada ate conferir a filial correta."
+          : "Escala do dia ausente; alocacao bloqueada ate a escala ser criada.",
       }),
       arguments_summary: "Sem escala do dia para vincular colaborador, horario e posto.",
     }
@@ -2191,9 +2238,12 @@ function fallbackInsight(
   const activePendingGroups = pendingGroups.filter(
     (group) => readBoolean(group, "alert") && readNumber(group, "count") > 0
   )
+  const scheduleScope = asRow(context.schedule_scope)
+  const otherBranchScheduleCount = readNumber(scheduleScope, "other_branches_schedules")
   const scheduleCount = readArray(context.tools.schedules_today).length
   const activeEmployees = context.employee_counts.active
   const missingSchedulesToday = scheduleCount === 0 && activeEmployees > 0
+  const schedulesExistInOtherBranch = missingSchedulesToday && otherBranchScheduleCount > 0
   const severity: AgentSeverity =
     critical > 0
       ? "critico"
@@ -2226,11 +2276,19 @@ function fallbackInsight(
     ...(missingSchedulesToday
       ? [
           {
-            title: "Escala do dia ausente",
+            title: schedulesExistInOtherBranch
+              ? "Escala ausente na filial selecionada"
+              : "Escala do dia ausente",
             severity: "alto" as AgentSeverity,
-            reason: "Nao ha escala cadastrada para hoje no contexto operacional.",
-            evidence: `0 escala(s) para hoje e ${activeEmployees} colaborador(es) ativo(s).`,
-            action: "Copiar a ultima escala valida ou importar a escala do dia antes de avaliar atrasos e cobertura.",
+            reason: schedulesExistInOtherBranch
+              ? "A filial selecionada nao tem escala hoje, mas ha escala cadastrada em outra filial."
+              : "Nao ha escala cadastrada para hoje no contexto operacional.",
+            evidence: schedulesExistInOtherBranch
+              ? `0 escala(s) na filial selecionada e ${otherBranchScheduleCount} escala(s) em outra(s) filial(is).`
+              : `0 escala(s) para hoje e ${activeEmployees} colaborador(es) ativo(s).`,
+            action: schedulesExistInOtherBranch
+              ? "Conferir a filial selecionada no topo ou copiar/importar a escala para a filial correta."
+              : "Copiar a ultima escala valida ou importar a escala do dia antes de avaliar atrasos e cobertura.",
             confidence: 0.86,
           },
         ]
@@ -2289,7 +2347,9 @@ function fallbackInsight(
   ]
   const passiveActionTitle =
     missingSchedulesToday
-      ? "Gerar escala do dia"
+      ? schedulesExistInOtherBranch
+        ? "Conferir filial selecionada"
+        : "Gerar escala do dia"
       : critical > 0
       ? "Atuar nos status criticos"
       : pendingAlerts > 0
@@ -2305,7 +2365,9 @@ function fallbackInsight(
             : "Acompanhar operacao"
   const passiveActionDescription =
     missingSchedulesToday
-      ? "Copie a ultima escala valida ou importe a escala de hoje para corrigir Dashboard, Operacoes e leitura da IA."
+      ? schedulesExistInOtherBranch
+        ? "A filial selecionada esta sem escala hoje, mas ha escala em outra filial. Confira se a filial do topo e a correta."
+        : "Copie a ultima escala valida ou importe a escala de hoje para corrigir Dashboard, Operacoes e leitura da IA."
       : critical > 0
       ? "Abra o painel operacional e confirme a acao para cada alerta critico."
       : pendingAlerts > 0
@@ -2335,8 +2397,12 @@ function fallbackInsight(
       ...(missingSchedulesToday
         ? [
             {
-              title: "Criar escala do dia",
-              description: "Copie a ultima escala valida ou importe a escala de hoje antes de analisar atrasos e cobertura.",
+              title: schedulesExistInOtherBranch
+                ? "Conferir filial da escala"
+                : "Criar escala do dia",
+              description: schedulesExistInOtherBranch
+                ? "Existe escala hoje em outra filial. Valide se a filial selecionada e a mesma onde a escala foi importada."
+                : "Copie a ultima escala valida ou importe a escala de hoje antes de analisar atrasos e cobertura.",
               owner: "Gestor da filial",
               priority: "alta",
               requires_confirmation: false,
@@ -2379,7 +2445,9 @@ function fallbackInsight(
     chat_answer: question
       ? directAnswer ??
         (missingSchedulesToday
-          ? `Nao ha escala cadastrada para hoje. Com ${activeEmployees} colaborador(es) ativo(s), preciso da escala do dia para responder com seguranca sobre entradas, atrasos, cobertura e alocacoes.`
+          ? schedulesExistInOtherBranch
+            ? `Nao ha escala na filial selecionada hoje, mas encontrei ${otherBranchScheduleCount} escala(s) em outra(s) filial(is). Confira a filial selecionada no topo para eu responder com seguranca.`
+            : `Nao ha escala cadastrada para hoje. Com ${activeEmployees} colaborador(es) ativo(s), preciso da escala do dia para responder com seguranca sobre entradas, atrasos, cobertura e alocacoes.`
           : `Com os dados atuais, minha leitura e: ${critical} risco(s) critico(s), ${delays} atraso(s), ${absences} falta(s), ${openDeliveries} entrega(s) aberta(s), ${openProduction} pedido(s) em producao e ${lowStockProducts} produto(s) em estoque baixo.`)
       : "Clique em perguntar ao agente para aprofundar um ponto especifico.",
     tools_used: [
@@ -2391,6 +2459,7 @@ function fallbackInsight(
       "operational_status",
       "recent_events",
       "schedules_today",
+      "schedules_today_all_branches",
       "checklist_runs",
       "employees",
       "operational_posts",
@@ -2585,7 +2654,7 @@ Deno.serve(async (request) => {
           {
             role: "system",
             content:
-              "Voce e o Unyx AI Agent, um agente operacional para varejo, food service e equipes de loja. Analise apenas os dados fornecidos. Considere colaboradores, horarios, dashboard, pendencias operacionais, notas, formularios, comunicados, entregas, clientes, caixa/PDV, producao, fiscal, estoque, auditoria e configuracoes quando vierem no contexto. Use context.tools.operational_pending_summary como resumo prioritario da tela Operacao: entradas atrasadas, intervalos vencidos, postos sem cobertura, alocados sem escala, caixas abertos, entregas atrasadas e producao atrasada. Se context.tools.direct_lookup trouxer resultado para horario, posto, PDV ou caixa perguntado pelo gestor, priorize essa consulta direta na resposta e nao responda por amostragem. Seja objetivo, pratico e conservador. Nao invente dados. Para action_plan use apenas generate_delay_report ou allocate_post. Relatorio de atrasos pode ser executado automaticamente; alocacao exige confirmacao humana e escala do dia em context.tools.schedules_today. Se nao houver escala do dia, nao proponha allocate_post; recomende criar/copiar a escala primeiro. Nao diga que executou acoes quando intent nao for act. Quando intent for resolve, gere uma proposta aplicavel para o gestor revisar e registrar como tarefa operacional. Quando intent for analyze, deixe resolution.status como none. Responda em portugues do Brasil sem acentos problematicos quando possivel.",
+              "Voce e o Unyx AI Agent, um agente operacional para varejo, food service e equipes de loja. Analise apenas os dados fornecidos. Considere colaboradores, horarios, dashboard, pendencias operacionais, notas, formularios, comunicados, entregas, clientes, caixa/PDV, producao, fiscal, estoque, auditoria e configuracoes quando vierem no contexto. Use context.tools.operational_pending_summary como resumo prioritario da tela Operacao: entradas atrasadas, intervalos vencidos, postos sem cobertura, alocados sem escala, caixas abertos, entregas atrasadas e producao atrasada. Use context.schedule_scope para diferenciar falta de escala na organizacao de falta de escala apenas na filial selecionada; se houver escala em outra filial, diga isso explicitamente e recomende conferir a filial do topo. Se context.tools.direct_lookup trouxer resultado para horario, posto, PDV ou caixa perguntado pelo gestor, priorize essa consulta direta na resposta e nao responda por amostragem. Seja objetivo, pratico e conservador. Nao invente dados. Para action_plan use apenas generate_delay_report ou allocate_post. Relatorio de atrasos pode ser executado automaticamente; alocacao exige confirmacao humana e escala do dia em context.tools.schedules_today. Se nao houver escala do dia na filial selecionada, nao proponha allocate_post; recomende conferir a filial ou criar/copiar a escala primeiro. Nao diga que executou acoes quando intent nao for act. Quando intent for resolve, gere uma proposta aplicavel para o gestor revisar e registrar como tarefa operacional. Quando intent for analyze, deixe resolution.status como none. Responda em portugues do Brasil sem acentos problematicos quando possivel.",
           },
           {
             role: "user",
