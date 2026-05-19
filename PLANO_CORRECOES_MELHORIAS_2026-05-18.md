@@ -122,9 +122,15 @@ Status do bloco anterior: concluido em 2026-05-18.
 - IA passou a avisar explicitamente quando falta escala do dia.
 - Tela Alocacao foi reposicionada como Mapa de postos, evitando duplicacao com Operacao.
 
-Proximo bloco em andamento:
+Status do bloco de pendencias: em andamento em 2026-05-19.
 
-1. Consolidar pendencias operacionais na tela Operacao.
-2. Remover acoes de sangria da tela Postos e manter sangria no fluxo de Operacao.
-3. Ampliar o painel de pendencias com dados de caixa, entregas e producao.
-4. Padronizar os eventos operacionais e cobrir os fluxos principais com testes.
+- Consolidado painel de pendencias operacionais na tela Operacao.
+- Removidas acoes de sangria da tela Postos; sangria ficou no fluxo de Operacao.
+- Painel agora considera caixas abertos, entregas atrasadas e producao atrasada.
+
+Proximo bloco recomendado:
+
+1. Padronizar os eventos operacionais e cobrir os fluxos principais com testes.
+2. Registrar motivo quando uma acao operacional for bloqueada.
+3. Melhorar confirmacoes visuais apos entrada, intervalo, retorno, saida e sangria.
+4. Conectar pendencias operacionais ao contexto da IA.

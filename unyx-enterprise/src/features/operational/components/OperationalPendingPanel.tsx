@@ -4,16 +4,22 @@ import {
   Clock,
   Link2Off,
   MapPinned,
+  Truck,
   UserRoundX,
+  Utensils,
+  Wallet,
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { formatTime } from "@/lib/format"
 import type {
+  CashSession,
+  DeliveryOrder,
   OperationalPost,
   OperationalStatusRecord,
   PostAllocation,
+  ProductionOrder,
   ScheduleWithRelations,
 } from "@/types/domain"
 
@@ -26,6 +32,9 @@ interface OperationalPendingPanelProps {
   activePosts: OperationalPost[]
   occupiedPostIds: Set<string>
   activeAllocations: PostAllocation[]
+  cashSessions: CashSession[]
+  deliveryOrders: DeliveryOrder[]
+  productionOrders: ProductionOrder[]
   currentMinutes: number
 }
 
@@ -44,6 +53,30 @@ function allocationLabel(allocation: PostAllocation) {
   ].join(" - ")
 }
 
+function isPast(value: string | null | undefined) {
+  if (!value) return false
+  return new Date(value).getTime() < Date.now()
+}
+
+function cashSessionLabel(session: CashSession) {
+  return [
+    session.operational_posts?.name ?? "Caixa",
+    session.employees?.name ?? session.user_profiles?.name,
+  ].filter(Boolean).join(" - ")
+}
+
+function deliveryLabel(order: DeliveryOrder) {
+  const due = order.estimated_delivery_at ?? order.scheduled_for
+  return `${order.customer_name} - entrega ${due ? new Date(due).toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }) : "sem horario"}`
+}
+
+function productionLabel(order: ProductionOrder) {
+  return `${order.order_code} - ${order.customer_name}`
+}
+
 export const OperationalPendingPanel = React.memo(
   ({
     schedulesToArrive,
@@ -52,6 +85,9 @@ export const OperationalPendingPanel = React.memo(
     activePosts,
     occupiedPostIds,
     activeAllocations,
+    cashSessions,
+    deliveryOrders,
+    productionOrders,
     currentMinutes,
   }: OperationalPendingPanelProps) => {
     const pendingGroups = useMemo(() => {
@@ -74,11 +110,27 @@ export const OperationalPendingPanel = React.memo(
         (allocation) => !allocation.schedule_id
       )
 
+      const openCashSessions = cashSessions.filter(
+        (session) => session.status === "open"
+      )
+
+      const overdueDeliveries = deliveryOrders.filter((order) => {
+        if (["delivered", "failed", "cancelled"].includes(order.status)) return false
+        const due = order.estimated_delivery_at ?? order.scheduled_for
+        return isPast(due)
+      })
+
+      const overdueProduction = productionOrders.filter((order) => {
+        if (["ready", "delivered", "cancelled"].includes(order.status)) return false
+        return isPast(order.promised_at)
+      })
+
       return [
         {
           key: "late-arrivals",
           title: "Entradas atrasadas",
           count: lateArrivals.length,
+          alert: true,
           Icon: UserRoundX,
           tone: "text-orange-700",
           empty: "Nenhum colaborador atrasado para entrada.",
@@ -93,6 +145,7 @@ export const OperationalPendingPanel = React.memo(
           key: "overdue-breaks",
           title: "Intervalos vencidos",
           count: overdueBreaks.length,
+          alert: true,
           Icon: Clock,
           tone: "text-red-700",
           empty: "Nenhum intervalo vencido.",
@@ -107,6 +160,7 @@ export const OperationalPendingPanel = React.memo(
           key: "uncovered-posts",
           title: "Postos sem cobertura",
           count: uncoveredPosts.length,
+          alert: true,
           Icon: MapPinned,
           tone: "text-sky-700",
           empty: "Todos os postos ativos estao cobertos.",
@@ -116,24 +170,58 @@ export const OperationalPendingPanel = React.memo(
           key: "allocations-without-schedule",
           title: "Alocados sem escala",
           count: allocationsWithoutSchedule.length,
+          alert: true,
           Icon: Link2Off,
           tone: "text-amber-700",
           empty: "Todas as alocacoes ativas estao vinculadas a uma escala.",
           items: allocationsWithoutSchedule.slice(0, 3).map(allocationLabel),
         },
+        {
+          key: "open-cash-sessions",
+          title: "Caixas abertos",
+          count: openCashSessions.length,
+          alert: false,
+          Icon: Wallet,
+          tone: "text-emerald-700",
+          empty: "Nenhum caixa aberto agora.",
+          items: openCashSessions.slice(0, 3).map(cashSessionLabel),
+        },
+        {
+          key: "overdue-deliveries",
+          title: "Entregas atrasadas",
+          count: overdueDeliveries.length,
+          alert: true,
+          Icon: Truck,
+          tone: "text-red-700",
+          empty: "Nenhuma entrega atrasada.",
+          items: overdueDeliveries.slice(0, 3).map(deliveryLabel),
+        },
+        {
+          key: "overdue-production",
+          title: "Producao atrasada",
+          count: overdueProduction.length,
+          alert: true,
+          Icon: Utensils,
+          tone: "text-orange-700",
+          empty: "Nenhum pedido de producao atrasado.",
+          items: overdueProduction.slice(0, 3).map(productionLabel),
+        },
       ]
     }, [
       activeAllocations,
       activePosts,
+      cashSessions,
       currentMinutes,
+      deliveryOrders,
       occupiedPostIds,
+      productionOrders,
       schedulesInTurn,
       schedulesToArrive,
       statusByScheduleId,
     ])
 
     const totalPending = pendingGroups.reduce(
-      (total, group) => total + group.count,
+      (total, group) => total + (group.alert ? group.count : 0),
       0
     )
 
@@ -149,15 +237,15 @@ export const OperationalPendingPanel = React.memo(
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            {pendingGroups.map(({ key, title, count, Icon, tone, empty, items }) => (
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
+            {pendingGroups.map(({ key, title, count, alert, Icon, tone, empty, items }) => (
               <div key={key} className="rounded-lg border border-slate-200 p-3">
                 <div className="flex items-center gap-2">
                   <Icon className={`size-4 ${tone}`} />
                   <div className="min-w-0 flex-1 truncate text-sm font-semibold">
                     {title}
                   </div>
-                  <Badge variant={count > 0 ? "destructive" : "outline"}>
+                  <Badge variant={alert && count > 0 ? "destructive" : "outline"}>
                     {count}
                   </Badge>
                 </div>

@@ -30,7 +30,12 @@ import { PageHeader } from "@/components/shared/PageHeader"
 import { modeUiConfig } from "@/features/ops/modes/modeUiConfig"
 import { operationalModeNames } from "@/features/ops/modes/operationalModes"
 import { MissingSchedulesPrompt } from "@/features/schedules/components/MissingSchedulesPrompt"
-import { useFinalizePostAllocation } from "@/hooks/useUnyxData"
+import {
+  useCashSessions,
+  useDeliveryOrders,
+  useFinalizePostAllocation,
+  useProductionOrders,
+} from "@/hooks/useUnyxData"
 
 import {
   BreakDialog,
@@ -108,6 +113,9 @@ export function OperationsPage() {
   // ── Clock (updates every 30s) ──
   const now = useClock()
   const finalizePostAllocation = useFinalizePostAllocation()
+  const cashSessions = useCashSessions()
+  const deliveryOrders = useDeliveryOrders()
+  const productionOrders = useProductionOrders(date, "all")
   const [releasingAllocationId, setReleasingAllocationId] = useState<string | null>(
     null
   )
@@ -436,6 +444,9 @@ export function OperationsPage() {
           activePosts={activePosts}
           occupiedPostIds={occupiedPostIds}
           activeAllocations={occupiedPostAllocations}
+          cashSessions={cashSessions.data ?? []}
+          deliveryOrders={deliveryOrders.data ?? []}
+          productionOrders={productionOrders.data ?? []}
           currentMinutes={now}
         />
 
