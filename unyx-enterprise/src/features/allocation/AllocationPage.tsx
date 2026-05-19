@@ -51,6 +51,7 @@ import {
   useOperationalSettings,
   useOrganization,
   usePostAllocations,
+  useRecordBreakAlreadyDone,
   useRecordOperationalEvent,
   useSchedules,
   useSectors,
@@ -329,6 +330,7 @@ export function AllocationPage() {
   const navigate = useNavigate()
   const updateSchedule = useUpdateSchedule()
   const recordEvent = useRecordOperationalEvent()
+  const recordBreakDone = useRecordBreakAlreadyDone()
 
   const org = useOrganization()
   const setupDefaults = useSetupSegmentDefaults()
@@ -512,20 +514,11 @@ export function AllocationPage() {
         ? `${schedule.break_start} - ${schedule.break_end}`
         : "horario planejado"
 
-    await recordEvent.mutateAsync({
+    await recordBreakDone.mutateAsync({
       branch_id: schedule.branch_id,
       employee_id: schedule.employee_id,
       schedule_id: schedule.id,
-      event_type: "intervalo_iniciado",
       notes: `Intervalo ja realizado no ${breakLabel}.`,
-    })
-
-    await recordEvent.mutateAsync({
-      branch_id: schedule.branch_id,
-      employee_id: schedule.employee_id,
-      schedule_id: schedule.id,
-      event_type: "retorno_confirmado",
-      notes: "Intervalo ja feito confirmado na alocacao.",
     })
 
     await updateSchedule.mutateAsync({

@@ -403,6 +403,8 @@ const NON_OPERATIONAL_SCHEDULE_STATUSES = new Set([
   "cancelled",
 ])
 
+const DEFAULT_BREAK_TOLERANCE_MINUTES = 15
+
 const ENTERED_STATUSES_FOR_PENDING = new Set([
   "trabalhando",
   "em_intervalo",
@@ -564,7 +566,24 @@ function buildOperationalPendingSummary(params: {
     const scheduleId = readString(schedule, "id")
     const status = scheduleId ? readString(statusByScheduleId.get(scheduleId) ?? {}, "current_status") : null
     const breakEnd = timeToMinutes(readString(schedule, "break_end"))
-    return status === "em_intervalo" && breakEnd !== null && currentMinutes > breakEnd
+    return (
+      status === "em_intervalo" &&
+      breakEnd !== null &&
+      currentMinutes > breakEnd + DEFAULT_BREAK_TOLERANCE_MINUTES
+    )
+  })
+  const breaksWaitingRelease = schedulesInTurn.filter((schedule) => {
+    const scheduleId = readString(schedule, "id")
+    const status = scheduleId ? readString(statusByScheduleId.get(scheduleId) ?? {}, "current_status") : null
+    const breakStart = timeToMinutes(readString(schedule, "break_start"))
+    const notes = readString(schedule, "notes") ?? ""
+    const lunchDone = notes.includes("lunch_done") || status === "voltou"
+    return (
+      !lunchDone &&
+      breakStart !== null &&
+      currentMinutes > breakStart + DEFAULT_BREAK_TOLERANCE_MINUTES &&
+      ["trabalhando", "deve_sair", "aguardando_sangria", "troca_de_caixa"].includes(status ?? "")
+    )
   })
   const uncoveredPosts = params.posts
     .map(asRow)
@@ -613,6 +632,17 @@ function buildOperationalPendingSummary(params: {
       overdueBreaks.map(
         (schedule) =>
           `${relationName(schedule, "employees") ?? "Colaborador"} - retorno ${readString(schedule, "break_end") ?? "sem horario"}`
+      )
+    ),
+    buildPendingGroup(
+      "breaks-waiting-release",
+      "Intervalos a liberar",
+      breaksWaitingRelease.length,
+      true,
+      "Nenhum intervalo aguardando liberacao.",
+      breaksWaitingRelease.map(
+        (schedule) =>
+          `${relationName(schedule, "employees") ?? "Colaborador"} - previsto ${readString(schedule, "break_start") ?? "sem horario"}`
       )
     ),
     buildPendingGroup(
@@ -2383,7 +2413,7 @@ function fallbackInsight(
       : critical > 0
       ? "Abra o painel operacional e confirme a acao para cada alerta critico."
       : pendingAlerts > 0
-        ? "Abra a tela Operacao e resolva entradas atrasadas, intervalos vencidos, postos descobertos ou filas atrasadas."
+        ? "Abra a tela Operacao e resolva entradas atrasadas, intervalos a liberar, intervalos vencidos, postos descobertos ou filas atrasadas."
       : urgentNotes > 0
         ? "Abra as anotacoes urgentes e defina responsavel para cada pendencia."
         : openDeliveries > 0
@@ -2666,7 +2696,7 @@ Deno.serve(async (request) => {
           {
             role: "system",
             content:
-              "Voce e o Unyx AI Agent, um agente operacional para varejo, food service e equipes de loja. Analise apenas os dados fornecidos. Considere colaboradores, horarios, dashboard, pendencias operacionais, notas, formularios, comunicados, entregas, clientes, caixa/PDV, producao, fiscal, estoque, auditoria e configuracoes quando vierem no contexto. Use context.tools.operational_pending_summary como resumo prioritario da tela Operacao: entradas atrasadas, intervalos vencidos, postos sem cobertura, alocados sem escala, caixas abertos, entregas atrasadas e producao atrasada. Use context.schedule_scope para diferenciar falta de escala na organizacao de falta de escala apenas na filial selecionada; se houver escala em outra filial, diga isso explicitamente e recomende conferir a filial do topo. Se context.tools.direct_lookup trouxer resultado para horario, posto, PDV ou caixa perguntado pelo gestor, priorize essa consulta direta na resposta e nao responda por amostragem. Seja objetivo, pratico e conservador. Nao invente dados. Para action_plan use apenas generate_delay_report ou allocate_post. Relatorio de atrasos pode ser executado automaticamente; alocacao exige confirmacao humana e escala do dia em context.tools.schedules_today. Se nao houver escala do dia na filial selecionada, nao proponha allocate_post; recomende conferir a filial ou criar/copiar a escala primeiro. Nao diga que executou acoes quando intent nao for act. Quando intent for resolve, gere uma proposta aplicavel para o gestor revisar e registrar como tarefa operacional. Quando intent for analyze, deixe resolution.status como none. Responda em portugues do Brasil sem acentos problematicos quando possivel.",
+              "Voce e o Unyx AI Agent, um agente operacional para varejo, food service e equipes de loja. Analise apenas os dados fornecidos. Considere colaboradores, horarios, dashboard, pendencias operacionais, notas, formularios, comunicados, entregas, clientes, caixa/PDV, producao, fiscal, estoque, auditoria e configuracoes quando vierem no contexto. Use context.tools.operational_pending_summary como resumo prioritario da tela Operacao: entradas atrasadas, intervalos a liberar, intervalos vencidos, postos sem cobertura, alocados sem escala, caixas abertos, entregas atrasadas e producao atrasada. Use context.schedule_scope para diferenciar falta de escala na organizacao de falta de escala apenas na filial selecionada; se houver escala em outra filial, diga isso explicitamente e recomende conferir a filial do topo. Se context.tools.direct_lookup trouxer resultado para horario, posto, PDV ou caixa perguntado pelo gestor, priorize essa consulta direta na resposta e nao responda por amostragem. Seja objetivo, pratico e conservador. Nao invente dados. Para action_plan use apenas generate_delay_report ou allocate_post. Relatorio de atrasos pode ser executado automaticamente; alocacao exige confirmacao humana e escala do dia em context.tools.schedules_today. Se nao houver escala do dia na filial selecionada, nao proponha allocate_post; recomende conferir a filial ou criar/copiar a escala primeiro. Nao diga que executou acoes quando intent nao for act. Quando intent for resolve, gere uma proposta aplicavel para o gestor revisar e registrar como tarefa operacional. Quando intent for analyze, deixe resolution.status como none. Responda em portugues do Brasil sem acentos problematicos quando possivel.",
           },
           {
             role: "user",

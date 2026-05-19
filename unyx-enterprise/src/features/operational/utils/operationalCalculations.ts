@@ -2,6 +2,9 @@
  * Operacional Calculations - Funções de cálculo de tempo e duração
  */
 
+export const DEFAULT_BREAK_TOLERANCE_MINUTES = 15
+export const CRITICAL_BREAK_TOLERANCE_MINUTES = 20
+
 export function timeToMinutes(time: string | null | undefined): number | null {
   if (!time) return null
   const [h, m] = time.split(":").map(Number)
@@ -51,10 +54,11 @@ export function calculateBreakProgress(
 
 export function isLateForBreak(
   scheduledBreakStartMin: number | null,
-  currentMinutes: number
+  currentMinutes: number,
+  toleranceMinutes = DEFAULT_BREAK_TOLERANCE_MINUTES
 ): boolean {
   if (scheduledBreakStartMin === null) return false
-  return currentMinutes > scheduledBreakStartMin + 2
+  return currentMinutes > scheduledBreakStartMin + toleranceMinutes
 }
 
 export function calculateTimeWorked(

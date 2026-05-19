@@ -76,11 +76,15 @@ describe("operationalCalculations", () => {
   })
 
   describe("isLateForBreak", () => {
-    it("detects late breaks", () => {
-      // Break should start at 12:00, now it's 12:05
-      expect(isLateForBreak(720, 725)).toBe(true)
-      // 2 minutes is still considered on-time
-      expect(isLateForBreak(720, 722)).toBe(false)
+    it("uses the operational tolerance window by default", () => {
+      // Break should start at 12:00; 12:15 is still inside the standard window.
+      expect(isLateForBreak(720, 735)).toBe(false)
+      expect(isLateForBreak(720, 736)).toBe(true)
+    })
+
+    it("accepts custom tolerance", () => {
+      expect(isLateForBreak(720, 725, 5)).toBe(false)
+      expect(isLateForBreak(720, 726, 5)).toBe(true)
     })
 
     it("returns false when no scheduled break", () => {

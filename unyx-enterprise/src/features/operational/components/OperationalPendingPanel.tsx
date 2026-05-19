@@ -23,7 +23,7 @@ import type {
   ScheduleWithRelations,
 } from "@/types/domain"
 
-import { timeToMinutes } from "../utils"
+import { DEFAULT_BREAK_TOLERANCE_MINUTES, timeToMinutes } from "../utils"
 
 interface OperationalPendingPanelProps {
   schedulesToArrive: ScheduleWithRelations[]
@@ -36,6 +36,7 @@ interface OperationalPendingPanelProps {
   deliveryOrders: DeliveryOrder[]
   productionOrders: ProductionOrder[]
   currentMinutes: number
+  breakToleranceMinutes?: number
 }
 
 function employeeLabel(schedule: ScheduleWithRelations) {
@@ -89,6 +90,7 @@ export const OperationalPendingPanel = React.memo(
     deliveryOrders,
     productionOrders,
     currentMinutes,
+    breakToleranceMinutes = DEFAULT_BREAK_TOLERANCE_MINUTES,
   }: OperationalPendingPanelProps) => {
     const pendingGroups = useMemo(() => {
       const lateArrivals = schedulesToArrive.filter((schedule) => {
@@ -99,7 +101,25 @@ export const OperationalPendingPanel = React.memo(
       const overdueBreaks = schedulesInTurn.filter((schedule) => {
         const status = statusByScheduleId.get(schedule.id)?.current_status
         const breakEnd = timeToMinutes(schedule.break_end)
-        return status === "em_intervalo" && breakEnd !== null && currentMinutes > breakEnd
+        return (
+          status === "em_intervalo" &&
+          breakEnd !== null &&
+          currentMinutes > breakEnd + breakToleranceMinutes
+        )
+      })
+
+      const breaksWaitingRelease = schedulesInTurn.filter((schedule) => {
+        const status = statusByScheduleId.get(schedule.id)?.current_status
+        const breakStart = timeToMinutes(schedule.break_start)
+        const lunchDone = schedule.notes?.includes("lunch_done") || status === "voltou"
+        return (
+          !lunchDone &&
+          breakStart !== null &&
+          currentMinutes > breakStart + breakToleranceMinutes &&
+          ["trabalhando", "deve_sair", "aguardando_sangria", "troca_de_caixa"].includes(
+            status ?? ""
+          )
+        )
       })
 
       const uncoveredPosts = activePosts.filter(
@@ -157,6 +177,21 @@ export const OperationalPendingPanel = React.memo(
             ),
         },
         {
+          key: "breaks-waiting-release",
+          title: "Intervalos a liberar",
+          count: breaksWaitingRelease.length,
+          alert: true,
+          Icon: Clock,
+          tone: "text-amber-700",
+          empty: "Nenhum intervalo aguardando liberacao.",
+          items: breaksWaitingRelease
+            .slice(0, 3)
+            .map(
+              (schedule) =>
+                `${employeeLabel(schedule)} - previsto ${formatTime(schedule.break_start)}`
+            ),
+        },
+        {
           key: "uncovered-posts",
           title: "Postos sem cobertura",
           count: uncoveredPosts.length,
@@ -210,6 +245,7 @@ export const OperationalPendingPanel = React.memo(
     }, [
       activeAllocations,
       activePosts,
+      breakToleranceMinutes,
       cashSessions,
       currentMinutes,
       deliveryOrders,
@@ -237,7 +273,7 @@ export const OperationalPendingPanel = React.memo(
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             {pendingGroups.map(({ key, title, count, alert, Icon, tone, empty, items }) => (
               <div key={key} className="rounded-lg border border-slate-200 p-3">
                 <div className="flex items-center gap-2">

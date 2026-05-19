@@ -59,6 +59,7 @@ import {
 } from "./hooks"
 
 import {
+  DEFAULT_BREAK_TOLERANCE_MINUTES,
   isCafeBreak,
   timeToMinutes,
 } from "./utils"
@@ -88,6 +89,8 @@ export function OperationsPage() {
     setTimelineOpen,
   } = useOperationalFilters()
 
+  const now = useClock()
+
   // ── Data ──
   const {
     schedules,
@@ -95,6 +98,7 @@ export function OperationsPage() {
     events,
     sectors,
     operationalPosts,
+    operationalSettings,
     postAllocations,
     mode,
     statusByScheduleId,
@@ -108,10 +112,11 @@ export function OperationsPage() {
     allocationByEmployeeId,
     occupiedPostAllocations,
     refetch,
-  } = useOperationalData(date, sectorFilter, searchText, sortBy, activeTab)
+  } = useOperationalData(date, sectorFilter, searchText, sortBy, activeTab, now)
 
-  // ── Clock (updates every 30s) ──
-  const now = useClock()
+  const breakToleranceMinutes =
+    operationalSettings.data?.break_tolerance_minutes ??
+    DEFAULT_BREAK_TOLERANCE_MINUTES
   const finalizePostAllocation = useFinalizePostAllocation()
   const cashSessions = useCashSessions()
   const deliveryOrders = useDeliveryOrders()
@@ -140,12 +145,19 @@ export function OperationsPage() {
       const endMin = timeToMinutes(s.break_end)
       return (
         endMin !== null &&
-        now >= endMin &&
+        now > endMin + breakToleranceMinutes &&
         !returnPrompt.dismissedIds.has(s.id)
       )
     })
     if (overdue) openReturnPrompt(overdue)
-  }, [now, emTurno, statusByScheduleId, returnPrompt, openReturnPrompt])
+  }, [
+    breakToleranceMinutes,
+    now,
+    emTurno,
+    statusByScheduleId,
+    returnPrompt,
+    openReturnPrompt,
+  ])
 
   // ── Dialogs ──
   const dialogs = useOperationalDialogs()
@@ -448,6 +460,7 @@ export function OperationsPage() {
           deliveryOrders={deliveryOrders.data ?? []}
           productionOrders={productionOrders.data ?? []}
           currentMinutes={now}
+          breakToleranceMinutes={breakToleranceMinutes}
         />
 
         {/* ── Main Panel ── */}
@@ -551,6 +564,7 @@ export function OperationsPage() {
         breakLateTime={dialogs.breakDialog.lateTime}
         onLateTimeChange={(time) => dialogs.setBreakLateTime(time)}
         currentMinutes={now}
+        breakToleranceMinutes={breakToleranceMinutes}
         isPending={isPending}
         onConfirm={handleBreakDialogConfirm}
       />

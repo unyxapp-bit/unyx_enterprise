@@ -3,6 +3,14 @@
  */
 
 import type { OperationalStatus } from "@/types/domain"
+import {
+  canFlowReturnFromBreak,
+  canFlowStartBreak,
+  canFlowStartCafe,
+  canFlowStartEntry,
+  canFlowStartExit,
+  FLOW_ENTERED_STATUSES,
+} from "./flowPolicy"
 
 export function getInitials(name: string): string {
   const parts = name.trim().split(" ").filter(Boolean)
@@ -35,40 +43,26 @@ export const postTypeLabel: Record<string, string> = {
 }
 
 // Statuses que significam que o colaborador já entrou (exclui finalizado)
-export const ENTERED_STATUSES = new Set<OperationalStatus>([
-  "trabalhando",
-  "voltou",
-  "em_intervalo",
-  "aguardando_sangria",
-  "troca_de_caixa",
-  "deve_sair",
-  "alerta_critico",
-])
+export const ENTERED_STATUSES = FLOW_ENTERED_STATUSES
 
 export function canStartEntry(status: OperationalStatus | null | undefined): boolean {
-  return !status || status === "aguardando_evento"
+  return canFlowStartEntry(status)
 }
 
 export function canStartBreak(status: OperationalStatus | null | undefined): boolean {
-  return status === "trabalhando" || status === "voltou" || status === "deve_sair"
+  return canFlowStartBreak(status)
 }
 
 export function canReturnFromBreak(status: OperationalStatus | null | undefined): boolean {
-  return status === "em_intervalo"
+  return canFlowReturnFromBreak(status)
 }
 
 export function canStartCafe(status: OperationalStatus | null | undefined): boolean {
-  return status === "voltou" || status === "trabalhando"
+  return canFlowStartCafe(status)
 }
 
 export function canStartExit(status: OperationalStatus | null | undefined): boolean {
-  return (
-    !!status &&
-    ENTERED_STATUSES.has(status) &&
-    status !== "em_intervalo" &&
-    status !== "aguardando_sangria" &&
-    status !== "troca_de_caixa"
-  )
+  return canFlowStartExit(status)
 }
 
 export function isCafeBreak(notes: string | null | undefined): boolean {

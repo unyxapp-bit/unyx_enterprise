@@ -13,7 +13,11 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import type { ScheduleWithRelations } from "@/types/domain"
-import { isLateForBreak, timeToMinutes } from "../../utils"
+import {
+  DEFAULT_BREAK_TOLERANCE_MINUTES,
+  isLateForBreak,
+  timeToMinutes,
+} from "../../utils"
 
 interface BreakDialogProps {
   isOpen: boolean
@@ -24,6 +28,7 @@ interface BreakDialogProps {
   breakLateTime: string
   onLateTimeChange: (time: string) => void
   currentMinutes: number
+  breakToleranceMinutes?: number
   isPending: boolean
   onConfirm: (actualStartTime: string) => void
 }
@@ -52,6 +57,7 @@ export const BreakDialog = React.memo(
     breakLateTime,
     onLateTimeChange,
     currentMinutes,
+    breakToleranceMinutes = DEFAULT_BREAK_TOLERANCE_MINUTES,
     isPending,
     onConfirm,
   }: BreakDialogProps) => {
@@ -67,7 +73,11 @@ export const BreakDialog = React.memo(
         ? timeToMinutes(schedule.break_end)! - scheduledStartMin
         : 60
 
-    const isLate = isLateForBreak(scheduledStartMin, currentMinutes)
+    const isLate = isLateForBreak(
+      scheduledStartMin,
+      currentMinutes,
+      breakToleranceMinutes
+    )
 
     const durationLabel = (min: number) =>
       min >= 60
@@ -121,7 +131,8 @@ export const BreakDialog = React.memo(
                 <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2.5 text-sm text-orange-800">
                   Este colaborador deveria ter saído para intervalo às{" "}
                   <span className="font-semibold">{schedule.break_start}</span>.
-                  Ele saiu no horário?
+                  A tolerância de {breakToleranceMinutes}min já passou. Ele saiu
+                  no horário?
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <Button
@@ -241,9 +252,9 @@ export const BreakDialog = React.memo(
             <EmployeeInfoBlock schedule={schedule} />
             <div className="grid grid-cols-3 gap-2 text-sm">
               <div className="rounded-lg border bg-slate-50 p-2 text-center">
-                <p className="text-[10px] text-slate-400">Saída</p>
+                <p className="text-[10px] text-slate-400">Saída agora</p>
                 <p className="font-bold text-slate-800">
-                  {schedule.break_start}
+                  {nowStr}
                 </p>
               </div>
               <div className="rounded-lg border bg-violet-50 p-2 text-center">
@@ -268,7 +279,7 @@ export const BreakDialog = React.memo(
               </Button>
               <Button
                 disabled={isPending}
-                onClick={() => onConfirm(schedule.break_start ?? nowStr)}
+                onClick={() => onConfirm(nowStr)}
               >
                 {isPending ? "Liberando..." : "Confirmar intervalo"}
               </Button>

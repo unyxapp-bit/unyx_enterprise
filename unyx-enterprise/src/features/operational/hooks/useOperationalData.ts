@@ -4,7 +4,6 @@
 
 import { useMemo } from "react"
 import type {
-  OperationalStatus,
   OperationalStatusRecord,
   PostAllocation,
 } from "@/types/domain"
@@ -20,7 +19,12 @@ import {
 } from "@/hooks/useUnyxData"
 import { getOperationalMode } from "@/features/ops/modes/operationalModes"
 import { getSchedulePriorityByMode } from "@/features/ops/modes/priorityRules"
-import { ENTERED_STATUSES } from "../utils/statusHelpers"
+import {
+  DEFAULT_BREAK_TOLERANCE_MINUTES,
+  getOperationalFlowPriority,
+  FLOW_ENTERED_STATUSES,
+  FLOW_REAL_WORKING_STATUSES,
+} from "../utils"
 import type { OperationalTab } from "../utils/types"
 
 const NON_OPERATIONAL_SCHEDULE_STATUSES = new Set([
@@ -33,14 +37,6 @@ const ACTIVE_ALLOCATION_STATUSES = new Set<PostAllocation["status"]>([
   "alocado",
   "aguardando_troca",
   "em_troca",
-])
-
-const REAL_WORKING_STATUSES = new Set<OperationalStatus>([
-  "trabalhando",
-  "voltou",
-  "aguardando_sangria",
-  "troca_de_caixa",
-  "deve_sair",
 ])
 
 function allocationBelongsToDate(allocation: PostAllocation, date: string) {
@@ -56,7 +52,9 @@ export function useOperationalData(
   sectorFilter: string,
   searchText: string,
   sortBy: "priority" | "name" | "time",
-  activeTab: OperationalTab
+  activeTab: OperationalTab,
+  currentMinutes: number,
+  breakToleranceMinutes?: number
 ) {
   const schedules = useSchedules(date)
   const statuses = useOperationalStatuses()
@@ -70,6 +68,10 @@ export function useOperationalData(
   const mode = getOperationalMode(
     operationalSettings.data?.mode ?? organization.data?.segment
   )
+  const resolvedBreakToleranceMinutes =
+    breakToleranceMinutes ??
+    operationalSettings.data?.break_tolerance_minutes ??
+    DEFAULT_BREAK_TOLERANCE_MINUTES
 
   // Create status map
   const statusByScheduleId = useMemo(() => {
@@ -119,9 +121,26 @@ export function useOperationalData(
       if (sortBy === "priority") {
         const sA = statusByScheduleId.get(a.id)
         const sB = statusByScheduleId.get(b.id)
+        const priorityA = Math.max(
+          getSchedulePriorityByMode(mode, a, sA),
+          getOperationalFlowPriority({
+            schedule: a,
+            status: sA,
+            currentMinutes,
+            breakToleranceMinutes: resolvedBreakToleranceMinutes,
+          })
+        )
+        const priorityB = Math.max(
+          getSchedulePriorityByMode(mode, b, sB),
+          getOperationalFlowPriority({
+            schedule: b,
+            status: sB,
+            currentMinutes,
+            breakToleranceMinutes: resolvedBreakToleranceMinutes,
+          })
+        )
         return (
-          getSchedulePriorityByMode(mode, b, sB) -
-            getSchedulePriorityByMode(mode, a, sA) ||
+          priorityB - priorityA ||
           (a.employees?.name ?? "").localeCompare(b.employees?.name ?? "")
         )
       }
@@ -137,14 +156,23 @@ export function useOperationalData(
       }
       return 0
     })
-  }, [schedules.data, sectorFilter, searchText, sortBy, mode, statusByScheduleId])
+  }, [
+    currentMinutes,
+    mode,
+    resolvedBreakToleranceMinutes,
+    schedules.data,
+    searchText,
+    sectorFilter,
+    sortBy,
+    statusByScheduleId,
+  ])
 
   // Split into tabs
   const emTurno = useMemo(
     () =>
       sortedSchedules.filter((s) => {
         const status = statusByScheduleId.get(s.id)?.current_status
-        return status && ENTERED_STATUSES.has(status)
+        return status && FLOW_ENTERED_STATUSES.has(status)
       }),
     [sortedSchedules, statusByScheduleId]
   )
@@ -248,7 +276,7 @@ export function useOperationalData(
             (allocation.schedule_id
               ? statusByScheduleId.get(allocation.schedule_id)
               : undefined) ?? statusByEmployeeId.get(allocation.employee_id)
-          return status && REAL_WORKING_STATUSES.has(status.current_status)
+          return status && FLOW_REAL_WORKING_STATUSES.has(status.current_status)
         })
         .slice()
         .sort((a, b) => {
