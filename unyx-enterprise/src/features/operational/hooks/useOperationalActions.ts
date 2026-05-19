@@ -7,6 +7,7 @@ import type { PostAllocation, ScheduleWithRelations } from "@/types/domain"
 import {
   useAllocatePost,
   useConfirmCashMovement,
+  useRecordBreakAlreadyDone,
   useRecordOperationalEvent,
   useUpdateSchedule,
 } from "@/hooks/useUnyxData"
@@ -15,6 +16,7 @@ import { addNoteMarker, removeNoteMarker } from "../utils/operationalCalculation
 
 export function useOperationalActions() {
   const recordEvent = useRecordOperationalEvent()
+  const recordBreakDone = useRecordBreakAlreadyDone()
   const updateSchedule = useUpdateSchedule()
   const allocatePost = useAllocatePost()
   const confirmCashMovement = useConfirmCashMovement()
@@ -59,20 +61,11 @@ export function useOperationalActions() {
           ? `${schedule.break_start} - ${schedule.break_end}`
           : "horario planejado"
 
-      await recordEvent.mutateAsync({
+      await recordBreakDone.mutateAsync({
         branch_id: schedule.branch_id,
         employee_id: schedule.employee_id,
         schedule_id: schedule.id,
-        event_type: "intervalo_iniciado",
         notes: `Intervalo ja realizado no ${breakLabel}.`,
-      })
-
-      await recordEvent.mutateAsync({
-        branch_id: schedule.branch_id,
-        employee_id: schedule.employee_id,
-        schedule_id: schedule.id,
-        event_type: "retorno_confirmado",
-        notes: "Intervalo ja feito confirmado pelo gestor.",
       })
 
       await updateSchedule.mutateAsync({
@@ -85,7 +78,7 @@ export function useOperationalActions() {
         },
       })
     },
-    [recordEvent, updateSchedule]
+    [recordBreakDone, updateSchedule]
   )
 
   const handleEntryConfirm = useCallback(
@@ -276,6 +269,7 @@ export function useOperationalActions() {
     handleOccurrenceSubmit,
     isPending:
       recordEvent.isPending ||
+      recordBreakDone.isPending ||
       updateSchedule.isPending ||
       allocatePost.isPending ||
       confirmCashMovement.isPending,

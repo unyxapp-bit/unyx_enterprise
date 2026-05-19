@@ -106,6 +106,7 @@ import {
   createInvitation,
   cancelInvitation,
   markCommsPostRead,
+  recordBreakAlreadyDone,
   recordOperationalEvent,
   runAiAgent,
   saveOperationalSettings,
@@ -1299,6 +1300,30 @@ export function useRecordOperationalEvent() {
       await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
       await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
       toast.success("Evento registrado.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useRecordBreakAlreadyDone() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: {
+      branch_id: string
+      employee_id: string
+      schedule_id: string
+      notes?: string | null
+    }) => recordBreakAlreadyDone(profile, input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["operational-status"] })
+      await queryClient.invalidateQueries({ queryKey: ["attendance-events"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      toast.success("Intervalo marcado como feito.")
     },
     onError: (error) => {
       toast.error(error.message)

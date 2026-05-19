@@ -249,6 +249,16 @@ function isMissingOperationalActionRpc(
   )
 }
 
+function isMissingBreakAlreadyDoneRpc(
+  error: { code?: string; message: string } | null
+) {
+  if (!error) return false
+  return (
+    error.code === "PGRST202" ||
+    error.message.includes("record_break_already_done")
+  )
+}
+
 function isUnsupportedFinalizedStatus(
   error: { code?: string; message: string } | null
 ) {
@@ -3003,6 +3013,31 @@ export async function recordOperationalEvent(
 
   raise(auditError)
   return event as AttendanceEvent
+}
+
+export async function recordBreakAlreadyDone(
+  _profile: UserProfile,
+  input: {
+    branch_id: string
+    employee_id: string
+    schedule_id: string
+    notes?: string | null
+  }
+) {
+  const { data, error } = await supabase.rpc("record_break_already_done", {
+    p_branch_id: input.branch_id,
+    p_employee_id: input.employee_id,
+    p_schedule_id: input.schedule_id,
+    p_notes: input.notes ?? null,
+  })
+
+  if (isMissingBreakAlreadyDoneRpc(error)) {
+    throw new Error(
+      "A acao 'intervalo ja feito' ainda nao esta instalada no Supabase. Rode supabase/break_already_done_rpc.sql e tente novamente."
+    )
+  }
+  raise(error)
+  return data as AttendanceEvent
 }
 
 export async function listAuditLogs(
