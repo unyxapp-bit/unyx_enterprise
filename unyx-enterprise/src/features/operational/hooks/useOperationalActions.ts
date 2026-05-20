@@ -102,6 +102,18 @@ export function useOperationalActions() {
     [allocatePost, fireAction, handleBreakAlreadyDone]
   )
 
+  const handlePostAllocation = useCallback(
+    async (schedule: ScheduleWithRelations, postId: string) => {
+      await allocatePost.mutateAsync({
+        post_id: postId,
+        employee_id: schedule.employee_id,
+        schedule_id: schedule.id,
+        notes: "Alocado pela frente de caixa em tempo real",
+      })
+    },
+    [allocatePost]
+  )
+
   const handleBreakConfirm = useCallback(
     async (schedule: ScheduleWithRelations, actualStartStr: string) => {
       const pad = (v: number) => String(v).padStart(2, "0")
@@ -260,6 +272,7 @@ export function useOperationalActions() {
   return {
     fireAction,
     handleEntryConfirm,
+    handlePostAllocation,
     handleBreakConfirm,
     handleBreakAlreadyDone,
     handleCashMovementConfirm,

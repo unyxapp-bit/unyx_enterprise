@@ -71,6 +71,7 @@ import {
 } from "./utils"
 
 import type {
+  OperationalPost,
   OperationalStatus,
   PostAllocation,
   ScheduleWithRelations,
@@ -229,6 +230,7 @@ export function OperationsPage() {
     handleCashMovementConfirm,
     handleCashierSwapConfirm,
     handleCafeStart,
+    handlePostAllocation,
     handleReturnAnswer,
     handleOccurrenceSubmit,
     fireAction,
@@ -289,6 +291,17 @@ export function OperationsPage() {
       await handleCashierSwapConfirm(schedule)
     } catch (error) {
       console.error("Erro ao confirmar troca de caixa:", error)
+    }
+  }
+
+  const handleAllocatePostClick = async (
+    schedule: ScheduleWithRelations,
+    post: OperationalPost
+  ) => {
+    try {
+      await handlePostAllocation(schedule, post.id)
+    } catch (error) {
+      console.error("Erro ao alocar posto:", error)
     }
   }
 
@@ -612,6 +625,8 @@ export function OperationsPage() {
               statusByScheduleId={statusByScheduleId}
               allocationByScheduleId={allocationByScheduleId}
               allocationByEmployeeId={allocationByEmployeeId}
+              activePosts={activePosts}
+              occupiedPostIds={occupiedPostIds}
               currentMinutes={now}
               activeTab={activeTab}
               pageIndex={pageIndex}
@@ -620,6 +635,7 @@ export function OperationsPage() {
               isError={schedules.isError || statuses.isError}
               error={schedules.error || statuses.error}
               isPending={isPending || setFlowStatus.isPending}
+              onAllocatePost={handleAllocatePostClick}
               onEntry={handleOpenEntryDialog}
               onBreak={(s) => dialogs.openBreakDialog(s)}
               onBreakAlreadyDone={handleBreakAlreadyDoneClick}

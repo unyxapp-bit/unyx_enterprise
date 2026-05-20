@@ -7,6 +7,7 @@ import { StateBlock } from "@/components/shared/StateBlock"
 import { EmployeeCard } from "./EmployeeCard"
 import { OperationalPagination } from "./OperationalPagination"
 import type {
+  OperationalPost,
   OperationalStatusRecord,
   PostAllocation,
   ScheduleWithRelations,
@@ -20,6 +21,8 @@ interface OperationalGridProps {
   statusByScheduleId: Map<string, OperationalStatusRecord>
   allocationByScheduleId: Map<string, PostAllocation>
   allocationByEmployeeId: Map<string, PostAllocation>
+  activePosts: OperationalPost[]
+  occupiedPostIds: Set<string>
   currentMinutes: number
   activeTab: OperationalTab
   pageIndex: number
@@ -28,6 +31,10 @@ interface OperationalGridProps {
   isError: boolean
   error?: Error | null
   isPending: boolean
+  onAllocatePost: (
+    schedule: ScheduleWithRelations,
+    post: OperationalPost
+  ) => void
   onEntry: (schedule: ScheduleWithRelations) => void
   onBreak: (schedule: ScheduleWithRelations) => void
   onBreakAlreadyDone: (schedule: ScheduleWithRelations) => void
@@ -51,6 +58,8 @@ export const OperationalGrid = React.memo(
     statusByScheduleId,
     allocationByScheduleId,
     allocationByEmployeeId,
+    activePosts,
+    occupiedPostIds,
     currentMinutes,
     activeTab,
     pageIndex,
@@ -59,6 +68,7 @@ export const OperationalGrid = React.memo(
     isError,
     error,
     isPending,
+    onAllocatePost,
     onEntry,
     onBreak,
     onBreakAlreadyDone,
@@ -123,9 +133,12 @@ export const OperationalGrid = React.memo(
                 schedule={schedule}
                 statusRecord={statusByScheduleId.get(schedule.id)}
                 postAllocation={postAllocation}
+                activePosts={activePosts}
+                occupiedPostIds={occupiedPostIds}
                 currentMinutes={currentMinutes}
                 activeTab={activeTab}
                 isPending={isPending}
+                onAllocatePost={(post) => onAllocatePost(schedule, post)}
                 onEntry={() => onEntry(schedule)}
                 onBreak={() => onBreak(schedule)}
                 onBreakAlreadyDone={() => onBreakAlreadyDone(schedule)}

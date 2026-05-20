@@ -7,6 +7,7 @@ import {
   ArrowRightLeft,
   Banknote,
   CheckCircle2,
+  ChevronDown,
   Coffee,
   Flame,
   Handshake,
@@ -18,8 +19,16 @@ import {
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { StatusBadge } from "@/components/bento/StatusBadge"
 import type {
+  OperationalPost,
   OperationalStatusRecord,
   PostAllocation,
   ScheduleWithRelations,
@@ -34,6 +43,7 @@ import {
   isCafeBreak,
   isDone,
   getInitials,
+  postTypeLabel,
 } from "../utils"
 import {
   calculateBreakProgress,
@@ -49,9 +59,12 @@ interface EmployeeCardProps {
   schedule: ScheduleWithRelations
   statusRecord: OperationalStatusRecord | undefined
   postAllocation?: PostAllocation
+  activePosts: OperationalPost[]
+  occupiedPostIds: Set<string>
   currentMinutes: number
   activeTab: OperationalTab
   isPending: boolean
+  onAllocatePost: (post: OperationalPost) => void
   onEntry: () => void
   onBreak: () => void
   onBreakAlreadyDone: () => void
@@ -71,9 +84,12 @@ export const EmployeeCard = React.memo(
     schedule,
     statusRecord,
     postAllocation,
+    activePosts,
+    occupiedPostIds,
     currentMinutes,
     activeTab,
     isPending,
+    onAllocatePost,
     onEntry,
     onBreak,
     onBreakAlreadyDone,
@@ -88,6 +104,21 @@ export const EmployeeCard = React.memo(
     onExit,
   }: EmployeeCardProps) => {
     const currentStatus = statusRecord?.current_status
+
+    const freePosts = useMemo(
+      () => activePosts.filter((post) => !occupiedPostIds.has(post.id)),
+      [activePosts, occupiedPostIds]
+    )
+
+    const freePostsBySector = useMemo(() => {
+      const map = new Map<string, OperationalPost[]>()
+      for (const post of freePosts) {
+        const sector = post.sectors?.name ?? "Sem setor"
+        if (!map.has(sector)) map.set(sector, [])
+        map.get(sector)!.push(post)
+      }
+      return map
+    }, [freePosts])
 
     const timeWorked = useMemo(() => {
       const startMin = timeToMinutes(schedule.start_time)
@@ -231,10 +262,70 @@ export const EmployeeCard = React.memo(
             </Badge>
           </div>
         ) : activeTab === "em_turno" ? (
-          <div className="mt-2 flex items-center gap-1.5 rounded-md border border-amber-100 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-700">
-            <MapPinned className="size-3.5 shrink-0" />
-            <span className="truncate">Sem posto alocado</span>
-          </div>
+          <DropdownMenu modal={false}>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                className="mt-2 h-auto w-full justify-start gap-1.5 rounded-md border-amber-100 bg-amber-50 px-2.5 py-1.5 text-xs font-normal text-amber-700 hover:bg-amber-100 hover:text-amber-800"
+                disabled={isPending}
+                aria-label={`Selecionar posto para ${schedule.employees?.name ?? "colaborador"}`}
+              >
+                <MapPinned className="size-3.5 shrink-0" />
+                <span className="truncate">Sem posto alocado</span>
+                <ChevronDown className="ml-auto size-3.5 shrink-0" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="start"
+              className="w-[min(22rem,calc(100vw-2rem))] p-0"
+              onCloseAutoFocus={(event) => event.preventDefault()}
+            >
+              <div className="max-h-72 overflow-y-auto p-2">
+                <DropdownMenuLabel className="px-1.5 text-[11px] uppercase tracking-wide">
+                  Postos/caixas disponiveis
+                </DropdownMenuLabel>
+                {freePosts.length === 0 ? (
+                  <div className="rounded-md border border-dashed bg-slate-50 px-3 py-4 text-center text-xs text-slate-500">
+                    Nenhum posto ativo livre agora.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {Array.from(freePostsBySector.entries()).map(([sector, posts]) => (
+                      <div key={sector} className="space-y-1">
+                        <p className="px-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                          {sector}
+                        </p>
+                        {posts.map((post) => (
+                          <DropdownMenuItem
+                            key={post.id}
+                            className="flex items-center gap-2 rounded-md border border-slate-100 bg-white px-2.5 py-2 text-xs"
+                            onSelect={() => onAllocatePost(post)}
+                          >
+                            <MapPinned className="size-3.5 shrink-0 text-slate-400" />
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate font-medium text-slate-800">
+                                {post.name}
+                              </p>
+                              <p className="truncate text-[11px] text-slate-400">
+                                {postTypeLabel[post.type] ?? post.type}
+                              </p>
+                            </div>
+                            <Badge
+                              variant="outline"
+                              className="h-5 shrink-0 border-emerald-200 bg-emerald-50 px-1.5 text-[10px] text-emerald-700"
+                            >
+                              Livre
+                            </Badge>
+                          </DropdownMenuItem>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </DropdownMenuContent>
+          </DropdownMenu>
         ) : null}
 
         {/* Break progress bar */}
@@ -487,6 +578,8 @@ export const EmployeeCard = React.memo(
       prev.schedule.id === next.schedule.id &&
       prev.schedule.notes === next.schedule.notes &&
       prev.postAllocation?.id === next.postAllocation?.id &&
+      prev.activePosts === next.activePosts &&
+      prev.occupiedPostIds === next.occupiedPostIds &&
       prev.statusRecord?.current_status === next.statusRecord?.current_status &&
       prev.currentMinutes === next.currentMinutes &&
       prev.activeTab === next.activeTab &&
