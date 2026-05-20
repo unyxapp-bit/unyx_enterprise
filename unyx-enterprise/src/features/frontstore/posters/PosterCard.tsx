@@ -5,6 +5,7 @@ import {
   Edit3,
   Megaphone,
   Printer,
+  RotateCcw,
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -31,6 +32,7 @@ export function PosterCard({
   onEdit,
   onExportPng,
   onPrint,
+  onRestore,
 }: {
   poster: OperationalPoster
   busy?: boolean
@@ -39,6 +41,7 @@ export function PosterCard({
   onEdit: (poster: OperationalPoster) => void
   onExportPng: (poster: OperationalPoster) => void
   onPrint: (poster: OperationalPoster) => void
+  onRestore: (poster: OperationalPoster) => void
 }) {
   const template = getPosterTemplate(poster.template_key)
 
@@ -51,6 +54,7 @@ export function PosterCard({
             <span className="truncate">{poster.product_name ?? poster.title}</span>
           </CardTitle>
           <div className="flex flex-wrap gap-1.5">
+            {!poster.active ? <Badge variant="destructive">Arquivado</Badge> : null}
             <Badge variant="outline">{toneLabel[poster.tone]}</Badge>
             <Badge variant="secondary">{formatLabel[poster.format]}</Badge>
           </div>
@@ -109,17 +113,30 @@ export function PosterCard({
             <Edit3 className="size-4" />
             Editar
           </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="destructive"
-            className="col-span-2"
-            disabled={busy}
-            onClick={() => onArchive(poster)}
-          >
-            <Archive className="size-4" />
-            Arquivar
-          </Button>
+          {poster.active ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="destructive"
+              className="col-span-2"
+              disabled={busy}
+              onClick={() => onArchive(poster)}
+            >
+              <Archive className="size-4" />
+              Arquivar
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              size="sm"
+              className="col-span-2"
+              disabled={busy}
+              onClick={() => onRestore(poster)}
+            >
+              <RotateCcw className="size-4" />
+              Restaurar
+            </Button>
+          )}
         </div>
       </CardContent>
     </Card>

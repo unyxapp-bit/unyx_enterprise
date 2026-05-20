@@ -520,13 +520,23 @@ export function useOperationalFormResponses() {
   })
 }
 
-export function useOperationalPosters() {
+export function useOperationalPosters(activeFilter: boolean | "all" = true) {
   const { profile } = useAuth()
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
 
   return useQuery({
-    queryKey: ["operational-posters", profile?.organization_id, selectedBranchId],
-    queryFn: () => listOperationalPosters(selectedBranchId, profile!.organization_id),
+    queryKey: [
+      "operational-posters",
+      profile?.organization_id,
+      selectedBranchId,
+      activeFilter,
+    ],
+    queryFn: () =>
+      listOperationalPosters(
+        selectedBranchId,
+        profile!.organization_id,
+        activeFilter
+      ),
     enabled: Boolean(profile),
   })
 }

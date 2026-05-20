@@ -2931,16 +2931,17 @@ export async function submitOperationalFormResponse(
 
 export async function listOperationalPosters(
   branchId?: string | null,
-  organizationId?: string | null
+  organizationId?: string | null,
+  activeFilter: boolean | "all" = true
 ) {
   let query = supabase
     .from("operational_posters")
     .select(operationalPosterSelect)
-    .eq("active", true)
     .order("created_at", { ascending: false })
-    .limit(120)
+    .limit(240)
 
   if (organizationId) query = query.eq("organization_id", organizationId)
+  if (activeFilter !== "all") query = query.eq("active", activeFilter)
   if (branchId) query = query.or(`branch_id.is.null,branch_id.eq.${branchId}`)
 
   const { data, error } = await query

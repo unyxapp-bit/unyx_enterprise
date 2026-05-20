@@ -3,9 +3,9 @@ import type { FormEvent } from "react"
 import {
   Archive,
   FileText,
-  ImageIcon,
   LayoutTemplate,
   Plus,
+  RotateCcw,
   Sparkles,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -38,7 +38,6 @@ import {
 } from "@/features/frontstore/posters/PosterFilters"
 import { downloadPosterAsPng } from "@/features/frontstore/posters/posterExport"
 import {
-  formatLabel,
   getPosterTemplate,
   posterTemplates,
   toneLabel,
@@ -57,8 +56,12 @@ type ConfirmAction = {
   title: string
   description: string
   confirmLabel: string
+  pendingLabel: string
+  tone: "archive" | "restore"
   onConfirm: () => Promise<void>
 }
+
+type PosterLibraryView = "active" | "archived"
 
 const emptyPosterFilters: PosterFiltersState = {
   search: "",
@@ -141,12 +144,13 @@ function posterMatchesFilters(poster: OperationalPoster, filters: PosterFiltersS
 
 export function OperationalPostersPage() {
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
-  const posters = useOperationalPosters()
+  const posters = useOperationalPosters("all")
   const branches = useBranches()
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<OperationalPoster | null>(null)
   const [form, setForm] = useState<PosterForm>(emptyPosterForm)
   const [filters, setFilters] = useState<PosterFiltersState>(emptyPosterFilters)
+  const [libraryView, setLibraryView] = useState<PosterLibraryView>("active")
   const [printPoster, setPrintPoster] = useState<OperationalPoster | null>(null)
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null)
   const [confirming, setConfirming] = useState(false)
@@ -159,19 +163,24 @@ export function OperationalPostersPage() {
   const updatePoster = useUpdateOperationalPoster()
 
   const rows = useMemo(() => posters.data ?? [], [posters.data])
+  const activeRows = useMemo(() => rows.filter((poster) => poster.active), [rows])
+  const archivedRows = useMemo(() => rows.filter((poster) => !poster.active), [rows])
+  const libraryRows = libraryView === "active" ? activeRows : archivedRows
   const filteredRows = useMemo(
-    () => rows.filter((poster) => posterMatchesFilters(poster, filters)),
-    [filters, rows]
+    () => libraryRows.filter((poster) => posterMatchesFilters(poster, filters)),
+    [filters, libraryRows]
   )
 
   const stats = useMemo(
     () => ({
       total: rows.length,
-      templates: rows.filter((poster) => poster.template_key).length,
-      attention: rows.filter((poster) => poster.tone === "attention").length,
-      a4: rows.filter((poster) => poster.format === "a4").length,
+      active: activeRows.length,
+      archived: archivedRows.length,
+      templates: activeRows.filter((poster) => poster.template_key).length,
+      attention: activeRows.filter((poster) => poster.tone === "attention").length,
+      a4: activeRows.filter((poster) => poster.format === "a4").length,
     }),
-    [rows]
+    [activeRows, archivedRows, rows]
   )
 
   useEffect(() => {
@@ -229,10 +238,28 @@ export function OperationalPostersPage() {
       title: "Arquivar cartaz",
       description: `O cartaz "${poster.product_name ?? poster.title}" saira da biblioteca ativa, mas o historico de auditoria continuara registrado.`,
       confirmLabel: "Arquivar",
+      pendingLabel: "Arquivando...",
+      tone: "archive",
       onConfirm: async () => {
         await updatePoster.mutateAsync({
           posterId: poster.id,
           values: { active: false },
+        })
+      },
+    })
+  }
+
+  function restorePoster(poster: OperationalPoster) {
+    setConfirmAction({
+      title: "Restaurar cartaz",
+      description: `O cartaz "${poster.product_name ?? poster.title}" voltara para a biblioteca ativa e podera ser impresso novamente.`,
+      confirmLabel: "Restaurar",
+      pendingLabel: "Restaurando...",
+      tone: "restore",
+      onConfirm: async () => {
+        await updatePoster.mutateAsync({
+          posterId: poster.id,
+          values: { active: true },
         })
       },
     })
@@ -291,7 +318,7 @@ export function OperationalPostersPage() {
           <StatCard
             icon={FileText}
             label="Cartazes ativos"
-            value={stats.total}
+            value={stats.active}
             detail="Biblioteca disponivel"
           />
           <StatCard
@@ -307,18 +334,52 @@ export function OperationalPostersPage() {
             detail={toneLabel.attention}
           />
           <StatCard
-            icon={ImageIcon}
-            label="Formato A4"
-            value={stats.a4}
-            detail={formatLabel.a4}
+            icon={Archive}
+            label="Arquivados"
+            value={stats.archived}
+            detail="Fora da biblioteca ativa"
           />
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-white p-2 shadow-sm">
+          <div className="flex flex-wrap gap-1">
+            <Button
+              type="button"
+              size="sm"
+              variant={libraryView === "active" ? "default" : "ghost"}
+              onClick={() => setLibraryView("active")}
+            >
+              <FileText className="size-4" />
+              Ativos
+              <span className="ml-1 rounded bg-white/20 px-1.5 text-xs">
+                {stats.active}
+              </span>
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={libraryView === "archived" ? "default" : "ghost"}
+              onClick={() => setLibraryView("archived")}
+            >
+              <Archive className="size-4" />
+              Arquivados
+              <span className="ml-1 rounded bg-white/20 px-1.5 text-xs">
+                {stats.archived}
+              </span>
+            </Button>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            {libraryView === "active"
+              ? "Cartazes disponiveis para edicao, impressao e exportacao."
+              : "Cartazes arquivados podem ser restaurados ou duplicados."}
+          </div>
         </div>
 
         <PosterFilters
           filters={filters}
           branches={branches.data ?? []}
           sectors={filterSectors.data ?? []}
-          total={rows.length}
+          total={libraryRows.length}
           visible={filteredRows.length}
           onChange={setFilters}
           onClear={() => setFilters(emptyPosterFilters)}
@@ -332,10 +393,14 @@ export function OperationalPostersPage() {
             title="Erro ao carregar cartazes"
             description={posters.error.message}
           />
-        ) : rows.length === 0 ? (
+        ) : libraryRows.length === 0 ? (
           <StateBlock
-            title="Nenhum cartaz"
-            description="Crie ofertas, avisos internos e materiais simples para impressao."
+            title={libraryView === "active" ? "Nenhum cartaz ativo" : "Nenhum cartaz arquivado"}
+            description={
+              libraryView === "active"
+                ? "Crie ofertas, avisos internos e materiais simples para impressao."
+                : "Cartazes arquivados aparecem aqui quando saem da biblioteca ativa."
+            }
           />
         ) : filteredRows.length === 0 ? (
           <StateBlock
@@ -354,6 +419,7 @@ export function OperationalPostersPage() {
                 onEdit={openEdit}
                 onExportPng={(row) => void exportPosterPng(row)}
                 onPrint={setPrintPoster}
+                onRestore={restorePoster}
               />
             ))}
           </div>
@@ -375,7 +441,11 @@ export function OperationalPostersPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Archive className="size-4" />
+              {confirmAction?.tone === "restore" ? (
+                <RotateCcw className="size-4" />
+              ) : (
+                <Archive className="size-4" />
+              )}
               {confirmAction?.title}
             </DialogTitle>
           </DialogHeader>
@@ -391,11 +461,11 @@ export function OperationalPostersPage() {
             </Button>
             <Button
               type="button"
-              variant="destructive"
+              variant={confirmAction?.tone === "restore" ? "default" : "destructive"}
               disabled={confirming}
               onClick={() => void confirmCurrentAction()}
             >
-              {confirming ? "Arquivando..." : confirmAction?.confirmLabel}
+              {confirming ? confirmAction?.pendingLabel : confirmAction?.confirmLabel}
             </Button>
           </DialogFooter>
         </DialogContent>
