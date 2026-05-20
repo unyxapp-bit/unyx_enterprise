@@ -7,6 +7,7 @@ import {
   MapPin,
   Move,
   Palette,
+  RotateCcw,
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -32,7 +33,7 @@ import {
   toneLabel,
   type PosterPositionAxis,
 } from "@/features/frontstore/posters/posterConfig"
-import { PosterCanvas } from "@/features/frontstore/posters/PosterCanvas"
+import { PosterPreviewEditor } from "@/features/frontstore/posters/PosterPreviewEditor"
 import {
   formPositionsFromLayoutConfig,
   formToCanvasData,
@@ -212,6 +213,13 @@ export function PosterEditorDialog({
       ...current,
       template_key: templateKey,
       ...formPositionsFromLayoutConfig(null, templateKey),
+    }))
+  }
+
+  function resetPositions() {
+    onFormChange((current) => ({
+      ...current,
+      ...formPositionsFromLayoutConfig(null, current.template_key),
     }))
   }
 
@@ -491,11 +499,22 @@ export function PosterEditorDialog({
 
             {section === "position" ? (
               <div className="space-y-4 rounded-xl border bg-white p-4">
-                <div>
-                  <h3 className="text-sm font-semibold">Posicao dos dados</h3>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Use ajustes finos somente quando o texto precisar encaixar no modelo.
-                  </p>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold">Posicao dos dados</h3>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Coordenadas de cada campo no modelo selecionado.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={resetPositions}
+                  >
+                    <RotateCcw className="size-4" />
+                    Resetar
+                  </Button>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   {positionFields.map(({ field, label }) => (
@@ -574,9 +593,24 @@ export function PosterEditorDialog({
                   <ImageIcon className="size-4" />
                   Previa
                 </div>
-                <Badge variant="secondary">{formatLabel[form.format]}</Badge>
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon-sm"
+                    title="Resetar posicoes"
+                    onClick={resetPositions}
+                  >
+                    <RotateCcw className="size-4" />
+                  </Button>
+                  <Badge variant="secondary">{formatLabel[form.format]}</Badge>
+                </div>
               </div>
-              <PosterCanvas data={previewData} showPlaceholders />
+              <PosterPreviewEditor
+                data={previewData}
+                form={form}
+                onPositionChange={updatePosition}
+              />
               <div className="mt-2 flex items-center justify-between gap-2 text-xs text-muted-foreground">
                 <span>{selectedTemplate?.name ?? "Em branco"}</span>
                 <span>{toneLabel[form.tone]}</span>
