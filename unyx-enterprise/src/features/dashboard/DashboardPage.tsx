@@ -56,7 +56,7 @@ import {
   usePostAllocations,
   useSchedules,
 } from "@/hooks/useUnyxData"
-import { formatTime, minutesLabel, todayISO } from "@/lib/format"
+import { minutesLabel, todayISO } from "@/lib/format"
 import { operationalStatuses, statusMeta } from "@/lib/status"
 import type {
   DashboardRow,
@@ -142,22 +142,6 @@ function getInitials(name: string): string {
   if (parts.length === 0) return "?"
   if (parts.length === 1) return (parts[0][0] ?? "?").toUpperCase()
   return ((parts[0][0] ?? "") + (parts[parts.length - 1][0] ?? "")).toUpperCase()
-}
-
-const avatarColorByStatus: Partial<Record<OperationalStatus, string>> = {
-  aguardando_evento:  "bg-slate-100 text-slate-600",
-  trabalhando:        "bg-emerald-100 text-emerald-700",
-  deve_sair:          "bg-amber-100 text-amber-700",
-  aguardando_sangria: "bg-orange-100 text-orange-700",
-  troca_de_caixa:     "bg-sky-100 text-sky-700",
-  em_intervalo:       "bg-violet-100 text-violet-700",
-  voltou:             "bg-teal-100 text-teal-700",
-  pico:               "bg-red-100 text-red-700",
-  apoio_operacional:  "bg-blue-100 text-blue-700",
-  fechamento:         "bg-indigo-100 text-indigo-700",
-  folga:              "bg-zinc-100 text-zinc-600",
-  finalizado:         "bg-neutral-100 text-neutral-600",
-  alerta_critico:     "bg-red-100 text-red-700",
 }
 
 type StatusCount = {
@@ -528,7 +512,6 @@ export function DashboardPage() {
   const [statusFilter, setStatusFilter] = useState("")
   const [showAllPrimary, setShowAllPrimary] = useState(false)
   const [showAllSecondary, setShowAllSecondary] = useState(false)
-  const [showAllLive, setShowAllLive] = useState(false)
   const dashboard = useDashboardRows(date)
   const schedules = useSchedules(date)
   const statuses = useOperationalStatuses()
@@ -671,19 +654,6 @@ export function DashboardPage() {
     })
   }, [filteredRows])
 
-  const liveActiveCount = liveRows.filter((row) =>
-    ACTIVE_STATUSES.includes(row.current_status)
-  ).length
-  const liveBreakCount = liveRows.filter(
-    (row) => row.current_status === "em_intervalo"
-  ).length
-  const liveRiskCount = liveRows.filter((row) =>
-    RISK_STATUSES.includes(row.current_status)
-  ).length
-  const liveDelayCount = liveRows.filter((row) => row.delay_minutes > 0).length
-  const occupiedPostCount = new Set(
-    postAllocationsInScope.map((allocation) => allocation.post_id)
-  ).size
   const allocatedWorkingCount = new Set(
     postAllocationsInScope.map((allocation) => allocation.employee_id)
   ).size
@@ -746,7 +716,6 @@ export function DashboardPage() {
   const visibleSecondaryRows = showAllSecondary
     ? secondaryRows
     : secondaryRows.slice(0, 5)
-  const visibleLiveRows = showAllLive ? liveRows : liveRows.slice(0, 12)
 
   const coverageRisk = filteredRows.filter((row) =>
     RISK_STATUSES.includes(row.current_status)
@@ -1316,155 +1285,7 @@ export function DashboardPage() {
           </Card>
         </div>
 
-        {/* Row 4: Live team */}
-        <Card className="border bg-white shadow-sm">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between gap-3">
-              <CardTitle className="text-base">Resumo em tempo real</CardTitle>
-              {liveRows.length > 0 ? (
-                <Badge variant="outline">
-                  {visibleLiveRows.length} de {liveRows.length}
-                </Badge>
-              ) : null}
-            </div>
-          </CardHeader>
-          <CardContent>
-            {dashboard.isLoading ? (
-              <StateBlock type="loading" title="Carregando operacao" />
-            ) : liveRows.length === 0 ? (
-              <StateBlock
-                title="Nenhum colaborador em turno agora"
-                description="Os colaboradores aparecem aqui durante o horario de trabalho."
-              />
-            ) : (
-              <>
-                <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-                  <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
-                    <p className="text-[11px] font-medium text-slate-400">Em turno</p>
-                    <p className="mt-1 text-2xl font-bold tabular-nums text-slate-800">
-                      {liveRows.length}
-                    </p>
-                  </div>
-                  <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-3">
-                    <p className="text-[11px] font-medium text-emerald-500">Ativos</p>
-                    <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-800">
-                      {liveActiveCount}
-                    </p>
-                  </div>
-                  <div className="rounded-lg border border-violet-100 bg-violet-50 p-3">
-                    <p className="text-[11px] font-medium text-violet-500">Intervalo</p>
-                    <p className="mt-1 text-2xl font-bold tabular-nums text-violet-800">
-                      {liveBreakCount}
-                    </p>
-                  </div>
-                  <div className="rounded-lg border border-red-100 bg-red-50 p-3">
-                    <p className="text-[11px] font-medium text-red-500">Em risco</p>
-                    <p className="mt-1 text-2xl font-bold tabular-nums text-red-800">
-                      {liveRiskCount}
-                    </p>
-                  </div>
-                  <div className="rounded-lg border border-amber-100 bg-amber-50 p-3">
-                    <p className="text-[11px] font-medium text-amber-500">Atraso</p>
-                    <p className="mt-1 text-2xl font-bold tabular-nums text-amber-800">
-                      {liveDelayCount}
-                    </p>
-                  </div>
-                  <div className="rounded-lg border border-sky-100 bg-sky-50 p-3">
-                    <p className="text-[11px] font-medium text-sky-500">Alocados trab.</p>
-                    <p className="mt-1 text-2xl font-bold tabular-nums text-sky-800">
-                      {occupiedPostCount}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {visibleLiveRows.map((row) => {
-                  const initials = getInitials(row.employee_name)
-                  const allocation = allocationByEmployeeId.get(row.employee_id)
-                  const avatarClass =
-                    avatarColorByStatus[row.current_status] ?? "bg-slate-100 text-slate-600"
-                  return (
-                    <div key={row.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                      <div className="flex items-center gap-3">
-                        <div className={`flex size-10 shrink-0 items-center justify-center rounded-full text-sm font-bold ${avatarClass}`}>
-                          {initials}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-semibold text-slate-800">
-                            {row.employee_name}
-                          </p>
-                          <p className="truncate text-xs text-slate-400">
-                            {[row.employee_role, row.sector_name].filter(Boolean).join(" · ") || row.branch_name}
-                          </p>
-                        </div>
-                        <StatusBadge status={row.current_status} />
-                      </div>
-                      <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
-                        <div className="rounded-lg bg-slate-50 px-2.5 py-2">
-                          <p className="text-slate-400">Posto</p>
-                          <p className="mt-0.5 truncate font-medium text-slate-700">
-                            {getPostLabel(allocation)}
-                          </p>
-                        </div>
-                        <div className="rounded-lg bg-slate-50 px-2.5 py-2">
-                          <p className="text-slate-400">Acao</p>
-                          <p className="mt-0.5 truncate font-medium text-slate-700">
-                            {getNextAction(row)}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-1.5">
-                        {row.start_time ? (
-                          <span className="rounded-md bg-slate-100 px-2 py-1 text-[11px] text-slate-500">
-                            {formatTime(row.start_time)}
-                          </span>
-                        ) : null}
-                        {row.break_start ? (
-                          <span className="rounded-md bg-violet-50 px-2 py-1 text-[11px] text-violet-600">
-                            int. {formatTime(row.break_start)}
-                          </span>
-                        ) : null}
-                        {row.break_end ? (
-                          <span className="rounded-md bg-teal-50 px-2 py-1 text-[11px] text-teal-600">
-                            ret. {formatTime(row.break_end)}
-                          </span>
-                        ) : null}
-                        {row.end_time ? (
-                          <span className="rounded-md bg-slate-100 px-2 py-1 text-[11px] text-slate-500">
-                            → {formatTime(row.end_time)}
-                          </span>
-                        ) : null}
-                      </div>
-                      {row.delay_minutes > 0 ? (
-                        <div className="mt-2">
-                          <Badge variant="destructive" className="text-[10px]">
-                            {minutesLabel(row.delay_minutes)} atraso
-                          </Badge>
-                        </div>
-                      ) : null}
-                    </div>
-                  )
-                })}
-                </div>
-                {liveRows.length > 12 ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="mt-3 w-full"
-                    onClick={() => setShowAllLive((value) => !value)}
-                  >
-                    {showAllLive ? "Recolher" : `Ver todos (${liveRows.length})`}
-                  </Button>
-                ) : null}
-                <Button asChild variant="outline" size="sm" className="mt-3 w-full">
-                  <Link to="/app/operations">Abrir frente de caixa completa</Link>
-                </Button>
-              </>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Row 5: Branch summary (multi-branch only) */}
+        {/* Row 4: Branch summary (multi-branch only) */}
         {(() => {
           const branchMap = new Map<string, { name: string; working: number; critical: number; total: number }>()
           for (const row of rows) {
