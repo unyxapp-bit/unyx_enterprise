@@ -37,6 +37,7 @@ import {
   toneLabel,
   type PosterPositionAxis,
 } from "@/features/frontstore/posters/posterConfig"
+import { PosterCanvas } from "@/features/frontstore/posters/PosterCanvas"
 import { PosterPreviewEditor } from "@/features/frontstore/posters/PosterPreviewEditor"
 import {
   formPositionsFromLayoutConfig,
@@ -341,8 +342,9 @@ export function PosterEditorDialog({
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="space-y-1 text-sm sm:col-span-2">
                     <span className="font-medium">Nome do produto</span>
-                    <Input
+                    <textarea
                       required
+                      className="min-h-24 w-full rounded-lg border bg-white px-2.5 py-2 text-xl font-black uppercase leading-none outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
                       value={form.product_name}
                       onChange={(event) =>
                         onFormChange((current) => ({
@@ -458,6 +460,15 @@ export function PosterEditorDialog({
                             alt=""
                             className="size-full object-fill"
                             src={templateUrl(template)}
+                          />
+                        ) : template.kind === "guided" ? (
+                          <PosterCanvas
+                            compact
+                            showPlaceholders
+                            data={formToCanvasData({
+                              ...form,
+                              template_key: template.key,
+                            })}
                           />
                         ) : (
                           <LayoutTemplate className="size-8 text-slate-400" />

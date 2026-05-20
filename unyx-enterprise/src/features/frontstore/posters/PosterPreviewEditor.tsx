@@ -3,6 +3,7 @@ import type { PointerEvent } from "react"
 
 import { cn } from "@/lib/utils"
 import {
+  getPosterTemplate,
   positionFields,
   type PosterPositionAxis,
 } from "@/features/frontstore/posters/posterConfig"
@@ -19,15 +20,22 @@ function formatPosition(value: number) {
   return String(Math.round(value * 10) / 10)
 }
 
-function fieldHasContent(form: PosterForm, field: OperationalPosterLayoutField) {
-  if (field === "subtitle") return Boolean(form.subtitle.trim())
+function fieldHasContent(
+  form: PosterForm,
+  data: PosterCanvasData,
+  field: OperationalPosterLayoutField
+) {
+  const template = getPosterTemplate(data.template_key)
+  if (field === "subtitle") {
+    return template.kind === "guided" || Boolean(form.subtitle.trim())
+  }
   if (field === "product") return Boolean(form.product_name.trim() || form.title.trim())
   if (field === "description") {
     return Boolean(form.product_description.trim() || form.body.trim())
   }
   if (field === "price") return Boolean(form.price_text.trim())
   if (field === "unit") return Boolean(form.sale_unit.trim())
-  return Boolean(form.footer.trim())
+  return template.kind === "guided" || Boolean(form.footer.trim())
 }
 
 function shortLabel(label: string) {
@@ -118,7 +126,7 @@ export function PosterPreviewEditor({
 
           <div className="absolute inset-0 z-20">
             {positionFields
-              .filter(({ field }) => fieldHasContent(form, field))
+              .filter(({ field }) => fieldHasContent(form, data, field))
               .map(({ field, label }) => {
                 const x = getFormPositionValue(form, field, "x")
                 const y = getFormPositionValue(form, field, "y")

@@ -77,6 +77,8 @@ export type PosterTemplate = {
   key: string
   name: string
   file: string | null
+  kind?: "image" | "guided"
+  guidedVariant?: "super-offer" | "yellow-offer"
   aspectRatio: string
   layout: {
     subtitle: PosterArea
@@ -117,7 +119,47 @@ const highNoticeLayout: PosterTemplate["layout"] = {
   footer: { top: "92%", left: "8%", width: "84%" },
 }
 
+const guidedSuperOfferLayout: PosterTemplate["layout"] = {
+  subtitle: { top: "10%", left: "22%", width: "56%" },
+  product: { top: "34%", left: "8%", width: "84%" },
+  description: { top: "46%", left: "9%", width: "82%" },
+  price: { top: "71%", left: "8%", width: "64%" },
+  unit: { top: "75%", left: "68%", width: "24%" },
+  footer: { top: "96%", left: "14%", width: "72%" },
+}
+
+const guidedYellowOfferLayout: PosterTemplate["layout"] = {
+  subtitle: { top: "9%", left: "10%", width: "80%" },
+  product: { top: "30%", left: "8%", width: "84%" },
+  description: { top: "42%", left: "10%", width: "80%" },
+  price: { top: "68%", left: "7%", width: "68%" },
+  unit: { top: "73%", left: "70%", width: "23%" },
+  footer: { top: "94%", left: "10%", width: "80%" },
+}
+
 export const posterTemplates: PosterTemplate[] = [
+  {
+    key: "super-oferta-guiada",
+    name: "Super oferta guiada",
+    file: null,
+    kind: "guided",
+    guidedVariant: "super-offer",
+    aspectRatio: "210 / 297",
+    layout: guidedSuperOfferLayout,
+    textColor: "#111827",
+    priceColor: "#c4282f",
+  },
+  {
+    key: "oferta-amarela-guiada",
+    name: "Oferta amarela guiada",
+    file: null,
+    kind: "guided",
+    guidedVariant: "yellow-offer",
+    aspectRatio: "210 / 297",
+    layout: guidedYellowOfferLayout,
+    textColor: "#111827",
+    priceColor: "#b91c1c",
+  },
   {
     key: "blank",
     name: "Em branco",
