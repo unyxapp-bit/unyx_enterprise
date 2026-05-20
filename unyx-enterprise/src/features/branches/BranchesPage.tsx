@@ -13,14 +13,9 @@ import {
 } from "lucide-react"
 
 import { PageHeader } from "@/components/shared/PageHeader"
+import { SectionPanel } from "@/components/shared/SectionPanel"
 import { StateBlock } from "@/components/shared/StateBlock"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
 import {
   Dialog,
   DialogContent,
@@ -518,11 +513,7 @@ export function BranchesPage() {
       />
 
       <div className="grid gap-4 p-6 xl:grid-cols-[1fr_1fr]">
-        <Card className="border bg-white shadow-sm">
-          <CardHeader>
-            <CardTitle>Filiais</CardTitle>
-          </CardHeader>
-          <CardContent>
+        <SectionPanel title="Filiais" variant="original">
             {branches.isLoading ? (
               <StateBlock type="loading" title="Carregando filiais" />
             ) : branches.isError ? (
@@ -607,28 +598,25 @@ export function BranchesPage() {
                 ))}
               </div>
             )}
-          </CardContent>
-        </Card>
+        </SectionPanel>
 
-        <Card className="border bg-white shadow-sm">
-          <CardHeader>
-            <div className="flex items-center justify-between gap-2">
-              <CardTitle>
-                {selectedBranchName ? `Setores — ${selectedBranchName}` : "Setores"}
-              </CardTitle>
-              {selectedBranchFilter ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setSelectedBranchFilter(null)}
-                >
-                  <X className="size-4" />
-                  Limpar filtro
-                </Button>
-              ) : null}
-            </div>
-          </CardHeader>
-          <CardContent>
+        <SectionPanel
+          title={selectedBranchName ? `Setores - ${selectedBranchName}` : "Setores"}
+          variant="original"
+          actions={
+            selectedBranchFilter ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 border-zinc-400/50 bg-white/40 text-zinc-900 hover:bg-white/70"
+                onClick={() => setSelectedBranchFilter(null)}
+              >
+                <X className="size-4" />
+                Limpar filtro
+              </Button>
+            ) : null
+          }
+        >
             {sectors.isLoading ? (
               <StateBlock type="loading" title="Carregando setores" />
             ) : sectors.isError ? (
@@ -715,8 +703,7 @@ export function BranchesPage() {
                 )}
               </div>
             )}
-          </CardContent>
-        </Card>
+        </SectionPanel>
       </div>
     </>
   )

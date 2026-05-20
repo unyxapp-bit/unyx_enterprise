@@ -10,8 +10,8 @@ import {
   Wallet,
 } from "lucide-react"
 
+import { SectionPanel } from "@/components/shared/SectionPanel"
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { formatTime } from "@/lib/format"
 import type {
   CashSession,
@@ -291,50 +291,50 @@ export const OperationalPendingPanel = React.memo(
     )
 
     return (
-      <Card className="border bg-white shadow-sm">
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <AlertTriangle className="size-5 text-amber-600" />
-            <span className="flex-1">Pendencias operacionais</span>
-            <Badge variant={totalPending > 0 ? "destructive" : "outline"}>
-              {totalPending}
-            </Badge>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            {pendingGroups.map(({ key, title, count, alert, Icon, tone, empty, items }) => (
-              <div key={key} className="rounded-lg border border-slate-200 p-3">
-                <div className="flex items-center gap-2">
-                  <Icon className={`size-4 ${tone}`} />
-                  <div className="min-w-0 flex-1 truncate text-sm font-semibold">
-                    {title}
-                  </div>
-                  <Badge variant={alert && count > 0 ? "destructive" : "outline"}>
-                    {count}
-                  </Badge>
+      <SectionPanel
+        title="Pendencias operacionais"
+        variant="secondary"
+        actions={
+          <Badge
+            variant={totalPending > 0 ? "destructive" : "outline"}
+            className={totalPending > 0 ? "" : "border-lime-300/40 text-lime-200"}
+          >
+            {totalPending}
+          </Badge>
+        }
+      >
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {pendingGroups.map(({ key, title, count, alert, Icon, tone, empty, items }) => (
+            <div key={key} className="rounded-lg border border-border bg-card p-3">
+              <div className="flex items-center gap-2">
+                <Icon className={`size-4 ${tone}`} />
+                <div className="min-w-0 flex-1 truncate text-sm font-semibold">
+                  {title}
                 </div>
-                <div className="mt-3 space-y-1.5 text-xs text-muted-foreground">
-                  {items.length > 0 ? (
-                    items.map((item) => (
-                      <div key={item} className="truncate">
-                        {item}
-                      </div>
-                    ))
-                  ) : (
-                    <div>{empty}</div>
-                  )}
-                  {count > items.length ? (
-                    <div className="font-medium text-slate-500">
-                      +{count - items.length} pendencia(s)
-                    </div>
-                  ) : null}
-                </div>
+                <Badge variant={alert && count > 0 ? "destructive" : "outline"}>
+                  {count}
+                </Badge>
               </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+              <div className="mt-3 space-y-1.5 text-xs text-muted-foreground">
+                {items.length > 0 ? (
+                  items.map((item) => (
+                    <div key={item} className="truncate">
+                      {item}
+                    </div>
+                  ))
+                ) : (
+                  <div>{empty}</div>
+                )}
+                {count > items.length ? (
+                  <div className="font-medium text-slate-500">
+                    +{count - items.length} pendencia(s)
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ))}
+        </div>
+      </SectionPanel>
     )
   }
 )

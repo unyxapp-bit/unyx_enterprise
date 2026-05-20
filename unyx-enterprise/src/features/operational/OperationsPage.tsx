@@ -11,7 +11,6 @@
 import { useEffect, useState } from "react"
 import type { FormEvent } from "react"
 import {
-  Activity,
   ChevronDown,
   History,
   MapPinned,
@@ -20,7 +19,6 @@ import {
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,6 +26,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { PageHeader } from "@/components/shared/PageHeader"
+import { SectionPanel } from "@/components/shared/SectionPanel"
 import { modeUiConfig } from "@/features/ops/modes/modeUiConfig"
 import { operationalModeNames } from "@/features/ops/modes/operationalModes"
 import { MissingSchedulesPrompt } from "@/features/schedules/components/MissingSchedulesPrompt"
@@ -542,28 +541,27 @@ export function OperationsPage() {
         />
 
         {/* ── Main Panel ── */}
-        <Card className="border bg-white shadow-sm">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Activity className="size-5" />
-              <span className="flex-1">Painel operacional</span>
-              <button
-                className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-slate-100 hover:text-slate-900"
-                onClick={() => refetch()}
-                disabled={schedules.isFetching || statuses.isFetching}
-                aria-label="Atualizar"
-              >
-                <RefreshCw
-                  className={`size-4 ${
-                    schedules.isFetching || statuses.isFetching
-                      ? "animate-spin"
-                      : ""
-                  }`}
-                />
-              </button>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
+        <SectionPanel
+          title="Painel operacional"
+          variant="primary"
+          actions={
+            <button
+              className="rounded-md p-1.5 text-zinc-900 transition-colors hover:bg-black/10 disabled:opacity-50"
+              onClick={() => refetch()}
+              disabled={schedules.isFetching || statuses.isFetching}
+              aria-label="Atualizar painel operacional"
+              title="Atualizar painel operacional"
+            >
+              <RefreshCw
+                className={`size-4 ${
+                  schedules.isFetching || statuses.isFetching
+                    ? "animate-spin"
+                    : ""
+                }`}
+              />
+            </button>
+          }
+        >
             {/* Tabs */}
             <OperationalTabs
               activeTab={activeTab}
@@ -601,8 +599,7 @@ export function OperationsPage() {
                 fireAction(s, "saida_confirmada")
               }}
             />
-          </CardContent>
-        </Card>
+        </SectionPanel>
       </div>
 
       {/* ── Dialogs ── */}

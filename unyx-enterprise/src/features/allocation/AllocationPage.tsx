@@ -12,7 +12,6 @@ import {
   Coffee,
   HelpCircle,
   History,
-  MapPinned,
   Pencil,
   Plus,
   Power,
@@ -23,6 +22,7 @@ import {
   Wand2,
 } from "lucide-react"
 import { PageHeader } from "@/components/shared/PageHeader"
+import { SectionPanel } from "@/components/shared/SectionPanel"
 import { StateBlock } from "@/components/shared/StateBlock"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -877,14 +877,7 @@ export function AllocationPage() {
             ) : null}
 
             <div className="grid gap-4 xl:grid-cols-[1.4fr_0.8fr]">
-              <Card className="border bg-white shadow-sm">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <MapPinned className="size-5" />
-                    Painel de cobertura
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
+              <SectionPanel title="Painel de cobertura" variant="original">
                   {panelAlerts.length > 0 && uncoveredPosts.length > 0 && (
                     <div className="mb-4 flex flex-wrap gap-2">
                       {panelAlerts
@@ -1149,8 +1142,7 @@ export function AllocationPage() {
                     </div>
                     </>
                   )}
-                </CardContent>
-              </Card>
+              </SectionPanel>
 
               <div className="space-y-4">
                 <Card className="border bg-white shadow-sm">
