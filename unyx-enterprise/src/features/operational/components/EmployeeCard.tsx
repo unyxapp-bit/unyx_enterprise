@@ -65,6 +65,7 @@ interface EmployeeCardProps {
   activeTab: OperationalTab
   isPending: boolean
   onAllocatePost: (post: OperationalPost) => void
+  onTransferPost: () => void
   onEntry: () => void
   onBreak: () => void
   onBreakAlreadyDone: () => void
@@ -90,6 +91,7 @@ export const EmployeeCard = React.memo(
     activeTab,
     isPending,
     onAllocatePost,
+    onTransferPost,
     onEntry,
     onBreak,
     onBreakAlreadyDone,
@@ -251,7 +253,7 @@ export const EmployeeCard = React.memo(
         {postAllocation ? (
           <div className="mt-2 flex items-center gap-1.5 rounded-md border border-sky-100 bg-sky-50 px-2.5 py-1.5 text-xs text-sky-700">
             <MapPinned className="size-3.5 shrink-0" />
-            <span className="truncate">
+            <span className="min-w-0 flex-1 truncate">
               {postAllocation.operational_posts?.name ?? "Posto alocado"}
             </span>
             <Badge
@@ -260,6 +262,20 @@ export const EmployeeCard = React.memo(
             >
               alocado
             </Badge>
+            {activeTab === "em_turno" && !cardIsDone ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-6 shrink-0 gap-1 border-sky-200 bg-white px-2 text-[10px] text-sky-700 hover:bg-sky-100"
+                disabled={isPending}
+                onClick={onTransferPost}
+                aria-label={`Trocar colaborador em ${postAllocation.operational_posts?.name ?? "posto alocado"}`}
+              >
+                <ArrowRightLeft className="size-3" />
+                Trocar
+              </Button>
+            ) : null}
           </div>
         ) : activeTab === "em_turno" ? (
           <DropdownMenu modal={false}>

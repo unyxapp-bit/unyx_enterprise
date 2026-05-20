@@ -35,6 +35,10 @@ interface OperationalGridProps {
     schedule: ScheduleWithRelations,
     post: OperationalPost
   ) => void
+  onTransferPost: (
+    schedule: ScheduleWithRelations,
+    allocation: PostAllocation
+  ) => void
   onEntry: (schedule: ScheduleWithRelations) => void
   onBreak: (schedule: ScheduleWithRelations) => void
   onBreakAlreadyDone: (schedule: ScheduleWithRelations) => void
@@ -69,6 +73,7 @@ export const OperationalGrid = React.memo(
     error,
     isPending,
     onAllocatePost,
+    onTransferPost,
     onEntry,
     onBreak,
     onBreakAlreadyDone,
@@ -139,6 +144,9 @@ export const OperationalGrid = React.memo(
                 activeTab={activeTab}
                 isPending={isPending}
                 onAllocatePost={(post) => onAllocatePost(schedule, post)}
+                onTransferPost={() => {
+                  if (postAllocation) onTransferPost(schedule, postAllocation)
+                }}
                 onEntry={() => onEntry(schedule)}
                 onBreak={() => onBreak(schedule)}
                 onBreakAlreadyDone={() => onBreakAlreadyDone(schedule)}

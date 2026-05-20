@@ -9,6 +9,7 @@ import {
   useConfirmCashMovement,
   useRecordBreakAlreadyDone,
   useRecordOperationalEvent,
+  useTransferPostAllocation,
   useUpdateSchedule,
 } from "@/hooks/useUnyxData"
 import { eventLabel } from "@/lib/status"
@@ -19,6 +20,7 @@ export function useOperationalActions() {
   const recordBreakDone = useRecordBreakAlreadyDone()
   const updateSchedule = useUpdateSchedule()
   const allocatePost = useAllocatePost()
+  const transferPost = useTransferPostAllocation()
   const confirmCashMovement = useConfirmCashMovement()
 
   const fireAction = useCallback(
@@ -112,6 +114,20 @@ export function useOperationalActions() {
       })
     },
     [allocatePost]
+  )
+
+  const handlePostTransfer = useCallback(
+    async (allocation: PostAllocation, nextSchedule: ScheduleWithRelations) => {
+      await transferPost.mutateAsync({
+        allocation_id: allocation.id,
+        next_employee_id: nextSchedule.employee_id,
+        next_schedule_id: nextSchedule.id,
+        notes: allocation.operational_posts?.name
+          ? `Troca feita no painel operacional em ${allocation.operational_posts.name}`
+          : "Troca feita no painel operacional",
+      })
+    },
+    [transferPost]
   )
 
   const handleBreakConfirm = useCallback(
@@ -273,6 +289,7 @@ export function useOperationalActions() {
     fireAction,
     handleEntryConfirm,
     handlePostAllocation,
+    handlePostTransfer,
     handleBreakConfirm,
     handleBreakAlreadyDone,
     handleCashMovementConfirm,
@@ -285,6 +302,7 @@ export function useOperationalActions() {
       recordBreakDone.isPending ||
       updateSchedule.isPending ||
       allocatePost.isPending ||
+      transferPost.isPending ||
       confirmCashMovement.isPending,
   }
 }

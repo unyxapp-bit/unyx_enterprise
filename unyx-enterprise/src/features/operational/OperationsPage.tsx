@@ -8,7 +8,7 @@
  * - Renderização da interface
  */
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import type { FormEvent } from "react"
 import {
   ChevronDown,
@@ -25,6 +25,13 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { PageHeader } from "@/components/shared/PageHeader"
 import { SectionPanel } from "@/components/shared/SectionPanel"
@@ -65,6 +72,7 @@ import {
 
 import {
   DEFAULT_BREAK_TOLERANCE_MINUTES,
+  isFlowWorkingStatus,
   isCafeBreak,
   timeToMinutes,
 } from "./utils"
@@ -230,6 +238,7 @@ export function OperationsPage() {
     handleCashierSwapConfirm,
     handleCafeStart,
     handlePostAllocation,
+    handlePostTransfer,
     handleReturnAnswer,
     handleOccurrenceSubmit,
     fireAction,
@@ -237,6 +246,36 @@ export function OperationsPage() {
   } = useOperationalActions()
 
   const modeConfig = modeUiConfig[mode]
+  const [transferAction, setTransferAction] = useState<{
+    allocation: PostAllocation
+    schedule: ScheduleWithRelations
+  } | null>(null)
+  const [transferTargetScheduleId, setTransferTargetScheduleId] = useState("")
+  const [transferError, setTransferError] = useState<string | null>(null)
+
+  const transferCandidates = useMemo(() => {
+    if (!transferAction) return []
+
+    return (schedules.data ?? [])
+      .filter((schedule) => {
+        if (schedule.branch_id !== transferAction.allocation.branch_id) return false
+        if (schedule.employee_id === transferAction.allocation.employee_id) return false
+        if (allocationByEmployeeId.has(schedule.employee_id)) return false
+
+        const status = statusByScheduleId.get(schedule.id)?.current_status
+        return isFlowWorkingStatus(status)
+      })
+      .sort((a, b) => {
+        const timeCompare = (a.start_time ?? "").localeCompare(b.start_time ?? "")
+        if (timeCompare !== 0) return timeCompare
+        return (a.employees?.name ?? "").localeCompare(b.employees?.name ?? "")
+      })
+  }, [
+    allocationByEmployeeId,
+    schedules.data,
+    statusByScheduleId,
+    transferAction,
+  ])
 
   // ── Handlers ──
 
@@ -287,6 +326,39 @@ export function OperationsPage() {
       await handlePostAllocation(schedule, post.id)
     } catch (error) {
       console.error("Erro ao alocar posto:", error)
+    }
+  }
+
+  const handleOpenTransferPost = (
+    schedule: ScheduleWithRelations,
+    allocation: PostAllocation
+  ) => {
+    setTransferAction({ schedule, allocation })
+    setTransferTargetScheduleId("")
+    setTransferError(null)
+  }
+
+  const handleTransferPostSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!transferAction) return
+
+    const nextSchedule = transferCandidates.find(
+      (schedule) => schedule.id === transferTargetScheduleId
+    )
+    if (!nextSchedule) {
+      setTransferError("Selecione um colaborador em turno e sem posto.")
+      return
+    }
+
+    try {
+      await handlePostTransfer(transferAction.allocation, nextSchedule)
+      setTransferAction(null)
+      setTransferTargetScheduleId("")
+      setTransferError(null)
+    } catch (error) {
+      setTransferError(
+        error instanceof Error ? error.message : "Nao foi possivel trocar."
+      )
     }
   }
 
@@ -621,6 +693,7 @@ export function OperationsPage() {
               error={schedules.error || statuses.error}
               isPending={isPending || setFlowStatus.isPending}
               onAllocatePost={handleAllocatePostClick}
+              onTransferPost={handleOpenTransferPost}
               onEntry={handleEntryClick}
               onBreak={(s) => dialogs.openBreakDialog(s)}
               onBreakAlreadyDone={handleBreakAlreadyDoneClick}
@@ -640,6 +713,77 @@ export function OperationsPage() {
       </div>
 
       {/* ── Dialogs ── */}
+
+      <Dialog
+        open={!!transferAction}
+        onOpenChange={(open) => {
+          if (!open) {
+            setTransferAction(null)
+            setTransferTargetScheduleId("")
+            setTransferError(null)
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Trocar colaborador</DialogTitle>
+          </DialogHeader>
+          <form className="space-y-4" onSubmit={handleTransferPostSubmit}>
+            <div className="rounded-lg border bg-slate-50 p-3 text-sm">
+              <div className="font-semibold">
+                {transferAction?.allocation.operational_posts?.name ?? "Posto alocado"}
+              </div>
+              <div className="mt-1 text-muted-foreground">
+                Atual: {transferAction?.schedule.employees?.name ?? "Colaborador"}
+              </div>
+            </div>
+
+            <label className="space-y-1 text-sm">
+              <span className="font-medium">Proximo colaborador</span>
+              <select
+                className={fieldClass}
+                value={transferTargetScheduleId}
+                onChange={(event) => {
+                  setTransferTargetScheduleId(event.target.value)
+                  setTransferError(null)
+                }}
+                disabled={transferCandidates.length === 0 || isPending}
+                required
+              >
+                <option value="">Selecione</option>
+                {transferCandidates.map((schedule) => (
+                  <option key={schedule.id} value={schedule.id}>
+                    {schedule.start_time ? `${schedule.start_time} - ` : ""}
+                    {schedule.employees?.name ?? "Colaborador"}
+                    {schedule.employees?.role ? ` - ${schedule.employees.role}` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {transferCandidates.length === 0 ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                Nao ha colaborador em turno, da mesma filial, sem posto alocado agora.
+              </div>
+            ) : null}
+
+            {transferError ? (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {transferError}
+              </div>
+            ) : null}
+
+            <DialogFooter>
+              <Button
+                type="submit"
+                disabled={isPending || transferCandidates.length === 0}
+              >
+                Confirmar troca
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <BreakDialog
         isOpen={!!dialogs.breakDialog.schedule}
