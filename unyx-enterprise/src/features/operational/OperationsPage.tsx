@@ -44,7 +44,6 @@ import {
 
 import {
   BreakDialog,
-  EntryDialog,
   FiscalFlowPanel,
   OperationalGrid,
   OperationalPendingPanel,
@@ -241,23 +240,9 @@ export function OperationsPage() {
 
   // ── Handlers ──
 
-  const handleOpenEntryDialog = (schedule: ScheduleWithRelations) => {
-    dialogs.openEntryDialog(schedule)
-  }
-
-  const handleEntryDialogConfirm = async (
-    withPost: boolean,
-    breakAlreadyDone: boolean
-  ) => {
-    const { schedule, selectedPostId } = dialogs.entry
-    if (!schedule) return
+  const handleEntryClick = async (schedule: ScheduleWithRelations) => {
     try {
-      await handleEntryConfirm(
-        schedule,
-        withPost ? selectedPostId : null,
-        breakAlreadyDone
-      )
-      dialogs.closeEntryDialog()
+      await handleEntryConfirm(schedule, null, false)
     } catch (error) {
       console.error("Erro ao confirmar entrada:", error)
     }
@@ -636,7 +621,7 @@ export function OperationsPage() {
               error={schedules.error || statuses.error}
               isPending={isPending || setFlowStatus.isPending}
               onAllocatePost={handleAllocatePostClick}
-              onEntry={handleOpenEntryDialog}
+              onEntry={handleEntryClick}
               onBreak={(s) => dialogs.openBreakDialog(s)}
               onBreakAlreadyDone={handleBreakAlreadyDoneClick}
               onCashMovement={handleCashMovementClick}
@@ -655,34 +640,6 @@ export function OperationsPage() {
       </div>
 
       {/* ── Dialogs ── */}
-
-      <EntryDialog
-        isOpen={!!dialogs.entry.schedule}
-        onOpenChange={(open) => {
-          if (!open) dialogs.closeEntryDialog()
-        }}
-        employeeName={dialogs.entry.schedule?.employees?.name ?? ""}
-        employeeRole={dialogs.entry.schedule?.employees?.role}
-        employeeSector={dialogs.entry.schedule?.employees?.sectors?.name}
-        startTime={dialogs.entry.schedule?.start_time}
-        breakStartTime={dialogs.entry.schedule?.break_start}
-        breakEndTime={dialogs.entry.schedule?.break_end}
-        endTime={dialogs.entry.schedule?.end_time}
-        shouldAskBreakAlreadyDone={(() => {
-          const schedule = dialogs.entry.schedule
-          if (!schedule || schedule.notes?.includes("lunch_done")) return false
-          const breakEnd = timeToMinutes(schedule.break_end)
-          return breakEnd !== null && now > breakEnd
-        })()}
-        breakAlreadyDone={dialogs.entry.breakAlreadyDone}
-        onBreakAlreadyDoneChange={(value) => dialogs.setEntryBreakAlreadyDone(value)}
-        availablePosts={activePosts}
-        occupiedPostIds={occupiedPostIds}
-        selectedPostId={dialogs.entry.selectedPostId}
-        onSelectedPostIdChange={(postId) => dialogs.setSelectedPost(postId)}
-        isPending={isPending}
-        onConfirm={handleEntryDialogConfirm}
-      />
 
       <BreakDialog
         isOpen={!!dialogs.breakDialog.schedule}
