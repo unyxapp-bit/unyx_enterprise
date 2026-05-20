@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { useSearchParams } from "react-router-dom"
 import {
   CheckCircle2,
   ClipboardList,
@@ -153,6 +154,11 @@ function isPizzaOption(item: ProductionItemOption) {
   return text.includes("pizza") || text.includes("pizzaria")
 }
 
+function isPast(value: string | null | undefined) {
+  if (!value) return false
+  return new Date(value).getTime() < Date.now()
+}
+
 function statusVariant(status: ProductionOrderStatus) {
   if (status === "cancelled") return "destructive"
   if (status === "ready" || status === "delivered") return "default"
@@ -224,6 +230,10 @@ function PrintableProductionOrder({ order }: { order: ProductionOrder }) {
 }
 
 export function ProductionOrdersPage() {
+  const [searchParams] = useSearchParams()
+  const focus = searchParams.get("focus")
+  const lastAppliedFocusRef = useRef<string | null>(null)
+  const onlyOverdueProduction = focus === "overdue-production"
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
   const [date, setDate] = useState(todayISO())
   const [statusFilter, setStatusFilter] = useState<ProductionOrderStatus | "all">("all")
@@ -250,6 +260,16 @@ export function ProductionOrdersPage() {
   const variants = useProductVariants()
   const customers = useCustomers(branchId || selectedBranchId || null, { optional: true })
   const orders = useProductionOrders(date, statusFilter)
+  const visibleOrders = useMemo(
+    () =>
+      (orders.data ?? []).filter(
+        (order) =>
+          !onlyOverdueProduction ||
+          (!["ready", "delivered", "cancelled"].includes(order.status) &&
+            isPast(order.promised_at))
+      ),
+    [onlyOverdueProduction, orders.data]
+  )
   const createOrder = useCreateProductionOrder()
   const updateStatus = useUpdateProductionOrderStatus()
   const deleteOrder = useDeleteProductionOrder()
@@ -542,6 +562,19 @@ export function ProductionOrdersPage() {
   const productionCount = (orders.data ?? []).filter((order) => order.status === "in_production").length
   const readyCount = (orders.data ?? []).filter((order) => order.status === "ready").length
 
+  useEffect(() => {
+    if (focus !== "overdue-production" || lastAppliedFocusRef.current === focus) return
+    lastAppliedFocusRef.current = focus
+    setStatusFilter("all")
+
+    window.requestAnimationFrame(() => {
+      document.getElementById("pedidos-producao")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      })
+    })
+  }, [focus])
+
   return (
     <>
       <PageHeader
@@ -591,7 +624,7 @@ export function ProductionOrdersPage() {
             </Card>
           </div>
 
-          <Card className="border bg-white shadow-sm">
+          <Card id="pedidos-producao" className="scroll-mt-20 border bg-white shadow-sm">
             <CardHeader className="space-y-3">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <CardTitle className="flex items-center gap-2">
@@ -681,7 +714,7 @@ export function ProductionOrdersPage() {
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <CardTitle className="flex items-center gap-2">
                   <ClipboardList className="size-5" />
-                  Pedidos do dia
+                  {onlyOverdueProduction ? "Pedidos atrasados" : "Pedidos do dia"}
                 </CardTitle>
                 <select
                   className={`${fieldClass} w-44`}
@@ -700,11 +733,11 @@ export function ProductionOrdersPage() {
               </div>
             </CardHeader>
             <CardContent>
-              {(orders.data ?? []).length === 0 ? (
+              {visibleOrders.length === 0 ? (
                 <StateBlock title="Nenhum pedido de producao" />
               ) : (
                 <div className="space-y-2">
-                  {(orders.data ?? []).map((order) => (
+                  {visibleOrders.map((order) => (
                     <div key={order.id} className="rounded-lg border p-3">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>

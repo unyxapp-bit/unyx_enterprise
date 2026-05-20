@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import type { FormEvent } from "react"
+import { useSearchParams } from "react-router-dom"
 import {
   CheckCircle2,
   Clock3,
@@ -256,6 +257,11 @@ function isOpenDelivery(status: DeliveryStatus) {
   return !["delivered", "failed", "cancelled"].includes(status)
 }
 
+function isPast(value: string | null | undefined) {
+  if (!value) return false
+  return new Date(value).getTime() < Date.now()
+}
+
 function nextStatus(status: DeliveryStatus): DeliveryStatus | null {
   const flow: Partial<Record<DeliveryStatus, DeliveryStatus>> = {
     pending: "preparing",
@@ -267,6 +273,10 @@ function nextStatus(status: DeliveryStatus): DeliveryStatus | null {
 }
 
 export function DeliveriesPage() {
+  const [searchParams] = useSearchParams()
+  const focus = searchParams.get("focus")
+  const lastAppliedFocusRef = useRef<string | null>(null)
+  const onlyOverdueDeliveries = focus === "overdue-deliveries"
   const { profile } = useAuth()
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
   const branches = useBranches()
@@ -301,6 +311,9 @@ export function DeliveriesPage() {
     return (deliveries.data ?? []).filter((delivery) => {
       const matchesStatus = statusFilter === "all" || delivery.status === statusFilter
       const matchesSource = sourceFilter === "all" || delivery.source === sourceFilter
+      const due = delivery.estimated_delivery_at ?? delivery.scheduled_for
+      const matchesFocus =
+        !onlyOverdueDeliveries || (isOpenDelivery(delivery.status) && isPast(due))
       const matchesSearch =
         !q ||
         delivery.customer_name.toLowerCase().includes(q) ||
@@ -309,9 +322,24 @@ export function DeliveriesPage() {
         (delivery.neighborhood ?? "").toLowerCase().includes(q) ||
         (delivery.courier_name ?? "").toLowerCase().includes(q)
 
-      return matchesStatus && matchesSource && matchesSearch
+      return matchesStatus && matchesSource && matchesFocus && matchesSearch
     })
-  }, [deliveries.data, search, sourceFilter, statusFilter])
+  }, [deliveries.data, onlyOverdueDeliveries, search, sourceFilter, statusFilter])
+
+  useEffect(() => {
+    if (focus !== "overdue-deliveries" || lastAppliedFocusRef.current === focus) return
+    lastAppliedFocusRef.current = focus
+    setStatusFilter("all")
+    setSourceFilter("all")
+    setSearch("")
+
+    window.requestAnimationFrame(() => {
+      document.getElementById("entregas-lista")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      })
+    })
+  }, [focus])
 
   const stats = useMemo(() => {
     const list = deliveries.data ?? []
@@ -516,11 +544,11 @@ export function DeliveriesPage() {
               />
             </BentoGrid>
 
-            <Card className="border bg-white shadow-sm">
+            <Card id="entregas-lista" className="scroll-mt-20 border bg-white shadow-sm">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Route className="size-5" />
-                  Entregas
+                  {onlyOverdueDeliveries ? "Entregas atrasadas" : "Entregas"}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">

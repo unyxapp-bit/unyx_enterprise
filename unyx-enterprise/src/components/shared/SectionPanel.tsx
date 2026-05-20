@@ -18,6 +18,7 @@ const iconVariantClass: Record<SectionPanelVariant, string> = {
 }
 
 type SectionPanelProps = {
+  id?: string
   title: string
   children: ReactNode
   actions?: ReactNode
@@ -29,6 +30,7 @@ type SectionPanelProps = {
 }
 
 export function SectionPanel({
+  id,
   title,
   children,
   actions,
@@ -43,7 +45,7 @@ export function SectionPanel({
   const actionLabel = open ? `Recolher ${title}` : `Expandir ${title}`
 
   return (
-    <section className={cn("space-y-3", className)}>
+    <section id={id} className={cn("scroll-mt-20 space-y-3", className)}>
       <div
         className={cn(
           "flex min-h-10 items-center gap-3 rounded-md px-3 shadow-sm",

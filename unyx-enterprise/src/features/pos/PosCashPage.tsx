@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import type { FormEvent } from "react"
+import { useSearchParams } from "react-router-dom"
 import {
   ArrowDownCircle,
   ArrowUpCircle,
@@ -71,6 +72,9 @@ function cashSessionDetail(session: CashSession) {
 }
 
 export function PosCashPage() {
+  const [searchParams] = useSearchParams()
+  const focus = searchParams.get("focus")
+  const lastAppliedFocusRef = useRef<string | null>(null)
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
   const branches = useBranches()
   const employees = useEmployees(null)
@@ -125,6 +129,18 @@ export function PosCashPage() {
   const activeEmployees = (employees.data ?? []).filter(
     (e) => e.active && (defaultBranchId ? e.branch_id === defaultBranchId : true)
   )
+
+  useEffect(() => {
+    if (focus !== "open-cash-sessions" || lastAppliedFocusRef.current === focus) return
+    lastAppliedFocusRef.current = focus
+
+    window.requestAnimationFrame(() => {
+      document.getElementById("caixas-abertos")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      })
+    })
+  }, [focus])
 
   const [openDialogOpen, setOpenDialogOpen] = useState(false)
   const [openForm, setOpenForm] = useState({
@@ -276,7 +292,7 @@ export function PosCashPage() {
         ) : (
           <>
             {openSessions.length > 0 ? (
-              <Card className="border bg-white shadow-sm">
+              <Card id="caixas-abertos" className="scroll-mt-20 border bg-white shadow-sm">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Banknote className="size-5" />

@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import type { FormEvent } from "react"
-import { useNavigate } from "react-router-dom"
+import { useNavigate, useSearchParams } from "react-router-dom"
 import {
   Activity,
   AlertCircle,
@@ -279,6 +279,9 @@ function sectorOptionsForBranch(sectors: Sector[], branchId: string) {
 }
 
 export function AllocationPage() {
+  const [searchParams] = useSearchParams()
+  const focus = searchParams.get("focus")
+  const lastAppliedFocusRef = useRef<string | null>(null)
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
   const branches = useBranches()
   const sectors = useSectors(null)
@@ -359,6 +362,9 @@ export function AllocationPage() {
   const uncoveredPosts = activePosts.filter(
     (post) => !allocationByPostId.has(post.id)
   )
+  const allocationsWithoutSchedule = activeAllocations.filter(
+    (allocation) => !allocation.ended_at && !allocation.schedule_id
+  )
   const coverageMetrics = [
     { label: "Postos ativos", value: activePosts.length, Icon: Store, extra: "" },
     { label: "Cobertos", value: coveredPosts.length, Icon: CheckCircle2, extra: "" },
@@ -382,15 +388,40 @@ export function AllocationPage() {
     () => POST_TYPE_ORDER.filter((type) => activePostsByType.has(type)),
     [activePostsByType]
   )
+  const focusedPostType = useMemo(() => {
+    if (focus === "uncovered-posts") return uncoveredPosts[0]?.type ?? null
+    if (focus === "allocations-without-schedule") {
+      const firstAllocation = allocationsWithoutSchedule[0]
+      const post = firstAllocation
+        ? activePosts.find((item) => item.id === firstAllocation.post_id)
+        : null
+      return post?.type ?? null
+    }
+    return null
+  }, [activePosts, allocationsWithoutSchedule, focus, uncoveredPosts])
 
   const effectiveTab: OperationalPostType | null =
     availableTabs.length > 1
       ? activePostType && availableTabs.includes(activePostType)
         ? activePostType
+        : focusedPostType && availableTabs.includes(focusedPostType)
+          ? focusedPostType
         : availableTabs[0]
       : null
 
   const visiblePosts = effectiveTab ? (activePostsByType.get(effectiveTab) ?? []) : activePosts
+
+  useEffect(() => {
+    if (!focus || lastAppliedFocusRef.current === focus) return
+    lastAppliedFocusRef.current = focus
+
+    window.requestAnimationFrame(() => {
+      document.getElementById("painel-cobertura")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      })
+    })
+  }, [focus])
 
   const busyEmployeeIds = useMemo(
     () => new Set(activeAllocations.map((allocationItem) => allocationItem.employee_id)),
@@ -877,7 +908,7 @@ export function AllocationPage() {
             ) : null}
 
             <div className="grid gap-4 xl:grid-cols-[1.4fr_0.8fr]">
-              <SectionPanel title="Painel de cobertura" variant="original">
+              <SectionPanel id="painel-cobertura" title="Painel de cobertura" variant="original">
                   {panelAlerts.length > 0 && uncoveredPosts.length > 0 && (
                     <div className="mb-4 flex flex-wrap gap-2">
                       {panelAlerts
@@ -892,9 +923,34 @@ export function AllocationPage() {
                             {" — "}
                             {alert.description}
                           </div>
-                        ))}
+                      ))}
                     </div>
                   )}
+                  {focus === "uncovered-posts" && uncoveredPosts.length > 0 ? (
+                    <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                      <span className="font-semibold">Postos sem cobertura: </span>
+                      {uncoveredPosts.slice(0, 4).map((post) => post.name).join(", ")}
+                      {uncoveredPosts.length > 4 ? ` +${uncoveredPosts.length - 4}` : ""}
+                    </div>
+                  ) : null}
+                  {focus === "allocations-without-schedule" &&
+                  allocationsWithoutSchedule.length > 0 ? (
+                    <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                      <span className="font-semibold">Alocados sem escala: </span>
+                      {allocationsWithoutSchedule
+                        .slice(0, 4)
+                        .map((allocation) =>
+                          [
+                            allocation.employees?.name ?? "Colaborador",
+                            allocation.operational_posts?.name ?? "Posto",
+                          ].join(" - ")
+                        )
+                        .join(", ")}
+                      {allocationsWithoutSchedule.length > 4
+                        ? ` +${allocationsWithoutSchedule.length - 4}`
+                        : ""}
+                    </div>
+                  ) : null}
                   {activePosts.length === 0 ? (
                     <StateBlock
                       title="Nenhum posto ativo"

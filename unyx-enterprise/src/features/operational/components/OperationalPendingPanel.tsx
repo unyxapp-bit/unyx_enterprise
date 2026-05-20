@@ -9,6 +9,7 @@ import {
   Utensils,
   Wallet,
 } from "lucide-react"
+import { useNavigate } from "react-router-dom"
 
 import { SectionPanel } from "@/components/shared/SectionPanel"
 import { Badge } from "@/components/ui/badge"
@@ -95,6 +96,7 @@ export const OperationalPendingPanel = React.memo(
     currentMinutes,
     breakToleranceMinutes = DEFAULT_BREAK_TOLERANCE_MINUTES,
   }: OperationalPendingPanelProps) => {
+    const navigate = useNavigate()
     const pendingGroups = useMemo(() => {
       const lateArrivals = schedulesToArrive.filter((schedule) => {
         const start = timeToMinutes(schedule.start_time)
@@ -167,6 +169,7 @@ export const OperationalPendingPanel = React.memo(
           Icon: UserRoundX,
           tone: "text-orange-700",
           empty: "Nenhum colaborador atrasado para entrada.",
+          href: "/app/operations?focus=late-arrivals#painel-operacional",
           items: lateArrivals
             .slice(0, 3)
             .map(
@@ -182,6 +185,7 @@ export const OperationalPendingPanel = React.memo(
           Icon: Clock,
           tone: "text-red-700",
           empty: "Nenhum intervalo vencido.",
+          href: "/app/operations?focus=overdue-breaks#painel-operacional",
           items: overdueBreaks
             .slice(0, 3)
             .map(
@@ -197,6 +201,7 @@ export const OperationalPendingPanel = React.memo(
           Icon: Clock,
           tone: "text-amber-700",
           empty: "Nenhum intervalo aguardando liberacao.",
+          href: "/app/operations?focus=breaks-waiting-release#painel-operacional",
           items: breaksWaitingRelease
             .slice(0, 3)
             .map(
@@ -212,6 +217,7 @@ export const OperationalPendingPanel = React.memo(
           Icon: AlertTriangle,
           tone: "text-red-700",
           empty: "Nenhuma fila operacional aberta.",
+          href: "/app/operations?focus=queue-signals#fluxo-operacional",
           items: openQueueSignals
             .slice(0, 3)
             .map(
@@ -227,6 +233,7 @@ export const OperationalPendingPanel = React.memo(
           Icon: MapPinned,
           tone: "text-sky-700",
           empty: "Todos os postos ativos estao cobertos.",
+          href: "/app/allocation?focus=uncovered-posts#painel-cobertura",
           items: uncoveredPosts.slice(0, 3).map(postLabel),
         },
         {
@@ -237,6 +244,7 @@ export const OperationalPendingPanel = React.memo(
           Icon: Link2Off,
           tone: "text-amber-700",
           empty: "Todas as alocacoes ativas estao vinculadas a uma escala.",
+          href: "/app/allocation?focus=allocations-without-schedule#painel-cobertura",
           items: allocationsWithoutSchedule.slice(0, 3).map(allocationLabel),
         },
         {
@@ -247,6 +255,7 @@ export const OperationalPendingPanel = React.memo(
           Icon: Wallet,
           tone: "text-emerald-700",
           empty: "Nenhum caixa aberto agora.",
+          href: "/app/pos/cash?focus=open-cash-sessions#caixas-abertos",
           items: openCashSessions.slice(0, 3).map(cashSessionLabel),
         },
         {
@@ -257,6 +266,7 @@ export const OperationalPendingPanel = React.memo(
           Icon: Truck,
           tone: "text-red-700",
           empty: "Nenhuma entrega atrasada.",
+          href: "/app/deliveries?focus=overdue-deliveries#entregas-lista",
           items: overdueDeliveries.slice(0, 3).map(deliveryLabel),
         },
         {
@@ -267,6 +277,7 @@ export const OperationalPendingPanel = React.memo(
           Icon: Utensils,
           tone: "text-orange-700",
           empty: "Nenhum pedido de producao atrasado.",
+          href: "/app/pos/production?focus=overdue-production#pedidos-producao",
           items: overdueProduction.slice(0, 3).map(productionLabel),
         },
       ]
@@ -304,8 +315,15 @@ export const OperationalPendingPanel = React.memo(
         }
       >
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {pendingGroups.map(({ key, title, count, alert, Icon, tone, empty, items }) => (
-            <div key={key} className="rounded-lg border border-border bg-card p-3">
+          {pendingGroups.map(({ key, title, count, alert, Icon, tone, empty, href, items }) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => navigate(href)}
+              className="min-h-36 rounded-lg border border-border bg-card p-3 text-left transition-colors hover:border-slate-400 hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/40"
+              aria-label={`Abrir ${title.toLowerCase()}`}
+              title={`Abrir ${title.toLowerCase()}`}
+            >
               <div className="flex items-center gap-2">
                 <Icon className={`size-4 ${tone}`} />
                 <div className="min-w-0 flex-1 truncate text-sm font-semibold">
@@ -331,7 +349,7 @@ export const OperationalPendingPanel = React.memo(
                   </div>
                 ) : null}
               </div>
-            </div>
+            </button>
           ))}
         </div>
       </SectionPanel>

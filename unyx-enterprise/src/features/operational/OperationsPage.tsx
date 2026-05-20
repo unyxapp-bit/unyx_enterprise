@@ -8,7 +8,7 @@
  * - Renderização da interface
  */
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import type { FormEvent } from "react"
 import {
   ChevronDown,
@@ -17,6 +17,7 @@ import {
   RefreshCw,
   Store,
 } from "lucide-react"
+import { useSearchParams } from "react-router-dom"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -86,6 +87,10 @@ const flowStatusPriority: Partial<Record<OperationalStatus, number>> = {
 }
 
 export function OperationsPage() {
+  const [searchParams] = useSearchParams()
+  const lastAppliedFocusRef = useRef<string | null>(null)
+  const focus = searchParams.get("focus")
+
   // ── Filters & Pagination ──
   const {
     date,
@@ -150,6 +155,34 @@ export function OperationsPage() {
   const [releasingAllocationId, setReleasingAllocationId] = useState<string | null>(
     null
   )
+
+  useEffect(() => {
+    if (!focus || lastAppliedFocusRef.current === focus) return
+    lastAppliedFocusRef.current = focus
+
+    if (focus === "late-arrivals") {
+      setActiveTab("a_chegar")
+      setSortBy("time")
+      setSearchText("")
+      setPageIndex(0)
+    }
+
+    if (focus === "overdue-breaks" || focus === "breaks-waiting-release") {
+      setActiveTab("em_turno")
+      setSortBy("priority")
+      setSearchText("")
+      setPageIndex(0)
+    }
+
+    window.requestAnimationFrame(() => {
+      const targetId =
+        focus === "queue-signals" ? "fluxo-operacional" : "painel-operacional"
+      document.getElementById(targetId)?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      })
+    })
+  }, [focus, setActiveTab, setPageIndex, setSearchText, setSortBy])
 
   // Reset pagination when tab/filter changes
   useEffect(() => {
@@ -501,29 +534,31 @@ export function OperationsPage() {
           onCopied={() => refetch()}
         />
 
-        <FiscalFlowPanel
-          activePosts={activePosts}
-          activeAllocations={occupiedPostAllocations}
-          queueSignals={queueSignals.data ?? []}
-          cashSessions={cashSessions.data ?? []}
-          schedulesInTurn={emTurno}
-          statusByScheduleId={statusByScheduleId}
-          currentMinutes={now}
-          breakToleranceMinutes={breakToleranceMinutes}
-          queueAttentionThreshold={queueAttentionThreshold}
-          queueCriticalThreshold={queueCriticalThreshold}
-          cashCountAlertAmount={cashCountAlertAmount}
-          isLoading={queueSignals.isLoading}
-          isPending={
-            createQueueSignal.isPending ||
-            resolveQueueSignal.isPending ||
-            setFlowStatus.isPending
-          }
-          onCreateQueueSignal={(input) => createQueueSignal.mutate(input)}
-          onResolveQueueSignal={(signalId) =>
-            resolveQueueSignal.mutate({ signalId })
-          }
-        />
+        <div id="fluxo-operacional" className="scroll-mt-20">
+          <FiscalFlowPanel
+            activePosts={activePosts}
+            activeAllocations={occupiedPostAllocations}
+            queueSignals={queueSignals.data ?? []}
+            cashSessions={cashSessions.data ?? []}
+            schedulesInTurn={emTurno}
+            statusByScheduleId={statusByScheduleId}
+            currentMinutes={now}
+            breakToleranceMinutes={breakToleranceMinutes}
+            queueAttentionThreshold={queueAttentionThreshold}
+            queueCriticalThreshold={queueCriticalThreshold}
+            cashCountAlertAmount={cashCountAlertAmount}
+            isLoading={queueSignals.isLoading}
+            isPending={
+              createQueueSignal.isPending ||
+              resolveQueueSignal.isPending ||
+              setFlowStatus.isPending
+            }
+            onCreateQueueSignal={(input) => createQueueSignal.mutate(input)}
+            onResolveQueueSignal={(signalId) =>
+              resolveQueueSignal.mutate({ signalId })
+            }
+          />
+        </div>
 
         <OperationalPendingPanel
           schedulesToArrive={aChegar}
@@ -542,6 +577,7 @@ export function OperationsPage() {
 
         {/* ── Main Panel ── */}
         <SectionPanel
+          id="painel-operacional"
           title="Painel operacional"
           variant="primary"
           actions={
