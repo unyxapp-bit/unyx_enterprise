@@ -3,11 +3,15 @@ import type { FormEvent } from "react"
 import {
   FileText,
   ImageIcon,
+  Layers,
   LayoutTemplate,
   MapPin,
+  Minus,
   Move,
   Palette,
+  Plus,
   RotateCcw,
+  SlidersHorizontal,
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -62,6 +66,55 @@ const sections: Array<{
   { key: "position", label: "Posicao", icon: Move },
   { key: "scope", label: "Publicacao", icon: MapPin },
 ]
+
+const sizeControlByField: Partial<
+  Record<
+    OperationalPosterLayoutField,
+    {
+      key: keyof PosterForm
+      label: string
+      min: number
+      max: number
+    }
+  >
+> = {
+  subtitle: {
+    key: "sale_unit_size",
+    label: "Tamanho da chamada",
+    min: 10,
+    max: 52,
+  },
+  product: {
+    key: "product_name_size",
+    label: "Tamanho do produto",
+    min: 18,
+    max: 96,
+  },
+  description: {
+    key: "description_size",
+    label: "Tamanho da descricao",
+    min: 10,
+    max: 54,
+  },
+  price: {
+    key: "price_size",
+    label: "Tamanho do valor",
+    min: 28,
+    max: 140,
+  },
+  unit: {
+    key: "sale_unit_size",
+    label: "Tamanho da unidade",
+    min: 10,
+    max: 52,
+  },
+  footer: {
+    key: "sale_unit_size",
+    label: "Tamanho do rodape",
+    min: 10,
+    max: 52,
+  },
+}
 
 function SizeControl({
   label,
@@ -194,8 +247,15 @@ export function PosterEditorDialog({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
 }) {
   const [section, setSection] = useState<EditorSection>("content")
+  const [selectedField, setSelectedField] =
+    useState<OperationalPosterLayoutField>("price")
+  const [zoom, setZoom] = useState(1)
   const previewData = useMemo(() => formToCanvasData(form), [form])
   const selectedTemplate = posterTemplates.find((template) => template.key === form.template_key)
+  const selectedFieldConfig = positionFields.find(({ field }) => field === selectedField)
+  const selectedSizeControl = sizeControlByField[selectedField]
+  const stageWidth = Math.round(620 * zoom)
+  const textScale = stageWidth / 620
 
   function updatePosition(
     field: OperationalPosterLayoutField,
@@ -223,14 +283,30 @@ export function PosterEditorDialog({
     }))
   }
 
+  function updateSelectedSize(value: string) {
+    if (!selectedSizeControl) return
+
+    onFormChange((current) => ({
+      ...current,
+      [selectedSizeControl.key]: value,
+    }))
+  }
+
+  function updateZoom(nextZoom: number) {
+    setZoom(Math.min(Math.max(nextZoom, 0.65), 1.45))
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-6xl">
+      <DialogContent className="max-h-[94vh] overflow-y-auto sm:max-w-[calc(100vw-1rem)] xl:max-w-7xl 2xl:max-w-[1360px]">
         <DialogHeader>
           <DialogTitle>{editing ? "Editar cartaz" : "Novo cartaz"}</DialogTitle>
         </DialogHeader>
 
-        <form className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]" onSubmit={onSubmit}>
+        <form
+          className="grid gap-5 xl:grid-cols-[minmax(320px,430px)_minmax(520px,1fr)]"
+          onSubmit={onSubmit}
+        >
           <div className="min-w-0 space-y-4">
             <div className="flex flex-wrap gap-1 rounded-lg border bg-slate-50 p-1">
               {sections.map((item) => {
@@ -516,6 +592,34 @@ export function PosterEditorDialog({
                     Resetar
                   </Button>
                 </div>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  {positionFields.map(({ field, label }) => (
+                    <button
+                      key={field}
+                      type="button"
+                      className={cn(
+                        "rounded-lg border px-2.5 py-2 text-left text-xs transition-colors",
+                        selectedField === field
+                          ? "border-slate-950 bg-slate-950 text-white"
+                          : "bg-white hover:border-slate-400 hover:bg-slate-50"
+                      )}
+                      onClick={() => setSelectedField(field)}
+                    >
+                      <span className="block font-semibold">{label}</span>
+                      <span
+                        className={cn(
+                          "mt-0.5 block",
+                          selectedField === field
+                            ? "text-white/70"
+                            : "text-muted-foreground"
+                        )}
+                      >
+                        X {getFormPositionValue(form, field, "x")}% / Y{" "}
+                        {getFormPositionValue(form, field, "y")}%
+                      </span>
+                    </button>
+                  ))}
+                </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   {positionFields.map(({ field, label }) => (
                     <PositionControl
@@ -586,34 +690,172 @@ export function PosterEditorDialog({
             ) : null}
           </div>
 
-          <aside className="space-y-3 lg:sticky lg:top-4 lg:self-start">
-            <div className="rounded-xl border bg-white p-3 shadow-sm">
-              <div className="mb-3 flex items-center justify-between gap-2">
+          <aside className="space-y-3 xl:sticky xl:top-4 xl:self-start">
+            <div className="overflow-hidden rounded-xl border bg-white shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-slate-950 px-3 py-2 text-white">
                 <div className="flex items-center gap-2 text-sm font-semibold">
                   <ImageIcon className="size-4" />
-                  Previa
+                  Editor visual
                 </div>
                 <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    className="inline-flex size-7 items-center justify-center rounded-md text-white/80 hover:bg-white/10 hover:text-white"
+                    title="Diminuir zoom"
+                    onClick={() => updateZoom(zoom - 0.1)}
+                  >
+                    <Minus className="size-4" />
+                  </button>
+                  <span className="min-w-12 text-center text-xs font-semibold">
+                    {Math.round(zoom * 100)}%
+                  </span>
+                  <button
+                    type="button"
+                    className="inline-flex size-7 items-center justify-center rounded-md text-white/80 hover:bg-white/10 hover:text-white"
+                    title="Aumentar zoom"
+                    onClick={() => updateZoom(zoom + 0.1)}
+                  >
+                    <Plus className="size-4" />
+                  </button>
                   <Button
                     type="button"
                     variant="outline"
                     size="icon-sm"
+                    className="border-white/20 bg-white/10 text-white hover:bg-white/20"
                     title="Resetar posicoes"
                     onClick={resetPositions}
                   >
                     <RotateCcw className="size-4" />
                   </Button>
-                  <Badge variant="secondary">{formatLabel[form.format]}</Badge>
                 </div>
               </div>
+
+              <div className="grid gap-0 border-b bg-white xl:grid-cols-[220px_minmax(0,1fr)]">
+                <div className="border-b p-3 xl:border-b-0 xl:border-r">
+                  <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-slate-700">
+                    <Layers className="size-4" />
+                    Camadas
+                  </div>
+                  <div className="grid gap-1.5">
+                    {positionFields.map(({ field, label }) => (
+                      <button
+                        key={field}
+                        type="button"
+                        className={cn(
+                          "flex items-center justify-between gap-2 rounded-lg border px-2.5 py-2 text-left text-xs transition-colors",
+                          selectedField === field
+                            ? "border-slate-950 bg-slate-950 text-white"
+                            : "bg-white hover:border-slate-400 hover:bg-slate-50"
+                        )}
+                        onClick={() => {
+                          setSelectedField(field)
+                          setSection("position")
+                        }}
+                      >
+                        <span className="font-semibold">{label}</span>
+                        <span
+                          className={cn(
+                            "text-[10px]",
+                            selectedField === field
+                              ? "text-white/70"
+                              : "text-muted-foreground"
+                          )}
+                        >
+                          {getFormPositionValue(form, field, "x")} /{" "}
+                          {getFormPositionValue(form, field, "y")}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-3 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <div className="flex items-center gap-2 text-sm font-semibold">
+                        <SlidersHorizontal className="size-4" />
+                        {selectedFieldConfig?.label ?? "Elemento"}
+                      </div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">
+                        Arraste no cartaz ou ajuste os valores.
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <Badge variant="secondary">{formatLabel[form.format]}</Badge>
+                      <Badge variant="outline">{toneLabel[form.tone]}</Badge>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-2 md:grid-cols-3">
+                    <label className="space-y-1 text-xs">
+                      <span className="font-medium">X</span>
+                      <Input
+                        max={100}
+                        min={0}
+                        step={0.5}
+                        type="number"
+                        value={getFormPositionValue(form, selectedField, "x")}
+                        onChange={(event) =>
+                          updatePosition(selectedField, "x", event.target.value)
+                        }
+                      />
+                    </label>
+                    <label className="space-y-1 text-xs">
+                      <span className="font-medium">Y</span>
+                      <Input
+                        max={100}
+                        min={0}
+                        step={0.5}
+                        type="number"
+                        value={getFormPositionValue(form, selectedField, "y")}
+                        onChange={(event) =>
+                          updatePosition(selectedField, "y", event.target.value)
+                        }
+                      />
+                    </label>
+                    {selectedSizeControl ? (
+                      <label className="space-y-1 text-xs">
+                        <span className="font-medium">{selectedSizeControl.label}</span>
+                        <Input
+                          min={selectedSizeControl.min}
+                          max={selectedSizeControl.max}
+                          type="number"
+                          value={String(form[selectedSizeControl.key])}
+                          onChange={(event) => updateSelectedSize(event.target.value)}
+                        />
+                      </label>
+                    ) : null}
+                  </div>
+
+                  {selectedSizeControl ? (
+                    <input
+                      className={rangeClass}
+                      min={selectedSizeControl.min}
+                      max={selectedSizeControl.max}
+                      type="range"
+                      value={String(form[selectedSizeControl.key])}
+                      onChange={(event) => updateSelectedSize(event.target.value)}
+                    />
+                  ) : null}
+                </div>
+              </div>
+
               <PosterPreviewEditor
                 data={previewData}
                 form={form}
+                selectedField={selectedField}
+                stageWidth={stageWidth}
+                textScale={textScale}
                 onPositionChange={updatePosition}
+                onSelectedFieldChange={(field) => {
+                  setSelectedField(field)
+                  setSection("position")
+                }}
               />
-              <div className="mt-2 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+
+              <div className="flex items-center justify-between gap-2 border-t bg-white px-3 py-2 text-xs text-muted-foreground">
                 <span>{selectedTemplate?.name ?? "Em branco"}</span>
-                <span>{toneLabel[form.tone]}</span>
+                <span>Previa em escala editorial</span>
               </div>
             </div>
             <DialogFooter className="sm:justify-end">

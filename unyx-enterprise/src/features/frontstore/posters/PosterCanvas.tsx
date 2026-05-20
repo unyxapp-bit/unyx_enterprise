@@ -39,7 +39,7 @@ function areaStyle(
     transform: "translateY(-50%)",
     color: area.color ?? color,
     fontFamily: "Arial Black, Arial, Helvetica, sans-serif",
-    fontSize: `${clamp(size * scale, 8, 150)}px`,
+    fontSize: `${clamp(size * scale, 8, 320)}px`,
     fontWeight: weight,
     letterSpacing: 0,
     lineHeight: 1,
@@ -55,15 +55,17 @@ export function PosterCanvas({
   compact = false,
   print = false,
   showPlaceholders = false,
+  textScale,
 }: {
   data: PosterCanvasData
   compact?: boolean
   print?: boolean
   showPlaceholders?: boolean
+  textScale?: number
 }) {
   const template = getPosterTemplate(data.template_key)
   const hasTemplate = Boolean(template.file)
-  const scale = print ? printScaleByFormat[data.format] : compact ? 0.36 : 0.5
+  const scale = textScale ?? (print ? printScaleByFormat[data.format] : compact ? 0.36 : 0.5)
   const textColor = template.textColor ?? "#111827"
   const priceColor = template.priceColor ?? textColor
   const layout = resolveTemplateLayout(template.layout, data.layout_config)
