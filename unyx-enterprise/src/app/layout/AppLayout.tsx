@@ -120,6 +120,62 @@ const navGroups = [
   },
 ]
 
+const navItemDescriptions: Record<string, string> = {
+  "/app": "Visao geral da operacao e indicadores do dia.",
+  "/app/operations": "Painel vivo para entradas, intervalos e alocacoes.",
+  "/app/allocation": "Cadastre e organize caixas, balcoes e postos.",
+  "/app/break-room": "Acompanhe pausas, cafes e retornos pendentes.",
+  "/app/alerts": "Riscos operacionais e pendencias criticas.",
+  "/app/schedules": "Monte, importe e confira a escala por filial.",
+  "/app/checklists": "Rotinas de abertura, fechamento e verificacoes.",
+  "/app/notes": "Registre comunicados e observacoes de frente.",
+  "/app/forms": "Capturas operacionais padronizadas por setor.",
+  "/app/posters": "Materiais internos para orientar a equipe.",
+  "/app/branches": "Gerencie unidades, enderecos e status ativos.",
+  "/app/employees": "Cadastro da equipe, cargos e setores.",
+  "/app/customers": "Base de clientes e dados comerciais.",
+  "/app/users": "Acessos, convites, papeis e permissoes.",
+  "/app/settings": "Regras operacionais e parametros da empresa.",
+  "/app/pos/sell": "Venda rapida, carrinho e finalizacao.",
+  "/app/pos/cash": "Abertura, fechamento e movimentos de caixa.",
+  "/app/pos/products": "Catalogo, precos e disponibilidade.",
+  "/app/pos/sales": "Consulta de vendas e comprovantes.",
+  "/app/pos/production": "Pedidos de preparo e producao interna.",
+  "/app/pos/fiscal": "Documentos fiscais e emissao vinculada.",
+  "/app/deliveries": "Pedidos, despachos e acompanhamento.",
+  "/app/reports": "Analises, exportacoes e leitura de desempenho.",
+  "/app/audit": "Eventos, rastreabilidade e historico de acoes.",
+  "/app/comms": "Comunicacao interna e alinhamento da equipe.",
+  "/app/game": "Engajamento, metas e reconhecimento.",
+  "/app/academy": "Treinamentos, trilhas e aprendizado.",
+  "/app/ai": "Agente operacional, relatorios e sugestoes.",
+}
+
+const navGroupFooter: Record<string, { label: string; badge?: string; description: string }> = {
+  "Unyx Ops": {
+    label: "Operacao ativa",
+    badge: "Live",
+    description: "Controle entradas, postos e pendencias do turno no mesmo fluxo.",
+  },
+  "Unyx Control": {
+    label: "Base administrativa",
+    description: "Organize dados mestres para manter a operacao consistente.",
+  },
+  "Unyx POS": {
+    label: "Frente de venda",
+    description: "PDV, caixa, produtos e entregas conectados ao operacional.",
+  },
+  "Unyx Insight": {
+    label: "Inteligencia",
+    description: "Transforme dados operacionais em analises e auditoria.",
+  },
+  Expansao: {
+    label: "Recursos avancados",
+    badge: "Novo",
+    description: "Ative modulos para comunicacao, treinamento, IA e engajamento.",
+  },
+}
+
 function isPosModePath(pathname: string) {
   return pathname === "/app/pos/sell" || pathname.startsWith("/app/pos/sell/")
 }
@@ -261,35 +317,67 @@ export function AppLayout() {
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent
-                    align="start"
-                    className="min-w-52 border-slate-700 bg-slate-800 p-1"
+                    align="center"
+                    sideOffset={12}
+                    className="w-[min(92vw,39rem)] overflow-hidden rounded-lg border-slate-200 bg-white p-0 shadow-xl"
                   >
-                    {visibleItems.map((item) => {
-                      const isActive =
-                        item.to === "/app"
-                          ? location.pathname === "/app"
-                          : location.pathname.startsWith(item.to)
-                      return (
-                        <DropdownMenuItem
-                          key={item.to}
-                          onClick={() => void navigate(item.to)}
-                          className={cn(
-                            "flex cursor-pointer items-center gap-2.5 rounded-md px-3 py-2 text-sm outline-none transition-colors",
-                            isActive
-                              ? "bg-white/10 text-white"
-                              : "text-slate-300 focus:bg-white/10 focus:text-white"
-                          )}
-                        >
-                          <item.icon className="size-4 shrink-0" />
-                          <span className="flex-1">{item.label}</span>
-                          {item.to === "/app/alerts" && criticalCount > 0 ? (
-                            <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
-                              {criticalCount > 99 ? "99+" : criticalCount}
+                    <div className="grid gap-x-6 gap-y-1 p-6 sm:grid-cols-2">
+                      {visibleItems.map((item) => {
+                        const isActive =
+                          item.to === "/app"
+                            ? location.pathname === "/app"
+                            : location.pathname.startsWith(item.to)
+                        return (
+                          <DropdownMenuItem
+                            key={item.to}
+                            onClick={() => void navigate(item.to)}
+                            className={cn(
+                              "flex cursor-pointer items-start gap-4 rounded-lg p-3 text-left outline-none transition-colors",
+                              isActive
+                                ? "bg-slate-100 text-slate-950"
+                                : "text-slate-700 focus:bg-slate-50 focus:text-slate-950"
+                            )}
+                          >
+                            <span
+                              className={cn(
+                                "flex size-10 shrink-0 items-center justify-center rounded-md bg-slate-50 text-slate-500",
+                                isActive && "bg-white text-slate-950"
+                              )}
+                            >
+                              <item.icon className="size-4" />
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="flex items-center gap-2 text-sm font-semibold text-slate-950">
+                                {item.label}
+                                {item.to === "/app/alerts" && criticalCount > 0 ? (
+                                  <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                                    {criticalCount > 99 ? "99+" : criticalCount}
+                                  </span>
+                                ) : null}
+                              </span>
+                              <span className="mt-1 block text-xs leading-5 text-slate-500">
+                                {navItemDescriptions[item.to]}
+                              </span>
+                            </span>
+                          </DropdownMenuItem>
+                        )
+                      })}
+                    </div>
+                    {navGroupFooter[group.label] ? (
+                      <div className="border-t bg-slate-50 px-6 py-4">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
+                          {navGroupFooter[group.label].label}
+                          {navGroupFooter[group.label].badge ? (
+                            <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-700">
+                              {navGroupFooter[group.label].badge}
                             </span>
                           ) : null}
-                        </DropdownMenuItem>
-                      )
-                    })}
+                        </div>
+                        <p className="mt-1 text-xs leading-5 text-slate-500">
+                          {navGroupFooter[group.label].description}
+                        </p>
+                      </div>
+                    ) : null}
                   </DropdownMenuContent>
                 </DropdownMenu>
               )
