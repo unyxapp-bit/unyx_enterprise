@@ -19,12 +19,14 @@ import {
   Megaphone,
   Menu,
   MessageSquareText,
+  Moon,
   Package,
   ReceiptText,
   Settings,
   ShoppingCart,
   Sparkles,
   StickyNote,
+  Sun,
   Trophy,
   Truck,
   UserCog,
@@ -35,6 +37,7 @@ import {
 import { NavLink, Navigate, Outlet, useLocation, useNavigate } from "react-router-dom"
 
 import { useAuth } from "@/app/providers/auth-context"
+import { useTheme } from "@/app/providers/theme-context"
 import { BranchSelector } from "@/components/shared/BranchSelector"
 import { StateBlock } from "@/components/shared/StateBlock"
 import {
@@ -129,7 +132,7 @@ function UserAvatar({ name }: { name: string }) {
     .join("")
     .toUpperCase()
   return (
-    <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-indigo-500 text-xs font-semibold text-white">
+    <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[var(--brand-primary)] text-xs font-semibold text-white">
       {initials}
     </div>
   )
@@ -137,6 +140,7 @@ function UserAvatar({ name }: { name: string }) {
 
 export function AppLayout() {
   const { profile, profileLoading, signOut } = useAuth()
+  const { resolvedTheme, toggleTheme } = useTheme()
   const { data: organization } = useOrganization()
   const { data: opStatuses } = useOperationalStatuses()
   const [accessMode, setAccessModeState] = useState<AccessMode | null>(() =>
@@ -152,7 +156,7 @@ export function AppLayout() {
 
   if (profileLoading) {
     return (
-      <main className="min-h-screen bg-slate-50 p-6">
+      <main className="min-h-screen bg-background p-6">
         <StateBlock type="loading" title="Carregando perfil" />
       </main>
     )
@@ -200,15 +204,18 @@ export function AppLayout() {
     await signOut()
   }
 
+  const themeLabel =
+    resolvedTheme === "dark" ? "Ativar tema claro" : "Ativar tema escuro"
+
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-950">
+    <div className="min-h-screen bg-background text-foreground">
       {/* ── Top nav ──────────────────────────────────────────── */}
-      <header className="sticky top-0 z-40 bg-slate-900 shadow-md">
+      <header className="sticky top-0 z-40 bg-[var(--nav-bg)] shadow-md">
         <div className="flex h-14 items-center gap-1 px-4">
 
           {/* Logo */}
           <div className="flex shrink-0 items-center gap-2.5 pr-4">
-            <div className="flex size-7 items-center justify-center rounded-md bg-indigo-500">
+            <div className="flex size-7 items-center justify-center rounded-md bg-[var(--brand-primary)]">
               <span className="text-xs font-bold text-white">U</span>
             </div>
             <div className="hidden min-w-0 sm:block">
@@ -295,6 +302,20 @@ export function AppLayout() {
               <BranchSelector />
             </div>
 
+            <button
+              type="button"
+              aria-label={themeLabel}
+              title={themeLabel}
+              onClick={toggleTheme}
+              className="inline-flex size-8 items-center justify-center rounded-md text-slate-400 outline-none transition-colors hover:bg-white/10 hover:text-white focus-visible:ring-2 focus-visible:ring-white/40"
+            >
+              {resolvedTheme === "dark" ? (
+                <Sun className="size-4" />
+              ) : (
+                <Moon className="size-4" />
+              )}
+            </button>
+
             {/* User dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -358,7 +379,7 @@ export function AppLayout() {
             onClick={() => setMobileOpen(false)}
             aria-label="Fechar menu"
           />
-          <div className="absolute left-0 top-0 h-full w-72 overflow-y-auto bg-slate-900">
+          <div className="absolute left-0 top-0 h-full w-72 overflow-y-auto bg-[var(--nav-bg)]">
             <div className="flex h-14 items-center justify-between px-4">
               <span className="text-sm font-semibold text-white">Unyx Enterprise</span>
               <button
@@ -428,6 +449,18 @@ export function AppLayout() {
                   <LogOut className="size-4" />
                 </button>
               </div>
+              <button
+                type="button"
+                onClick={toggleTheme}
+                className="mt-3 flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
+              >
+                {resolvedTheme === "dark" ? (
+                  <Sun className="size-4" />
+                ) : (
+                  <Moon className="size-4" />
+                )}
+                {themeLabel}
+              </button>
               <button
                 type="button"
                 onClick={handleChangeAccessMode}

@@ -1,0 +1,62 @@
+.touch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: var(--space-4);
+}
+
+.touch-action-card {
+  min-height: 8.75rem;
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+}
+
+.surface {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.surface-soft {
+  background: var(--bg-surface-soft);
+  color: var(--text-primary);
+}
+
+.text-secondary {
+  color: var(--text-secondary);
+}
+
+.text-muted-app {
+  color: var(--text-muted);
+}
+
+.border-soft {
+  border-color: var(--border-soft);
+}
+
+.scrollbar-stable {
+  scrollbar-gutter: stable;
+}
+
+@media (pointer: coarse) {
+  .touch-target,
+  button[data-slot="button"],
+  a[data-slot="button"] {
+    min-height: var(--touch-target);
+  }
+
+  input[data-slot="input"],
+  select,
+  textarea {
+    min-height: var(--touch-target);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
