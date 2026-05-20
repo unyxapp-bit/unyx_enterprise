@@ -52,6 +52,8 @@ const actionLabels: Record<string, string> = {
   retorno_confirmado: "Retorno confirmado",
   saida_confirmada: "Saida confirmada",
   ocorrencia_registrada: "Ocorrencia registrada",
+  operational_action_blocked: "Acao operacional bloqueada",
+  ai_agent_action_status_updated: "Status de acao da IA atualizado",
   // Alocacao
   operational_post_created: "Criacao de posto operacional",
   operational_post_updated: "Atualizacao de posto operacional",
@@ -127,6 +129,7 @@ const entityLabels: Record<string, string> = {
   operational_forms: "Formulario operacional",
   operational_form_responses: "Resposta de formulario",
   operational_posters: "Cartaz operacional",
+  ai_agent_actions: "Acao da IA",
   user: "Usuario",
   user_profiles: "Perfil de usuario",
   organization: "Empresa",

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { useAuth } from "@/app/providers/auth-context"
+import { eventLabel } from "@/lib/status"
 import { useAppStore } from "@/store/useAppStore"
 import {
   closeCashSession,
@@ -55,6 +56,7 @@ import {
   importSchedules,
   getCurrentCashSession,
   getLatestAiAgentSnapshot,
+  listAiAgentQueuedActions,
   listAllocationHistory,
   listCashSessions,
   listCustomers,
@@ -121,6 +123,7 @@ import {
   toggleSectorActive,
   transferPostAllocation,
   updateBranch,
+  updateAiAgentQueuedActionStatus,
   updateCustomer,
   updateDeliveryOrder,
   updateEmployee,
@@ -139,6 +142,7 @@ import {
 } from "@/services/unyxApi"
 import type {
   AiAgentInput,
+  AiAgentQueuedActionStatus,
   BulkImportResult,
   ChecklistProcedureInput,
   CompleteSaleInput,
@@ -540,6 +544,28 @@ export function useLatestAiAgentSnapshot() {
   })
 }
 
+export function useAiAgentQueuedActions(openOnly = true) {
+  const { profile } = useAuth()
+  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
+
+  return useQuery({
+    queryKey: [
+      "ai-agent-actions",
+      profile?.organization_id,
+      selectedBranchId,
+      openOnly,
+    ],
+    queryFn: () =>
+      listAiAgentQueuedActions(
+        selectedBranchId ?? null,
+        profile!.organization_id,
+        openOnly
+      ),
+    enabled: Boolean(profile),
+    refetchInterval: 30_000,
+  })
+}
+
 export function useAiAgent() {
   const queryClient = useQueryClient()
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
@@ -552,9 +578,10 @@ export function useAiAgent() {
         target: input?.target ?? null,
         question: input?.question ?? null,
         action: input?.action ?? null,
-      }),
+    }),
     onSuccess: async (data) => {
       await queryClient.invalidateQueries({ queryKey: ["ai-agent-snapshot"] })
+      await queryClient.invalidateQueries({ queryKey: ["ai-agent-actions"] })
 
       if (data.action_result.status !== "executed") return
 
@@ -565,6 +592,31 @@ export function useAiAgent() {
       await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
       await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
       toast.success(data.action_result.title || "Acao executada.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useUpdateAiAgentQueuedActionStatus() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: {
+      actionId: string
+      status: AiAgentQueuedActionStatus
+    }) => updateAiAgentQueuedActionStatus(profile, input.actionId, input.status),
+    onSuccess: async (_, variables) => {
+      await queryClient.invalidateQueries({ queryKey: ["ai-agent-actions"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      if (variables.status === "dismissed") {
+        toast.success("Acao da IA descartada.")
+      } else {
+        toast.success("Fila da IA atualizada.")
+      }
     },
     onError: (error) => {
       toast.error(error.message)
@@ -1386,12 +1438,12 @@ export function useRecordOperationalEvent() {
       delay_minutes?: number
       notes?: string | null
     }) => recordOperationalEvent(profile, input),
-    onSuccess: async () => {
+    onSuccess: async (_, variables) => {
       await queryClient.invalidateQueries({ queryKey: ["operational-status"] })
       await queryClient.invalidateQueries({ queryKey: ["attendance-events"] })
       await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
       await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
-      toast.success("Evento registrado.")
+      toast.success(eventLabel[variables.event_type] ?? "Evento registrado.")
     },
     onError: (error) => {
       toast.error(error.message)

@@ -14,6 +14,133 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_agent_actions: {
+        Row: {
+          action_result: Json
+          approved_at: string | null
+          approved_by: string | null
+          arguments: Json
+          branch_id: string | null
+          confidence: number
+          confirmation_required: boolean
+          context_snapshot: Json
+          created_at: string
+          created_by: string | null
+          description: string
+          id: string
+          intent: string
+          mode: string
+          organization_id: string
+          reason: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          snapshot_id: string | null
+          source: string
+          status: string
+          target: Json | null
+          title: string
+          tool_name: string | null
+          updated_at: string
+        }
+        Insert: {
+          action_result?: Json
+          approved_at?: string | null
+          approved_by?: string | null
+          arguments?: Json
+          branch_id?: string | null
+          confidence?: number
+          confirmation_required?: boolean
+          context_snapshot?: Json
+          created_at?: string
+          created_by?: string | null
+          description: string
+          id?: string
+          intent?: string
+          mode?: string
+          organization_id: string
+          reason?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          snapshot_id?: string | null
+          source?: string
+          status?: string
+          target?: Json | null
+          title: string
+          tool_name?: string | null
+          updated_at?: string
+        }
+        Update: {
+          action_result?: Json
+          approved_at?: string | null
+          approved_by?: string | null
+          arguments?: Json
+          branch_id?: string | null
+          confidence?: number
+          confirmation_required?: boolean
+          context_snapshot?: Json
+          created_at?: string
+          created_by?: string | null
+          description?: string
+          id?: string
+          intent?: string
+          mode?: string
+          organization_id?: string
+          reason?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          snapshot_id?: string | null
+          source?: string
+          status?: string
+          target?: Json | null
+          title?: string
+          tool_name?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_agent_actions_approved_by_fkey"
+            columns: ["approved_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_agent_actions_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_agent_actions_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_agent_actions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_agent_actions_resolved_by_fkey"
+            columns: ["resolved_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_agent_actions_snapshot_id_fkey"
+            columns: ["snapshot_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agent_snapshots"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_agent_snapshots: {
         Row: {
           action_status: string | null

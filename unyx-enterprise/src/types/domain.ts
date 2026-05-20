@@ -268,7 +268,9 @@ export interface AttendanceEvent {
   created_by: string | null
   notes: string | null
   created_at: string
-  employees?: Pick<Employee, "name"> | null
+  employees?: (Pick<Employee, "name"> & {
+    sectors?: Pick<Sector, "name"> | null
+  }) | null
   branches?: Pick<Branch, "name"> | null
 }
 

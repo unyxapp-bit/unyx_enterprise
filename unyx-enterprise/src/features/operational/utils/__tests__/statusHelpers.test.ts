@@ -50,6 +50,8 @@ describe("statusHelpers", () => {
       expect(canStartBreak("trabalhando")).toBe(true)
       expect(canStartBreak("voltou")).toBe(true)
       expect(canStartBreak("deve_sair")).toBe(true)
+      expect(canStartBreak("apoio_operacional")).toBe(true)
+      expect(canStartBreak("fechamento")).toBe(true)
     })
 
     it("disallows break from other statuses", () => {
@@ -73,6 +75,7 @@ describe("statusHelpers", () => {
     it("allows café from working status", () => {
       expect(canStartCafe("trabalhando")).toBe(true)
       expect(canStartCafe("voltou")).toBe(true)
+      expect(canStartCafe("apoio_operacional")).toBe(true)
     })
 
     it("disallows café from break status", () => {
@@ -130,6 +133,9 @@ describe("statusHelpers", () => {
       expect(ENTERED_STATUSES.has("trabalhando")).toBe(true)
       expect(ENTERED_STATUSES.has("voltou")).toBe(true)
       expect(ENTERED_STATUSES.has("em_intervalo")).toBe(true)
+      expect(ENTERED_STATUSES.has("pico")).toBe(true)
+      expect(ENTERED_STATUSES.has("apoio_operacional")).toBe(true)
+      expect(ENTERED_STATUSES.has("fechamento")).toBe(true)
       expect(ENTERED_STATUSES.has("finalizado")).toBe(false)
     })
   })

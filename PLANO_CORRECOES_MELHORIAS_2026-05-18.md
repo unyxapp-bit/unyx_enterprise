@@ -137,3 +137,20 @@ Proximo bloco recomendado:
 2. Registrar motivo quando uma acao operacional for bloqueada.
 3. Melhorar confirmacoes visuais apos entrada, intervalo, retorno, saida e sangria.
 4. Ampliar acoes sugeridas da IA a partir das pendencias ja detectadas.
+
+Status do bloco IA/fluxo: concluido em 2026-05-20.
+
+- Criada a tabela `ai_agent_actions` para fila real de acoes sugeridas, prontas, pendentes de aprovacao, executadas, bloqueadas, com falha ou descartadas.
+- A Edge Function `ai-agent` passou a salvar cada plano relevante na fila com contexto, motivo, argumentos, resultado e status.
+- Tela Unyx AI passou a exibir a fila de acoes, executar/confirmar itens prontos e descartar itens que nao serao usados.
+- Acoes operacionais bloqueadas passaram a gerar auditoria com motivo, colaborador, escala e evento solicitado.
+- Confirmacoes visuais de eventos operacionais passaram a usar o nome real do evento.
+- Testes de fluxo foram ampliados para os status fiscal/PDV `pico`, `apoio_operacional` e `fechamento`.
+- Relatorios passaram a filtrar e resumir eventos por filial e setor, mantendo exportacao CSV com essas dimensoes.
+
+Proximo bloco recomendado:
+
+1. Evoluir relatorios por colaborador, filial e setor com visao de reincidencia.
+2. Melhorar auditoria gerencial com filtros e detalhes mais legiveis dos motivos.
+3. Quebrar `unyxApi.ts` e `useUnyxData.ts` em services/hooks por dominio.
+4. Adicionar testes para hooks criticos e chamadas RPC.

@@ -37,6 +37,34 @@ describe("flowPolicy", () => {
     expect(operationalStageForStatus("aguardando_sangria")).toBe("cash_control")
     expect(operationalStageForStatus("troca_de_caixa")).toBe("coverage_change")
     expect(operationalStageForStatus("em_intervalo")).toBe("break")
+    expect(operationalStageForStatus("pico")).toBe("working")
+    expect(operationalStageForStatus("apoio_operacional")).toBe("working")
+    expect(operationalStageForStatus("fechamento")).toBe("closing")
+  })
+
+  it("creates fiscal flow signals for peak, support and closing statuses", () => {
+    const peakSignals = buildOperationalFlowSignals({
+      schedule: baseSchedule,
+      status: statusRecord("pico"),
+      currentMinutes: 12 * 60,
+      breakToleranceMinutes: 15,
+    })
+    const supportSignals = buildOperationalFlowSignals({
+      schedule: baseSchedule,
+      status: statusRecord("apoio_operacional"),
+      currentMinutes: 12 * 60,
+      breakToleranceMinutes: 15,
+    })
+    const closingSignals = buildOperationalFlowSignals({
+      schedule: baseSchedule,
+      status: statusRecord("fechamento"),
+      currentMinutes: 12 * 60,
+      breakToleranceMinutes: 15,
+    })
+
+    expect(peakSignals.some((signal) => signal.key === "peak-operation")).toBe(true)
+    expect(supportSignals.some((signal) => signal.key === "support-operation")).toBe(true)
+    expect(closingSignals.some((signal) => signal.key === "closing-operation")).toBe(true)
   })
 
   it("raises priority when break release is past tolerance", () => {

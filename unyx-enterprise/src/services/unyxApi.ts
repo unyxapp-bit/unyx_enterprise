@@ -232,6 +232,22 @@ function isMissingAiAgentSnapshotFeature(error: { code?: string; message: string
   )
 }
 
+function isMissingAiAgentActionsFeature(error: { code?: string; message: string } | null) {
+  if (!error) return false
+  const message = error.message.toLowerCase()
+  return (
+    message.includes("ai_agent_actions") &&
+    (
+      error.code === "42P01" ||
+      error.code === "PGRST204" ||
+      error.code === "PGRST205" ||
+      message.includes("schema cache") ||
+      message.includes("does not exist") ||
+      message.includes("could not find")
+    )
+  )
+}
+
 function isMissingFrontStoreFeature(error: { code?: string; message: string } | null) {
   if (!error) return false
   const message = error.message.toLowerCase()
@@ -341,6 +357,41 @@ async function createAuditLog(
   })
 
   raise(error)
+}
+
+async function createOperationalActionBlockedAudit(
+  profile: UserProfile,
+  input: {
+    branch_id: string
+    employee_id: string
+    schedule_id: string
+    event_type: AttendanceEventType | "intervalo_ja_feito"
+    reason: string
+    notes?: string | null
+  }
+) {
+  try {
+    await createAuditLog(profile, {
+      branch_id: input.branch_id,
+      action: "operational_action_blocked",
+      entity_type: "operational_status",
+      entity_id: input.schedule_id,
+      old_value: null,
+      new_value: {
+        employee_id: input.employee_id,
+        schedule_id: input.schedule_id,
+        requested_event_type: input.event_type,
+        reason: input.reason,
+        notes: input.notes ?? null,
+        blocked_at: new Date().toISOString(),
+      },
+    })
+  } catch (error) {
+    console.warn(
+      "Nao foi possivel auditar acao operacional bloqueada:",
+      error instanceof Error ? error.message : error
+    )
+  }
 }
 
 function normalizeText(value: string | null | undefined) {
@@ -2407,6 +2458,43 @@ export interface AiAgentSnapshot {
   created_at: string
 }
 
+export type AiAgentQueuedActionStatus =
+  | "suggested"
+  | "ready"
+  | "pending_approval"
+  | "executed"
+  | "blocked"
+  | "failed"
+  | "dismissed"
+
+export interface AiAgentQueuedAction {
+  id: string
+  organization_id: string
+  branch_id: string | null
+  snapshot_id: string | null
+  created_by: string | null
+  approved_by: string | null
+  resolved_by: string | null
+  intent: AiAgentIntent
+  source: "agent" | "manual"
+  status: AiAgentQueuedActionStatus
+  mode: AiAgentActionMode
+  tool_name: AiAgentActionTool | null
+  title: string
+  description: string
+  reason: string | null
+  confidence: number
+  confirmation_required: boolean
+  arguments: Partial<AiAgentActionArguments>
+  target: AiAgentTarget | null
+  context_snapshot: Record<string, unknown>
+  action_result: Partial<AiAgentActionResult>
+  approved_at: string | null
+  resolved_at: string | null
+  created_at: string
+  updated_at: string
+}
+
 const operationalNoteSelect =
   "*, branches(name), sectors(name), user_profiles!created_by(name)"
 
@@ -2896,6 +2984,79 @@ export async function getLatestAiAgentSnapshot(
   return ((data ?? [])[0] ?? null) as AiAgentSnapshot | null
 }
 
+export async function listAiAgentQueuedActions(
+  branchId?: string | null,
+  organizationId?: string | null,
+  openOnly = true
+) {
+  let query = supabase
+    .from("ai_agent_actions")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(80)
+
+  if (organizationId) query = query.eq("organization_id", organizationId)
+  if (branchId) query = query.or(`branch_id.is.null,branch_id.eq.${branchId}`)
+  if (openOnly) {
+    query = query.in("status", [
+      "suggested",
+      "ready",
+      "pending_approval",
+      "blocked",
+      "failed",
+    ])
+  }
+
+  const { data, error } = await query
+  if (isMissingAiAgentActionsFeature(error)) return []
+  raise(error)
+
+  return (data ?? []) as AiAgentQueuedAction[]
+}
+
+export async function updateAiAgentQueuedActionStatus(
+  profile: UserProfile,
+  actionId: string,
+  status: AiAgentQueuedActionStatus
+) {
+  const now = new Date().toISOString()
+  const payload: Record<string, unknown> = { status }
+
+  if (status === "pending_approval") {
+    payload.approved_by = profile.id
+    payload.approved_at = now
+  }
+
+  if (["executed", "blocked", "failed", "dismissed"].includes(status)) {
+    payload.resolved_by = profile.id
+    payload.resolved_at = now
+  }
+
+  const { data, error } = await supabase
+    .from("ai_agent_actions")
+    .update(payload)
+    .eq("id", actionId)
+    .eq("organization_id", profile.organization_id)
+    .select("*")
+    .single()
+
+  if (isMissingAiAgentActionsFeature(error)) {
+    throw new Error("Fila de acoes da IA ainda nao instalada no Supabase. Rode supabase/ai_agent_actions_setup.sql.")
+  }
+  raise(error)
+
+  await createAuditLog(profile, {
+    branch_id: (data as AiAgentQueuedAction).branch_id,
+    action: "ai_agent_action_status_updated",
+    entity_type: "ai_agent_actions",
+    entity_id: actionId,
+    old_value: null,
+    new_value: { status },
+  })
+
+  return data as AiAgentQueuedAction
+}
+
 export async function createOperationalPoster(
   profile: UserProfile,
   input: OperationalPosterInput
@@ -3117,6 +3278,14 @@ export async function recordOperationalEvent(
 
   if (!rpcError) return rpcEvent as AttendanceEvent
   if (!isMissingOperationalActionRpc(rpcError)) {
+    await createOperationalActionBlockedAudit(profile, {
+      branch_id: input.branch_id,
+      employee_id: input.employee_id,
+      schedule_id: input.schedule_id,
+      event_type: input.event_type,
+      reason: rpcError.message,
+      notes: input.notes ?? null,
+    })
     throw new Error(rpcError.message)
   }
 
@@ -3193,7 +3362,7 @@ export async function recordOperationalEvent(
 }
 
 export async function recordBreakAlreadyDone(
-  _profile: UserProfile,
+  profile: UserProfile,
   input: {
     branch_id: string
     employee_id: string
@@ -3212,6 +3381,16 @@ export async function recordBreakAlreadyDone(
     throw new Error(
       "A acao 'intervalo ja feito' ainda nao esta instalada no Supabase. Rode supabase/break_already_done_rpc.sql e tente novamente."
     )
+  }
+  if (error) {
+    await createOperationalActionBlockedAudit(profile, {
+      branch_id: input.branch_id,
+      employee_id: input.employee_id,
+      schedule_id: input.schedule_id,
+      event_type: "intervalo_ja_feito",
+      reason: error.message,
+      notes: input.notes ?? null,
+    })
   }
   raise(error)
   return data as AttendanceEvent

@@ -2608,6 +2608,101 @@ function sanitizeOpenAiError(value: unknown) {
     .slice(0, 260)
 }
 
+function actionQueueStatus(
+  actionPlan: DataRow,
+  actionResult: DataRow
+): string | null {
+  const resultStatus = readString(actionResult, "status")
+  if (resultStatus === "executed") return "executed"
+  if (resultStatus === "pending_confirmation") return "pending_approval"
+  if (resultStatus === "blocked") return "blocked"
+  if (resultStatus === "failed") return "failed"
+
+  const mode = readString(actionPlan, "mode")
+  if (!mode || mode === "none") return null
+  if (mode === "execute_with_confirmation") return "pending_approval"
+  if (mode === "execute_auto") return "ready"
+  return "suggested"
+}
+
+function actionQueueContext(
+  intent: AgentIntent,
+  question: string | null,
+  target: AgentTarget | null,
+  insight: Record<string, unknown>
+) {
+  return {
+    intent,
+    question,
+    target,
+    overall_severity: readString(insight, "overall_severity"),
+    summary: trimText(readString(insight, "summary"), 240),
+    tools_used: readArray(insight, "tools_used"),
+  }
+}
+
+async function saveAgentAction(
+  supabase: ReturnType<typeof createClient>,
+  profile: UserProfile,
+  branchId: string | null,
+  snapshotId: string | null,
+  intent: AgentIntent,
+  question: string | null,
+  target: AgentTarget | null,
+  insight: Record<string, unknown>
+) {
+  const actionPlan = asRow(insight.action_plan)
+  const actionResult = asRow(insight.action_result)
+  const status = actionQueueStatus(actionPlan, actionResult)
+  if (!status) return
+
+  const title =
+    readString(actionPlan, "title") ||
+    readString(actionResult, "title") ||
+    "Acao sugerida pela IA"
+  const description =
+    readString(actionPlan, "description") ||
+    readString(actionResult, "message") ||
+    "A IA gerou uma acao operacional para revisao."
+  const resultStatus = readString(actionResult, "status")
+  const confidence = Math.min(1, Math.max(0, readNumber(actionPlan, "confidence") || 0))
+  const resolvedStatus = ["executed", "blocked", "failed"].includes(status)
+
+  const { error } = await supabase.from("ai_agent_actions").insert({
+    organization_id: profile.organization_id,
+    branch_id: branchId,
+    snapshot_id: snapshotId,
+    created_by: profile.id,
+    resolved_by: resolvedStatus ? profile.id : null,
+    intent,
+    source: "agent",
+    status,
+    mode: readString(actionPlan, "mode") || "suggest",
+    tool_name: readString(actionPlan, "tool_name") || readString(actionResult, "tool_name"),
+    title: trimText(title, 180) || "Acao sugerida pela IA",
+    description: trimText(description, 800) || "A IA gerou uma acao operacional para revisao.",
+    reason:
+      readString(actionPlan, "arguments_summary") ||
+      readString(actionResult, "message") ||
+      null,
+    confidence,
+    confirmation_required:
+      readBoolean(actionPlan, "confirmation_required") ||
+      status === "pending_approval",
+    arguments: actionPlan["arguments"] ?? {},
+    target,
+    context_snapshot: actionQueueContext(intent, question, target, insight),
+    action_result: actionResult,
+    resolved_at: resolvedStatus ? new Date().toISOString() : null,
+    approved_at: resultStatus === "executed" ? new Date().toISOString() : null,
+    approved_by: resultStatus === "executed" ? profile.id : null,
+  })
+
+  if (error) {
+    console.warn("[ai-agent] action queue not saved", error.message)
+  }
+}
+
 async function saveAgentSnapshot(
   supabase: ReturnType<typeof createClient>,
   profile: UserProfile,
@@ -2618,7 +2713,7 @@ async function saveAgentSnapshot(
   insight: Record<string, unknown>
 ) {
   const actionResult = asRow(insight.action_result)
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("ai_agent_snapshots")
     .insert({
       organization_id: profile.organization_id,
@@ -2633,10 +2728,34 @@ async function saveAgentSnapshot(
       action_tool: readString(actionResult, "tool_name"),
       action_status: readString(actionResult, "status"),
     })
+    .select("id")
+    .single()
 
   if (error) {
     console.warn("[ai-agent] snapshot not saved", error.message)
+    await saveAgentAction(
+      supabase,
+      profile,
+      branchId,
+      null,
+      intent,
+      question,
+      target,
+      insight
+    )
+    return
   }
+
+  await saveAgentAction(
+    supabase,
+    profile,
+    branchId,
+    readString(asRow(data), "id"),
+    intent,
+    question,
+    target,
+    insight
+  )
 }
 
 Deno.serve(async (request) => {

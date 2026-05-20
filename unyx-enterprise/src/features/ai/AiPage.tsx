@@ -9,6 +9,7 @@ import {
   ClipboardCheck,
   Clock,
   FileText,
+  ListChecks,
   Lightbulb,
   PlayCircle,
   RefreshCw,
@@ -34,12 +35,14 @@ import { useAuth } from "@/app/providers/auth-context"
 import { MissingSchedulesPrompt } from "@/features/schedules/components/MissingSchedulesPrompt"
 import {
   useAiAgent,
+  useAiAgentQueuedActions,
   useAllEmployees,
   useCreateOperationalNote,
   useLatestAiAgentSnapshot,
   useOperationalStatuses,
   useReportEvents,
   useSchedules,
+  useUpdateAiAgentQueuedActionStatus,
 } from "@/hooks/useUnyxData"
 import { formatDateTimeBR, todayISO } from "@/lib/format"
 import { supabase } from "@/lib/supabase"
@@ -49,6 +52,8 @@ import type {
   AiAgentActionArguments,
   AiAgentActionTool,
   AiAgentInsight,
+  AiAgentQueuedAction,
+  AiAgentQueuedActionStatus,
   AiAgentSeverity,
   AiAgentTarget,
 } from "@/services/unyxApi"
@@ -145,6 +150,22 @@ function targetFromStatus(status: OperationalStatusRecord): AiAgentTarget {
   }
 }
 
+const queuedActionStatusLabel: Record<AiAgentQueuedActionStatus, string> = {
+  suggested: "sugerida",
+  ready: "pronta",
+  pending_approval: "confirmacao",
+  executed: "executada",
+  blocked: "bloqueada",
+  failed: "falhou",
+  dismissed: "descartada",
+}
+
+function queuedActionBadgeVariant(status: AiAgentQueuedActionStatus) {
+  if (status === "blocked" || status === "failed") return "destructive"
+  if (status === "pending_approval" || status === "ready") return "outline"
+  return "default"
+}
+
 export function AiPage() {
   const { profile } = useAuth()
   const queryClient = useQueryClient()
@@ -153,6 +174,8 @@ export function AiPage() {
   const events = useReportEvents()
   const employees = useAllEmployees()
   const aiAgent = useAiAgent()
+  const queuedActions = useAiAgentQueuedActions()
+  const updateQueuedAction = useUpdateAiAgentQueuedActionStatus()
   const latestSnapshot = useLatestAiAgentSnapshot()
   const createNote = useCreateOperationalNote()
   const today = useMemo(() => todayISO(), [])
@@ -200,6 +223,20 @@ export function AiPage() {
           const snapshot = payload.new as { branch_id?: string | null }
           if ((snapshot.branch_id ?? null) !== (selectedBranchId ?? null)) return
           void queryClient.invalidateQueries({ queryKey: ["ai-agent-snapshot"] })
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "ai_agent_actions",
+          filter: `organization_id=eq.${profile.organization_id}`,
+        },
+        (payload) => {
+          const action = payload.new as { branch_id?: string | null }
+          if ((action.branch_id ?? null) !== (selectedBranchId ?? null)) return
+          void queryClient.invalidateQueries({ queryKey: ["ai-agent-actions"] })
         }
       )
       .subscribe()
@@ -367,6 +404,40 @@ export function AiPage() {
     runActiveAction(plan.tool_name, true, plan.arguments)
   }
 
+  function runQueuedAction(action: AiAgentQueuedAction) {
+    if (!action.tool_name) return
+
+    aiAgent.mutate(
+      {
+        intent: "act",
+        question:
+          action.tool_name === "generate_delay_report"
+            ? "Executar acao da fila: relatorio de atrasos."
+            : "Executar acao da fila: alocacao operacional segura.",
+        action: {
+          tool_name: action.tool_name,
+          arguments: action.arguments,
+          confirmed: action.status === "pending_approval" || action.confirmation_required,
+        },
+      },
+      {
+        onSuccess: (data) => {
+          const status =
+            data.action_result.status === "executed"
+              ? "executed"
+              : data.action_result.status === "blocked"
+                ? "blocked"
+                : data.action_result.status === "failed"
+                  ? "failed"
+                  : action.status
+          if (status !== action.status) {
+            updateQueuedAction.mutate({ actionId: action.id, status })
+          }
+        },
+      }
+    )
+  }
+
   async function applyResolutionAsNote() {
     const resolution = agentInsight?.resolution
     if (!resolution || resolution.status !== "drafted") return
@@ -435,6 +506,100 @@ export function AiPage() {
             runAgent(null)
           }}
         />
+
+        <Card className="border bg-white shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex flex-wrap items-center gap-2">
+              <ListChecks className="size-5" />
+              <span className="flex-1">Fila de acoes da IA</span>
+              <Badge variant="outline">
+                {(queuedActions.data ?? []).length} aberta(s)
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {queuedActions.isLoading ? (
+              <StateBlock type="loading" title="Carregando fila da IA" />
+            ) : (queuedActions.data ?? []).length === 0 ? (
+              <div className="rounded-lg border bg-slate-50 px-3 py-2 text-sm text-muted-foreground">
+                Nenhuma acao pendente. Ao executar o agente, sugestoes e bloqueios passam a ficar salvos aqui.
+              </div>
+            ) : (
+              <div className="grid gap-2 lg:grid-cols-2">
+                {(queuedActions.data ?? []).slice(0, 8).map((action) => (
+                  <div
+                    key={action.id}
+                    className="rounded-lg border border-slate-200 bg-slate-50 p-3"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-semibold">
+                          {action.title}
+                        </div>
+                        <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
+                          {action.description}
+                        </p>
+                      </div>
+                      <Badge variant={queuedActionBadgeVariant(action.status)}>
+                        {queuedActionStatusLabel[action.status]}
+                      </Badge>
+                    </div>
+                    {action.reason ? (
+                      <div className="mt-2 rounded-md border bg-white px-2 py-1.5 text-xs text-muted-foreground">
+                        {action.reason}
+                      </div>
+                    ) : null}
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap gap-1.5 text-xs text-muted-foreground">
+                        {action.tool_name ? (
+                          <Badge variant="outline">{action.tool_name}</Badge>
+                        ) : null}
+                        <Badge variant="outline">
+                          {Math.round(action.confidence * 100)}%
+                        </Badge>
+                        {action.confirmation_required ? (
+                          <Badge variant="destructive">confirmar</Badge>
+                        ) : null}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {action.tool_name &&
+                        (action.status === "ready" ||
+                          action.status === "pending_approval") ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={aiAgent.isPending || updateQueuedAction.isPending}
+                            onClick={() => runQueuedAction(action)}
+                          >
+                            <PlayCircle className="size-3.5" />
+                            {action.status === "pending_approval"
+                              ? "Confirmar"
+                              : "Executar"}
+                          </Button>
+                        ) : null}
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={updateQueuedAction.isPending}
+                          onClick={() =>
+                            updateQueuedAction.mutate({
+                              actionId: action.id,
+                              status: "dismissed",
+                            })
+                          }
+                        >
+                          Descartar
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {isDataLoading ? (
           <StateBlock type="loading" title="Gerando insights" />

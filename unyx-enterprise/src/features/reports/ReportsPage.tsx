@@ -43,6 +43,8 @@ export function ReportsPage() {
   const [startDate, setStartDate] = useState(() => getRelativeISODate(-30))
   const [endDate, setEndDate] = useState(() => getRelativeISODate(0))
   const [employeeFilter, setEmployeeFilter] = useState("")
+  const [branchFilter, setBranchFilter] = useState("")
+  const [sectorFilter, setSectorFilter] = useState("")
 
   const employeeOptions = useMemo(() => {
     const map = new Map<string, string>()
@@ -54,15 +56,38 @@ export function ReportsPage() {
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [events.data])
 
+  const branchOptions = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const event of events.data ?? []) {
+      if (!map.has(event.branch_id)) {
+        map.set(event.branch_id, event.branches?.name ?? "Filial")
+      }
+    }
+    return Array.from(map.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [events.data])
+
+  const sectorOptions = useMemo(() => {
+    const set = new Set<string>()
+    for (const event of events.data ?? []) {
+      const sector = event.employees?.sectors?.name
+      if (sector) set.add(sector)
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b))
+  }, [events.data])
+
   const filteredEvents = useMemo(() => {
     const list = events.data ?? []
     return list.filter((e) => {
       const d = e.event_time.slice(0, 10)
       const inRange = d >= startDate && d <= endDate
       const inEmployee = !employeeFilter || e.employee_id === employeeFilter
-      return inRange && inEmployee
+      const inBranch = !branchFilter || e.branch_id === branchFilter
+      const inSector = !sectorFilter || e.employees?.sectors?.name === sectorFilter
+      return inRange && inEmployee && inBranch && inSector
     })
-  }, [events.data, startDate, endDate, employeeFilter])
+  }, [branchFilter, employeeFilter, endDate, events.data, sectorFilter, startDate])
 
   const periodDays = useMemo(() => {
     const start = new Date(startDate)
@@ -82,9 +107,11 @@ export function ReportsPage() {
       const d = e.event_time.slice(0, 10)
       const inRange = d >= ps && d <= pe
       const inEmployee = !employeeFilter || e.employee_id === employeeFilter
-      return inRange && inEmployee
+      const inBranch = !branchFilter || e.branch_id === branchFilter
+      const inSector = !sectorFilter || e.employees?.sectors?.name === sectorFilter
+      return inRange && inEmployee && inBranch && inSector
     })
-  }, [events.data, startDate, periodDays, employeeFilter])
+  }, [branchFilter, employeeFilter, events.data, periodDays, sectorFilter, startDate])
 
   const stats = useMemo(() => {
     const total = filteredEvents.length
@@ -118,11 +145,38 @@ export function ReportsPage() {
       .slice(0, 5)
 
     const eventBreakdown: Record<string, number> = {}
+    const branchCounts: Record<string, { name: string; total: number }> = {}
+    const sectorCounts: Record<string, { name: string; total: number }> = {}
     for (const e of filteredEvents) {
       eventBreakdown[e.event_type] = (eventBreakdown[e.event_type] ?? 0) + 1
+      const branchName = e.branches?.name ?? "Filial"
+      const sectorName = e.employees?.sectors?.name ?? "Sem setor"
+      branchCounts[e.branch_id] = branchCounts[e.branch_id] ?? {
+        name: branchName,
+        total: 0,
+      }
+      branchCounts[e.branch_id].total++
+      sectorCounts[sectorName] = sectorCounts[sectorName] ?? {
+        name: sectorName,
+        total: 0,
+      }
+      sectorCounts[sectorName].total++
     }
 
-    return { total, absences, delays, occurrences, topEmployees, eventBreakdown }
+    return {
+      total,
+      absences,
+      delays,
+      occurrences,
+      topEmployees,
+      eventBreakdown,
+      topBranches: Object.values(branchCounts)
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 5),
+      topSectors: Object.values(sectorCounts)
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 5),
+    }
   }, [filteredEvents])
 
   const dailyChartData = useMemo(() => {
@@ -154,6 +208,7 @@ export function ReportsPage() {
       { key: "employee_name", label: "Colaborador" },
       { key: "event_type_label", label: "Tipo de evento" },
       { key: "branch_name", label: "Filial" },
+      { key: "sector_name", label: "Setor" },
       { key: "notes", label: "Observacoes" },
     ]
     const rows = filteredEvents.map((e) => ({
@@ -161,6 +216,7 @@ export function ReportsPage() {
       employee_name: e.employees?.name ?? "",
       event_type_label: eventLabel[e.event_type as keyof typeof eventLabel] ?? e.event_type,
       branch_name: e.branches?.name ?? "",
+      sector_name: e.employees?.sectors?.name ?? "",
       notes: e.notes ?? "",
     }))
     downloadCsv(buildCsv(rows, headers), `relatorio_${startDate}_${endDate}.csv`)
@@ -196,6 +252,34 @@ export function ReportsPage() {
                 {employeeOptions.map((opt) => (
                   <option key={opt.id} value={opt.id}>
                     {opt.name}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+            {branchOptions.length > 1 ? (
+              <select
+                className={filterClass}
+                value={branchFilter}
+                onChange={(e) => setBranchFilter(e.target.value)}
+              >
+                <option value="">Todas as filiais</option>
+                {branchOptions.map((opt) => (
+                  <option key={opt.id} value={opt.id}>
+                    {opt.name}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+            {sectorOptions.length > 0 ? (
+              <select
+                className={filterClass}
+                value={sectorFilter}
+                onChange={(e) => setSectorFilter(e.target.value)}
+              >
+                <option value="">Todos os setores</option>
+                {sectorOptions.map((sector) => (
+                  <option key={sector} value={sector}>
+                    {sector}
                   </option>
                 ))}
               </select>
@@ -369,6 +453,58 @@ export function ReportsPage() {
                           <Bar dataKey="total" fill="#0f172a" radius={[4, 4, 0, 0]} name="Total" />
                         </BarChart>
                       </ResponsiveContainer>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="grid gap-4 xl:grid-cols-2">
+              <Card className="border bg-white shadow-sm">
+                <CardHeader>
+                  <CardTitle>Eventos por filial</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {stats.topBranches.length === 0 ? (
+                    <StateBlock title="Sem eventos por filial" />
+                  ) : (
+                    <div className="space-y-2">
+                      {stats.topBranches.map((branch) => (
+                        <div
+                          key={branch.name}
+                          className="flex items-center justify-between rounded-lg border bg-slate-50 px-3 py-2 text-sm"
+                        >
+                          <span className="font-medium">{branch.name}</span>
+                          <span className="text-muted-foreground">
+                            {branch.total} evento(s)
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="border bg-white shadow-sm">
+                <CardHeader>
+                  <CardTitle>Eventos por setor</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {stats.topSectors.length === 0 ? (
+                    <StateBlock title="Sem eventos por setor" />
+                  ) : (
+                    <div className="space-y-2">
+                      {stats.topSectors.map((sector) => (
+                        <div
+                          key={sector.name}
+                          className="flex items-center justify-between rounded-lg border bg-slate-50 px-3 py-2 text-sm"
+                        >
+                          <span className="font-medium">{sector.name}</span>
+                          <span className="text-muted-foreground">
+                            {sector.total} evento(s)
+                          </span>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </CardContent>
