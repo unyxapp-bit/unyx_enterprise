@@ -48,6 +48,7 @@ function shortLabel(label: string) {
 }
 
 export function PosterPreviewEditor({
+  className,
   data,
   form,
   selectedField,
@@ -56,6 +57,7 @@ export function PosterPreviewEditor({
   onPositionChange,
   onSelectedFieldChange,
 }: {
+  className?: string
   data: PosterCanvasData
   form: PosterForm
   selectedField: OperationalPosterLayoutField | null
@@ -100,14 +102,20 @@ export function PosterPreviewEditor({
   const selectedY = selectedField ? getFormPositionValue(form, selectedField, "y") : null
 
   return (
-    <div className="overflow-auto bg-[linear-gradient(45deg,#e5e7eb_25%,transparent_25%),linear-gradient(-45deg,#e5e7eb_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#e5e7eb_75%),linear-gradient(-45deg,transparent_75%,#e5e7eb_75%)] bg-[length:24px_24px] bg-[position:0_0,0_12px,12px_-12px,-12px_0] p-4">
-      <div
-        className="mx-auto"
-        style={{
-          width: `${stageWidth}px`,
-          maxWidth: "none",
-        }}
-      >
+    <div
+      className={cn(
+        "h-full overflow-auto bg-[linear-gradient(45deg,#e5e7eb_25%,transparent_25%),linear-gradient(-45deg,#e5e7eb_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#e5e7eb_75%),linear-gradient(-45deg,transparent_75%,#e5e7eb_75%)] bg-[length:24px_24px] bg-[position:0_0,0_12px,12px_-12px,-12px_0] p-6",
+        className
+      )}
+    >
+      <div className="flex min-h-full items-center justify-center">
+        <div
+          className="mx-auto"
+          style={{
+            width: `${stageWidth}px`,
+            maxWidth: "none",
+          }}
+        >
         <div ref={boundsRef} className="relative touch-none select-none">
           <PosterCanvas data={data} showPlaceholders textScale={textScale} />
 
@@ -159,6 +167,7 @@ export function PosterPreviewEditor({
                 )
               })}
           </div>
+        </div>
         </div>
       </div>
     </div>
