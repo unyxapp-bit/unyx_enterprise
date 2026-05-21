@@ -9,16 +9,13 @@ import {
 } from "@/features/frontstore/posters/posterConfig"
 import { PosterCanvas } from "@/features/frontstore/posters/PosterCanvas"
 import {
-  clamp,
+  clampFieldPositionValue,
+  formatDecimal,
   getFormPositionValue,
   type PosterCanvasData,
   type PosterForm,
 } from "@/features/frontstore/posters/posterModel"
 import type { OperationalPosterLayoutField } from "@/types/domain"
-
-function formatPosition(value: number) {
-  return String(Math.round(value * 10) / 10)
-}
 
 function fieldHasContent(
   form: PosterForm,
@@ -78,11 +75,13 @@ export function PosterPreviewEditor({
     const bounds = boundsRef.current?.getBoundingClientRect()
     if (!bounds) return
 
-    const x = clamp(((event.clientX - bounds.left) / bounds.width) * 100, 0, 100)
-    const y = clamp(((event.clientY - bounds.top) / bounds.height) * 100, 0, 100)
+    const rawX = ((event.clientX - bounds.left) / bounds.width) * 100
+    const rawY = ((event.clientY - bounds.top) / bounds.height) * 100
+    const x = clampFieldPositionValue(form, field, "x", formatDecimal(rawX))
+    const y = clampFieldPositionValue(form, field, "y", formatDecimal(rawY))
 
-    onPositionChange(field, "x", formatPosition(x))
-    onPositionChange(field, "y", formatPosition(y))
+    onPositionChange(field, "x", x)
+    onPositionChange(field, "y", y)
   }
 
   function startDrag(event: PointerEvent<HTMLButtonElement>, field: OperationalPosterLayoutField) {

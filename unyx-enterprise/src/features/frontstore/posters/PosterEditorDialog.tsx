@@ -37,8 +37,11 @@ import {
 import { PosterCanvas } from "@/features/frontstore/posters/PosterCanvas"
 import { PosterPreviewEditor } from "@/features/frontstore/posters/PosterPreviewEditor"
 import {
+  clampFieldPositionValue,
+  clampPosterTextSize,
   formPositionsFromLayoutConfig,
   formToCanvasData,
+  getFieldPositionBounds,
   getFormPositionValue,
   type PosterForm,
 } from "@/features/frontstore/posters/posterModel"
@@ -64,37 +67,37 @@ const sizeControlByField: Record<
     key: "subtitle_size",
     label: "Chamada",
     min: 10,
-    max: 80,
+    max: 64,
   },
   product: {
     key: "product_name_size",
     label: "Produto",
     min: 18,
-    max: 140,
+    max: 112,
   },
   description: {
     key: "description_size",
     label: "Descricao",
     min: 10,
-    max: 86,
+    max: 64,
   },
   price: {
     key: "price_size",
     label: "Valor",
     min: 36,
-    max: 220,
+    max: 170,
   },
   unit: {
     key: "sale_unit_size",
     label: "Unidade",
     min: 10,
-    max: 80,
+    max: 58,
   },
   footer: {
     key: "footer_size",
     label: "Rodape",
     min: 10,
-    max: 80,
+    max: 48,
   },
 }
 
@@ -224,6 +227,7 @@ export function PosterEditorDialog({
   const selectedFieldConfig =
     positionFields.find(({ field }) => field === selectedField) ?? positionFields[0]
   const selectedSizeControl = sizeControlByField[selectedField]
+  const selectedPositionBounds = getFieldPositionBounds(form, selectedField)
   const stageWidth = Math.round(620 * zoom)
   const textScale = stageWidth / 620
 
@@ -232,10 +236,14 @@ export function PosterEditorDialog({
     axis: PosterPositionAxis,
     value: string
   ) {
-    onFormChange((current) => ({
-      ...current,
-      [`${field}_${axis}`]: value,
-    }))
+    onFormChange((current) => {
+      const nextValue = clampFieldPositionValue(current, field, axis, value)
+
+      return {
+        ...current,
+        [`${field}_${axis}`]: nextValue,
+      }
+    })
   }
 
   function updateFormValue(key: keyof PosterForm, value: string) {
@@ -258,9 +266,20 @@ export function PosterEditorDialog({
   }
 
   function updateSelectedSize(value: string) {
+    const nextValue = String(clampPosterTextSize(selectedField, value))
+
     onFormChange((current) => ({
       ...current,
-      [selectedSizeControl.key]: value,
+      [selectedSizeControl.key]: nextValue,
+    }))
+  }
+
+  function updateSizeValue(field: OperationalPosterLayoutField, value: string) {
+    const control = sizeControlByField[field]
+
+    onFormChange((current) => ({
+      ...current,
+      [control.key]: String(clampPosterTextSize(field, value)),
     }))
   }
 
@@ -510,8 +529,8 @@ export function PosterEditorDialog({
                   <label className="space-y-1.5 text-xs">
                     <span className="font-medium">X</span>
                     <Input
-                      max={100}
-                      min={0}
+                      max={selectedPositionBounds.x.max}
+                      min={selectedPositionBounds.x.min}
                       step={0.5}
                       type="number"
                       value={getFormPositionValue(form, selectedField, "x")}
@@ -523,8 +542,8 @@ export function PosterEditorDialog({
                   <label className="space-y-1.5 text-xs">
                     <span className="font-medium">Y</span>
                     <Input
-                      max={100}
-                      min={0}
+                      max={selectedPositionBounds.y.max}
+                      min={selectedPositionBounds.y.min}
                       step={0.5}
                       type="number"
                       value={getFormPositionValue(form, selectedField, "y")}
@@ -538,7 +557,7 @@ export function PosterEditorDialog({
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-medium">{selectedSizeControl.label}</span>
                     <span className="text-muted-foreground">
-                      {String(form[selectedSizeControl.key])}px
+                      {clampPosterTextSize(selectedField, form[selectedSizeControl.key])}px
                     </span>
                   </div>
                   <input
@@ -546,14 +565,14 @@ export function PosterEditorDialog({
                     min={selectedSizeControl.min}
                     max={selectedSizeControl.max}
                     type="range"
-                    value={String(form[selectedSizeControl.key])}
+                    value={clampPosterTextSize(selectedField, form[selectedSizeControl.key])}
                     onChange={(event) => updateSelectedSize(event.target.value)}
                   />
                 <Input
                   min={selectedSizeControl.min}
                   max={selectedSizeControl.max}
                   type="number"
-                  value={String(form[selectedSizeControl.key])}
+                  value={clampPosterTextSize(selectedField, form[selectedSizeControl.key])}
                   onChange={(event) => updateSelectedSize(event.target.value)}
                 />
                 </label>
@@ -614,44 +633,44 @@ export function PosterEditorDialog({
                   <SizeControl
                     label="Chamada"
                     min={10}
-                    max={80}
-                    value={form.subtitle_size}
-                    onChange={(value) => updateFormValue("subtitle_size", value)}
+                    max={64}
+                    value={String(clampPosterTextSize("subtitle", form.subtitle_size))}
+                    onChange={(value) => updateSizeValue("subtitle", value)}
                   />
                   <SizeControl
                     label="Produto"
                     min={18}
-                    max={140}
-                    value={form.product_name_size}
-                    onChange={(value) => updateFormValue("product_name_size", value)}
+                    max={112}
+                    value={String(clampPosterTextSize("product", form.product_name_size))}
+                    onChange={(value) => updateSizeValue("product", value)}
                   />
                   <SizeControl
                     label="Descricao"
                     min={10}
-                    max={86}
-                    value={form.description_size}
-                    onChange={(value) => updateFormValue("description_size", value)}
+                    max={64}
+                    value={String(clampPosterTextSize("description", form.description_size))}
+                    onChange={(value) => updateSizeValue("description", value)}
                   />
                   <SizeControl
                     label="Valor"
                     min={36}
-                    max={220}
-                    value={form.price_size}
-                    onChange={(value) => updateFormValue("price_size", value)}
+                    max={170}
+                    value={String(clampPosterTextSize("price", form.price_size))}
+                    onChange={(value) => updateSizeValue("price", value)}
                   />
                   <SizeControl
                     label="Unidade"
                     min={10}
-                    max={80}
-                    value={form.sale_unit_size}
-                    onChange={(value) => updateFormValue("sale_unit_size", value)}
+                    max={58}
+                    value={String(clampPosterTextSize("unit", form.sale_unit_size))}
+                    onChange={(value) => updateSizeValue("unit", value)}
                   />
                   <SizeControl
                     label="Rodape"
                     min={10}
-                    max={80}
-                    value={form.footer_size}
-                    onChange={(value) => updateFormValue("footer_size", value)}
+                    max={48}
+                    value={String(clampPosterTextSize("footer", form.footer_size))}
+                    onChange={(value) => updateSizeValue("footer", value)}
                   />
                 </div>
               </FieldGroup>
