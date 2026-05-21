@@ -1,5 +1,4 @@
-.fiscal-print-root,
-.poster-print-root {
+.fiscal-print-root {
   display: none;
 }
 
@@ -14,44 +13,12 @@
     margin: 4mm;
   }
 
-  @page poster-a2 {
-    size: A2 portrait;
-    margin: 8mm;
-  }
-
-  @page poster-a3 {
-    size: A3 portrait;
-    margin: 7mm;
-  }
-
-  @page poster-a4 {
-    size: A4 portrait;
-    margin: 6mm;
-  }
-
-  @page poster-a5 {
-    size: A5 portrait;
-    margin: 5mm;
-  }
-
-  @page poster-a6 {
-    size: A6 portrait;
-    margin: 4mm;
-  }
-
-  @page poster-thermal {
-    size: 80mm auto;
-    margin: 4mm;
-  }
-
   body * {
     visibility: hidden;
   }
 
   .fiscal-print-root,
-  .fiscal-print-root *,
-  .poster-print-root,
-  .poster-print-root * {
+  .fiscal-print-root * {
     visibility: visible;
   }
 
@@ -63,148 +30,6 @@
     color: #000;
     background: #fff;
     page: fiscal-coupon;
-  }
-
-  .poster-print-root {
-    display: flex;
-    position: absolute;
-    inset: 0;
-    align-items: stretch;
-    justify-content: center;
-    color: #111;
-    background: #fff;
-    page: poster-a4;
-  }
-
-  .poster-format-a2 {
-    page: poster-a2;
-  }
-
-  .poster-format-a3 {
-    page: poster-a3;
-  }
-
-  .poster-format-a5 {
-    page: poster-a5;
-  }
-
-  .poster-format-a6 {
-    page: poster-a6;
-  }
-
-  .poster-format-thermal {
-    page: poster-thermal;
-  }
-
-  .poster-print-root .poster-template-canvas {
-    width: 198mm;
-    border: 0;
-    border-radius: 0;
-    box-shadow: none;
-  }
-
-  .poster-format-a2 .poster-template-canvas {
-    width: 404mm;
-  }
-
-  .poster-format-a3 .poster-template-canvas {
-    width: 283mm;
-  }
-
-  .poster-format-a5 .poster-template-canvas {
-    width: 138mm;
-  }
-
-  .poster-format-a6 .poster-template-canvas {
-    width: 97mm;
-  }
-
-  .poster-format-thermal .poster-template-canvas {
-    width: 72mm;
-  }
-
-  .poster-print-page {
-    display: flex;
-    width: 190mm;
-    min-height: 277mm;
-    flex-direction: column;
-    justify-content: center;
-    gap: 12mm;
-    border: 4mm solid #111;
-    padding: 18mm;
-    text-align: center;
-    font-family: Arial, Helvetica, sans-serif;
-  }
-
-  .poster-format-a5 .poster-print-page {
-    width: 128mm;
-    min-height: 190mm;
-    padding: 12mm;
-  }
-
-  .poster-format-thermal .poster-print-page {
-    width: 72mm;
-    min-height: auto;
-    border-width: 1mm;
-    padding: 6mm;
-  }
-
-  .poster-print-subtitle {
-    font-size: 18pt;
-    font-weight: 800;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-
-  .poster-print-title {
-    font-size: 42pt;
-    font-weight: 900;
-    letter-spacing: 0;
-    line-height: 0.95;
-    text-transform: uppercase;
-  }
-
-  .poster-format-thermal .poster-print-title {
-    font-size: 22pt;
-  }
-
-  .poster-print-body {
-    white-space: pre-wrap;
-    font-size: 24pt;
-    font-weight: 700;
-    line-height: 1.15;
-  }
-
-  .poster-format-thermal .poster-print-body {
-    font-size: 14pt;
-  }
-
-  .poster-print-footer {
-    border-top: 1mm solid currentColor;
-    padding-top: 6mm;
-    font-size: 14pt;
-    font-weight: 800;
-    text-transform: uppercase;
-  }
-
-  .poster-tone-urgent .poster-print-page {
-    border-color: #991b1b;
-    color: #991b1b;
-  }
-
-  .poster-tone-attention .poster-print-page {
-    border-color: #92400e;
-    color: #92400e;
-  }
-
-  .poster-tone-info .poster-print-page {
-    border-color: #075985;
-    color: #075985;
-  }
-
-  .poster-tone-success .poster-print-page {
-    border-color: #166534;
-    color: #166534;
   }
 
   .fiscal-coupon {

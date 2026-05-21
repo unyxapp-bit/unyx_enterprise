@@ -44,7 +44,7 @@ O deploy usa `--use-api`, entao nao depende do Docker para publicar a Edge Funct
 - O contexto do agente e compacto e inclui, quando disponivel:
   - estrutura da organizacao: filiais, setores e configuracoes operacionais;
   - operacao do dia: dashboard, status, escalas, eventos de presenca, colaboradores, postos e alocacoes;
-  - suporte de loja: checklists, anotacoes, formularios, respostas, cartazes e comunicados;
+  - suporte de loja: checklists, anotacoes, formularios, respostas e comunicados;
   - entregas e clientes: pedidos recentes, prioridades, status, clientes recentes e bloqueados;
   - PDV e retaguarda: caixas, vendas do dia, pedidos de producao, documentos fiscais, produtos com estoque baixo e categorias;
   - gestao: treinamentos ativos e auditoria recente.

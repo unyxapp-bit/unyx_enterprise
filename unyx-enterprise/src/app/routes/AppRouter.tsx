@@ -66,9 +66,6 @@ const OperationalFormsPage = lazy(() =>
 const OperationalNotesPage = lazy(() =>
   import("@/features/frontstore/OperationalNotesPage").then((m) => ({ default: m.OperationalNotesPage }))
 )
-const OperationalPostersPage = lazy(() =>
-  import("@/features/frontstore/OperationalPostersPage").then((m) => ({ default: m.OperationalPostersPage }))
-)
 const OperationsPage = lazy(() =>
   import("@/features/operational/OperationsPage").then((m) => ({ default: m.OperationsPage }))
 )
@@ -168,9 +165,6 @@ export function AppRouter() {
             </Route>
             <Route element={<RequirePermission perm="front_forms" />}>
               <Route path="forms" element={<OperationalFormsPage />} />
-            </Route>
-            <Route element={<RequirePermission perm="front_posters" />}>
-              <Route path="posters" element={<OperationalPostersPage />} />
             </Route>
 
             <Route element={<RequirePermission perm="branches" />}>

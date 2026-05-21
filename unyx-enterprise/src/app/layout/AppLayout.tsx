@@ -16,7 +16,6 @@ import {
   ListChecks,
   LogOut,
   MapPinned,
-  Megaphone,
   Menu,
   MessageSquareText,
   Moon,
@@ -77,7 +76,6 @@ const navGroups = [
       { to: "/app/checklists", label: "Checklists", icon: ListChecks,      perm: "checklists" as PermissionKey },
       { to: "/app/notes",      label: "Anotacoes", icon: StickyNote,      perm: "front_notes" as PermissionKey },
       { to: "/app/forms",      label: "Formularios", icon: FileText,      perm: "front_forms" as PermissionKey },
-      { to: "/app/posters",    label: "Cartazes",  icon: Megaphone,       perm: "front_posters" as PermissionKey },
     ],
   },
   {
@@ -130,7 +128,6 @@ const navItemDescriptions: Record<string, string> = {
   "/app/checklists": "Rotinas de abertura, fechamento e verificacoes.",
   "/app/notes": "Registre comunicados e observacoes de frente.",
   "/app/forms": "Capturas operacionais padronizadas por setor.",
-  "/app/posters": "Materiais internos para orientar a equipe.",
   "/app/branches": "Gerencie unidades, enderecos e status ativos.",
   "/app/employees": "Cadastro da equipe, cargos e setores.",
   "/app/customers": "Base de clientes e dados comerciais.",

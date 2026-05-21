@@ -39,14 +39,10 @@ import type {
   OperationalFormResponse,
   OperationalNote,
   OperationalNoteStatus,
-  OperationalPoster,
-  OperationalPosterFormat,
-  OperationalPosterLayoutConfig,
   OperationalQueueSeverity,
   OperationalQueueSignal,
   OperationalQueueStatus,
   OperationalQueueType,
-  OperationalPosterTone,
   OperationalSupportPriority,
   OperationalStatus,
   OperationalStatusRecord,
@@ -254,8 +250,7 @@ function isMissingFrontStoreFeature(error: { code?: string; message: string } | 
   const mentionsFrontStore =
     message.includes("operational_notes") ||
     message.includes("operational_forms") ||
-    message.includes("operational_form_responses") ||
-    message.includes("operational_posters")
+    message.includes("operational_form_responses")
 
   return (
     mentionsFrontStore &&
@@ -2293,27 +2288,6 @@ export interface OperationalFormResponseInput {
   notes: string | null
 }
 
-export interface OperationalPosterInput {
-  branch_id: string | null
-  sector_id: string | null
-  template_key: string | null
-  title: string
-  subtitle: string | null
-  body: string
-  footer: string | null
-  product_name: string | null
-  product_description: string | null
-  price_text: string | null
-  sale_unit: string | null
-  product_name_size: number
-  description_size: number
-  price_size: number
-  sale_unit_size: number
-  layout_config: OperationalPosterLayoutConfig | null
-  tone: OperationalPosterTone
-  format: OperationalPosterFormat
-}
-
 export type AiAgentSeverity = "normal" | "medio" | "alto" | "critico"
 export type AiAgentPriority = "baixa" | "media" | "alta"
 export type AiAgentProvider = "openai" | "fallback" | "local"
@@ -2503,9 +2477,6 @@ const operationalFormSelect =
 
 const operationalFormResponseSelect =
   "*, operational_forms(title, category), branches(name), user_profiles!user_id(name)"
-
-const operationalPosterSelect =
-  "*, branches(name), sectors(name), user_profiles!created_by(name)"
 
 async function validateOptionalScope(
   profile: UserProfile,
@@ -2929,28 +2900,6 @@ export async function submitOperationalFormResponse(
   return data as OperationalFormResponse
 }
 
-export async function listOperationalPosters(
-  branchId?: string | null,
-  organizationId?: string | null,
-  activeFilter: boolean | "all" = true
-) {
-  let query = supabase
-    .from("operational_posters")
-    .select(operationalPosterSelect)
-    .order("created_at", { ascending: false })
-    .limit(240)
-
-  if (organizationId) query = query.eq("organization_id", organizationId)
-  if (activeFilter !== "all") query = query.eq("active", activeFilter)
-  if (branchId) query = query.or(`branch_id.is.null,branch_id.eq.${branchId}`)
-
-  const { data, error } = await query
-  if (isMissingFrontStoreFeature(error)) throw new Error(frontStoreFeatureMessage())
-  raise(error)
-
-  return (data ?? []) as OperationalPoster[]
-}
-
 export async function runAiAgent(input: AiAgentInput) {
   const { data, error } = await supabase.functions.invoke<AiAgentInsight>("ai-agent", {
     body: input,
@@ -3056,198 +3005,6 @@ export async function updateAiAgentQueuedActionStatus(
   })
 
   return data as AiAgentQueuedAction
-}
-
-export async function createOperationalPoster(
-  profile: UserProfile,
-  input: OperationalPosterInput
-) {
-  const title = input.title.trim()
-  const body = input.body.trim()
-  const productName = input.product_name?.trim() || title
-  const productDescription = input.product_description?.trim() || body
-  const priceText = input.price_text?.trim() || null
-  const saleUnit = input.sale_unit?.trim() || null
-  if (!title) throw new Error("Informe o titulo do cartaz.")
-  if (!body && !productDescription) throw new Error("Informe o conteudo do cartaz.")
-
-  await validateOptionalScope(profile, input.branch_id, input.sector_id)
-
-  const { data, error } = await supabase
-    .from("operational_posters")
-    .insert({
-      organization_id: profile.organization_id,
-      branch_id: input.branch_id,
-      sector_id: input.sector_id,
-      created_by: profile.id,
-      template_key: input.template_key || null,
-      title,
-      subtitle: input.subtitle?.trim() || null,
-      body: body || productDescription,
-      footer: input.footer?.trim() || null,
-      product_name: productName,
-      product_description: productDescription,
-      price_text: priceText,
-      sale_unit: saleUnit,
-      product_name_size: Math.max(12, Number(input.product_name_size) || 32),
-      description_size: Math.max(10, Number(input.description_size) || 18),
-      price_size: Math.max(20, Number(input.price_size) || 72),
-      sale_unit_size: Math.max(8, Number(input.sale_unit_size) || 18),
-      layout_config: input.layout_config ?? null,
-      tone: input.tone,
-      format: input.format,
-    })
-    .select(operationalPosterSelect)
-    .single()
-
-  if (isMissingFrontStoreFeature(error)) throw new Error(frontStoreFeatureMessage())
-  raise(error)
-
-  await createAuditLog(profile, {
-    branch_id: input.branch_id,
-    action: "operational_poster_created",
-    entity_type: "operational_posters",
-    entity_id: data.id,
-    old_value: null,
-    new_value: data,
-  })
-
-  return data as OperationalPoster
-}
-
-export async function updateOperationalPoster(
-  profile: UserProfile,
-  posterId: string,
-  input: Partial<OperationalPosterInput & { active: boolean }>
-) {
-  const { data: previous, error: previousError } = await supabase
-    .from("operational_posters")
-    .select("*")
-    .eq("id", posterId)
-    .eq("organization_id", profile.organization_id)
-    .maybeSingle()
-
-  if (isMissingFrontStoreFeature(previousError)) throw new Error(frontStoreFeatureMessage())
-  raise(previousError)
-  if (!previous) throw new Error("Cartaz nao encontrado.")
-
-  const branchId = input.branch_id === undefined ? previous.branch_id : input.branch_id
-  const sectorId = input.sector_id === undefined ? previous.sector_id : input.sector_id
-  await validateOptionalScope(profile, branchId, sectorId)
-
-  const payload = {
-    branch_id: branchId,
-    sector_id: sectorId,
-    template_key:
-      input.template_key === undefined
-        ? previous.template_key
-        : input.template_key || null,
-    title: input.title === undefined ? previous.title : input.title.trim(),
-    subtitle:
-      input.subtitle === undefined
-        ? previous.subtitle
-        : input.subtitle?.trim() || null,
-    body: input.body === undefined ? previous.body : input.body.trim(),
-    footer:
-      input.footer === undefined
-        ? previous.footer
-        : input.footer?.trim() || null,
-    product_name:
-      input.product_name === undefined
-        ? previous.product_name
-        : input.product_name?.trim() || null,
-    product_description:
-      input.product_description === undefined
-        ? previous.product_description
-        : input.product_description?.trim() || null,
-    price_text:
-      input.price_text === undefined
-        ? previous.price_text
-        : input.price_text?.trim() || null,
-    sale_unit:
-      input.sale_unit === undefined
-        ? previous.sale_unit
-        : input.sale_unit?.trim() || null,
-    product_name_size:
-      input.product_name_size === undefined
-        ? previous.product_name_size ?? 32
-        : Math.max(12, Number(input.product_name_size) || 32),
-    description_size:
-      input.description_size === undefined
-        ? previous.description_size ?? 18
-        : Math.max(10, Number(input.description_size) || 18),
-    price_size:
-      input.price_size === undefined
-        ? previous.price_size ?? 72
-        : Math.max(20, Number(input.price_size) || 72),
-    sale_unit_size:
-      input.sale_unit_size === undefined
-        ? previous.sale_unit_size ?? 18
-        : Math.max(8, Number(input.sale_unit_size) || 18),
-    layout_config:
-      input.layout_config === undefined ? previous.layout_config ?? null : input.layout_config,
-    tone: input.tone ?? previous.tone,
-    format: input.format ?? previous.format,
-    active: input.active ?? previous.active,
-  }
-
-  if (!payload.title) throw new Error("Informe o titulo do cartaz.")
-  if (!payload.body && !payload.product_description) {
-    throw new Error("Informe o conteudo do cartaz.")
-  }
-
-  const { data, error } = await supabase
-    .from("operational_posters")
-    .update(payload)
-    .eq("id", posterId)
-    .eq("organization_id", profile.organization_id)
-    .select(operationalPosterSelect)
-    .single()
-
-  if (isMissingFrontStoreFeature(error)) throw new Error(frontStoreFeatureMessage())
-  raise(error)
-
-  await createAuditLog(profile, {
-    branch_id: data.branch_id,
-    action: "operational_poster_updated",
-    entity_type: "operational_posters",
-    entity_id: posterId,
-    old_value: previous,
-    new_value: data,
-  })
-
-  return data as OperationalPoster
-}
-
-export async function deleteOperationalPoster(profile: UserProfile, posterId: string) {
-  const { data: previous, error: previousError } = await supabase
-    .from("operational_posters")
-    .select("*")
-    .eq("id", posterId)
-    .eq("organization_id", profile.organization_id)
-    .maybeSingle()
-
-  if (isMissingFrontStoreFeature(previousError)) throw new Error(frontStoreFeatureMessage())
-  raise(previousError)
-  if (!previous) throw new Error("Cartaz nao encontrado.")
-
-  const { error } = await supabase
-    .from("operational_posters")
-    .delete()
-    .eq("id", posterId)
-    .eq("organization_id", profile.organization_id)
-
-  if (isMissingFrontStoreFeature(error)) throw new Error(frontStoreFeatureMessage())
-  raise(error)
-
-  await createAuditLog(profile, {
-    branch_id: previous.branch_id,
-    action: "operational_poster_deleted",
-    entity_type: "operational_posters",
-    entity_id: posterId,
-    old_value: previous,
-    new_value: null,
-  })
 }
 
 export async function recordOperationalEvent(

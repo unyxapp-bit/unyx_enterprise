@@ -86,9 +86,6 @@ const actionLabels: Record<string, string> = {
   operational_form_updated: "Formulario atualizado",
   operational_form_deleted: "Formulario excluido",
   operational_form_submitted: "Formulario respondido",
-  operational_poster_created: "Cartaz criado",
-  operational_poster_updated: "Cartaz atualizado",
-  operational_poster_deleted: "Cartaz excluido",
   // Configuracoes
   update_settings: "Atualizacao de configuracoes",
   update_organization: "Atualizacao da empresa",
@@ -128,7 +125,6 @@ const entityLabels: Record<string, string> = {
   operational_notes: "Anotacao operacional",
   operational_forms: "Formulario operacional",
   operational_form_responses: "Resposta de formulario",
-  operational_posters: "Cartaz operacional",
   ai_agent_actions: "Acao da IA",
   user: "Usuario",
   user_profiles: "Perfil de usuario",

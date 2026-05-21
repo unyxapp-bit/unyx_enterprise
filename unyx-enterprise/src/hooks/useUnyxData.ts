@@ -25,7 +25,6 @@ import {
   createCommsPostComment,
   createEmployee,
   createOperationalForm,
-  createOperationalPoster,
   createOperationalNote,
   createOperationalPost,
   createOperationalQueueSignal,
@@ -42,7 +41,6 @@ import {
   deleteDeliveryOrder,
   deleteOperationalForm,
   deleteOperationalNote,
-  deleteOperationalPoster,
   cancelFiscalDocument,
   deleteSchedulesBulk,
   listSchedulesRange,
@@ -92,7 +90,6 @@ import {
   listOperationalForms,
   listOperationalFormResponses,
   listOperationalNotes,
-  listOperationalPosters,
   listOperationalPosts,
   listOperationalQueueSignals,
   listOperationalStatuses,
@@ -129,7 +126,6 @@ import {
   updateEmployee,
   updateOperationalForm,
   updateOperationalNote,
-  updateOperationalPoster,
   updateCurrentUserPassword,
   updateCurrentUserProfile,
   updateOperationalPost,
@@ -159,7 +155,6 @@ import type {
   OperationalFormInput,
   OperationalFormResponseInput,
   OperationalNoteInput,
-  OperationalPosterInput,
   OperationalQueueInput,
   ScheduleImportInput,
 } from "@/services/unyxApi"
@@ -516,27 +511,6 @@ export function useOperationalFormResponses() {
     queryKey: ["operational-form-responses", profile?.organization_id, selectedBranchId],
     queryFn: () =>
       listOperationalFormResponses(selectedBranchId, profile!.organization_id),
-    enabled: Boolean(profile),
-  })
-}
-
-export function useOperationalPosters(activeFilter: boolean | "all" = true) {
-  const { profile } = useAuth()
-  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
-
-  return useQuery({
-    queryKey: [
-      "operational-posters",
-      profile?.organization_id,
-      selectedBranchId,
-      activeFilter,
-    ],
-    queryFn: () =>
-      listOperationalPosters(
-        selectedBranchId,
-        profile!.organization_id,
-        activeFilter
-      ),
     enabled: Boolean(profile),
   })
 }
@@ -925,57 +899,6 @@ export function useSubmitOperationalFormResponse() {
       await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
       await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
       toast.success("Formulario enviado.")
-    },
-    onError: (error) => { toast.error(error.message) },
-  })
-}
-
-export function useCreateOperationalPoster() {
-  const queryClient = useQueryClient()
-  const profile = useRequiredProfile()
-
-  return useMutation({
-    mutationFn: (input: OperationalPosterInput) => createOperationalPoster(profile, input),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["operational-posters"] })
-      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
-      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
-      toast.success("Cartaz criado.")
-    },
-    onError: (error) => { toast.error(error.message) },
-  })
-}
-
-export function useUpdateOperationalPoster() {
-  const queryClient = useQueryClient()
-  const profile = useRequiredProfile()
-
-  return useMutation({
-    mutationFn: (input: {
-      posterId: string
-      values: Partial<OperationalPosterInput & { active: boolean }>
-    }) => updateOperationalPoster(profile, input.posterId, input.values),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["operational-posters"] })
-      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
-      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
-      toast.success("Cartaz atualizado.")
-    },
-    onError: (error) => { toast.error(error.message) },
-  })
-}
-
-export function useDeleteOperationalPoster() {
-  const queryClient = useQueryClient()
-  const profile = useRequiredProfile()
-
-  return useMutation({
-    mutationFn: (posterId: string) => deleteOperationalPoster(profile, posterId),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["operational-posters"] })
-      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
-      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
-      toast.success("Cartaz excluido.")
     },
     onError: (error) => { toast.error(error.message) },
   })

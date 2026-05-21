@@ -1015,14 +1015,6 @@ async function fetchContext(
     .order("submitted_at", { ascending: false })
     .limit(80)
 
-  let postersQuery = supabase
-    .from("operational_posters")
-    .select("id, branch_id, sector_id, title, tone, format, product_name, price_text, active, updated_at, branches(name), sectors(name)")
-    .eq("organization_id", profile.organization_id)
-    .eq("active", true)
-    .order("updated_at", { ascending: false })
-    .limit(50)
-
   let commsPostsQuery = supabase
     .from("comms_posts")
     .select("id, branch_id, sector_id, title, content, pinned, created_at, branches(name), sectors(name)")
@@ -1149,7 +1141,6 @@ async function fetchContext(
     notesQuery = nullableBranchScoped(notesQuery)
     formsQuery = nullableBranchScoped(formsQuery)
     formResponsesQuery = nullableBranchScoped(formResponsesQuery)
-    postersQuery = nullableBranchScoped(postersQuery)
     commsPostsQuery = nullableBranchScoped(commsPostsQuery)
     deliveriesQuery = branchScoped(deliveriesQuery)
     customersQuery = nullableBranchScoped(customersQuery)
@@ -1180,7 +1171,6 @@ async function fetchContext(
     notes,
     forms,
     formResponses,
-    posters,
     commsPosts,
     trainingItems,
     deliveries,
@@ -1211,7 +1201,6 @@ async function fetchContext(
     notesQuery,
     formsQuery,
     formResponsesQuery,
-    postersQuery,
     commsPostsQuery,
     trainingItemsQuery,
     deliveriesQuery,
@@ -1256,7 +1245,6 @@ async function fetchContext(
   const notesData = optionalRows(notes)
   const formsData = optionalRows(forms)
   const formResponsesData = optionalRows(formResponses)
-  const postersData = optionalRows(posters)
   const commsPostsData = optionalRows(commsPosts)
   const trainingItemsData = optionalRows(trainingItems)
   const deliveriesData = optionalRows(deliveries)
@@ -1392,7 +1380,6 @@ async function fetchContext(
       urgent_notes: countRows(notesData, (item: any) => item.priority === "urgent"),
       active_forms: formsData.length,
       recent_form_responses: formResponsesData.length,
-      active_posters: postersData.length,
       recent_comms_posts: commsPostsData.length,
       pinned_comms_posts: countRows(commsPostsData, (item: any) => Boolean(item.pinned)),
       active_training_items: trainingItemsData.length,
@@ -1459,7 +1446,6 @@ async function fetchContext(
       operational_notes: compactRows(notesData, 40),
       operational_forms: compactRows(formsData, 40),
       operational_form_responses: compactRows(formResponsesData, 30),
-      operational_posters: compactRows(postersData, 30),
       comms_posts: compactRows(commsPostsData, 30),
       training_items: compactRows(trainingItemsData, 30),
       delivery_orders: compactRows(deliveriesData, 50),
@@ -1488,7 +1474,6 @@ async function fetchContext(
       optionalError("operational_notes", notes),
       optionalError("operational_forms", forms),
       optionalError("operational_form_responses", formResponses),
-      optionalError("operational_posters", posters),
       optionalError("comms_posts", commsPosts),
       optionalError("training_items", trainingItems),
       optionalError("delivery_orders", deliveries),
@@ -1573,7 +1558,6 @@ function buildModelContext(context: AgentContext) {
   const notes = (context.tools.operational_notes as unknown[]).map(asRow)
   const forms = (context.tools.operational_forms as unknown[]).map(asRow)
   const formResponses = (context.tools.operational_form_responses as unknown[]).map(asRow)
-  const posters = (context.tools.operational_posters as unknown[]).map(asRow)
   const commsPosts = (context.tools.comms_posts as unknown[]).map(asRow)
   const trainingItems = (context.tools.training_items as unknown[]).map(asRow)
   const deliveries = (context.tools.delivery_orders as unknown[]).map(asRow)
@@ -1779,17 +1763,6 @@ function buildModelContext(context: AgentContext) {
         branch: relationName(response, "branches"),
         submitted_at: readString(response, "submitted_at"),
         notes: trimText(readString(response, "notes"), 100),
-      })),
-      operational_posters: posters.slice(0, 8).map((poster) => ({
-        id: readString(poster, "id"),
-        branch_id: readString(poster, "branch_id"),
-        title: trimText(readString(poster, "title"), 90),
-        tone: readString(poster, "tone"),
-        format: readString(poster, "format"),
-        product_name: trimText(readString(poster, "product_name"), 70),
-        price_text: readString(poster, "price_text"),
-        branch: relationName(poster, "branches"),
-        sector: relationName(poster, "sectors"),
       })),
       comms_posts: commsPosts.slice(0, 8).map((post) => ({
         id: readString(post, "id"),
@@ -2580,7 +2553,6 @@ function fallbackInsight(
       "operational_notes",
       "operational_forms",
       "operational_form_responses",
-      "operational_posters",
       "comms_posts",
       "training_items",
       "delivery_orders",

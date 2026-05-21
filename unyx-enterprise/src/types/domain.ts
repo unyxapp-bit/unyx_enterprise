@@ -484,59 +484,6 @@ export interface OperationalFormResponse {
   user_profiles?: Pick<UserProfile, "name"> | null
 }
 
-export type OperationalPosterTone = "neutral" | "info" | "attention" | "urgent" | "success"
-export type OperationalPosterFormat = "a2" | "a3" | "a4" | "a5" | "a6" | "thermal"
-export type OperationalPosterLayoutField =
-  | "subtitle"
-  | "product"
-  | "description"
-  | "price"
-  | "unit"
-  | "footer"
-
-export type OperationalPosterTextStyleConfig = {
-  subtitle_size?: number | null
-  footer_size?: number | null
-  price_cents_scale?: number | null
-}
-
-export type OperationalPosterLayoutConfig = Partial<
-  Record<OperationalPosterLayoutField, { x?: number | null; y?: number | null }>
-> & {
-  mode?: "center" | null
-  text_style?: OperationalPosterTextStyleConfig | null
-}
-
-export interface OperationalPoster {
-  id: string
-  organization_id: string
-  branch_id: string | null
-  sector_id: string | null
-  created_by: string | null
-  template_key: string | null
-  title: string
-  subtitle: string | null
-  body: string
-  footer: string | null
-  product_name: string | null
-  product_description: string | null
-  price_text: string | null
-  sale_unit: string | null
-  product_name_size: number
-  description_size: number
-  price_size: number
-  sale_unit_size: number
-  layout_config: OperationalPosterLayoutConfig | null
-  tone: OperationalPosterTone
-  format: OperationalPosterFormat
-  active: boolean
-  created_at: string
-  updated_at: string
-  branches?: Pick<Branch, "name"> | null
-  sectors?: Pick<Sector, "name"> | null
-  user_profiles?: Pick<UserProfile, "name"> | null
-}
-
 export interface AuditLog {
   id: string
   organization_id: string
