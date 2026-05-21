@@ -61,7 +61,7 @@ const sizeControlByField: Record<
   }
 > = {
   subtitle: {
-    key: "sale_unit_size",
+    key: "subtitle_size",
     label: "Chamada",
     min: 10,
     max: 80,
@@ -91,7 +91,7 @@ const sizeControlByField: Record<
     max: 80,
   },
   footer: {
-    key: "sale_unit_size",
+    key: "footer_size",
     label: "Rodape",
     min: 10,
     max: 80,
@@ -349,6 +349,17 @@ export function PosterEditorDialog({
                     </datalist>
                   </label>
                 </div>
+                <label className="flex items-center gap-2 rounded-lg border bg-slate-50 px-2.5 py-2 text-xs font-medium">
+                  <input
+                    checked={form.price_cents_scale === "50"}
+                    className="size-4 accent-slate-950"
+                    type="checkbox"
+                    onChange={(event) =>
+                      updateFormValue("price_cents_scale", event.target.checked ? "50" : "100")
+                    }
+                  />
+                  Centavos do valor com 50% da altura
+                </label>
                 <label className="space-y-1.5 text-xs">
                   <span className="font-medium">Chamada</span>
                   <Input
@@ -538,14 +549,30 @@ export function PosterEditorDialog({
                     value={String(form[selectedSizeControl.key])}
                     onChange={(event) => updateSelectedSize(event.target.value)}
                   />
-                  <Input
-                    min={selectedSizeControl.min}
-                    max={selectedSizeControl.max}
-                    type="number"
-                    value={String(form[selectedSizeControl.key])}
-                    onChange={(event) => updateSelectedSize(event.target.value)}
-                  />
+                <Input
+                  min={selectedSizeControl.min}
+                  max={selectedSizeControl.max}
+                  type="number"
+                  value={String(form[selectedSizeControl.key])}
+                  onChange={(event) => updateSelectedSize(event.target.value)}
+                />
                 </label>
+                {selectedField === "price" ? (
+                  <label className="flex items-center gap-2 rounded-lg border bg-slate-50 px-2.5 py-2 text-xs font-medium">
+                    <input
+                      checked={form.price_cents_scale === "50"}
+                      className="size-4 accent-slate-950"
+                      type="checkbox"
+                      onChange={(event) =>
+                        updateFormValue(
+                          "price_cents_scale",
+                          event.target.checked ? "50" : "100"
+                        )
+                      }
+                    />
+                    Centavos em 50%
+                  </label>
+                ) : null}
               </FieldGroup>
 
               <FieldGroup icon={Palette} title="Design">
@@ -585,6 +612,13 @@ export function PosterEditorDialog({
                 </div>
                 <div className="space-y-3">
                   <SizeControl
+                    label="Chamada"
+                    min={10}
+                    max={80}
+                    value={form.subtitle_size}
+                    onChange={(value) => updateFormValue("subtitle_size", value)}
+                  />
+                  <SizeControl
                     label="Produto"
                     min={18}
                     max={140}
@@ -611,6 +645,13 @@ export function PosterEditorDialog({
                     max={80}
                     value={form.sale_unit_size}
                     onChange={(value) => updateFormValue("sale_unit_size", value)}
+                  />
+                  <SizeControl
+                    label="Rodape"
+                    min={10}
+                    max={80}
+                    value={form.footer_size}
+                    onChange={(value) => updateFormValue("footer_size", value)}
                   />
                 </div>
               </FieldGroup>

@@ -133,6 +133,86 @@ function priceParts(value: string) {
   return value.replace(/^R\$\s*/i, "").trim() || value
 }
 
+function priceAmountParts(value: string) {
+  const clean = value.trim()
+  const match = clean.match(/^(.*?)([,.]\d{1,3})$/)
+
+  if (!match) return { main: clean, cents: "" }
+
+  return {
+    main: match[1] || "0",
+    cents: match[2],
+  }
+}
+
+function drawPriceAmount({
+  context,
+  area,
+  text,
+  fontSize,
+  color,
+  weight,
+  canvasWidth,
+  canvasHeight,
+  centsScale,
+}: {
+  context: CanvasRenderingContext2D
+  area: PosterArea
+  text: string
+  fontSize: number
+  color: string
+  weight: number
+  canvasWidth: number
+  canvasHeight: number
+  centsScale: number
+}) {
+  const price = priceAmountParts(text.toUpperCase())
+
+  if (centsScale >= 0.99 || !price.cents) {
+    drawPosterText({
+      context,
+      area,
+      text,
+      fontSize,
+      color,
+      weight,
+      canvasWidth,
+      canvasHeight,
+    })
+    return
+  }
+
+  const rect = areaRect(area, canvasWidth, canvasHeight)
+  const size = clamp(fontSize, 16, 240)
+  const centsSize = clamp(size * centsScale, 8, size)
+
+  context.save()
+  context.fillStyle = area.color ?? color
+  context.textBaseline = "middle"
+  context.shadowColor = "rgba(255,255,255,0.72)"
+  context.shadowBlur = 2
+  context.shadowOffsetY = 1
+
+  context.font = `${weight} ${size}px Arial Black, Arial, Helvetica, sans-serif`
+  const mainWidth = context.measureText(price.main).width
+  context.font = `${weight} ${centsSize}px Arial Black, Arial, Helvetica, sans-serif`
+  const centsWidth = context.measureText(price.cents).width
+  const totalWidth = mainWidth + centsWidth
+
+  const x =
+    area.align === "left"
+      ? rect.left
+      : area.align === "right"
+        ? rect.left + rect.width - totalWidth
+        : rect.left + rect.width / 2 - totalWidth / 2
+
+  context.font = `${weight} ${size}px Arial Black, Arial, Helvetica, sans-serif`
+  context.fillText(price.main, x, rect.top)
+  context.font = `${weight} ${centsSize}px Arial Black, Arial, Helvetica, sans-serif`
+  context.fillText(price.cents, x + mainWidth, rect.top - size * 0.2)
+  context.restore()
+}
+
 function drawBrush(
   context: CanvasRenderingContext2D,
   x: number,
@@ -273,7 +353,7 @@ function drawGuidedPoster(
     context,
     area: layout.subtitle,
     text: subtitle,
-    fontSize: Math.max(poster.sale_unit_size, isYellow ? 24 : 32) * scale,
+    fontSize: Math.max(poster.subtitle_size, isYellow ? 24 : 32) * scale,
     color: isYellow ? "#ffe100" : "#ffd400",
     weight: 900,
     canvasWidth,
@@ -316,16 +396,19 @@ function drawGuidedPoster(
       Math.max(92 * scale, canvasHeight * 0.09)
     )
 
+    drawPriceAmount({
+      context,
+      area: layout.price,
+      text: priceParts(price),
+      fontSize: Math.max(poster.price_size * scale, 44),
+      color: priceColor,
+      weight: 900,
+      canvasWidth,
+      canvasHeight,
+      centsScale: poster.price_cents_scale,
+    })
+
     context.save()
-    context.font = `900 ${Math.max(poster.price_size * scale, 44)}px Arial Black, Arial, Helvetica, sans-serif`
-    context.textAlign = "center"
-    context.textBaseline = "middle"
-    context.fillStyle = priceColor
-    context.fillText(
-      priceParts(price).toUpperCase(),
-      priceRect.left + priceRect.width / 2,
-      priceRect.top
-    )
     context.font = `900 ${Math.max(poster.sale_unit_size * scale, 18)}px Arial Black, Arial, Helvetica, sans-serif`
     context.textAlign = "right"
     context.fillStyle = textColor
@@ -350,7 +433,7 @@ function drawGuidedPoster(
     context,
     area: layout.footer,
     text: poster.footer || "UNYX",
-    fontSize: poster.sale_unit_size * scale,
+    fontSize: poster.footer_size * scale,
     color: isYellow ? "#ffffff" : "#d50000",
     weight: 900,
     canvasWidth,
@@ -398,7 +481,7 @@ export async function downloadPosterAsPng(poster: OperationalPoster) {
     {
       area: layout.subtitle,
       text: data.subtitle,
-      size: Math.max(data.sale_unit_size, 18) * scale,
+      size: Math.max(data.subtitle_size, 18) * scale,
       color: textColor,
       weight: 900,
     },
@@ -422,6 +505,7 @@ export async function downloadPosterAsPng(poster: OperationalPoster) {
       size: data.price_size * scale,
       color: priceColor,
       weight: 900,
+      price: true,
     },
     {
       area: layout.unit,
@@ -433,7 +517,7 @@ export async function downloadPosterAsPng(poster: OperationalPoster) {
     {
       area: layout.footer,
       text: data.footer,
-      size: data.sale_unit_size * scale,
+      size: data.footer_size * scale,
       color: textColor,
       weight: 900,
     },
@@ -441,6 +525,21 @@ export async function downloadPosterAsPng(poster: OperationalPoster) {
 
   fields.forEach((field) => {
     if (!field.text) return
+    if (field.price) {
+      drawPriceAmount({
+        context,
+        area: field.area,
+        text: field.text,
+        fontSize: field.size,
+        color: field.color,
+        weight: field.weight,
+        canvasWidth,
+        canvasHeight,
+        centsScale: data.price_cents_scale,
+      })
+      return
+    }
+
     drawPosterText({
       context,
       area: field.area,

@@ -60,6 +60,45 @@ function priceParts(value: string) {
   }
 }
 
+function priceAmountParts(value: string) {
+  const clean = value.trim()
+  const match = clean.match(/^(.*?)([,.]\d{1,3})$/)
+
+  if (!match) return { main: clean, cents: "" }
+
+  return {
+    main: match[1] || "0",
+    cents: match[2],
+  }
+}
+
+function priceJustify(area: PosterArea) {
+  if (area.align === "left") return "flex-start"
+  if (area.align === "right") return "flex-end"
+  return "center"
+}
+
+function PriceAmount({
+  centsScale,
+  value,
+}: {
+  centsScale: number
+  value: string
+}) {
+  const price = priceAmountParts(value)
+
+  if (centsScale >= 0.99 || !price.cents) return <>{value}</>
+
+  return (
+    <>
+      <span>{price.main}</span>
+      <span style={{ fontSize: `${centsScale}em`, lineHeight: 1, marginTop: "0.04em" }}>
+        {price.cents}
+      </span>
+    </>
+  )
+}
+
 function posterAreaCenter(area: PosterArea, axis: "x" | "y") {
   if (axis === "y") return percentNumber(area.top) ?? 0
   const left = percentNumber(area.left) ?? 0
@@ -136,7 +175,7 @@ function GuidedPosterCanvas({
         style={{
           ...areaStyle(
             layout.subtitle,
-            Math.max(data.sale_unit_size, isYellow ? 24 : 32),
+            Math.max(data.subtitle_size, isYellow ? 24 : 32),
             textScale,
             isYellow ? "#ffe100" : "#ffd400",
             900
@@ -225,12 +264,14 @@ function GuidedPosterCanvas({
           <strong
             style={{
               color: priceColor,
+              display: "inline-flex",
+              alignItems: "flex-start",
               fontSize: `${clamp(data.price_size * textScale, 36, 220)}px`,
               fontWeight: 900,
               letterSpacing: 0,
             }}
           >
-            {price.value}
+            <PriceAmount centsScale={data.price_cents_scale} value={price.value} />
           </strong>
         </div>
       ) : null}
@@ -256,7 +297,7 @@ function GuidedPosterCanvas({
         style={{
           ...areaStyle(
             layout.footer,
-            data.sale_unit_size,
+            data.footer_size,
             textScale,
             isYellow ? "#ffffff" : "#d50000",
             900
@@ -332,7 +373,7 @@ export function PosterCanvas({
       {subtitleText ? (
         <div
           style={{
-            ...areaStyle(layout.subtitle, Math.max(data.sale_unit_size, 18), scale, textColor, 900),
+            ...areaStyle(layout.subtitle, Math.max(data.subtitle_size, 18), scale, textColor, 900),
             zIndex: 2,
             borderBottom: !hasTemplate ? "4px solid currentColor" : undefined,
             paddingBottom: !hasTemplate ? "0.35rem" : undefined,
@@ -378,10 +419,13 @@ export function PosterCanvas({
         <div
           style={{
             ...areaStyle(layout.price, data.price_size, scale, priceColor, 900),
+            alignItems: "flex-start",
+            display: "flex",
+            justifyContent: priceJustify(layout.price),
             lineHeight: 0.92,
           }}
         >
-          {priceText}
+          <PriceAmount centsScale={data.price_cents_scale} value={priceText} />
         </div>
       ) : null}
 
@@ -402,7 +446,7 @@ export function PosterCanvas({
       {data.footer ? (
         <div
           style={{
-            ...areaStyle(layout.footer, data.sale_unit_size, scale, textColor, 900),
+            ...areaStyle(layout.footer, data.footer_size, scale, textColor, 900),
             lineHeight: 1.15,
           }}
         >

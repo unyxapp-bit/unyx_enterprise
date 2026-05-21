@@ -494,10 +494,17 @@ export type OperationalPosterLayoutField =
   | "unit"
   | "footer"
 
+export type OperationalPosterTextStyleConfig = {
+  subtitle_size?: number | null
+  footer_size?: number | null
+  price_cents_scale?: number | null
+}
+
 export type OperationalPosterLayoutConfig = Partial<
   Record<OperationalPosterLayoutField, { x?: number | null; y?: number | null }>
 > & {
   mode?: "center" | null
+  text_style?: OperationalPosterTextStyleConfig | null
 }
 
 export interface OperationalPoster {

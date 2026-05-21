@@ -10,6 +10,7 @@ import type {
   OperationalPosterFormat,
   OperationalPosterLayoutConfig,
   OperationalPosterLayoutField,
+  OperationalPosterTextStyleConfig,
   OperationalPosterTone,
 } from "@/types/domain"
 
@@ -23,10 +24,13 @@ export type PosterCanvasData = {
   product_description: string | null
   price_text: string | null
   sale_unit: string | null
+  subtitle_size: number
   product_name_size: number
   description_size: number
   price_size: number
   sale_unit_size: number
+  footer_size: number
+  price_cents_scale: number
   layout_config: OperationalPosterLayoutConfig | null
   tone: OperationalPosterTone
   format: OperationalPosterFormat
@@ -44,10 +48,13 @@ export const emptyPosterForm = {
   product_description: "",
   price_text: "",
   sale_unit: "unid",
+  subtitle_size: "34",
   product_name_size: "54",
   description_size: "24",
   price_size: "112",
   sale_unit_size: "30",
+  footer_size: "24",
+  price_cents_scale: "100",
   subtitle_x: "",
   subtitle_y: "",
   product_x: "",
@@ -110,6 +117,54 @@ function formatPercentValue(value: number) {
   return String(Math.round(clamp(value, 0, 100) * 10) / 10)
 }
 
+function styleNumber(value: unknown, min: number, max: number) {
+  const parsed = typeof value === "string" ? Number(value) : value
+  return typeof parsed === "number" && Number.isFinite(parsed) && parsed > 0
+    ? clamp(parsed, min, max)
+    : null
+}
+
+function centsScaleNumber(value: unknown) {
+  const parsed = typeof value === "string" ? Number(value) : value
+  if (typeof parsed !== "number" || !Number.isFinite(parsed) || parsed <= 0) return null
+
+  const scale = parsed > 1 ? parsed / 100 : parsed
+  return clamp(scale, 0.35, 1)
+}
+
+function priceCentsScaleFromForm(value: string) {
+  return value === "50" ? 0.5 : 1
+}
+
+function normalizeTextStyle(
+  value: OperationalPosterTextStyleConfig | null | undefined
+): OperationalPosterTextStyleConfig | null {
+  const subtitleSize = styleNumber(value?.subtitle_size, 8, 120)
+  const footerSize = styleNumber(value?.footer_size, 8, 120)
+  const priceCentsScale = centsScaleNumber(value?.price_cents_scale)
+  const next: OperationalPosterTextStyleConfig = {}
+
+  if (subtitleSize !== null) next.subtitle_size = subtitleSize
+  if (footerSize !== null) next.footer_size = footerSize
+  if (priceCentsScale !== null && priceCentsScale < 0.99) {
+    next.price_cents_scale = priceCentsScale
+  }
+
+  return Object.keys(next).length > 0 ? next : null
+}
+
+function textStyleSize(
+  layoutConfig: OperationalPosterLayoutConfig | null,
+  key: "subtitle_size" | "footer_size",
+  fallback: number
+) {
+  return styleNumber(layoutConfig?.text_style?.[key], 8, 120) ?? fallback
+}
+
+function textStylePriceCentsScale(layoutConfig: OperationalPosterLayoutConfig | null) {
+  return centsScaleNumber(layoutConfig?.text_style?.price_cents_scale) ?? 1
+}
+
 function areaPercent(area: PosterArea, axis: PosterPositionAxis) {
   return percentNumber(axis === "x" ? area.left : area.top) ?? 0
 }
@@ -148,6 +203,7 @@ export function normalizeLayoutConfig(
   value: OperationalPosterLayoutConfig | null | undefined
 ): OperationalPosterLayoutConfig | null {
   const next: OperationalPosterLayoutConfig = value?.mode === "center" ? { mode: "center" } : {}
+  const textStyle = normalizeTextStyle(value?.text_style)
 
   for (const { field } of positionFields) {
     const x = percentNumber(value?.[field]?.x)
@@ -160,7 +216,9 @@ export function normalizeLayoutConfig(
     }
   }
 
-  return positionFields.some(({ field }) => Boolean(next[field])) ? next : null
+  if (textStyle) next.text_style = textStyle
+
+  return positionFields.some(({ field }) => Boolean(next[field])) || textStyle ? next : null
 }
 
 function layoutConfigPosition(
@@ -213,6 +271,8 @@ export function resolveTemplateLayout(
 export function buildLayoutConfigFromForm(form: PosterForm): OperationalPosterLayoutConfig | null {
   const template = getPosterTemplate(form.template_key)
   const next: OperationalPosterLayoutConfig = { mode: "center" }
+  const unitSize = toNumber(form.sale_unit_size, 20)
+  const textStyle: OperationalPosterTextStyleConfig = {}
 
   for (const { field } of positionFields) {
     const xKey = positionFormKeys[field].x
@@ -229,7 +289,19 @@ export function buildLayoutConfigFromForm(form: PosterForm): OperationalPosterLa
     if (Object.keys(fieldConfig).length > 0) next[field] = fieldConfig
   }
 
-  return positionFields.some(({ field }) => Boolean(next[field])) ? next : null
+  const subtitleSize = toNumber(form.subtitle_size, unitSize)
+  const footerSize = toNumber(form.footer_size, unitSize)
+  const priceCentsScale = priceCentsScaleFromForm(form.price_cents_scale)
+
+  if (Math.abs(subtitleSize - unitSize) > 0.05) textStyle.subtitle_size = subtitleSize
+  if (Math.abs(footerSize - unitSize) > 0.05) textStyle.footer_size = footerSize
+  if (priceCentsScale < 0.99) textStyle.price_cents_scale = priceCentsScale
+  if (Object.keys(textStyle).length > 0) next.text_style = textStyle
+
+  return positionFields.some(({ field }) => Boolean(next[field])) ||
+    Object.keys(textStyle).length > 0
+    ? next
+    : null
 }
 
 export function getFormPositionValue(
@@ -278,6 +350,7 @@ export function formPositionsFromLayoutConfig(
 export function formToCanvasData(form: PosterForm): PosterCanvasData {
   const productName = form.product_name.trim()
   const productDescription = form.product_description.trim()
+  const unitSize = toNumber(form.sale_unit_size, 20)
 
   return {
     template_key: form.template_key === "blank" ? null : form.template_key,
@@ -289,10 +362,13 @@ export function formToCanvasData(form: PosterForm): PosterCanvasData {
     product_description: productDescription || null,
     price_text: form.price_text.trim() || null,
     sale_unit: form.sale_unit.trim() || null,
+    subtitle_size: toNumber(form.subtitle_size, unitSize),
     product_name_size: toNumber(form.product_name_size, 34),
     description_size: toNumber(form.description_size, 18),
     price_size: toNumber(form.price_size, 76),
-    sale_unit_size: toNumber(form.sale_unit_size, 20),
+    sale_unit_size: unitSize,
+    footer_size: toNumber(form.footer_size, unitSize),
+    price_cents_scale: priceCentsScaleFromForm(form.price_cents_scale),
     layout_config: buildLayoutConfigFromForm(form),
     tone: form.tone,
     format: form.format,
@@ -300,6 +376,9 @@ export function formToCanvasData(form: PosterForm): PosterCanvasData {
 }
 
 export function posterToCanvasData(poster: OperationalPoster): PosterCanvasData {
+  const layoutConfig = normalizeLayoutConfig(poster.layout_config)
+  const unitSize = poster.sale_unit_size ?? 20
+
   return {
     template_key: poster.template_key,
     title: poster.title,
@@ -310,11 +389,14 @@ export function posterToCanvasData(poster: OperationalPoster): PosterCanvasData 
     product_description: poster.product_description,
     price_text: poster.price_text,
     sale_unit: poster.sale_unit,
+    subtitle_size: textStyleSize(layoutConfig, "subtitle_size", unitSize),
     product_name_size: poster.product_name_size ?? 34,
     description_size: poster.description_size ?? 18,
     price_size: poster.price_size ?? 76,
-    sale_unit_size: poster.sale_unit_size ?? 20,
-    layout_config: normalizeLayoutConfig(poster.layout_config),
+    sale_unit_size: unitSize,
+    footer_size: textStyleSize(layoutConfig, "footer_size", unitSize),
+    price_cents_scale: textStylePriceCentsScale(layoutConfig),
+    layout_config: layoutConfig,
     tone: poster.tone,
     format: poster.format,
   }
@@ -351,6 +433,7 @@ export function formToPosterPayload(form: PosterForm) {
 export function posterToForm(poster: OperationalPoster): PosterForm {
   const templateKey = poster.template_key ?? "blank"
   const layoutConfig = normalizeLayoutConfig(poster.layout_config)
+  const unitSize = poster.sale_unit_size ?? 20
 
   return {
     ...emptyPosterForm,
@@ -365,10 +448,13 @@ export function posterToForm(poster: OperationalPoster): PosterForm {
     product_description: poster.product_description ?? poster.body,
     price_text: poster.price_text ?? "",
     sale_unit: poster.sale_unit ?? "unid",
+    subtitle_size: String(textStyleSize(layoutConfig, "subtitle_size", unitSize)),
     product_name_size: String(poster.product_name_size ?? 34),
     description_size: String(poster.description_size ?? 18),
     price_size: String(poster.price_size ?? 76),
-    sale_unit_size: String(poster.sale_unit_size ?? 20),
+    sale_unit_size: String(unitSize),
+    footer_size: String(textStyleSize(layoutConfig, "footer_size", unitSize)),
+    price_cents_scale: textStylePriceCentsScale(layoutConfig) < 0.99 ? "50" : "100",
     ...formPositionsFromLayoutConfig(layoutConfig, templateKey),
     tone: poster.tone,
     format: poster.format,
