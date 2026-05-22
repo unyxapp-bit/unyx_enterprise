@@ -1,0 +1,36 @@
+{
+  "templates": [
+    {
+      "file": "aproveite agora.svg",
+      "name": "Aproveite Agora"
+    },
+    {
+      "file": "cartaz-oferta-do-dia.svg",
+      "name": "Cartaz Oferta do Dia"
+    },
+    {
+      "file": "Cartaz Oferta.svg",
+      "name": "Cartaz Oferta"
+    },
+    {
+      "file": "Oferta (2).svg",
+      "name": "Oferta 2"
+    },
+    {
+      "file": "Oferta do Dia Tradicional.svg",
+      "name": "Oferta Dia Tradicional"
+    },
+    {
+      "file": "oferta.svg",
+      "name": "Oferta"
+    },
+    {
+      "file": "proximo vencimento.svg",
+      "name": "Proximo Vencimento"
+    },
+    {
+      "file": "super oferta.svg",
+      "name": "Super Oferta"
+    }
+  ]
+}

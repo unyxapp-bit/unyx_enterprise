@@ -75,6 +75,9 @@ const PosCashPage = lazy(() =>
 const PosProductsPage = lazy(() =>
   import("@/features/pos/PosProductsPage").then((m) => ({ default: m.PosProductsPage }))
 )
+const PosterEditorPage = lazy(() =>
+  import("@/features/pos/PosterEditorPage").then((m) => ({ default: m.PosterEditorPage }))
+)
 const PosSalesPage = lazy(() =>
   import("@/features/pos/PosSalesPage").then((m) => ({ default: m.PosSalesPage }))
 )
@@ -191,6 +194,9 @@ export function AppRouter() {
             </Route>
             <Route element={<RequirePermission perm="pos_products" />}>
               <Route path="pos/products" element={<PosProductsPage />} />
+            </Route>
+            <Route element={<RequirePermission perm="pos_posters" />}>
+              <Route path="pos/posters" element={<PosterEditorPage />} />
             </Route>
             <Route element={<RequirePermission perm="pos_sales" />}>
               <Route path="pos/sales" element={<PosSalesPage />} />
