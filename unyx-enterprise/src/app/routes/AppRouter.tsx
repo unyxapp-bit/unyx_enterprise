@@ -84,9 +84,6 @@ const PosSalesPage = lazy(() =>
 const PosSellPage = lazy(() =>
   import("@/features/pos/PosSellPage").then((m) => ({ default: m.PosSellPage }))
 )
-const ProductionOrdersPage = lazy(() =>
-  import("@/features/pos/ProductionOrdersPage").then((m) => ({ default: m.ProductionOrdersPage }))
-)
 const ReportsPage = lazy(() =>
   import("@/features/reports/ReportsPage").then((m) => ({ default: m.ReportsPage }))
 )
@@ -202,7 +199,7 @@ export function AppRouter() {
               <Route path="pos/sales" element={<PosSalesPage />} />
             </Route>
             <Route element={<RequirePermission perm="production_orders" />}>
-              <Route path="pos/production" element={<ProductionOrdersPage />} />
+              <Route path="pos/production" element={<PosSellPage initialWorkspace="production" />} />
             </Route>
             <Route element={<RequirePermission perm="fiscal_documents" />}>
               <Route path="pos/fiscal" element={<FiscalDocumentsPage />} />

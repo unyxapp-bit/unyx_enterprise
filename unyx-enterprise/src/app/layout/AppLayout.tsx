@@ -97,7 +97,6 @@ const navGroups = [
       { to: "/app/pos/products", label: "Produtos",    icon: Package,      perm: "pos_products" as PermissionKey },
       { to: "/app/pos/posters",  label: "Cartazes",    icon: ImageIcon,    perm: "pos_posters"  as PermissionKey },
       { to: "/app/pos/sales",    label: "Historico",   icon: ReceiptText,  perm: "pos_sales"    as PermissionKey },
-      { to: "/app/pos/production", label: "Producao",  icon: ClipboardList, perm: "production_orders" as PermissionKey },
       { to: "/app/pos/fiscal",    label: "Cupons / NFC-e", icon: ReceiptText, perm: "fiscal_documents" as PermissionKey },
       { to: "/app/deliveries",    label: "Entregas",    icon: Truck,        perm: "deliveries"   as PermissionKey },
     ],

@@ -562,6 +562,12 @@ export function ProductionOrdersPage({ embedded = false }: { embedded?: boolean 
   const pendingCount = (orders.data ?? []).filter((order) => order.status === "pending").length
   const productionCount = (orders.data ?? []).filter((order) => order.status === "in_production").length
   const readyCount = (orders.data ?? []).filter((order) => order.status === "ready").length
+  const formFieldClass = `${fieldClass} ${
+    embedded ? "border-gray-700 bg-gray-800 text-white" : ""
+  }`
+  const formInputClass = embedded
+    ? "border-gray-700 bg-gray-800 text-white placeholder:text-gray-500"
+    : ""
   const productionControls = (
     <div className="flex flex-wrap items-center gap-2">
       {!embedded ? (
@@ -573,7 +579,11 @@ export function ProductionOrdersPage({ embedded = false }: { embedded?: boolean 
         </Button>
       ) : null}
       <Input
-        className="w-40"
+        className={`w-40 ${
+          embedded
+            ? "border-gray-700 bg-gray-800 text-white"
+            : ""
+        }`}
         type="date"
         value={date}
         onChange={(event) => setDate(event.target.value)}
@@ -582,6 +592,11 @@ export function ProductionOrdersPage({ embedded = false }: { embedded?: boolean 
         type="button"
         variant="outline"
         size="icon"
+        className={
+          embedded
+            ? "border-gray-700 bg-gray-800 text-gray-200 hover:bg-gray-700 hover:text-white"
+            : ""
+        }
         onClick={() => void orders.refetch()}
         aria-label="Atualizar pedidos"
       >
@@ -606,10 +621,10 @@ export function ProductionOrdersPage({ embedded = false }: { embedded?: boolean 
   return (
     <>
       {embedded ? (
-        <div className="flex flex-col gap-2 border-b border-slate-200 bg-white px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-2 border-b border-gray-800 bg-gray-950 px-4 py-3 text-white sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <div className="text-sm font-semibold text-slate-950">Fila de producao</div>
-            <div className="text-xs text-muted-foreground">
+            <div className="text-sm font-semibold">Fila de producao</div>
+            <div className="text-xs text-gray-500">
               Pedidos e comandas internas do mesmo posto.
             </div>
           </div>
@@ -626,11 +641,17 @@ export function ProductionOrdersPage({ embedded = false }: { embedded?: boolean 
       <div
         className={`grid gap-4 lg:grid-cols-[minmax(0,1fr)_400px] 2xl:grid-cols-[minmax(0,1fr)_420px] ${
           embedded
-            ? "bg-slate-100 p-3 lg:min-h-[calc(100dvh-14.5rem)]"
+            ? "min-h-0 flex-1 bg-gray-950 p-3 text-white"
             : "p-4 lg:min-h-[calc(100dvh-8.5rem)] xl:p-4"
         }`}
       >
-        <div className="min-h-0 space-y-4 lg:grid lg:grid-rows-[auto_minmax(21rem,0.9fr)_minmax(24rem,1.1fr)] lg:gap-4 lg:space-y-0">
+        <div
+          className={`min-h-0 space-y-4 lg:grid lg:gap-4 lg:space-y-0 ${
+            embedded
+              ? "lg:grid-rows-[auto_minmax(28rem,1fr)]"
+              : "lg:grid-rows-[auto_minmax(21rem,0.9fr)_minmax(24rem,1.1fr)]"
+          }`}
+        >
           <div className="grid gap-3 sm:grid-cols-3">
             <button
               type="button"
@@ -638,12 +659,20 @@ export function ProductionOrdersPage({ embedded = false }: { embedded?: boolean 
               onClick={() =>
                 setStatusFilter(statusFilter === "pending" ? "all" : "pending")
               }
-              className={`rounded-lg border bg-white p-4 text-left shadow-sm transition-colors hover:border-slate-400 hover:bg-slate-50 ${
-                statusFilter === "pending" ? "border-amber-400 bg-amber-50" : ""
+              className={`rounded-xl border p-4 text-left transition-colors ${
+                embedded
+                  ? "border-gray-800 bg-yellow-900/20 hover:border-yellow-600 hover:bg-yellow-900/30"
+                  : "bg-white shadow-sm hover:border-slate-400 hover:bg-slate-50"
+              } ${
+                statusFilter === "pending"
+                  ? embedded
+                    ? "border-yellow-500"
+                    : "border-amber-400 bg-amber-50"
+                  : ""
               }`}
             >
-              <div className="text-xs text-muted-foreground">Abertos</div>
-              <div className="text-2xl font-semibold text-amber-700">{pendingCount}</div>
+              <div className={`text-xs ${embedded ? "text-gray-400" : "text-muted-foreground"}`}>Abertos</div>
+              <div className={`text-2xl font-semibold ${embedded ? "text-yellow-300" : "text-amber-700"}`}>{pendingCount}</div>
             </button>
             <button
               type="button"
@@ -653,12 +682,20 @@ export function ProductionOrdersPage({ embedded = false }: { embedded?: boolean 
                   statusFilter === "in_production" ? "all" : "in_production"
                 )
               }
-              className={`rounded-lg border bg-white p-4 text-left shadow-sm transition-colors hover:border-slate-400 hover:bg-slate-50 ${
-                statusFilter === "in_production" ? "border-sky-400 bg-sky-50" : ""
+              className={`rounded-xl border p-4 text-left transition-colors ${
+                embedded
+                  ? "border-gray-800 bg-blue-900/20 hover:border-blue-600 hover:bg-blue-900/30"
+                  : "bg-white shadow-sm hover:border-slate-400 hover:bg-slate-50"
+              } ${
+                statusFilter === "in_production"
+                  ? embedded
+                    ? "border-blue-500"
+                    : "border-sky-400 bg-sky-50"
+                  : ""
               }`}
             >
-              <div className="text-xs text-muted-foreground">Em producao</div>
-              <div className="text-2xl font-semibold text-sky-700">
+              <div className={`text-xs ${embedded ? "text-gray-400" : "text-muted-foreground"}`}>Em producao</div>
+              <div className={`text-2xl font-semibold ${embedded ? "text-blue-300" : "text-sky-700"}`}>
                 {productionCount}
               </div>
             </button>
@@ -668,15 +705,24 @@ export function ProductionOrdersPage({ embedded = false }: { embedded?: boolean 
               onClick={() =>
                 setStatusFilter(statusFilter === "ready" ? "all" : "ready")
               }
-              className={`rounded-lg border bg-white p-4 text-left shadow-sm transition-colors hover:border-slate-400 hover:bg-slate-50 ${
-                statusFilter === "ready" ? "border-emerald-400 bg-emerald-50" : ""
+              className={`rounded-xl border p-4 text-left transition-colors ${
+                embedded
+                  ? "border-gray-800 bg-green-900/20 hover:border-green-600 hover:bg-green-900/30"
+                  : "bg-white shadow-sm hover:border-slate-400 hover:bg-slate-50"
+              } ${
+                statusFilter === "ready"
+                  ? embedded
+                    ? "border-green-500"
+                    : "border-emerald-400 bg-emerald-50"
+                  : ""
               }`}
             >
-              <div className="text-xs text-muted-foreground">Prontos</div>
-              <div className="text-2xl font-semibold text-emerald-700">{readyCount}</div>
+              <div className={`text-xs ${embedded ? "text-gray-400" : "text-muted-foreground"}`}>Prontos</div>
+              <div className={`text-2xl font-semibold ${embedded ? "text-green-300" : "text-emerald-700"}`}>{readyCount}</div>
             </button>
           </div>
 
+          {!embedded ? (
           <Card className="flex min-h-0 flex-col border bg-white shadow-sm">
             <CardHeader className="space-y-3">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -761,10 +807,15 @@ export function ProductionOrdersPage({ embedded = false }: { embedded?: boolean 
               )}
             </CardContent>
           </Card>
+          ) : null}
 
           <Card
             id="pedidos-producao"
-            className="flex min-h-0 scroll-mt-20 flex-col border bg-white shadow-sm"
+            className={`flex min-h-0 scroll-mt-20 flex-col ${
+              embedded
+                ? "rounded-xl border-gray-800 bg-gray-900 text-white shadow-none"
+                : "border bg-white shadow-sm"
+            }`}
           >
             <CardHeader>
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -773,7 +824,9 @@ export function ProductionOrdersPage({ embedded = false }: { embedded?: boolean 
                   {onlyOverdueProduction ? "Pedidos atrasados" : "Pedidos do dia"}
                 </CardTitle>
                 <select
-                  className={`${fieldClass} w-44`}
+                  className={`${fieldClass} w-44 ${
+                    embedded ? "border-gray-700 bg-gray-800 text-white" : ""
+                  }`}
                   value={statusFilter}
                   onChange={(event) =>
                     setStatusFilter(event.target.value as ProductionOrderStatus | "all")
@@ -794,7 +847,12 @@ export function ProductionOrdersPage({ embedded = false }: { embedded?: boolean 
               ) : (
                 <div className="space-y-2">
                   {visibleOrders.map((order) => (
-                    <div key={order.id} className="rounded-lg border p-3">
+                    <div
+                      key={order.id}
+                      className={`rounded-lg border p-3 ${
+                        embedded ? "border-gray-800 bg-gray-950" : ""
+                      }`}
+                    >
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <div className="flex flex-wrap items-center gap-2">
@@ -806,10 +864,10 @@ export function ProductionOrdersPage({ embedded = false }: { embedded?: boolean 
                               {priorityLabel[order.priority]}
                             </Badge>
                           </div>
-                          <div className="mt-1 text-sm text-muted-foreground">
+                          <div className={`mt-1 text-sm ${embedded ? "text-gray-400" : "text-muted-foreground"}`}>
                             {order.customer_name} - {branchName(activeBranches, order.branch_id)}
                           </div>
-                          <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                          <div className={`mt-1 flex flex-wrap gap-2 text-xs ${embedded ? "text-gray-500" : "text-muted-foreground"}`}>
                             <span>Entrada {formatDateTimeBR(order.ordered_at)}</span>
                             {order.promised_at ? (
                               <span>Promessa {formatDateTimeBR(order.promised_at)}</span>
@@ -859,13 +917,17 @@ export function ProductionOrdersPage({ embedded = false }: { embedded?: boolean 
                           </Button>
                         </div>
                       </div>
-                      <div className="mt-3 space-y-2 rounded-lg bg-slate-50 p-2">
+                      <div className={`mt-3 space-y-2 rounded-lg p-2 ${embedded ? "bg-gray-900" : "bg-slate-50"}`}>
                         {(order.production_order_items ?? []).map((item) => (
                           <div
                             key={item.id}
-                            className="rounded-lg border border-slate-200 border-l-4 border-l-slate-900 bg-white p-3"
+                            className={`rounded-lg border border-l-4 p-3 ${
+                              embedded
+                                ? "border-gray-800 border-l-orange-500 bg-gray-800"
+                                : "border-slate-200 border-l-slate-900 bg-white"
+                            }`}
                           >
-                            <div className="text-base font-extrabold uppercase leading-snug text-slate-950">
+                            <div className={`text-base font-extrabold uppercase leading-snug ${embedded ? "text-white" : "text-slate-950"}`}>
                               {formatProductionQuantity(item.quantity)}x {item.product_name}
                             </div>
                             {item.notes ? (
@@ -890,7 +952,13 @@ export function ProductionOrdersPage({ embedded = false }: { embedded?: boolean 
         </div>
 
         <div className="min-h-0">
-          <Card className="border bg-white shadow-sm lg:sticky lg:top-4 lg:flex lg:max-h-[calc(100dvh-9.5rem)] lg:flex-col">
+          <Card
+            className={`lg:sticky lg:top-4 lg:flex lg:max-h-[calc(100dvh-9.5rem)] lg:flex-col ${
+              embedded
+                ? "rounded-xl border-gray-800 bg-gray-900 text-white shadow-none"
+                : "border bg-white shadow-sm"
+            }`}
+          >
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <PackageCheck className="size-5" />
@@ -902,7 +970,7 @@ export function ProductionOrdersPage({ embedded = false }: { embedded?: boolean 
                 <label className="space-y-1 text-sm">
                   <span className="font-medium">Filial</span>
                   <select
-                    className={fieldClass}
+                    className={formFieldClass}
                     value={branchId || selectedBranchId || ""}
                     onChange={(event) => setBranchId(event.target.value)}
                   >
@@ -918,7 +986,7 @@ export function ProductionOrdersPage({ embedded = false }: { embedded?: boolean 
                 <label className="space-y-1 text-sm">
                   <span className="font-medium">Cliente cadastrado</span>
                   <select
-                    className={fieldClass}
+                    className={formFieldClass}
                     value={customerId}
                     onChange={(event) => applyCustomer(event.target.value)}
                   >
@@ -934,6 +1002,7 @@ export function ProductionOrdersPage({ embedded = false }: { embedded?: boolean 
                 <label className="space-y-1 text-sm">
                   <span className="font-medium">Nome do cliente</span>
                   <Input
+                    className={formInputClass}
                     value={customerName}
                     onChange={(event) => setCustomerName(event.target.value)}
                     placeholder="Nome para identificar o pedido"
@@ -944,6 +1013,7 @@ export function ProductionOrdersPage({ embedded = false }: { embedded?: boolean 
                   <label className="space-y-1 text-sm">
                     <span className="font-medium">Telefone</span>
                     <Input
+                      className={formInputClass}
                       value={customerPhone}
                       onChange={(event) => setCustomerPhone(event.target.value)}
                     />
@@ -951,7 +1021,7 @@ export function ProductionOrdersPage({ embedded = false }: { embedded?: boolean 
                   <label className="space-y-1 text-sm">
                     <span className="font-medium">Prioridade</span>
                     <select
-                      className={fieldClass}
+                      className={formFieldClass}
                       value={priority}
                       onChange={(event) =>
                         setPriority(event.target.value as ProductionOrderPriority)
@@ -974,12 +1044,73 @@ export function ProductionOrdersPage({ embedded = false }: { embedded?: boolean 
                     Horario prometido
                   </span>
                   <Input
+                    className={formInputClass}
                     type="datetime-local"
                     value={promisedAt}
                     onChange={(event) => setPromisedAt(event.target.value)}
                   />
                 </label>
               </div>
+
+              {embedded ? (
+                <div className="space-y-2 rounded-xl border border-gray-800 bg-gray-950/70 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-sm font-semibold">Adicionar itens</div>
+                    {canUseHalfAndHalf ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="bg-purple-700 text-white hover:bg-purple-600"
+                        onClick={openHalfAndHalfDialog}
+                      >
+                        <Utensils className="size-4" />
+                        Meio a meio
+                      </Button>
+                    ) : null}
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_10rem]">
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-gray-500" />
+                      <Input
+                        className="border-gray-700 bg-gray-800 pl-8 text-white placeholder:text-gray-500"
+                        placeholder="Buscar pizza, lanche, prato..."
+                        value={search}
+                        onChange={(event) => setSearch(event.target.value)}
+                      />
+                    </div>
+                    <select
+                      className="h-8 w-full rounded-lg border border-gray-700 bg-gray-800 px-2.5 text-sm text-white outline-none focus:border-orange-500"
+                      value={categoryFilter}
+                      onChange={(event) => setCategoryFilter(event.target.value)}
+                    >
+                      <option value="all">Categorias</option>
+                      {categoryOptions.map((category) => (
+                        <option key={category} value={category}>
+                          {category}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="max-h-40 space-y-1 overflow-y-auto pr-1">
+                    {filteredItems.slice(0, 8).map((item) => (
+                      <button
+                        key={item.key}
+                        type="button"
+                        onClick={() => addItem(item)}
+                        className="flex w-full items-center justify-between gap-2 rounded-lg border border-gray-800 bg-gray-900 px-3 py-2 text-left text-sm transition-colors hover:border-orange-500 hover:bg-gray-800"
+                      >
+                        <span className="min-w-0 truncate">{item.name}</span>
+                        <span className="shrink-0 text-orange-300">+</span>
+                      </button>
+                    ))}
+                    {!isLoading && filteredItems.length === 0 ? (
+                      <div className="rounded-lg border border-dashed border-gray-800 px-3 py-3 text-center text-xs text-gray-500">
+                        Nenhum item encontrado.
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
 
               <div className="space-y-2 rounded-lg border p-3">
                 <div className="text-sm font-medium">Itens</div>

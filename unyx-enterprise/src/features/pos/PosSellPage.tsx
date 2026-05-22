@@ -27,9 +27,9 @@ import {
   Utensils,
   X,
 } from "lucide-react"
+import { Link } from "react-router-dom"
 
 import { useAuth } from "@/app/providers/auth-context"
-import { PageHeader } from "@/components/shared/PageHeader"
 import { StateBlock } from "@/components/shared/StateBlock"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -383,7 +383,11 @@ function ShortcutKey({ children }: { children: string }) {
   )
 }
 
-export function PosSellPage() {
+export function PosSellPage({
+  initialWorkspace = "sale",
+}: {
+  initialWorkspace?: PosWorkspace
+} = {}) {
   const { profile } = useAuth()
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
   const cashSessions = useCashSessions(selectedBranchId ?? null)
@@ -444,7 +448,7 @@ export function PosSellPage() {
   )
 
   const [search, setSearch] = useState("")
-  const [workspace, setWorkspace] = useState<PosWorkspace>("sale")
+  const [workspace, setWorkspace] = useState<PosWorkspace>(initialWorkspace)
   const [productsExpanded, setProductsExpanded] = useState(true)
   const [categoryFilter, setCategoryFilter] = useState("all")
   const [cart, setCart] = useState<CartItem[]>([])
@@ -1717,96 +1721,79 @@ export function PosSellPage() {
 
   if (!session && openCashSessions.length === 0) {
     return (
-      <>
-        <PageHeader title="PDV - Venda" description="Registre vendas pelo caixa." />
-        <div className="p-6">
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-            Nenhum caixa aberto. Acesse <strong>Caixa</strong> para abrir um caixa antes de registrar vendas.
+      <main className="flex h-[calc(100dvh-3.5rem)] items-center justify-center bg-gray-950 p-6 text-white">
+        <div className="w-full max-w-lg">
+          <div className="mb-8 text-center">
+            <div className="text-4xl font-black tracking-tight text-blue-300">PDV</div>
+            <div className="mt-1 text-sm text-gray-500">Sistema operacional Unyx</div>
+          </div>
+          <div className="rounded-2xl border border-gray-800 bg-gray-900 p-6 shadow-2xl">
+            <h1 className="text-lg font-bold">Caixa necessario</h1>
+            <p className="mt-2 text-sm text-gray-400">
+              Nenhum caixa esta aberto para operar venda e producao neste posto.
+            </p>
+            {profile && canAccessUser(profile, "pos_cash") ? (
+              <Button asChild className="mt-5 w-full bg-blue-600 text-white hover:bg-blue-500">
+                <Link to="/app/pos/cash">
+                  <Store className="size-4" />
+                  Abrir caixa real
+                </Link>
+              </Button>
+            ) : null}
           </div>
         </div>
-      </>
+      </main>
     )
   }
 
   if (!session) {
     return (
-      <>
-        <PageHeader title="PDV - Venda" description="Escolha o caixa para registrar vendas." />
-        <div className="p-6">
-          <Card className="border bg-white shadow-sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Store className="size-5" />
-                Selecionar caixa do PDV
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
+      <main className="flex h-[calc(100dvh-3.5rem)] items-center justify-center bg-gray-950 p-6 text-white">
+        <div className="w-full max-w-xl">
+          <div className="mb-8 text-center">
+            <div className="text-4xl font-black tracking-tight text-blue-300">PDV</div>
+            <div className="mt-1 text-sm text-gray-500">Selecione um caixa aberto</div>
+          </div>
+          <div className="rounded-2xl border border-gray-800 bg-gray-900 p-6 shadow-2xl">
+            <div className="mb-4 flex items-center gap-2 text-lg font-bold">
+              <Store className="size-5" />
+              Caixas reais disponiveis
+            </div>
+            <div className="space-y-3">
               {openCashSessions.map((cashSession) => (
                 <button
                   key={cashSession.id}
                   type="button"
                   onClick={() => chooseCashSession(cashSession)}
-                  className="flex w-full items-center justify-between rounded-lg border bg-white px-4 py-3 text-left transition-colors hover:border-slate-400 hover:bg-slate-50"
+                  className="flex w-full items-center justify-between rounded-xl border border-gray-700 bg-gray-800 px-4 py-3 text-left transition-colors hover:border-blue-500 hover:bg-gray-700"
                 >
                   <div>
-                    <div className="font-medium">{cashSessionTitle(cashSession)}</div>
-                    <div className="text-xs text-muted-foreground">
+                    <div className="font-bold">{cashSessionTitle(cashSession)}</div>
+                    <div className="text-xs text-gray-400">
                       {cashSessionDescription(cashSession)}
                     </div>
                   </div>
-                  <Badge variant="default">Aberto</Badge>
+                  <span className="rounded-md bg-green-900/50 px-2 py-1 text-xs font-bold text-green-300">
+                    Aberto
+                  </span>
                 </button>
               ))}
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </div>
-      </>
+      </main>
     )
   }
 
   return (
     <>
-      <PageHeader
-        title="PDV operacional"
-        description={
-          canOpenProduction
-            ? "Venda e producao no mesmo posto de trabalho."
-            : "Registro de venda, cliente, pagamento e entrega no mesmo fluxo."
-        }
-        action={
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="gap-1">
-              <ModeIcon className="size-3" />
-              {saleModeLabel[saleMode]}
-            </Badge>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setCashSessionDialogOpen(true)}
-            >
-              <Store className="size-4" />
-              {cashSessionTitle(session)}
-            </Button>
-            <Badge variant="default" className="text-sm">
-              Caixa aberto
-            </Badge>
-            {!operatorReady ? (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={openOperatorDialog}
-              >
-                <LockKeyhole className="size-4" />
-                Liberar PDV
-              </Button>
-            ) : null}
-          </div>
-        }
-      />
-
-      <div className="p-4 sm:p-6 xl:p-4">
-        <div className="overflow-hidden rounded-lg border border-slate-900 bg-slate-950 shadow-sm">
-          <div className="flex flex-col gap-2 border-b border-slate-800 bg-slate-950 px-3 py-2 text-white md:flex-row md:items-center md:justify-between">
+      <div className="flex h-[calc(100dvh-3.5rem)] min-h-[38rem] flex-col overflow-hidden bg-gray-950 text-white">
+        <div className="flex flex-col gap-2 border-b border-gray-800 bg-gray-900 px-4 py-2 md:flex-row md:items-center md:justify-between">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="hidden shrink-0 md:block">
+              <div className="text-base font-black tracking-tight text-blue-300">PDV</div>
+              <div className="text-[11px] text-gray-500">Unyx operacional</div>
+            </div>
             <div className="flex min-w-0 items-center gap-1">
               <button
                 type="button"
@@ -1835,31 +1822,45 @@ export function PosSellPage() {
                 </button>
               ) : null}
             </div>
-            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-300">
-              <span className="rounded-md bg-white/10 px-2 py-1">
-                {cashSessionTitle(session)}
-              </span>
-              <span>{cashSessionDescription(session)}</span>
-              <span
-                className={`rounded-md px-2 py-1 font-semibold ${
-                  operatorReady
-                    ? "bg-emerald-400/15 text-emerald-200"
-                    : "bg-amber-400/15 text-amber-100"
-                }`}
-              >
-                {operatorReady ? "PDV liberado" : "Operador pendente"}
-              </span>
-            </div>
           </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs text-gray-400">
+            <button
+              type="button"
+              onClick={() => setCashSessionDialogOpen(true)}
+              className="rounded-md bg-gray-800 px-2 py-1 text-gray-200 transition-colors hover:bg-gray-700"
+            >
+                {cashSessionTitle(session)}
+            </button>
+            <span>{cashSessionDescription(session)}</span>
+            <span className="rounded-md bg-gray-800 px-2 py-1">
+              <ModeIcon className="mr-1 inline size-3" />
+              {saleModeLabel[saleMode]}
+            </span>
+            {!operatorReady ? (
+              <button
+                type="button"
+                onClick={openOperatorDialog}
+                className="inline-flex items-center gap-1 rounded-md bg-amber-500 px-2 py-1 font-bold text-gray-950 transition-colors hover:bg-amber-400"
+              >
+                <LockKeyhole className="size-3" />
+                Liberar PDV
+              </button>
+            ) : (
+              <span className="rounded-md bg-green-900/50 px-2 py-1 font-semibold text-green-300">
+                Operador liberado
+              </span>
+            )}
+          </div>
+        </div>
 
-          {productionWorkspace ? (
-            <ProductionOrdersPage embedded />
-          ) : (
-            <div className="bg-slate-100 p-3 sm:p-4 xl:h-[calc(100dvh-12rem)] xl:min-h-[42rem]">
-              <div className="grid h-full gap-4 xl:grid-cols-[minmax(0,1fr)_400px] 2xl:grid-cols-[minmax(0,1fr)_430px]">
+        {productionWorkspace ? (
+          <ProductionOrdersPage embedded />
+        ) : (
+          <div className="min-h-0 flex-1">
+            <div className="grid h-full xl:grid-cols-[minmax(0,1fr)_22rem] 2xl:grid-cols-[minmax(0,1fr)_24rem]">
           <div className="min-h-0">
-            <Card className="flex min-h-[34rem] flex-col border bg-white shadow-sm xl:h-full">
-              <CardHeader className="space-y-3">
+            <Card className="flex min-h-[34rem] flex-col rounded-none border-0 bg-gray-950 text-white shadow-none xl:h-full">
+              <CardHeader className="shrink-0 space-y-2 border-b border-gray-800 p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <CardTitle className="flex items-center gap-2">
                     <Search className="size-5" />
@@ -1867,15 +1868,11 @@ export function PosSellPage() {
                     <ShortcutKey>F2</ShortcutKey>
                   </CardTitle>
                   <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="gap-1">
-                      <ModeIcon className="size-3" />
-                      {saleModeLabel[saleMode]}
-                    </Badge>
                     {canUseHalfAndHalf ? (
                       <Button
                         type="button"
                         size="sm"
-                        variant="outline"
+                        className="bg-purple-700 text-white hover:bg-purple-600"
                         onClick={openHalfAndHalfDialog}
                       >
                         <Utensils className="size-4" />
@@ -1886,6 +1883,11 @@ export function PosSellPage() {
                       type="button"
                       size="sm"
                       variant={productsExpanded ? "default" : "outline"}
+                      className={
+                        productsExpanded
+                          ? "bg-blue-600 text-white hover:bg-blue-500"
+                          : "border-gray-700 bg-gray-800 text-gray-300 hover:bg-gray-700 hover:text-white"
+                      }
                       onClick={() => setProductsExpanded((current) => !current)}
                     >
                       {productsExpanded ? "Recolher" : "Mostrar"}
@@ -1893,10 +1895,10 @@ export function PosSellPage() {
                   </div>
                 </div>
                 <div className="relative">
-                  <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-gray-500" />
                   <Input
                     ref={searchRef}
-                    className="h-10 pl-9 text-base"
+                    className="h-10 border-gray-700 bg-gray-800 pl-9 text-base text-white placeholder:text-gray-500"
                     placeholder="Produto, codigo, SKU, categoria..."
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
@@ -1909,6 +1911,11 @@ export function PosSellPage() {
                     type="button"
                     size="sm"
                     variant={categoryFilter === "all" ? "default" : "outline"}
+                    className={
+                      categoryFilter === "all"
+                        ? "bg-blue-600 text-white hover:bg-blue-500"
+                        : "border-gray-700 bg-gray-800 text-gray-300 hover:bg-gray-700 hover:text-white"
+                    }
                     onClick={() => setCategoryFilter("all")}
                   >
                     Todas
@@ -1919,6 +1926,11 @@ export function PosSellPage() {
                       type="button"
                       size="sm"
                       variant={categoryFilter === category ? "default" : "outline"}
+                      className={
+                        categoryFilter === category
+                          ? "bg-blue-600 text-white hover:bg-blue-500"
+                          : "border-gray-700 bg-gray-800 text-gray-300 hover:bg-gray-700 hover:text-white"
+                      }
                       onClick={() => setCategoryFilter(category)}
                     >
                       {category}
@@ -1926,14 +1938,14 @@ export function PosSellPage() {
                   ))}
                 </div>
               </CardHeader>
-              <CardContent className="flex min-h-0 flex-1 flex-col space-y-3">
+              <CardContent className="flex min-h-0 flex-1 flex-col space-y-3 p-3">
                 {saleError ? (
                   <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                     {saleError}
                   </div>
                 ) : null}
                 {!showProductList ? (
-                  <div className="rounded-lg border border-dashed bg-slate-50 px-3 py-6 text-center text-sm text-muted-foreground">
+                  <div className="rounded-lg border border-dashed border-gray-700 bg-gray-900 px-3 py-6 text-center text-sm text-gray-500">
                     Produtos recolhidos. Use a busca por codigo/nome ou clique em Mostrar.
                   </div>
                 ) : filteredProducts.length === 0 ? (
@@ -1948,7 +1960,7 @@ export function PosSellPage() {
                         <button
                           key={item.key}
                           type="button"
-                          className="min-h-32 rounded-lg border bg-white p-3 text-left transition-colors hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-55"
+                          className="min-h-32 rounded-xl border border-gray-800 bg-gray-900 p-3 text-left text-white transition-colors hover:border-blue-500 hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-55"
                           onClick={() => addToCart(item)}
                           disabled={stockBlocked}
                         >
@@ -1957,7 +1969,7 @@ export function PosSellPage() {
                               <div className="line-clamp-2 text-sm font-semibold">
                                 {item.name}
                               </div>
-                              <div className="mt-1 text-xs text-muted-foreground">
+                              <div className="mt-1 text-xs text-gray-500">
                                 {item.category}
                               </div>
                             </div>
@@ -1970,10 +1982,10 @@ export function PosSellPage() {
                           </div>
                           <div className="mt-3 flex items-end justify-between gap-2">
                             <div>
-                              <div className="text-base font-semibold">
+                              <div className="text-base font-black text-blue-300">
                                 {formatCurrency(item.unit_price)}
                               </div>
-                              <div className="text-xs text-muted-foreground">
+                              <div className="text-xs text-gray-500">
                                 {item.product.unit}
                               </div>
                             </div>
@@ -1982,7 +1994,7 @@ export function PosSellPage() {
                             </Badge>
                           </div>
                           {(item.barcode || item.sku) ? (
-                            <div className="mt-2 truncate text-xs text-muted-foreground">
+                            <div className="mt-2 truncate text-xs text-gray-500">
                               {item.barcode ?? item.sku}
                             </div>
                           ) : null}
@@ -1995,9 +2007,9 @@ export function PosSellPage() {
             </Card>
           </div>
 
-          <div className="flex min-h-0 flex-col gap-4">
-            <Card className="flex min-h-[36rem] flex-col border bg-white shadow-sm xl:min-h-0 xl:flex-1">
-              <CardHeader className="space-y-3">
+          <div className="flex min-h-0 flex-col border-l border-gray-800 bg-gray-900">
+            <Card className="flex min-h-[30rem] flex-col rounded-none border-0 bg-gray-900 text-white shadow-none xl:min-h-0 xl:flex-1">
+              <CardHeader className="shrink-0 space-y-3 border-b border-gray-800 p-3">
                 <div className="flex items-center justify-between gap-2">
                   <CardTitle className="flex items-center gap-2">
                     <ShoppingCart className="size-5" />
@@ -2016,7 +2028,7 @@ export function PosSellPage() {
                     <div className="flex gap-2">
                       <select
                         ref={customerSelectRef}
-                        className={fieldClass}
+                        className="h-9 min-w-0 flex-1 rounded-lg border border-gray-700 bg-gray-800 px-2.5 text-sm text-white outline-none transition-colors focus:border-blue-500"
                         value={selectedCustomerId}
                         onChange={(event) => applyCustomerById(event.target.value)}
                       >
@@ -2030,7 +2042,7 @@ export function PosSellPage() {
                       </select>
                       <Button
                         type="button"
-                        variant="outline"
+                        className="bg-gray-800 text-blue-300 hover:bg-gray-700 hover:text-blue-200"
                         size="icon"
                         onClick={() => setQuickCustomerOpen(true)}
                         aria-label="Novo cliente"
@@ -2042,6 +2054,7 @@ export function PosSellPage() {
                   <label className="space-y-1 text-sm">
                     <span className="font-medium">Nome no cupom</span>
                     <Input
+                      className="border-gray-700 bg-gray-800 text-white placeholder:text-gray-500"
                       value={customerName}
                       onChange={(event) => setCustomerName(event.target.value)}
                       placeholder="Consumidor final"
@@ -2049,9 +2062,13 @@ export function PosSellPage() {
                   </label>
                 </div>
               </CardHeader>
-              <CardContent className="flex min-h-0 flex-1 flex-col space-y-3">
+              <CardContent className="flex min-h-0 flex-1 flex-col space-y-3 p-2">
                 {cart.length === 0 ? (
-                  <StateBlock title="Carrinho vazio" description="Adicione produtos para iniciar." />
+                  <div className="flex min-h-40 flex-1 flex-col items-center justify-center rounded-xl border border-dashed border-gray-800 text-center text-gray-600">
+                    <ShoppingCart className="mb-2 size-8" />
+                    <div className="text-sm font-semibold">Carrinho vazio</div>
+                    <div className="text-xs">Adicione produtos para iniciar.</div>
+                  </div>
                 ) : (
                   <>
                     <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
@@ -2066,8 +2083,8 @@ export function PosSellPage() {
                             onFocus={() => setSelectedCartItemKey(item.key)}
                             className={`rounded-lg border p-2.5 outline-none transition-colors ${
                               isSelected
-                                ? "border-slate-900 bg-slate-50 ring-2 ring-slate-200"
-                                : "bg-white focus:border-slate-400"
+                                ? "border-blue-500 bg-gray-800 ring-2 ring-blue-500/30"
+                                : "border-gray-800 bg-gray-800/80 focus:border-gray-600"
                             }`}
                           >
                             <div className="flex items-start justify-between gap-2">
@@ -2108,7 +2125,7 @@ export function PosSellPage() {
                               </Button>
                             </div>
 
-                            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-500">
                               <span className="inline-flex items-center gap-1">
                                 Quantidade
                                 <ShortcutKey>F4</ShortcutKey>
@@ -2136,7 +2153,7 @@ export function PosSellPage() {
                                 type="number"
                                 min={item.half_and_half || !item.product.allow_fractional_quantity ? "1" : "0.001"}
                                 step={item.half_and_half || !item.product.allow_fractional_quantity ? "1" : "0.001"}
-                                className="h-7 rounded border px-1.5 text-center text-sm font-medium outline-none focus:border-ring"
+                                className="h-7 rounded border border-gray-700 bg-gray-900 px-1.5 text-center text-sm font-medium text-white outline-none focus:border-blue-500"
                                 value={formatQuantity(item.quantity)}
                                 onFocus={() => setSelectedCartItemKey(item.key)}
                                 onChange={(event) =>
@@ -2154,12 +2171,12 @@ export function PosSellPage() {
                               </Button>
                               <div className="grid grid-cols-2 gap-1">
                                 <label className="flex items-center gap-1">
-                                  <span className="text-xs text-muted-foreground">R$</span>
+                                  <span className="text-xs text-gray-500">R$</span>
                                   <input
                                     type="number"
                                     step="0.01"
                                     min="0"
-                                    className="h-7 min-w-0 rounded border px-1.5 text-xs outline-none focus:border-ring"
+                                    className="h-7 min-w-0 rounded border border-gray-700 bg-gray-900 px-1.5 text-xs text-white outline-none focus:border-blue-500"
                                     value={item.unit_price}
                                     onFocus={() => setSelectedCartItemKey(item.key)}
                                     onChange={(event) =>
@@ -2168,7 +2185,7 @@ export function PosSellPage() {
                                   />
                                 </label>
                                 <label className="flex items-center gap-1">
-                                  <Percent className="size-3 text-muted-foreground" />
+                                  <Percent className="size-3 text-gray-500" />
                                   <input
                                     ref={(node) => {
                                       discountInputRefs.current[item.key] = node
@@ -2176,7 +2193,7 @@ export function PosSellPage() {
                                     type="number"
                                     step="0.01"
                                     min="0"
-                                    className="h-7 min-w-0 rounded border px-1.5 text-xs outline-none focus:border-ring"
+                                    className="h-7 min-w-0 rounded border border-gray-700 bg-gray-900 px-1.5 text-xs text-white outline-none focus:border-blue-500"
                                     value={item.discount || ""}
                                     onFocus={() => setSelectedCartItemKey(item.key)}
                                     onChange={(event) =>
@@ -2193,7 +2210,7 @@ export function PosSellPage() {
                                   <label className="space-y-1 text-xs">
                                     <span className="font-medium">Observacao do item</span>
                                     <Input
-                                      className="h-7 text-xs"
+                                      className="h-7 border-gray-700 bg-gray-900 text-xs text-white placeholder:text-gray-500"
                                       value={item.notes}
                                       onChange={(event) =>
                                         updateItemNotes(item.key, event.target.value)
@@ -2221,15 +2238,15 @@ export function PosSellPage() {
                       })}
                     </div>
 
-                    <div className="grid gap-2 border-t pt-3">
+                    <div className="grid gap-2 border-t border-gray-800 pt-3">
                       <label className="flex items-center justify-between gap-2 text-sm">
-                        <span className="text-muted-foreground">Desconto venda R$</span>
+                        <span className="text-gray-400">Desconto venda R$</span>
                         <input
                           type="number"
                           step="0.01"
                           min="0"
                           placeholder="0,00"
-                          className="h-8 w-28 rounded border px-2 text-sm outline-none focus:border-ring"
+                          className="h-8 w-28 rounded border border-gray-700 bg-gray-800 px-2 text-sm text-white outline-none focus:border-blue-500"
                           ref={cartDiscountRef}
                           value={cartDiscount_}
                           onChange={(event) => setCartDiscount_(event.target.value)}
@@ -2239,6 +2256,7 @@ export function PosSellPage() {
                         <label className="space-y-1 text-sm">
                           <span className="font-medium">Autorizacao</span>
                           <Input
+                            className="border-gray-700 bg-gray-800 text-white placeholder:text-gray-500"
                             value={managerAuthorization}
                             onChange={(event) =>
                               setManagerAuthorization(event.target.value)
@@ -2249,8 +2267,8 @@ export function PosSellPage() {
                       ) : null}
                     </div>
 
-                    <div className="rounded-lg border bg-slate-50 p-3 text-sm">
-                      <div className="flex justify-between text-muted-foreground">
+                    <div className="rounded-xl border border-gray-800 bg-gray-950 p-3 text-sm">
+                      <div className="flex justify-between text-gray-400">
                         <span>Subtotal</span>
                         <span>{formatCurrency(subtotal)}</span>
                       </div>
@@ -2261,38 +2279,38 @@ export function PosSellPage() {
                         </div>
                       ) : null}
                       {deliveryFee > 0 ? (
-                        <div className="flex justify-between text-muted-foreground">
+                        <div className="flex justify-between text-gray-400">
                           <span>Taxa de entrega</span>
                           <span>{formatCurrency(deliveryFee)}</span>
                         </div>
                       ) : null}
-                      <div className="mt-1 flex justify-between border-t pt-2 text-lg font-semibold">
+                      <div className="mt-1 flex justify-between border-t border-gray-800 pt-2 text-lg font-black">
                         <span>Total</span>
                         <span>{formatCurrency(finalTotal)}</span>
                       </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2">
-                      <Button type="button" onClick={openPayDialog}>
+                      <Button type="button" className="bg-green-600 text-white hover:bg-green-500" onClick={openPayDialog}>
                         <CreditCard className="size-4" />
                         Pagamento
                         <ShortcutKey>F8</ShortcutKey>
                       </Button>
-                      <Button type="button" variant="outline" onClick={holdCurrentSale}>
+                      <Button type="button" className="bg-gray-800 text-gray-100 hover:bg-gray-700" onClick={holdCurrentSale}>
                         <Pause className="size-4" />
                         Espera
                         <ShortcutKey>F6</ShortcutKey>
                       </Button>
                       <Button
                         type="button"
-                        variant="outline"
+                        className="bg-gray-800 text-gray-100 hover:bg-gray-700"
                         onClick={() => setCancelDialogOpen(true)}
                       >
                         <Ban className="size-4" />
                         Cancelar
                         <ShortcutKey>F10</ShortcutKey>
                       </Button>
-                      <Button type="button" variant="outline" onClick={resetCurrentSale}>
+                      <Button type="button" className="bg-gray-800 text-gray-100 hover:bg-gray-700" onClick={resetCurrentSale}>
                         <Trash2 className="size-4" />
                         Limpar
                       </Button>
@@ -2302,8 +2320,8 @@ export function PosSellPage() {
               </CardContent>
             </Card>
 
-            <Card className="shrink-0 border bg-white shadow-sm xl:max-h-64">
-              <CardHeader>
+            <Card className="shrink-0 rounded-none border-0 border-t border-gray-800 bg-gray-900 text-white shadow-none xl:max-h-56">
+              <CardHeader className="p-3">
                 <CardTitle className="flex items-center gap-2">
                   <History className="size-5" />
                   Em espera
@@ -2313,21 +2331,23 @@ export function PosSellPage() {
                   ) : null}
                 </CardTitle>
               </CardHeader>
-              <CardContent className="xl:min-h-0 xl:overflow-y-auto">
+              <CardContent className="px-3 pb-3 xl:min-h-0 xl:overflow-y-auto">
                 {heldSalesForBranch.length === 0 ? (
-                  <StateBlock title="Nenhuma venda em espera" />
+                  <div className="rounded-lg border border-dashed border-gray-800 px-3 py-4 text-center text-xs text-gray-500">
+                    Nenhuma venda em espera
+                  </div>
                 ) : (
                   <div className="space-y-2">
                     {heldSalesForBranch.map((held) => (
                       <div
                         key={held.id}
-                        className="flex items-center justify-between gap-2 rounded-lg border p-2"
+                        className="flex items-center justify-between gap-2 rounded-lg border border-gray-800 bg-gray-800 p-2"
                       >
                         <div className="min-w-0">
                           <div className="truncate text-sm font-medium">
                             {held.label}
                           </div>
-                          <div className="text-xs text-muted-foreground">
+                          <div className="text-xs text-gray-500">
                             {new Date(held.created_at).toLocaleTimeString("pt-BR", {
                               hour: "2-digit",
                               minute: "2-digit",
@@ -2338,7 +2358,7 @@ export function PosSellPage() {
                           <Button
                             type="button"
                             size="icon-sm"
-                            variant="outline"
+                            className="bg-gray-700 text-blue-200 hover:bg-gray-600"
                             onClick={() => restoreHeldSale(held)}
                             aria-label="Retomar venda"
                           >
@@ -2347,7 +2367,7 @@ export function PosSellPage() {
                           <Button
                             type="button"
                             size="icon-sm"
-                            variant="ghost"
+                            className="text-gray-400 hover:bg-gray-700 hover:text-white"
                             onClick={() => removeHeldSale(held.id)}
                             aria-label="Excluir venda em espera"
                           >
@@ -2365,7 +2385,6 @@ export function PosSellPage() {
           </div>
           )}
         </div>
-      </div>
 
       <Dialog open={cashSessionDialogOpen} onOpenChange={setCashSessionDialogOpen}>
         <DialogContent>
