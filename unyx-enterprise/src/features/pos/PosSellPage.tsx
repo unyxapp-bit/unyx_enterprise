@@ -5,6 +5,7 @@ import {
   Ban,
   Barcode,
   Clock3,
+  ClipboardList,
   CreditCard,
   History,
   LockKeyhole,
@@ -27,6 +28,7 @@ import {
   X,
 } from "lucide-react"
 
+import { useAuth } from "@/app/providers/auth-context"
 import { PageHeader } from "@/components/shared/PageHeader"
 import { StateBlock } from "@/components/shared/StateBlock"
 import { Badge } from "@/components/ui/badge"
@@ -58,7 +60,9 @@ import {
   type FiscalCouponPrintItem,
   type FiscalCouponPrintPayment,
 } from "@/features/pos/FiscalDocumentsPage"
+import { ProductionOrdersPage } from "@/features/pos/ProductionOrdersPage"
 import { formatCurrency, formatDateTimeBR } from "@/lib/format"
+import { canAccessUser } from "@/lib/permissions"
 import { setSelectedCashSessionId as persistSelectedCashSessionId } from "@/lib/posSession"
 import { formatCep, lookupCep } from "@/services/viaCep"
 import { useAppStore } from "@/store/useAppStore"
@@ -209,6 +213,8 @@ type HeldSale = {
   delivery_form: DeliveryFormState
   cart: CartItem[]
 }
+
+type PosWorkspace = "sale" | "production"
 
 function emptyDeliveryForm(): DeliveryFormState {
   return {
@@ -378,6 +384,7 @@ function ShortcutKey({ children }: { children: string }) {
 }
 
 export function PosSellPage() {
+  const { profile } = useAuth()
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
   const cashSessions = useCashSessions(selectedBranchId ?? null)
   const organization = useOrganization()
@@ -432,9 +439,13 @@ export function PosSellPage() {
 
   const saleMode = organizationMode
   const ModeIcon = saleModeIcon[saleMode]
+  const canOpenProduction = Boolean(
+    profile && canAccessUser(profile, "production_orders")
+  )
 
   const [search, setSearch] = useState("")
-  const [productsExpanded, setProductsExpanded] = useState(false)
+  const [workspace, setWorkspace] = useState<PosWorkspace>("sale")
+  const [productsExpanded, setProductsExpanded] = useState(true)
   const [categoryFilter, setCategoryFilter] = useState("all")
   const [cart, setCart] = useState<CartItem[]>([])
   const [selectedCartItemKey, setSelectedCartItemKey] = useState("")
@@ -653,6 +664,7 @@ export function PosSellPage() {
     operatorDialogDismissedSessionId !== session?.id
   const selectedCartItem =
     cart.find((item) => item.key === selectedCartItemKey) ?? cart.at(-1) ?? null
+  const productionWorkspace = canOpenProduction && workspace === "production"
 
   function focusSearch() {
     window.setTimeout(() => searchRef.current?.focus(), 0)
@@ -1510,6 +1522,8 @@ export function PosSellPage() {
 
   useEffect(() => {
     shortcutHandlerRef.current = (event: globalThis.KeyboardEvent) => {
+    if (productionWorkspace) return
+
     function isEditableTarget(target: EventTarget | null) {
       if (!(target instanceof HTMLElement)) return false
       const tagName = target.tagName
@@ -1753,8 +1767,12 @@ export function PosSellPage() {
   return (
     <>
       <PageHeader
-        title="PDV - Venda"
-        description="Registro de venda, cliente, pagamento e entrega no mesmo fluxo."
+        title="PDV operacional"
+        description={
+          canOpenProduction
+            ? "Venda e producao no mesmo posto de trabalho."
+            : "Registro de venda, cliente, pagamento e entrega no mesmo fluxo."
+        }
         action={
           <div className="flex items-center gap-2">
             <Badge variant="outline" className="gap-1">
@@ -1786,10 +1804,61 @@ export function PosSellPage() {
         }
       />
 
-      <div className="p-4 sm:p-6">
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_430px]">
-          <div className="space-y-4">
-            <Card className="border bg-white shadow-sm">
+      <div className="p-4 sm:p-6 xl:p-4">
+        <div className="overflow-hidden rounded-lg border border-slate-900 bg-slate-950 shadow-sm">
+          <div className="flex flex-col gap-2 border-b border-slate-800 bg-slate-950 px-3 py-2 text-white md:flex-row md:items-center md:justify-between">
+            <div className="flex min-w-0 items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setWorkspace("sale")}
+                className={`inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-sm font-semibold transition-colors ${
+                  productionWorkspace
+                    ? "text-slate-300 hover:bg-white/10 hover:text-white"
+                    : "bg-white text-slate-950"
+                }`}
+              >
+                <ShoppingCart className="size-4" />
+                Venda
+              </button>
+              {canOpenProduction ? (
+                <button
+                  type="button"
+                  onClick={() => setWorkspace("production")}
+                  className={`inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-sm font-semibold transition-colors ${
+                    productionWorkspace
+                      ? "bg-orange-500 text-white"
+                      : "text-slate-300 hover:bg-white/10 hover:text-white"
+                  }`}
+                >
+                  <ClipboardList className="size-4" />
+                  Producao
+                </button>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-300">
+              <span className="rounded-md bg-white/10 px-2 py-1">
+                {cashSessionTitle(session)}
+              </span>
+              <span>{cashSessionDescription(session)}</span>
+              <span
+                className={`rounded-md px-2 py-1 font-semibold ${
+                  operatorReady
+                    ? "bg-emerald-400/15 text-emerald-200"
+                    : "bg-amber-400/15 text-amber-100"
+                }`}
+              >
+                {operatorReady ? "PDV liberado" : "Operador pendente"}
+              </span>
+            </div>
+          </div>
+
+          {productionWorkspace ? (
+            <ProductionOrdersPage embedded />
+          ) : (
+            <div className="bg-slate-100 p-3 sm:p-4 xl:h-[calc(100dvh-12rem)] xl:min-h-[42rem]">
+              <div className="grid h-full gap-4 xl:grid-cols-[minmax(0,1fr)_400px] 2xl:grid-cols-[minmax(0,1fr)_430px]">
+          <div className="min-h-0">
+            <Card className="flex min-h-[34rem] flex-col border bg-white shadow-sm xl:h-full">
               <CardHeader className="space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <CardTitle className="flex items-center gap-2">
@@ -1857,7 +1926,7 @@ export function PosSellPage() {
                   ))}
                 </div>
               </CardHeader>
-              <CardContent className="space-y-3">
+              <CardContent className="flex min-h-0 flex-1 flex-col space-y-3">
                 {saleError ? (
                   <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                     {saleError}
@@ -1870,7 +1939,7 @@ export function PosSellPage() {
                 ) : filteredProducts.length === 0 ? (
                   <StateBlock title="Nenhum produto encontrado" />
                 ) : (
-                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+                  <div className="grid min-h-0 flex-1 content-start gap-2 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
                     {filteredProducts.map((item) => {
                       const stockBlocked = tracksInventory(item.product) && item.stock_quantity <= 0
                       const needsPrescription =
@@ -1926,8 +1995,8 @@ export function PosSellPage() {
             </Card>
           </div>
 
-          <div className="space-y-4">
-            <Card className="border bg-white shadow-sm">
+          <div className="flex min-h-0 flex-col gap-4">
+            <Card className="flex min-h-[36rem] flex-col border bg-white shadow-sm xl:min-h-0 xl:flex-1">
               <CardHeader className="space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <CardTitle className="flex items-center gap-2">
@@ -1980,12 +2049,12 @@ export function PosSellPage() {
                   </label>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-3">
+              <CardContent className="flex min-h-0 flex-1 flex-col space-y-3">
                 {cart.length === 0 ? (
                   <StateBlock title="Carrinho vazio" description="Adicione produtos para iniciar." />
                 ) : (
                   <>
-                    <div className="max-h-[48vh] space-y-2 overflow-y-auto pr-1">
+                    <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
                       {cart.map((item) => {
                         const needsPrescription = itemHasPrescriptionRule(item)
                         const isSelected = selectedCartItem?.key === item.key
@@ -2233,7 +2302,7 @@ export function PosSellPage() {
               </CardContent>
             </Card>
 
-            <Card className="border bg-white shadow-sm">
+            <Card className="shrink-0 border bg-white shadow-sm xl:max-h-64">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <History className="size-5" />
@@ -2244,7 +2313,7 @@ export function PosSellPage() {
                   ) : null}
                 </CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="xl:min-h-0 xl:overflow-y-auto">
                 {heldSalesForBranch.length === 0 ? (
                   <StateBlock title="Nenhuma venda em espera" />
                 ) : (
@@ -2291,7 +2360,10 @@ export function PosSellPage() {
                 )}
               </CardContent>
             </Card>
+              </div>
+            </div>
           </div>
+          )}
         </div>
       </div>
 

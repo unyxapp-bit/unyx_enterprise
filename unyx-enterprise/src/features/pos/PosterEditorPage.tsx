@@ -594,8 +594,8 @@ export function PosterEditorPage() {
         }
       />
 
-      <div className="p-4 md:p-6">
-        <div className="grid min-h-[calc(100vh-11rem)] overflow-hidden rounded-lg border bg-slate-950 text-slate-100 shadow-sm lg:grid-cols-[13rem_minmax(0,1fr)_20rem]">
+      <div className="p-4 md:p-6 lg:p-4">
+        <div className="grid min-h-[42rem] overflow-hidden rounded-lg border bg-slate-950 text-slate-100 shadow-sm lg:h-[calc(100dvh-9.5rem)] lg:min-h-[36rem] lg:grid-cols-[13rem_minmax(0,1fr)_20rem]">
           <aside className="flex min-h-0 flex-col border-b border-slate-800 bg-slate-900/80 lg:border-b-0 lg:border-r">
             <div className="border-b border-slate-800 px-3 py-3">
               <p className="text-xs font-semibold uppercase text-slate-400">Templates</p>
@@ -645,7 +645,7 @@ export function PosterEditorPage() {
             </div>
           </aside>
 
-          <section className="flex min-h-[36rem] min-w-0 flex-col bg-slate-950 lg:min-h-0">
+          <section className="flex min-h-[34rem] min-w-0 flex-col bg-slate-950 lg:min-h-0">
             <div className="flex min-h-12 items-center justify-between gap-3 border-b border-slate-800 px-4 py-2">
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold">
@@ -658,18 +658,16 @@ export function PosterEditorPage() {
               <p className="truncate text-xs text-slate-400">{FIELD_META[selectedField].label}</p>
             </div>
 
-            <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden p-3 sm:p-6">
-              <div
-                className="relative h-full max-w-full overflow-hidden rounded-lg bg-slate-900 shadow-2xl"
-                style={{ aspectRatio: `${width}/${height}` }}
+            <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden p-3 sm:p-4">
+              <svg
+                ref={svgRef}
+                width={width}
+                height={height}
+                viewBox={`0 0 ${width} ${height}`}
+                className="block h-auto max-h-full w-auto max-w-full shrink-0 select-none rounded-lg bg-slate-900 shadow-2xl"
+                style={{ cursor: draggingField ? "grabbing" : "default", touchAction: "none" }}
+                onPointerMove={handlePointerMove}
               >
-                <svg
-                  ref={svgRef}
-                  viewBox={`0 0 ${width} ${height}`}
-                  className="h-full w-full select-none"
-                  style={{ cursor: draggingField ? "grabbing" : "default", touchAction: "none" }}
-                  onPointerMove={handlePointerMove}
-                >
                   {activeTemplate ? (
                     <image
                       href={activeTemplate.dataUrl}
@@ -752,8 +750,7 @@ export function PosterEditorPage() {
                       </g>
                     )
                   })}
-                </svg>
-              </div>
+              </svg>
             </div>
           </section>
 

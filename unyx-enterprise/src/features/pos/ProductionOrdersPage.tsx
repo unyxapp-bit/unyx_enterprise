@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { useSearchParams } from "react-router-dom"
+import { Link, useSearchParams } from "react-router-dom"
 import {
   CheckCircle2,
   ClipboardList,
@@ -8,6 +8,7 @@ import {
   Printer,
   RefreshCw,
   Search,
+  ShoppingCart,
   Trash2,
   Utensils,
   XCircle,
@@ -229,7 +230,7 @@ function PrintableProductionOrder({ order }: { order: ProductionOrder }) {
   )
 }
 
-export function ProductionOrdersPage() {
+export function ProductionOrdersPage({ embedded = false }: { embedded?: boolean } = {}) {
   const [searchParams] = useSearchParams()
   const focus = searchParams.get("focus")
   const lastAppliedFocusRef = useRef<string | null>(null)
@@ -561,6 +562,33 @@ export function ProductionOrdersPage() {
   const pendingCount = (orders.data ?? []).filter((order) => order.status === "pending").length
   const productionCount = (orders.data ?? []).filter((order) => order.status === "in_production").length
   const readyCount = (orders.data ?? []).filter((order) => order.status === "ready").length
+  const productionControls = (
+    <div className="flex flex-wrap items-center gap-2">
+      {!embedded ? (
+        <Button asChild variant="outline">
+          <Link to="/app/pos/sell">
+            <ShoppingCart className="size-4" />
+            PDV
+          </Link>
+        </Button>
+      ) : null}
+      <Input
+        className="w-40"
+        type="date"
+        value={date}
+        onChange={(event) => setDate(event.target.value)}
+      />
+      <Button
+        type="button"
+        variant="outline"
+        size="icon"
+        onClick={() => void orders.refetch()}
+        aria-label="Atualizar pedidos"
+      >
+        <RefreshCw className="size-4" />
+      </Button>
+    </div>
+  )
 
   useEffect(() => {
     if (focus !== "overdue-production" || lastAppliedFocusRef.current === focus) return
@@ -577,54 +605,79 @@ export function ProductionOrdersPage() {
 
   return (
     <>
-      <PageHeader
-        title="Pedidos de producao"
-        description="Lance pedidos para cozinha, padaria e pizzaria sem fluxo financeiro."
-        action={
-          <div className="flex flex-wrap items-center gap-2">
-            <Input
-              className="w-40"
-              type="date"
-              value={date}
-              onChange={(event) => setDate(event.target.value)}
-            />
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              onClick={() => void orders.refetch()}
-              aria-label="Atualizar pedidos"
-            >
-              <RefreshCw className="size-4" />
-            </Button>
+      {embedded ? (
+        <div className="flex flex-col gap-2 border-b border-slate-200 bg-white px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="text-sm font-semibold text-slate-950">Fila de producao</div>
+            <div className="text-xs text-muted-foreground">
+              Pedidos e comandas internas do mesmo posto.
+            </div>
           </div>
-        }
-      />
+          {productionControls}
+        </div>
+      ) : (
+        <PageHeader
+          title="Pedidos de producao"
+          description="Lance pedidos para cozinha, padaria e pizzaria sem fluxo financeiro."
+          action={productionControls}
+        />
+      )}
 
-      <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_420px]">
-        <div className="space-y-4">
+      <div
+        className={`grid gap-4 lg:grid-cols-[minmax(0,1fr)_400px] 2xl:grid-cols-[minmax(0,1fr)_420px] ${
+          embedded
+            ? "bg-slate-100 p-3 lg:min-h-[calc(100dvh-14.5rem)]"
+            : "p-4 lg:min-h-[calc(100dvh-8.5rem)] xl:p-4"
+        }`}
+      >
+        <div className="min-h-0 space-y-4 lg:grid lg:grid-rows-[auto_minmax(21rem,0.9fr)_minmax(24rem,1.1fr)] lg:gap-4 lg:space-y-0">
           <div className="grid gap-3 sm:grid-cols-3">
-            <Card className="border bg-white shadow-sm">
-              <CardContent className="p-4">
-                <div className="text-xs text-muted-foreground">Abertos</div>
-                <div className="text-2xl font-semibold">{pendingCount}</div>
-              </CardContent>
-            </Card>
-            <Card className="border bg-white shadow-sm">
-              <CardContent className="p-4">
-                <div className="text-xs text-muted-foreground">Em producao</div>
-                <div className="text-2xl font-semibold">{productionCount}</div>
-              </CardContent>
-            </Card>
-            <Card className="border bg-white shadow-sm">
-              <CardContent className="p-4">
-                <div className="text-xs text-muted-foreground">Prontos</div>
-                <div className="text-2xl font-semibold">{readyCount}</div>
-              </CardContent>
-            </Card>
+            <button
+              type="button"
+              aria-pressed={statusFilter === "pending"}
+              onClick={() =>
+                setStatusFilter(statusFilter === "pending" ? "all" : "pending")
+              }
+              className={`rounded-lg border bg-white p-4 text-left shadow-sm transition-colors hover:border-slate-400 hover:bg-slate-50 ${
+                statusFilter === "pending" ? "border-amber-400 bg-amber-50" : ""
+              }`}
+            >
+              <div className="text-xs text-muted-foreground">Abertos</div>
+              <div className="text-2xl font-semibold text-amber-700">{pendingCount}</div>
+            </button>
+            <button
+              type="button"
+              aria-pressed={statusFilter === "in_production"}
+              onClick={() =>
+                setStatusFilter(
+                  statusFilter === "in_production" ? "all" : "in_production"
+                )
+              }
+              className={`rounded-lg border bg-white p-4 text-left shadow-sm transition-colors hover:border-slate-400 hover:bg-slate-50 ${
+                statusFilter === "in_production" ? "border-sky-400 bg-sky-50" : ""
+              }`}
+            >
+              <div className="text-xs text-muted-foreground">Em producao</div>
+              <div className="text-2xl font-semibold text-sky-700">
+                {productionCount}
+              </div>
+            </button>
+            <button
+              type="button"
+              aria-pressed={statusFilter === "ready"}
+              onClick={() =>
+                setStatusFilter(statusFilter === "ready" ? "all" : "ready")
+              }
+              className={`rounded-lg border bg-white p-4 text-left shadow-sm transition-colors hover:border-slate-400 hover:bg-slate-50 ${
+                statusFilter === "ready" ? "border-emerald-400 bg-emerald-50" : ""
+              }`}
+            >
+              <div className="text-xs text-muted-foreground">Prontos</div>
+              <div className="text-2xl font-semibold text-emerald-700">{readyCount}</div>
+            </button>
           </div>
 
-          <Card id="pedidos-producao" className="scroll-mt-20 border bg-white shadow-sm">
+          <Card className="flex min-h-0 flex-col border bg-white shadow-sm">
             <CardHeader className="space-y-3">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <CardTitle className="flex items-center gap-2">
@@ -667,7 +720,7 @@ export function ProductionOrdersPage() {
                 </div>
               </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="min-h-0 flex-1 overflow-y-auto">
               {loadError ? (
                 <StateBlock
                   type="error"
@@ -709,7 +762,10 @@ export function ProductionOrdersPage() {
             </CardContent>
           </Card>
 
-          <Card className="border bg-white shadow-sm">
+          <Card
+            id="pedidos-producao"
+            className="flex min-h-0 scroll-mt-20 flex-col border bg-white shadow-sm"
+          >
             <CardHeader>
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <CardTitle className="flex items-center gap-2">
@@ -732,7 +788,7 @@ export function ProductionOrdersPage() {
                 </select>
               </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="min-h-0 flex-1 overflow-y-auto">
               {visibleOrders.length === 0 ? (
                 <StateBlock title="Nenhum pedido de producao" />
               ) : (
@@ -833,15 +889,15 @@ export function ProductionOrdersPage() {
           </Card>
         </div>
 
-        <div className="space-y-4">
-          <Card className="border bg-white shadow-sm">
+        <div className="min-h-0">
+          <Card className="border bg-white shadow-sm lg:sticky lg:top-4 lg:flex lg:max-h-[calc(100dvh-9.5rem)] lg:flex-col">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <PackageCheck className="size-5" />
                 Novo pedido
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="space-y-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
               <div className="grid gap-2">
                 <label className="space-y-1 text-sm">
                   <span className="font-medium">Filial</span>
