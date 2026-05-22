@@ -250,6 +250,7 @@ export function ProductionOrdersPage({ embedded = false }: { embedded?: boolean 
   const [cart, setCart] = useState<ProductionCartItem[]>([])
   const [formError, setFormError] = useState<string | null>(null)
   const [printOrder, setPrintOrder] = useState<ProductionOrder | null>(null)
+  const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null)
   const [halfAndHalfDialogOpen, setHalfAndHalfDialogOpen] = useState(false)
   const [halfAndHalfFirstKey, setHalfAndHalfFirstKey] = useState("")
   const [halfAndHalfSecondKey, setHalfAndHalfSecondKey] = useState("")
@@ -260,16 +261,19 @@ export function ProductionOrdersPage({ embedded = false }: { embedded?: boolean 
   const categories = useProductCategories(branchId || selectedBranchId || null)
   const variants = useProductVariants()
   const customers = useCustomers(branchId || selectedBranchId || null, { optional: true })
-  const orders = useProductionOrders(date, statusFilter)
+  const orders = useProductionOrders(date, "all")
   const visibleOrders = useMemo(
     () =>
-      (orders.data ?? []).filter(
-        (order) =>
+      (orders.data ?? []).filter((order) => {
+        const matchesStatus = statusFilter === "all" || order.status === statusFilter
+        const matchesOverdue =
           !onlyOverdueProduction ||
           (!["ready", "delivered", "cancelled"].includes(order.status) &&
             isPast(order.promised_at))
-      ),
-    [onlyOverdueProduction, orders.data]
+
+        return matchesStatus && matchesOverdue
+      }),
+    [onlyOverdueProduction, orders.data, statusFilter]
   )
   const createOrder = useCreateProductionOrder()
   const updateStatus = useUpdateProductionOrderStatus()
@@ -307,7 +311,12 @@ export function ProductionOrdersPage({ embedded = false }: { embedded?: boolean 
 
   const itemOptions = useMemo(() => {
     return (products.data ?? [])
-      .filter((product) => product.active && isProductionProduct(product, categoryById.get(product.category_id ?? "")))
+      .filter(
+        (product) =>
+          product.active &&
+          (embedded ||
+            isProductionProduct(product, categoryById.get(product.category_id ?? "")))
+      )
       .flatMap((product): ProductionItemOption[] => {
         const productVariants = variantsByProduct.get(product.id) ?? []
         const category = productCategory(product, categoryById.get(product.category_id ?? ""))
@@ -334,7 +343,7 @@ export function ProductionOrdersPage({ embedded = false }: { embedded?: boolean 
         ]
       })
       .sort((a, b) => a.name.localeCompare(b.name))
-  }, [categoryById, products.data, variantsByProduct])
+  }, [categoryById, embedded, products.data, variantsByProduct])
 
   const categoryOptions = useMemo(() => {
     return Array.from(new Set(itemOptions.map((item) => item.category))).sort((a, b) =>
@@ -617,6 +626,673 @@ export function ProductionOrdersPage({ embedded = false }: { embedded?: boolean 
       })
     })
   }, [focus])
+
+  const catalogLoading = products.isLoading || categories.isLoading || variants.isLoading
+  const catalogError = products.error || categories.error || variants.error
+  const halfAndHalfDialog = (
+    <Dialog
+      open={halfAndHalfDialogOpen}
+      onOpenChange={(open) => {
+        setHalfAndHalfDialogOpen(open)
+        if (!open) {
+          setHalfAndHalfNotes("")
+          setFormError(null)
+        }
+      }}
+    >
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Utensils className="size-5" />
+            Pizza meio a meio
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="space-y-1 text-sm">
+              <span className="font-medium">Primeiro sabor</span>
+              <select
+                className={fieldClass}
+                value={halfAndHalfFirstKey}
+                onChange={(event) => setHalfAndHalfFirstKey(event.target.value)}
+              >
+                {halfAndHalfOptions.map((item) => (
+                  <option key={item.key} value={item.key}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1 text-sm">
+              <span className="font-medium">Segundo sabor</span>
+              <select
+                className={fieldClass}
+                value={halfAndHalfSecondKey}
+                onChange={(event) => setHalfAndHalfSecondKey(event.target.value)}
+              >
+                {halfAndHalfOptions.map((item) => (
+                  <option key={item.key} value={item.key}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <label className="space-y-1 text-sm">
+            <span className="font-bold uppercase text-amber-900">
+              Observacao da producao
+            </span>
+            <textarea
+              className="min-h-24 w-full rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-sm font-semibold text-amber-950 outline-none transition-colors placeholder:text-amber-700/60 focus:border-amber-400 focus:ring-3 focus:ring-amber-200"
+              value={halfAndHalfNotes}
+              onChange={(event) => setHalfAndHalfNotes(event.target.value)}
+              placeholder="Borda, ponto da massa, retirar ingrediente..."
+            />
+          </label>
+          {formError ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {formError}
+            </div>
+          ) : null}
+        </div>
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setHalfAndHalfDialogOpen(false)}
+          >
+            Cancelar
+          </Button>
+          <Button type="button" onClick={addHalfAndHalfItem}>
+            Adicionar pizza
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+
+  if (embedded) {
+    const queueStatusFilters: Array<{
+      label: string
+      value: ProductionOrderStatus | "all"
+    }> = [
+      { label: "Todos", value: "all" },
+      { label: statusLabel.pending, value: "pending" },
+      { label: statusLabel.in_production, value: "in_production" },
+      { label: statusLabel.ready, value: "ready" },
+      { label: statusLabel.delivered, value: "delivered" },
+    ]
+
+    return (
+      <>
+        <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-gray-950 text-white">
+          <div className="shrink-0 border-b border-gray-800 px-3 py-3">
+            <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-center 2xl:justify-between">
+              <div className="grid flex-1 gap-2 sm:grid-cols-3">
+                <button
+                  type="button"
+                  aria-pressed={statusFilter === "pending"}
+                  onClick={() =>
+                    setStatusFilter(statusFilter === "pending" ? "all" : "pending")
+                  }
+                  className={`flex min-h-16 items-center justify-between rounded-lg border px-4 py-2 text-left transition-colors ${
+                    statusFilter === "pending"
+                      ? "border-yellow-500 bg-yellow-900/35"
+                      : "border-gray-800 bg-yellow-950/25 hover:border-yellow-700"
+                  }`}
+                >
+                  <span className="text-xs text-gray-300">Abertos</span>
+                  <span className="text-2xl font-black text-yellow-300">
+                    {pendingCount}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={statusFilter === "in_production"}
+                  onClick={() =>
+                    setStatusFilter(
+                      statusFilter === "in_production" ? "all" : "in_production"
+                    )
+                  }
+                  className={`flex min-h-16 items-center justify-between rounded-lg border px-4 py-2 text-left transition-colors ${
+                    statusFilter === "in_production"
+                      ? "border-blue-500 bg-blue-900/35"
+                      : "border-gray-800 bg-blue-950/25 hover:border-blue-700"
+                  }`}
+                >
+                  <span className="text-xs text-gray-300">Em producao</span>
+                  <span className="text-2xl font-black text-blue-300">
+                    {productionCount}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={statusFilter === "ready"}
+                  onClick={() =>
+                    setStatusFilter(statusFilter === "ready" ? "all" : "ready")
+                  }
+                  className={`flex min-h-16 items-center justify-between rounded-lg border px-4 py-2 text-left transition-colors ${
+                    statusFilter === "ready"
+                      ? "border-green-500 bg-green-900/35"
+                      : "border-gray-800 bg-green-950/25 hover:border-green-700"
+                  }`}
+                >
+                  <span className="text-xs text-gray-300">Prontos</span>
+                  <span className="text-2xl font-black text-green-300">
+                    {readyCount}
+                  </span>
+                </button>
+              </div>
+              <div className="flex flex-col gap-2 2xl:items-end">
+                {productionControls}
+                <div className="flex flex-wrap gap-1.5">
+                  {queueStatusFilters.map((item) => (
+                    <button
+                      key={item.value}
+                      type="button"
+                      onClick={() => setStatusFilter(item.value)}
+                      className={`h-7 rounded-md px-2.5 text-xs font-semibold transition-colors ${
+                        statusFilter === item.value
+                          ? "bg-orange-500 text-white"
+                          : "bg-gray-900 text-gray-400 hover:bg-gray-800 hover:text-white"
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_23rem] 2xl:grid-cols-[minmax(0,1fr)_25rem]">
+            <div
+              id="pedidos-producao"
+              className="min-h-0 scroll-mt-20 overflow-y-auto p-3"
+            >
+              <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+                <div>
+                  <h2 className="flex items-center gap-2 text-sm font-semibold">
+                    <ClipboardList className="size-4 text-orange-300" />
+                    {onlyOverdueProduction ? "Pedidos atrasados" : "Fila do dia"}
+                  </h2>
+                  <p className="text-xs text-gray-500">
+                    {visibleOrders.length} pedido(s) no filtro atual.
+                  </p>
+                </div>
+                <select
+                  className="h-8 rounded-lg border border-gray-700 bg-gray-900 px-2.5 text-sm text-white outline-none focus:border-orange-500"
+                  value={statusFilter}
+                  onChange={(event) =>
+                    setStatusFilter(event.target.value as ProductionOrderStatus | "all")
+                  }
+                >
+                  <option value="all">Todos status</option>
+                  {(Object.keys(statusLabel) as ProductionOrderStatus[]).map((status) => (
+                    <option key={status} value={status}>
+                      {statusLabel[status]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {orders.error ? (
+                <div className="rounded-lg border border-red-900 bg-red-950/60 p-4 text-sm text-red-200">
+                  {orders.error.message}
+                </div>
+              ) : orders.isLoading ? (
+                <div className="rounded-lg border border-dashed border-gray-800 bg-gray-900 px-4 py-12 text-center text-sm text-gray-500">
+                  Carregando pedidos de producao...
+                </div>
+              ) : visibleOrders.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-gray-800 bg-gray-900 px-4 py-12 text-center">
+                  <ClipboardList className="mx-auto mb-2 size-7 text-gray-600" />
+                  <div className="text-sm font-semibold text-gray-300">
+                    Nenhum pedido encontrado
+                  </div>
+                  <div className="mt-1 text-xs text-gray-500">
+                    Ajuste o filtro ou gere um pedido no painel ao lado.
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {visibleOrders.map((order) => {
+                    const expanded = expandedOrderId === order.id
+                    const nextOrderStatus = nextStatus(order.status)
+                    const orderItems = order.production_order_items ?? []
+
+                    return (
+                      <article
+                        key={order.id}
+                        className={`overflow-hidden rounded-lg border bg-gray-900 transition-colors ${
+                          expanded ? "border-orange-500" : "border-gray-800"
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          className="flex w-full flex-col gap-3 px-3 py-3 text-left transition-colors hover:bg-gray-800/70 sm:flex-row sm:items-center"
+                          onClick={() =>
+                            setExpandedOrderId((current) =>
+                              current === order.id ? null : order.id
+                            )
+                          }
+                        >
+                          <div className="w-24 shrink-0">
+                            <div className="font-mono text-xs text-gray-500">
+                              {order.order_code}
+                            </div>
+                            <div className="mt-1 text-[11px] text-gray-600">
+                              {formatDateTimeBR(order.ordered_at)}
+                            </div>
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-bold text-white">
+                              {order.priority !== "normal" ? (
+                                <span
+                                  className={
+                                    order.priority === "urgent"
+                                      ? "text-red-300"
+                                      : "text-yellow-300"
+                                  }
+                                >
+                                  {priorityLabel[order.priority]} -{" "}
+                                </span>
+                              ) : null}
+                              {order.customer_name}
+                            </div>
+                            <div className="mt-0.5 truncate text-xs text-gray-500">
+                              {branchName(activeBranches, order.branch_id)} -{" "}
+                              {orderItems.length} item(ns)
+                            </div>
+                          </div>
+                          <div className="flex min-w-24 shrink-0 items-center justify-between gap-2 sm:block sm:text-center">
+                            <span className="text-xs text-gray-500">Promessa</span>
+                            <div className="text-sm font-bold text-gray-100">
+                              {order.promised_at
+                                ? formatDateTimeBR(order.promised_at)
+                                : "--"}
+                            </div>
+                          </div>
+                          <Badge
+                            className="shrink-0 self-start sm:self-center"
+                            variant={statusVariant(order.status)}
+                          >
+                            {statusLabel[order.status]}
+                          </Badge>
+                        </button>
+
+                        {expanded ? (
+                          <div className="space-y-3 border-t border-gray-800 px-3 py-3">
+                            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-400">
+                              {order.customer_phone ? (
+                                <span>Telefone {order.customer_phone}</span>
+                              ) : null}
+                              <span>Prioridade {priorityLabel[order.priority]}</span>
+                            </div>
+                            <div className="space-y-1.5">
+                              {orderItems.map((item) => (
+                                <div
+                                  key={item.id}
+                                  className="rounded-lg border border-gray-800 bg-gray-950 px-3 py-2"
+                                >
+                                  <div className="text-sm font-bold uppercase text-white">
+                                    {formatProductionQuantity(item.quantity)}x{" "}
+                                    {item.product_name}
+                                  </div>
+                                  {item.notes ? (
+                                    <div className="mt-1 whitespace-pre-wrap rounded-md bg-yellow-950/45 px-2 py-1.5 text-xs font-semibold text-yellow-200">
+                                      {item.notes}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              ))}
+                            </div>
+                            {order.notes ? (
+                              <div className="rounded-lg border border-orange-900/80 bg-orange-950/35 px-3 py-2 text-xs text-orange-200">
+                                {order.notes}
+                              </div>
+                            ) : null}
+                            <div className="flex flex-wrap gap-2">
+                              {nextOrderStatus ? (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  className="bg-blue-600 text-white hover:bg-blue-500"
+                                  onClick={() => handleStatus(order)}
+                                >
+                                  <CheckCircle2 className="size-4" />
+                                  {statusLabel[nextOrderStatus]}
+                                </Button>
+                              ) : null}
+                              <Button
+                                type="button"
+                                size="icon-sm"
+                                variant="outline"
+                                className="border-gray-700 bg-gray-800 text-gray-200 hover:bg-gray-700 hover:text-white"
+                                onClick={() => setPrintOrder(order)}
+                                aria-label="Imprimir pedido"
+                              >
+                                <Printer className="size-4" />
+                              </Button>
+                              {order.status !== "cancelled" &&
+                              order.status !== "delivered" ? (
+                                <Button
+                                  type="button"
+                                  size="icon-sm"
+                                  variant="outline"
+                                  className="border-yellow-800 bg-yellow-950/45 text-yellow-200 hover:bg-yellow-900 hover:text-white"
+                                  onClick={() => handleCancel(order)}
+                                  aria-label="Cancelar pedido"
+                                >
+                                  <XCircle className="size-4" />
+                                </Button>
+                              ) : null}
+                              <Button
+                                type="button"
+                                size="icon-sm"
+                                variant="destructive"
+                                onClick={() => handleDelete(order)}
+                                aria-label="Excluir pedido"
+                              >
+                                <Trash2 className="size-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        ) : null}
+                      </article>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            <aside className="flex min-h-0 flex-col border-l border-gray-800 bg-gray-900">
+              <div className="shrink-0 border-b border-gray-800 px-3 py-3">
+                <h2 className="flex items-center gap-2 text-sm font-bold text-orange-300">
+                  <PackageCheck className="size-4" />
+                  Novo pedido de producao
+                </h2>
+              </div>
+
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+                <label className="block space-y-1 text-xs text-gray-400">
+                  <span>Filial</span>
+                  <select
+                    className={formFieldClass}
+                    value={branchId || selectedBranchId || ""}
+                    onChange={(event) => setBranchId(event.target.value)}
+                  >
+                    <option value="">Selecione</option>
+                    {activeBranches.map((branch) => (
+                      <option key={branch.id} value={branch.id}>
+                        {branch.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block space-y-1 text-xs text-gray-400">
+                  <span>Cliente cadastrado</span>
+                  <select
+                    className={formFieldClass}
+                    value={customerId}
+                    onChange={(event) => applyCustomer(event.target.value)}
+                  >
+                    <option value="">Cliente avulso</option>
+                    {customerOptions.map((customer) => (
+                      <option key={customer.id} value={customer.id}>
+                        {customerLabel(customer)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block space-y-1 text-xs text-gray-400">
+                  <span>Cliente / comanda</span>
+                  <Input
+                    className={formInputClass}
+                    value={customerName}
+                    onChange={(event) => setCustomerName(event.target.value)}
+                    placeholder="Nome para identificar o pedido"
+                  />
+                </label>
+
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <label className="block space-y-1 text-xs text-gray-400">
+                    <span>Telefone</span>
+                    <Input
+                      className={formInputClass}
+                      value={customerPhone}
+                      onChange={(event) => setCustomerPhone(event.target.value)}
+                      placeholder="(00) 00000-0000"
+                    />
+                  </label>
+                  <label className="block space-y-1 text-xs text-gray-400">
+                    <span>Prioridade</span>
+                    <select
+                      className={formFieldClass}
+                      value={priority}
+                      onChange={(event) =>
+                        setPriority(event.target.value as ProductionOrderPriority)
+                      }
+                    >
+                      {(Object.keys(priorityLabel) as ProductionOrderPriority[]).map(
+                        (item) => (
+                          <option key={item} value={item}>
+                            {priorityLabel[item]}
+                          </option>
+                        )
+                      )}
+                    </select>
+                  </label>
+                </div>
+
+                <label className="block space-y-1 text-xs text-gray-400">
+                  <span className="flex items-center gap-1">
+                    <Clock3 className="size-3.5" />
+                    Horario prometido
+                  </span>
+                  <Input
+                    className={formInputClass}
+                    type="datetime-local"
+                    value={promisedAt}
+                    onChange={(event) => setPromisedAt(event.target.value)}
+                  />
+                </label>
+
+                <div className="space-y-2 rounded-lg border border-gray-800 bg-gray-950/60 p-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-semibold text-gray-300">
+                      Adicionar itens
+                    </span>
+                    {canUseHalfAndHalf ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="bg-purple-700 text-white hover:bg-purple-600"
+                        onClick={openHalfAndHalfDialog}
+                      >
+                        <Utensils className="size-4" />
+                        Meio a meio
+                      </Button>
+                    ) : null}
+                  </div>
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-gray-500" />
+                    <Input
+                      className="border-gray-700 bg-gray-800 pl-8 text-white placeholder:text-gray-500"
+                      placeholder="Buscar produto real..."
+                      value={search}
+                      onChange={(event) => setSearch(event.target.value)}
+                    />
+                  </div>
+                  <select
+                    className="h-8 w-full rounded-lg border border-gray-700 bg-gray-800 px-2.5 text-sm text-white outline-none focus:border-orange-500"
+                    value={categoryFilter}
+                    onChange={(event) => setCategoryFilter(event.target.value)}
+                  >
+                    <option value="all">Todas categorias</option>
+                    {categoryOptions.map((category) => (
+                      <option key={category} value={category}>
+                        {category}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="max-h-40 space-y-1 overflow-y-auto pr-1">
+                    {catalogError ? (
+                      <div className="rounded-md border border-red-900 bg-red-950/60 px-2 py-2 text-xs text-red-200">
+                        {catalogError.message}
+                      </div>
+                    ) : catalogLoading ? (
+                      <div className="rounded-md border border-dashed border-gray-800 px-2 py-3 text-center text-xs text-gray-500">
+                        Carregando catalogo...
+                      </div>
+                    ) : filteredItems.length === 0 ? (
+                      <div className="rounded-md border border-dashed border-gray-800 px-2 py-3 text-center text-xs text-gray-500">
+                        Nenhum produto ativo encontrado.
+                      </div>
+                    ) : (
+                      filteredItems.slice(0, 10).map((item) => (
+                        <button
+                          key={item.key}
+                          type="button"
+                          onClick={() => addItem(item)}
+                          className="flex w-full items-center justify-between gap-2 rounded-md border border-gray-800 bg-gray-900 px-2.5 py-2 text-left text-xs transition-colors hover:border-orange-500 hover:bg-gray-800"
+                        >
+                          <span className="min-w-0">
+                            <span className="block truncate font-semibold text-gray-100">
+                              {item.name}
+                            </span>
+                            <span className="block truncate text-gray-500">
+                              {item.category}
+                            </span>
+                          </span>
+                          <span className="shrink-0 text-base font-bold text-orange-300">
+                            +
+                          </span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-2 rounded-lg border border-gray-800 bg-gray-950/60 p-2.5">
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <span className="font-semibold text-gray-300">Itens</span>
+                    <span className="text-gray-500">{cart.length} selecionado(s)</span>
+                  </div>
+                  {cart.length === 0 ? (
+                    <div className="rounded-md border border-dashed border-gray-800 px-3 py-4 text-center text-xs text-gray-500">
+                      Clique em um produto para adicionar.
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {cart.map((item) => (
+                        <div
+                          key={item.key}
+                          className="rounded-lg border border-gray-800 bg-gray-900 p-2"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="truncate text-xs font-semibold text-white">
+                                {item.name}
+                              </div>
+                              {item.half_and_half ? (
+                                <span className="mt-1 inline-block rounded bg-purple-950 px-1.5 py-0.5 text-[11px] text-purple-200">
+                                  Meio a meio
+                                </span>
+                              ) : null}
+                            </div>
+                            <button
+                              type="button"
+                              className="rounded p-1 text-gray-500 transition-colors hover:bg-red-950 hover:text-red-300"
+                              onClick={() => removeItem(item.key)}
+                              aria-label="Remover item"
+                            >
+                              <Trash2 className="size-3.5" />
+                            </button>
+                          </div>
+                          <div className="mt-2 flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              className="size-6 rounded bg-gray-800 text-xs text-gray-200 transition-colors hover:bg-gray-700"
+                              onClick={() =>
+                                updateItemQuantity(item.key, item.quantity - 1)
+                              }
+                            >
+                              -
+                            </button>
+                            <Input
+                              className="h-6 w-14 border-gray-700 bg-gray-800 px-1 text-center text-xs text-white"
+                              type="number"
+                              min={1}
+                              step={1}
+                              value={item.quantity}
+                              onChange={(event) =>
+                                updateItemQuantity(item.key, Number(event.target.value))
+                              }
+                            />
+                            <button
+                              type="button"
+                              className="size-6 rounded bg-gray-800 text-xs text-gray-200 transition-colors hover:bg-gray-700"
+                              onClick={() =>
+                                updateItemQuantity(item.key, item.quantity + 1)
+                              }
+                            >
+                              +
+                            </button>
+                          </div>
+                          <Input
+                            className="mt-2 border-gray-700 bg-gray-800 text-xs text-white placeholder:text-gray-500"
+                            value={item.notes}
+                            onChange={(event) =>
+                              updateItemNotes(item.key, event.target.value)
+                            }
+                            placeholder="Observacao do item"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <label className="block space-y-1 text-xs text-gray-400">
+                  <span>Observacoes do pedido</span>
+                  <textarea
+                    className="min-h-16 w-full rounded-lg border border-gray-700 bg-gray-800 px-2.5 py-2 text-sm text-white outline-none placeholder:text-gray-500 focus:border-orange-500"
+                    value={notes}
+                    onChange={(event) => setNotes(event.target.value)}
+                    placeholder="Observacoes gerais"
+                  />
+                </label>
+
+                {formError ? (
+                  <div className="rounded-lg border border-red-900 bg-red-950/60 px-3 py-2 text-xs text-red-200">
+                    {formError}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="shrink-0 border-t border-gray-800 p-3">
+                <Button
+                  type="button"
+                  className="h-11 w-full bg-orange-600 font-black text-white hover:bg-orange-500"
+                  disabled={createOrder.isPending}
+                  onClick={() => void handleCreateOrder()}
+                >
+                  <Printer className="size-4" />
+                  {createOrder.isPending ? "Gerando..." : "Gerar pedido e imprimir"}
+                </Button>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        {halfAndHalfDialog}
+        {printOrder ? <PrintableProductionOrder order={printOrder} /> : null}
+      </>
+    )
+  }
 
   return (
     <>
