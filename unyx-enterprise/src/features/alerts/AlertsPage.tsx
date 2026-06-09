@@ -43,8 +43,8 @@ import type {
 } from "@/types/domain"
 import { localDateKey } from "@/features/operational/utils"
 
-type AlertView = "alerts" | "critical" | "attention" | "normal" | "all"
-type AlertSeverity = "critical" | "attention" | "normal"
+type AlertView = "alerts" | "critical" | "attention" | "review" | "normal" | "all"
+type AlertSeverity = "critical" | "attention" | "review" | "normal"
 
 type AlertItem = {
   status: OperationalStatusRecord
@@ -58,9 +58,19 @@ const viewLabel: Record<AlertView, string> = {
   alerts: "Alertas",
   critical: "Criticos",
   attention: "Atencao",
+  review: "Revisao",
   normal: "Normal",
   all: "Todos",
 }
+
+const viewOptions = [
+  "alerts",
+  "critical",
+  "attention",
+  "review",
+  "normal",
+  "all",
+] satisfies AlertView[]
 
 const normalStatuses = new Set(["trabalhando", "voltou", "finalizado", "folga"])
 
@@ -100,13 +110,15 @@ function severityFor(params: {
   if (params.status.current_status === "alerta_critico" || params.priority >= 85) {
     return "critical"
   }
-  if (params.stale || params.priority >= 55) return "attention"
+  if (params.stale) return "review"
+  if (params.priority >= 55) return "attention"
   return "normal"
 }
 
 function itemClassName(severity: AlertSeverity) {
   if (severity === "critical") return "border-red-200 bg-red-50"
   if (severity === "attention") return "border-amber-200 bg-amber-50"
+  if (severity === "review") return "border-sky-200 bg-sky-50"
   return "border-border bg-white"
 }
 
@@ -181,19 +193,24 @@ export function AlertsPage() {
 
   const criticalItems = alertItems.filter((item) => item.severity === "critical")
   const attentionItems = alertItems.filter((item) => item.severity === "attention")
+  const reviewItems = alertItems.filter((item) => item.severity === "review")
   const normalItems = alertItems.filter((item) => item.severity === "normal")
-  const activeAlertItems = alertItems.filter((item) => item.severity !== "normal")
+  const activeAlertItems = alertItems.filter(
+    (item) => item.severity === "critical" || item.severity === "attention"
+  )
 
   const visibleItems =
     view === "critical"
       ? criticalItems
       : view === "attention"
         ? attentionItems
-        : view === "normal"
-          ? normalItems
-          : view === "all"
-            ? alertItems
-            : activeAlertItems
+        : view === "review"
+          ? reviewItems
+          : view === "normal"
+            ? normalItems
+            : view === "all"
+              ? alertItems
+              : activeAlertItems
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -225,7 +242,7 @@ export function AlertsPage() {
       />
 
       <div className="space-y-5 p-6">
-        <div className="grid gap-3 md:grid-cols-4">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           <div className="rounded-lg border bg-white p-4">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <AlertTriangle className="size-4 text-red-600" />
@@ -239,6 +256,13 @@ export function AlertsPage() {
               Atencao
             </div>
             <div className="mt-2 text-2xl font-semibold">{attentionItems.length}</div>
+          </div>
+          <div className="rounded-lg border bg-white p-4">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <History className="size-4 text-sky-600" />
+              Revisao
+            </div>
+            <div className="mt-2 text-2xl font-semibold">{reviewItems.length}</div>
           </div>
           <div className="rounded-lg border bg-white p-4">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -265,19 +289,17 @@ export function AlertsPage() {
         </div>
 
         <div className="flex flex-wrap gap-2">
-          {(["alerts", "critical", "attention", "normal", "all"] as AlertView[]).map(
-            (item) => (
-              <Button
-                key={item}
-                type="button"
-                size="sm"
-                variant={view === item ? "default" : "outline"}
-                onClick={() => setView(item)}
-              >
-                {viewLabel[item]}
-              </Button>
-            )
-          )}
+          {viewOptions.map((item) => (
+            <Button
+              key={item}
+              type="button"
+              size="sm"
+              variant={view === item ? "default" : "outline"}
+              onClick={() => setView(item)}
+            >
+              {viewLabel[item]}
+            </Button>
+          ))}
         </div>
 
         {statuses.isLoading ? (
@@ -294,9 +316,26 @@ export function AlertsPage() {
             description="Registre eventos na Operacao do Dia para gerar alertas."
           />
         ) : visibleItems.length === 0 ? (
-          <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-            <CheckCircle2 className="size-4 shrink-0" />
-            Nenhum alerta nesta categoria.
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="size-4 shrink-0" />
+              <span>
+                {view === "alerts"
+                  ? "Nenhum alerta ativo no momento."
+                  : "Nenhum alerta nesta categoria."}
+              </span>
+            </div>
+            {view === "alerts" && reviewItems.length > 0 ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="border-emerald-200 bg-white text-emerald-800 hover:bg-emerald-100"
+                onClick={() => setView("review")}
+              >
+                Ver revisao ({reviewItems.length})
+              </Button>
+            ) : null}
           </div>
         ) : (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -331,7 +370,7 @@ export function AlertsPage() {
                   <div className="mt-3 flex flex-wrap items-center gap-2">
                     <Badge variant="outline">Prioridade {item.priority}</Badge>
                     {item.stale ? (
-                      <Badge className="border-amber-200 bg-white text-amber-700" variant="outline">
+                      <Badge className="border-sky-200 bg-white text-sky-700" variant="outline">
                         Revisar fechamento
                       </Badge>
                     ) : null}
