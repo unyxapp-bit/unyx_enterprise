@@ -74,6 +74,7 @@ import {
   DEFAULT_BREAK_TOLERANCE_MINUTES,
   isFlowWorkingStatus,
   isCafeBreak,
+  operationalMinutesForDate,
   timeToMinutes,
 } from "./utils"
 
@@ -118,7 +119,11 @@ export function OperationsPage() {
     setTimelineOpen,
   } = useOperationalFilters()
 
-  const now = useClock()
+  const liveNow = useClock()
+  const now = useMemo(
+    () => operationalMinutesForDate(date, liveNow),
+    [date, liveNow]
+  )
 
   // ── Data ──
   const {
@@ -649,7 +654,7 @@ export function OperationsPage() {
         <SectionPanel
           id="painel-operacional"
           title="Painel operacional"
-          variant="primary"
+          variant="original"
           actions={
             <button
               className="rounded-md p-1.5 text-zinc-900 transition-colors hover:bg-black/10 disabled:opacity-50"

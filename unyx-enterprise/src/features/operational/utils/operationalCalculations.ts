@@ -23,6 +23,23 @@ export function nowMinutes(): number {
   return now.getHours() * 60 + now.getMinutes()
 }
 
+export function localDateKey(date = new Date()): string {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, "0")
+  const d = String(date.getDate()).padStart(2, "0")
+  return `${y}-${m}-${d}`
+}
+
+export function operationalMinutesForDate(
+  selectedDate: string,
+  currentMinutes = nowMinutes(),
+  today = localDateKey()
+): number {
+  if (selectedDate > today) return -1
+  if (selectedDate < today) return 24 * 60
+  return currentMinutes
+}
+
 export function formatDuration(minutes: number): string {
   if (minutes < 60) return `${minutes}min`
   const h = Math.floor(minutes / 60)

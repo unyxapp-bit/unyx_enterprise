@@ -9,6 +9,8 @@ import {
   formatDuration,
   calculateBreakProgress,
   isLateForBreak,
+  localDateKey,
+  operationalMinutesForDate,
 } from "../operationalCalculations"
 
 describe("operationalCalculations", () => {
@@ -89,6 +91,26 @@ describe("operationalCalculations", () => {
 
     it("returns false when no scheduled break", () => {
       expect(isLateForBreak(null, 500)).toBe(false)
+    })
+  })
+
+  describe("localDateKey", () => {
+    it("formats a date using local calendar fields", () => {
+      expect(localDateKey(new Date(2026, 5, 9, 23, 30))).toBe("2026-06-09")
+    })
+  })
+
+  describe("operationalMinutesForDate", () => {
+    it("uses current minutes for today", () => {
+      expect(operationalMinutesForDate("2026-06-09", 12 * 60, "2026-06-09")).toBe(720)
+    })
+
+    it("prevents future dates from being treated as late", () => {
+      expect(operationalMinutesForDate("2026-06-10", 12 * 60, "2026-06-09")).toBe(-1)
+    })
+
+    it("treats past dates as a completed operational day", () => {
+      expect(operationalMinutesForDate("2026-06-08", 12 * 60, "2026-06-09")).toBe(1440)
     })
   })
 })

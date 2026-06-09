@@ -4,11 +4,11 @@
 
 import { useState } from "react"
 import type { FilterOptions, OperationalTab } from "../utils/types"
+import { localDateKey } from "../utils/operationalCalculations"
 
 export function useOperationalFilters() {
   const [date, setDate] = useState<string>(() => {
-    const today = new Date()
-    return today.toISOString().split("T")[0]
+    return localDateKey()
   })
 
   const [activeTab, setActiveTab] = useState<OperationalTab>("em_turno")
