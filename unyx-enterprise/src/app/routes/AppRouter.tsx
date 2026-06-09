@@ -54,9 +54,6 @@ const FiscalDocumentsPage = lazy(() =>
 const GamePage = lazy(() =>
   import("@/features/game/GamePage").then((m) => ({ default: m.GamePage }))
 )
-const LandingPage = lazy(() =>
-  import("@/features/landing/LandingPage").then((m) => ({ default: m.LandingPage }))
-)
 const LoginPage = lazy(() =>
   import("@/features/auth/LoginPage").then((m) => ({ default: m.LoginPage }))
 )
@@ -139,7 +136,7 @@ export function AppRouter() {
     <BrowserRouter basename={basename}>
       <Suspense fallback={<RouteFallback />}>
         <Routes>
-          <Route path="/" element={<LandingPage />} />
+          <Route path="/" element={<LoginPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route element={<ProtectedRoute />}>
             <Route path="/access" element={<AccessChoicePage />} />
@@ -229,7 +226,7 @@ export function AppRouter() {
             </Route>
             </Route>
           </Route>
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </Suspense>
     </BrowserRouter>
