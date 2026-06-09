@@ -74,6 +74,8 @@ type PostFormState = {
   active: boolean
 }
 
+type PostStatusFilter = "all" | "active" | "inactive" | "without_sector"
+
 function emptyPostForm(branchId = ""): PostFormState {
   return {
     branch_id: branchId,
@@ -109,6 +111,9 @@ export function AllocationPage() {
   const [postForm, setPostForm] = useState<PostFormState>(emptyPostForm())
   const [postError, setPostError] = useState<string | null>(null)
   const [setupOpen, setSetupOpen] = useState(false)
+  const [statusFilter, setStatusFilter] = useState<PostStatusFilter>("all")
+  const [typeFilter, setTypeFilter] = useState<OperationalPostType | "all">("all")
+  const [sectorFilter, setSectorFilter] = useState("")
 
   const allPosts = useMemo(
     () =>
@@ -131,14 +136,32 @@ export function AllocationPage() {
     [...inactivePosts, ...postsWithoutSector].map((post) => post.id)
   ).size
 
+  const filteredPosts = useMemo(() => {
+    return allPosts.filter((post) => {
+      if (statusFilter === "active" && !post.active) return false
+      if (statusFilter === "inactive" && post.active) return false
+      if (statusFilter === "without_sector" && post.sector_id) return false
+      if (typeFilter !== "all" && post.type !== typeFilter) return false
+      if (sectorFilter && (post.sectors?.name ?? "") !== sectorFilter) return false
+      return true
+    })
+  }, [allPosts, sectorFilter, statusFilter, typeFilter])
+
+  const sectorFilterOptions = useMemo(() => {
+    const names = new Set(
+      allPosts.map((post) => post.sectors?.name).filter(Boolean) as string[]
+    )
+    return Array.from(names).sort()
+  }, [allPosts])
+
   const postsByType = useMemo(() => {
     const map = new Map<OperationalPostType, OperationalPost[]>()
-    for (const post of allPosts) {
+    for (const post of filteredPosts) {
       if (!map.has(post.type)) map.set(post.type, [])
       map.get(post.type)!.push(post)
     }
     return map
-  }, [allPosts])
+  }, [filteredPosts])
 
   const isLoading = posts.isLoading || branches.isLoading || sectors.isLoading
   const pageError = posts.error ?? branches.error ?? sectors.error
@@ -277,11 +300,73 @@ export function AllocationPage() {
               </Card>
             </div>
 
-            <SectionPanel id="postos-cadastrados" title="Postos cadastrados" variant="primary">
+            <SectionPanel id="postos-cadastrados" title="Postos cadastrados" variant="original">
+              <div className="mb-4 flex flex-wrap items-center gap-2">
+                <select
+                  className="h-8 rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+                  value={statusFilter}
+                  onChange={(event) =>
+                    setStatusFilter(event.target.value as PostStatusFilter)
+                  }
+                >
+                  <option value="all">Todos status</option>
+                  <option value="active">Ativos</option>
+                  <option value="inactive">Inativos</option>
+                  <option value="without_sector">Sem setor</option>
+                </select>
+                <select
+                  className="h-8 rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+                  value={typeFilter}
+                  onChange={(event) =>
+                    setTypeFilter(event.target.value as OperationalPostType | "all")
+                  }
+                >
+                  <option value="all">Todos tipos</option>
+                  {sortedPostTypes.map((type) => (
+                    <option key={type} value={type}>
+                      {postTypeLabel[type]}
+                    </option>
+                  ))}
+                </select>
+                {sectorFilterOptions.length > 0 ? (
+                  <select
+                    className="h-8 rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+                    value={sectorFilter}
+                    onChange={(event) => setSectorFilter(event.target.value)}
+                  >
+                    <option value="">Todos setores</option>
+                    {sectorFilterOptions.map((sector) => (
+                      <option key={sector} value={sector}>
+                        {sector}
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
+                {(statusFilter !== "all" || typeFilter !== "all" || sectorFilter) ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setStatusFilter("all")
+                      setTypeFilter("all")
+                      setSectorFilter("")
+                    }}
+                  >
+                    Limpar
+                  </Button>
+                ) : null}
+              </div>
+
               {allPosts.length === 0 ? (
                 <StateBlock
                   title="Nenhum posto cadastrado"
                   description="Crie caixas, balcoes e pontos de atendimento para usar nas alocacoes do Painel operacional."
+                />
+              ) : filteredPosts.length === 0 ? (
+                <StateBlock
+                  title="Nenhum posto neste filtro"
+                  description="Ajuste os filtros para visualizar outros postos cadastrados."
                 />
               ) : (
                 <div className="space-y-5">

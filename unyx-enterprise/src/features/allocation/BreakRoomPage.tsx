@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react"
-import { CheckCircle2, Clock, Coffee, RotateCcw, Timer } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import { AlertTriangle, CheckCircle2, Clock, Coffee, RotateCcw, Timer } from "lucide-react"
 
 import {
   useOperationalSettings,
@@ -8,9 +8,12 @@ import {
   useSchedules,
   useUpdateSchedule,
 } from "@/hooks/useUnyxData"
+import { PageHeader } from "@/components/shared/PageHeader"
 import { StateBlock } from "@/components/shared/StateBlock"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { localDateKey } from "@/features/operational/utils"
+import { useAppStore } from "@/store/useAppStore"
 import type { PostAllocation, ScheduleWithRelations } from "@/types/domain"
 
 function timeToMinutes(t: string | null | undefined): number {
@@ -217,7 +220,8 @@ function LunchCard({
 }
 
 export function BreakRoomPage() {
-  const today = new Date().toISOString().slice(0, 10)
+  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
+  const today = localDateKey()
   const [now, setNow] = useState(() => new Date())
 
   useEffect(() => {
@@ -227,9 +231,9 @@ export function BreakRoomPage() {
 
   const nowMin = now.getHours() * 60 + now.getMinutes()
 
-  const schedulesQuery = useSchedules(today, null)
+  const schedulesQuery = useSchedules(today)
   const allocationsQuery = usePostAllocations()
-  const coffeeSettings = useOperationalSettings(null)
+  const coffeeSettings = useOperationalSettings()
   const updateSchedule = useUpdateSchedule()
   const recordEvent = useRecordOperationalEvent()
 
@@ -258,28 +262,6 @@ export function BreakRoomPage() {
   const onLunch = allOnBreak.filter(
     (s) => !activeAllocationEmployeeIds.has(s.employee_id)
   )
-
-  // Auto-return coffee employees when timer expires
-  const autoReturnedRef = useRef<Set<string>>(new Set())
-  useEffect(() => {
-    for (const s of onCoffee) {
-      if (autoReturnedRef.current.has(s.id)) continue
-      const startMs = new Date(s.updated_at).getTime()
-      const elapsed = (now.getTime() - startMs) / 60_000
-      if (elapsed >= coffeeDuration) {
-        autoReturnedRef.current.add(s.id)
-        const notes = addNoteMarker(s.notes, "cafe_done")
-        updateSchedule.mutate({ scheduleId: s.id, values: { status: "working", notes } })
-        recordEvent.mutate({
-          branch_id: s.branch_id,
-          employee_id: s.employee_id,
-          schedule_id: s.id,
-          event_type: "retorno_confirmado",
-          notes: "Retorno automatico do cafe",
-        })
-      }
-    }
-  }, [now, onCoffee, coffeeDuration, updateSchedule, recordEvent])
 
   function handleCoffeeReturn(schedule: ScheduleWithRelations) {
     const notes = addNoteMarker(schedule.notes, "cafe_done")
@@ -320,31 +302,34 @@ export function BreakRoomPage() {
   const totalActive = onCoffee.length + onLunch.length
 
   return (
-    <main className="min-h-[calc(100vh-4rem)] bg-slate-50 p-4 sm:p-6">
-      <div className="mx-auto max-w-3xl space-y-6">
-        <div className="flex items-center gap-3">
-          <Coffee className="size-6 text-amber-500" />
-          <div>
-            <h1 className="text-xl font-semibold">Intervalo / Café</h1>
-            <p className="text-sm text-muted-foreground">
-              Colaboradores em pausa agora
-            </p>
-          </div>
+    <>
+      <PageHeader
+        title="Intervalo / Café"
+        description={`Pausas e retornos de ${today}${selectedBranchId ? "" : " em todas as filiais"}.`}
+        action={
           <Button
             variant="outline"
             size="icon"
-            className="ml-auto"
             onClick={() => {
               void schedulesQuery.refetch()
               void allocationsQuery.refetch()
             }}
-            disabled={schedulesQuery.isFetching}
+            disabled={schedulesQuery.isFetching || allocationsQuery.isFetching}
+            aria-label="Atualizar intervalos"
           >
             <RotateCcw
-              className={`size-4 ${schedulesQuery.isFetching ? "animate-spin" : ""}`}
+              className={`size-4 ${
+                schedulesQuery.isFetching || allocationsQuery.isFetching
+                  ? "animate-spin"
+                  : ""
+              }`}
             />
           </Button>
-        </div>
+        }
+      />
+
+      <main className="p-4 sm:p-6">
+      <div className="mx-auto max-w-4xl space-y-6">
 
         <div className="grid grid-cols-3 gap-3">
           <div className="flex items-center gap-3 rounded-lg border bg-white px-4 py-3 shadow-sm">
@@ -378,6 +363,16 @@ export function BreakRoomPage() {
           />
         ) : (
           <>
+            {onCoffee.some((s) => {
+              const startMs = new Date(s.updated_at).getTime()
+              return (now.getTime() - startMs) / 60_000 >= coffeeDuration
+            }) ? (
+              <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+                Ha pausa de cafe com tempo esgotado. Confirme o retorno manualmente.
+              </div>
+            ) : null}
+
             {onCoffee.length > 0 && (
               <div className="space-y-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -433,5 +428,6 @@ export function BreakRoomPage() {
         )}
       </div>
     </main>
+    </>
   )
 }

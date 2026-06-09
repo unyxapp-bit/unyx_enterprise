@@ -258,6 +258,14 @@ export function OperationsPage() {
   const [transferTargetScheduleId, setTransferTargetScheduleId] = useState("")
   const [transferError, setTransferError] = useState<string | null>(null)
 
+  const refetchOperationalScreen = () => {
+    refetch()
+    void queueSignals.refetch()
+    void cashSessions.refetch()
+    void deliveryOrders.refetch()
+    void productionOrders.refetch()
+  }
+
   const transferCandidates = useMemo(() => {
     if (!transferAction) return []
 
@@ -606,7 +614,7 @@ export function OperationsPage() {
           date={date}
           currentScheduleCount={schedules.data?.length ?? 0}
           isLoading={schedules.isLoading}
-          onCopied={() => refetch()}
+          onCopied={refetchOperationalScreen}
         />
 
         <div id="fluxo-operacional" className="scroll-mt-20">
@@ -658,7 +666,7 @@ export function OperationsPage() {
           actions={
             <button
               className="rounded-md p-1.5 text-zinc-900 transition-colors hover:bg-black/10 disabled:opacity-50"
-              onClick={() => refetch()}
+              onClick={refetchOperationalScreen}
               disabled={schedules.isFetching || statuses.isFetching}
               aria-label="Atualizar painel operacional"
               title="Atualizar painel operacional"

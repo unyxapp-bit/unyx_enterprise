@@ -73,6 +73,12 @@ const frequencyOptions: ChecklistProcedureFrequency[] = [
 ]
 
 const managerRoles: UserRole[] = ["owner", "admin", "branch_manager", "supervisor"]
+const checklistViews = [
+  ["execute", "Executar"],
+  ["pending", "Pendentes"],
+  ["history", "Historico"],
+  ["models", "Modelos"],
+] as const
 
 function todayStartISO() {
   const date = new Date()
@@ -228,6 +234,7 @@ export function ChecklistsPage() {
   const createProcedure = useCreateChecklistProcedure()
   const completeRun = useCompleteChecklistRun()
   const [open, setOpen] = useState(false)
+  const [view, setView] = useState<"execute" | "pending" | "history" | "models">("execute")
   const [checkedByProcedure, setCheckedByProcedure] = useState<Record<string, string[]>>({})
   const [notesByProcedure, setNotesByProcedure] = useState<Record<string, string>>({})
   const [form, setForm] = useState({
@@ -273,6 +280,17 @@ export function ChecklistsPage() {
       totalItems,
     }
   }, [completedTodayIds, procedures.data, runsToday.data])
+
+  const displayedProcedures = useMemo(() => {
+    const rows = procedures.data ?? []
+    if (view === "pending") {
+      return rows.filter(
+        (procedure) =>
+          procedure.frequency === "daily" && !completedTodayIds.has(procedure.id)
+      )
+    }
+    return rows
+  }, [completedTodayIds, procedures.data, view])
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -587,37 +605,74 @@ export function ChecklistsPage() {
               />
             </BentoGrid>
 
-            <div className="grid gap-4 xl:grid-cols-[1fr_22rem]">
+            <div className="flex flex-wrap gap-2">
+              {checklistViews.map(([key, label]) => (
+                <Button
+                  key={key}
+                  type="button"
+                  size="sm"
+                  variant={view === key ? "default" : "outline"}
+                  onClick={() => setView(key)}
+                >
+                  {label}
+                </Button>
+              ))}
+            </div>
+
+            <div className={`grid gap-4 ${view === "execute" ? "xl:grid-cols-[1fr_22rem]" : ""}`}>
+              {view !== "history" ? (
               <div className="space-y-4">
                 {(procedures.data ?? []).length === 0 ? (
                   <StateBlock
                     title="Nenhum procedimento cadastrado"
                     description="Cadastre o primeiro checklist para padronizar uma rotina operacional."
                   />
+                ) : displayedProcedures.length === 0 ? (
+                  <StateBlock
+                    title="Nenhum checklist pendente"
+                    description="As rotinas diarias do recorte atual ja foram baixadas."
+                  />
                 ) : (
-                  (procedures.data ?? []).map((procedure) => (
-                    <ProcedureCard
-                      key={procedure.id}
-                      procedure={procedure}
-                      checkedItems={checkedByProcedure[procedure.id] ?? []}
-                      notes={notesByProcedure[procedure.id] ?? ""}
-                      isCompletedToday={completedTodayIds.has(procedure.id)}
-                      isPending={completeRun.isPending}
-                      onToggleItem={(item) => toggleItem(procedure.id, item)}
-                      onToggleAll={() => toggleAll(procedure)}
-                      onReset={() => resetProcedure(procedure.id)}
-                      onNotesChange={(value) =>
-                        setNotesByProcedure((current) => ({
-                          ...current,
-                          [procedure.id]: value,
-                        }))
-                      }
-                      onComplete={() => void completeProcedure(procedure)}
-                    />
-                  ))
+                  displayedProcedures.map((procedure) =>
+                    view === "models" ? (
+                      <Card key={procedure.id} className="border bg-white shadow-sm">
+                        <CardHeader>
+                          <CardTitle className="text-base">{procedure.title}</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-2 text-sm text-muted-foreground">
+                          <div>{frequencyLabel[procedure.frequency]}</div>
+                          <div>{procedure.checklist_items.length} item(ns)</div>
+                          {procedure.instructions ? (
+                            <p className="whitespace-pre-wrap">{procedure.instructions}</p>
+                          ) : null}
+                        </CardContent>
+                      </Card>
+                    ) : (
+                      <ProcedureCard
+                        key={procedure.id}
+                        procedure={procedure}
+                        checkedItems={checkedByProcedure[procedure.id] ?? []}
+                        notes={notesByProcedure[procedure.id] ?? ""}
+                        isCompletedToday={completedTodayIds.has(procedure.id)}
+                        isPending={completeRun.isPending}
+                        onToggleItem={(item) => toggleItem(procedure.id, item)}
+                        onToggleAll={() => toggleAll(procedure)}
+                        onReset={() => resetProcedure(procedure.id)}
+                        onNotesChange={(value) =>
+                          setNotesByProcedure((current) => ({
+                            ...current,
+                            [procedure.id]: value,
+                          }))
+                        }
+                        onComplete={() => void completeProcedure(procedure)}
+                      />
+                    )
+                  )
                 )}
               </div>
+              ) : null}
 
+              {view === "execute" || view === "history" ? (
               <Card className="border bg-white shadow-sm">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-base">
@@ -670,6 +725,7 @@ export function ChecklistsPage() {
                   )}
                 </CardContent>
               </Card>
+              ) : null}
             </div>
 
             {completeRun.error ? (

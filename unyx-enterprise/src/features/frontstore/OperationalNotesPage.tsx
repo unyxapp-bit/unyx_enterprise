@@ -93,8 +93,11 @@ function scopeLabel(note: OperationalNote) {
 export function OperationalNotesPage() {
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
   const [statusFilter, setStatusFilter] = useState<OperationalNoteStatus | "all">("all")
+  const [priorityFilter, setPriorityFilter] = useState<OperationalSupportPriority | "all">("all")
+  const [searchText, setSearchText] = useState("")
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<OperationalNote | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<OperationalNote | null>(null)
   const [form, setForm] = useState(emptyForm)
 
   const notes = useOperationalNotes(statusFilter)
@@ -111,8 +114,26 @@ export function OperationalNotesPage() {
       review: rows.filter((note) => note.status === "in_review").length,
       urgent: rows.filter((note) => note.priority === "urgent").length,
       total: rows.length,
+      overdue: rows.filter(
+        (note) =>
+          note.due_at &&
+          note.status !== "resolved" &&
+          note.status !== "archived" &&
+          new Date(note.due_at).getTime() < Date.now()
+      ).length,
     }
   }, [notes.data])
+
+  const filteredNotes = useMemo(() => {
+    const query = searchText.trim().toLowerCase()
+    return (notes.data ?? []).filter((note) => {
+      if (priorityFilter !== "all" && note.priority !== priorityFilter) return false
+      if (!query) return true
+      return [note.title, note.content, note.category, scopeLabel(note)]
+        .filter(Boolean)
+        .some((value) => value!.toLowerCase().includes(query))
+    })
+  }, [notes.data, priorityFilter, searchText])
 
   function resetForm() {
     setForm(emptyForm)
@@ -171,8 +192,7 @@ export function OperationalNotesPage() {
   }
 
   function removeNote(note: OperationalNote) {
-    if (!window.confirm(`Excluir a anotacao "${note.title}"?`)) return
-    void deleteNote.mutateAsync(note.id)
+    setDeleteTarget(note)
   }
 
   const isPending = createNote.isPending || updateNote.isPending
@@ -198,6 +218,27 @@ export function OperationalNotesPage() {
                 </option>
               ))}
             </select>
+            <select
+              className={fieldClass}
+              value={priorityFilter}
+              onChange={(event) =>
+                setPriorityFilter(event.target.value as OperationalSupportPriority | "all")
+              }
+            >
+              <option value="all">Todas prioridades</option>
+              {(Object.keys(priorityLabel) as OperationalSupportPriority[]).map((priority) => (
+                <option key={priority} value={priority}>
+                  {priorityLabel[priority]}
+                </option>
+              ))}
+            </select>
+            <Input
+              className="w-52"
+              type="search"
+              placeholder="Buscar anotacao..."
+              value={searchText}
+              onChange={(event) => setSearchText(event.target.value)}
+            />
             <Dialog open={open} onOpenChange={(nextOpen) => {
               setOpen(nextOpen)
               if (!nextOpen) resetForm()
@@ -375,8 +416,10 @@ export function OperationalNotesPage() {
           </Card>
           <Card className="border bg-white shadow-sm">
             <CardContent className="p-4">
-              <div className="text-xs text-muted-foreground">Urgentes</div>
-              <div className="text-2xl font-semibold">{stats.urgent}</div>
+              <div className="text-xs text-muted-foreground">Urgentes / vencidas</div>
+              <div className="text-2xl font-semibold">
+                {stats.urgent} / {stats.overdue}
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -394,10 +437,26 @@ export function OperationalNotesPage() {
             title="Nenhuma anotacao"
             description="Registre pendencias, ocorrencias e orientacoes para a frente de loja."
           />
+        ) : filteredNotes.length === 0 ? (
+          <StateBlock
+            title="Nenhuma anotacao neste filtro"
+            description="Ajuste busca, status ou prioridade para ampliar a lista."
+          />
         ) : (
           <div className="grid gap-4 xl:grid-cols-2">
-            {(notes.data ?? []).map((note) => (
-              <Card key={note.id} className="border bg-white shadow-sm">
+            {filteredNotes.map((note) => {
+              const isOverdue =
+                note.due_at &&
+                note.status !== "resolved" &&
+                note.status !== "archived" &&
+                new Date(note.due_at).getTime() < Date.now()
+              return (
+              <Card
+                key={note.id}
+                className={`border bg-white shadow-sm ${
+                  isOverdue ? "border-amber-200 bg-amber-50" : ""
+                }`}
+              >
                 <CardHeader>
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -429,7 +488,7 @@ export function OperationalNotesPage() {
                     ) : null}
                     <span>{note.user_profiles?.name ?? "Usuario"}</span>
                     {note.due_at ? (
-                      <span className="inline-flex items-center gap-1">
+                      <span className={`inline-flex items-center gap-1 ${isOverdue ? "font-medium text-amber-700" : ""}`}>
                         <Clock3 className="size-3.5" />
                         Prazo {formatDateTimeBR(note.due_at)}
                       </span>
@@ -472,7 +531,8 @@ export function OperationalNotesPage() {
                   </div>
                 </CardContent>
               </Card>
-            ))}
+              )
+            })}
           </div>
         )}
 
@@ -483,6 +543,36 @@ export function OperationalNotesPage() {
           </div>
         ) : null}
       </div>
+
+      <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => {
+        if (!open) setDeleteTarget(null)
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Excluir anotacao</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Deseja excluir permanentemente "{deleteTarget?.title}"?
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deleteNote.isPending}
+              onClick={() => {
+                if (!deleteTarget) return
+                void deleteNote.mutateAsync(deleteTarget.id).then(() => {
+                  setDeleteTarget(null)
+                })
+              }}
+            >
+              {deleteNote.isPending ? "Excluindo..." : "Excluir"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

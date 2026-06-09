@@ -36,9 +36,10 @@ import {
   useUpdateSchedule,
 } from "@/hooks/useUnyxData"
 import { buildCsv, downloadCsv } from "@/lib/exportCsv"
-import { formatDateBR, formatTime, todayISO } from "@/lib/format"
+import { formatDateBR, formatTime } from "@/lib/format"
 import { scheduleStatusLabel } from "@/lib/status"
 import { cn } from "@/lib/utils"
+import { localDateKey } from "@/features/operational/utils"
 import {
   cellToDate,
   cellToText,
@@ -904,11 +905,12 @@ function addDays(dateISO: string, n: number): string {
 
 export function SchedulesPage() {
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
+  const today = localDateKey()
   const [viewMode, setViewMode] = useState<"range" | "calendar">("calendar")
   const [selectedDay, setSelectedDay] = useState<string | null>(null)
-  const [calendarMonth, setCalendarMonth] = useState(() => todayISO().slice(0, 7))
-  const [rangeFrom, setRangeFrom] = useState(() => addDays(todayISO(), -180))
-  const [rangeTo, setRangeTo] = useState(() => addDays(todayISO(), 180))
+  const [calendarMonth, setCalendarMonth] = useState(() => today.slice(0, 7))
+  const [rangeFrom, setRangeFrom] = useState(() => addDays(today, -30))
+  const [rangeTo, setRangeTo] = useState(() => addDays(today, 30))
   const [sectorFilter, setSectorFilter] = useState("")
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
@@ -917,7 +919,7 @@ export function SchedulesPage() {
   const [form, setForm] = useState<ScheduleFormState>({
     branch_id: selectedBranchId ?? "",
     employee_id: "",
-    work_date: todayISO(),
+    work_date: today,
     start_time: "08:00",
     break_start: "12:00",
     break_end: "13:00",
@@ -932,8 +934,12 @@ export function SchedulesPage() {
     const lastDay = new Date(Number(yearStr), Number(monthStr), 0).getDate()
     return `${calendarMonth}-${String(lastDay).padStart(2, "0")}`
   }, [calendarMonth])
-  const rangeQuery = useSchedulesRange(rangeFrom, rangeTo)
-  const monthQuery = useSchedulesRange(monthStart, monthEnd)
+  const rangeQuery = useSchedulesRange(rangeFrom, rangeTo, {
+    enabled: viewMode === "range",
+  })
+  const monthQuery = useSchedulesRange(monthStart, monthEnd, {
+    enabled: viewMode === "calendar",
+  })
   const currentQuery = viewMode === "range" ? rangeQuery : monthQuery
 
   const employees = useEmployees(form.branch_id || selectedBranchId)
@@ -970,6 +976,17 @@ export function SchedulesPage() {
       map.get(s.work_date)!.push(s)
     }
     return map
+  }, [filteredSchedules])
+
+  const conflictCount = useMemo(() => {
+    const seen = new Set<string>()
+    const conflicts = new Set<string>()
+    for (const schedule of filteredSchedules) {
+      const key = `${schedule.employee_id}:${schedule.work_date}`
+      if (seen.has(key)) conflicts.add(key)
+      seen.add(key)
+    }
+    return conflicts.size
   }, [filteredSchedules])
 
   const activeEmployees = useMemo(
@@ -1120,13 +1137,13 @@ export function SchedulesPage() {
             </Button>
             <SchedulesImportDialog
               branches={branches.data ?? []}
-              currentDate={todayISO()}
+              currentDate={today}
               employees={allEmployees.data ?? []}
               selectedBranchId={selectedBranchId}
             />
             <CopyDayDialog
               branches={branches.data ?? []}
-              currentDate={todayISO()}
+              currentDate={today}
               selectedBranchId={selectedBranchId}
             />
 
@@ -1237,6 +1254,12 @@ export function SchedulesPage() {
           </div>
         ) : null}
 
+        {conflictCount > 0 ? (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            {conflictCount} colaborador(es) com mais de uma escala no mesmo dia neste recorte.
+          </div>
+        ) : null}
+
         {/* Conteúdo */}
         {currentQuery.isLoading ? (
           <StateBlock type="loading" title="Carregando escalas" />
@@ -1248,7 +1271,7 @@ export function SchedulesPage() {
             onMonthChange={setCalendarMonth}
             schedulesByDate={schedulesByDate}
             selectedDay={selectedDay}
-            today={todayISO()}
+            today={today}
             onDaySelect={setSelectedDay}
           />
         ) : filteredSchedules.length === 0 ? (

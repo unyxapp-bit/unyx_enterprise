@@ -56,8 +56,9 @@ import {
   usePostAllocations,
   useSchedules,
 } from "@/hooks/useUnyxData"
-import { minutesLabel, todayISO } from "@/lib/format"
+import { minutesLabel } from "@/lib/format"
 import { operationalStatuses, statusMeta } from "@/lib/status"
+import { localDateKey, operationalMinutesForDate } from "@/features/operational/utils"
 import type {
   DashboardRow,
   OperationalStatus,
@@ -506,7 +507,7 @@ function getPriority(row: DashboardRow, mode: ReturnType<typeof getOperationalMo
 }
 
 export function DashboardPage() {
-  const [date, setDate] = useState(todayISO())
+  const [date, setDate] = useState(localDateKey())
   const [sectorFilter, setSectorFilter] = useState("")
   const [searchText, setSearchText] = useState("")
   const [statusFilter, setStatusFilter] = useState("")
@@ -642,8 +643,14 @@ export function DashboardPage() {
   }
 
   const liveRows = useMemo(() => {
-    const now = new Date()
-    const nowMin = now.getHours() * 60 + now.getMinutes()
+    const today = localDateKey()
+    if (date !== today) {
+      return filteredRows.filter(
+        (row) => !["folga", "finalizado"].includes(row.current_status)
+      )
+    }
+
+    const nowMin = operationalMinutesForDate(date)
     return filteredRows.filter((row) => {
       if (["folga", "finalizado"].includes(row.current_status)) return false
       const startMin = toMin(row.start_time)
@@ -652,7 +659,7 @@ export function DashboardPage() {
       if (endMin !== null && nowMin > endMin) return false
       return true
     })
-  }, [filteredRows])
+  }, [date, filteredRows])
 
   const allocatedWorkingCount = new Set(
     postAllocationsInScope.map((allocation) => allocation.employee_id)
@@ -738,6 +745,14 @@ export function DashboardPage() {
   const presencePct =
     scheduledCount > 0 ? Math.round((workingCount / scheduledCount) * 100) : 0
 
+  const refetchDashboardScreen = () => {
+    void dashboard.refetch()
+    void schedules.refetch()
+    void statuses.refetch()
+    void attendanceEvents.refetch()
+    void postAllocations.refetch()
+  }
+
   if (dashboard.isError) {
     return (
       <>
@@ -770,7 +785,7 @@ export function DashboardPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setDate(todayISO())}
+              onClick={() => setDate(localDateKey())}
             >
               Hoje
             </Button>
@@ -827,11 +842,27 @@ export function DashboardPage() {
             <Button
               variant="outline"
               size="icon"
-              onClick={() => void dashboard.refetch()}
-              disabled={dashboard.isFetching}
+              onClick={refetchDashboardScreen}
+              disabled={
+                dashboard.isFetching ||
+                schedules.isFetching ||
+                statuses.isFetching ||
+                attendanceEvents.isFetching ||
+                postAllocations.isFetching
+              }
               aria-label="Atualizar"
             >
-              <RefreshCw className={`size-4 ${dashboard.isFetching ? "animate-spin" : ""}`} />
+              <RefreshCw
+                className={`size-4 ${
+                  dashboard.isFetching ||
+                  schedules.isFetching ||
+                  statuses.isFetching ||
+                  attendanceEvents.isFetching ||
+                  postAllocations.isFetching
+                    ? "animate-spin"
+                    : ""
+                }`}
+              />
             </Button>
           </div>
         }
@@ -843,8 +874,7 @@ export function DashboardPage() {
           currentScheduleCount={scheduledToday.length}
           isLoading={schedules.isLoading}
           onCopied={() => {
-            void schedules.refetch()
-            void dashboard.refetch()
+            refetchDashboardScreen()
           }}
         />
 

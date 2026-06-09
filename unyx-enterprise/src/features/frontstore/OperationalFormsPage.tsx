@@ -36,6 +36,7 @@ import {
   useSubmitOperationalFormResponse,
   useUpdateOperationalForm,
 } from "@/hooks/useUnyxData"
+import { localDateKey } from "@/features/operational/utils"
 import { formatDateTimeBR } from "@/lib/format"
 import { useAppStore } from "@/store/useAppStore"
 import type { OperationalForm } from "@/types/domain"
@@ -54,6 +55,12 @@ const emptyForm = {
   category: "",
   questions: "",
 }
+
+const formViews = [
+  ["respond", "Responder"],
+  ["models", "Modelos"],
+  ["responses", "Respostas"],
+] as const
 
 function splitQuestions(value: string) {
   return value
@@ -79,6 +86,8 @@ export function OperationalFormsPage() {
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [responseNotes, setResponseNotes] = useState("")
   const [expandedFormIds, setExpandedFormIds] = useState<Set<string>>(new Set())
+  const [view, setView] = useState<"respond" | "models" | "responses">("respond")
+  const [deleteTarget, setDeleteTarget] = useState<OperationalForm | null>(null)
 
   const sectors = useSectors(form.branch_id || null)
   const createForm = useCreateOperationalForm()
@@ -94,7 +103,7 @@ export function OperationalFormsPage() {
   const stats = useMemo(() => {
     const formRows = forms.data ?? []
     const responseRows = responses.data ?? []
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localDateKey()
     return {
       forms: formRows.length,
       questions: formRows.reduce((sum, item) => sum + item.questions.length, 0),
@@ -164,8 +173,7 @@ export function OperationalFormsPage() {
   }
 
   function removeForm(item: OperationalForm) {
-    if (!window.confirm(`Excluir o formulario "${item.title}"?`)) return
-    void deleteForm.mutateAsync(item.id)
+    setDeleteTarget(item)
   }
 
   function toggleFormExpanded(formId: string) {
@@ -330,6 +338,20 @@ export function OperationalFormsPage() {
           </Card>
         </div>
 
+        <div className="flex flex-wrap gap-2">
+          {formViews.map(([key, label]) => (
+            <Button
+              key={key}
+              type="button"
+              size="sm"
+              variant={view === key ? "default" : "outline"}
+              onClick={() => setView(key)}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+
         {forms.isLoading || responses.isLoading ? (
           <StateBlock type="loading" title="Carregando formularios" />
         ) : forms.isError ? (
@@ -345,7 +367,14 @@ export function OperationalFormsPage() {
             description={responses.error.message}
           />
         ) : (
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_1fr]">
+          <div
+            className={
+              view === "respond"
+                ? "grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_1fr]"
+                : "grid gap-4"
+            }
+          >
+            {view !== "responses" ? (
             <div className="space-y-4">
               {(forms.data ?? []).length === 0 ? (
                 <StateBlock
@@ -437,8 +466,11 @@ export function OperationalFormsPage() {
                 })
               )}
             </div>
+            ) : null}
 
+            {view === "respond" || view === "responses" ? (
             <div className="space-y-4">
+              {view === "respond" ? (
               <Card className="border bg-white shadow-sm">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-base">
@@ -488,6 +520,7 @@ export function OperationalFormsPage() {
                   )}
                 </CardContent>
               </Card>
+              ) : null}
 
               <Card className="border bg-white shadow-sm">
                 <CardHeader>
@@ -524,6 +557,7 @@ export function OperationalFormsPage() {
                 </CardContent>
               </Card>
             </div>
+            ) : null}
           </div>
         )}
 
@@ -534,6 +568,36 @@ export function OperationalFormsPage() {
           </div>
         ) : null}
       </div>
+
+      <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => {
+        if (!open) setDeleteTarget(null)
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Excluir formulario</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Deseja excluir permanentemente "{deleteTarget?.title}"?
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deleteForm.isPending}
+              onClick={() => {
+                if (!deleteTarget) return
+                void deleteForm.mutateAsync(deleteTarget.id).then(() => {
+                  setDeleteTarget(null)
+                })
+              }}
+            >
+              {deleteForm.isPending ? "Excluindo..." : "Excluir"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }
