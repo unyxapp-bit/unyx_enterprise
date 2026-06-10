@@ -7,9 +7,12 @@ import {
   BrainCircuit,
   CheckCircle2,
   ClipboardCheck,
+  BarChart3,
   Clock,
+  Boxes,
   Database,
   FileText,
+  BellRing,
   ListChecks,
   Lightbulb,
   MessageSquare,
@@ -18,8 +21,12 @@ import {
   Send,
   ShieldAlert,
   Sparkles,
+  TrendingUp,
+  Truck,
   UserPlus,
+  Users,
 } from "lucide-react"
+import type { LucideIcon } from "lucide-react"
 
 import { BentoGrid } from "@/components/bento/BentoGrid"
 import { MetricCard } from "@/components/bento/MetricCard"
@@ -196,6 +203,107 @@ const queuedActionStatusLabel: Record<AiAgentQueuedActionStatus, string> = {
   failed: "falhou",
   dismissed: "descartada",
 }
+
+type AiCapabilityCard = {
+  title: string
+  objective: string
+  execution: string
+  icon: LucideIcon
+  signals: string[]
+  outputs: string[]
+  requiresConfirmation: boolean
+}
+
+const aiCapabilityCards: AiCapabilityCard[] = [
+  {
+    title: "Gestao de escalas semanais",
+    objective:
+      "Organiza turnos, evita sobrecarga e protege horarios criticos.",
+    execution:
+      "Cruza escalas, status do dia, cobertura e apontamentos para sugerir ajustes e trocas.",
+    icon: ListChecks,
+    signals: ["Escalas", "Status do dia", "Cobertura"],
+    outputs: ["Troca sugerida", "Cobertura em risco"],
+    requiresConfirmation: false,
+  },
+  {
+    title: "Controle de entregas",
+    objective:
+      "Acompanha pedidos, prazos e falhas de despacho.",
+    execution:
+      "Lê pedidos, prazos e pendencias para emitir alertas e priorizar despachos atrasados.",
+    icon: Truck,
+    signals: ["Entregas", "Filas", "Pendencias"],
+    outputs: ["Atraso detectado", "Despacho prioritario"],
+    requiresConfirmation: false,
+  },
+  {
+    title: "Monitoramento de colaboradores",
+    objective:
+      "Verifica presenca, desempenho e cumprimento das rotinas.",
+    execution:
+      "Cruza ponto, eventos recentes e escala do dia para mostrar faltas, atrasos e reincidencias.",
+    icon: Users,
+    signals: ["Ponto", "Eventos", "Escala"],
+    outputs: ["Resumo de presenca", "Reincidencia"],
+    requiresConfirmation: false,
+  },
+  {
+    title: "Gestao de estoque",
+    objective:
+      "Evita ruptura e excesso com leitura dos itens mais sensiveis.",
+    execution:
+      "Cruza vendas, pedidos e produtos com baixo estoque para sugerir reposicao e alerta critico.",
+    icon: Boxes,
+    signals: ["Vendas", "Pedidos", "Estoque baixo"],
+    outputs: ["Ruptura em risco", "Reposicao sugerida"],
+    requiresConfirmation: false,
+  },
+  {
+    title: "Alertas e notificacoes",
+    objective:
+      "Destaca o que exige acao imediata do gestor.",
+    execution:
+      "Prioriza pendencias, filas, intervalos e cobertura para avisar antes que o problema cresca.",
+    icon: BellRing,
+    signals: ["Pendencias", "Filas", "Cobertura"],
+    outputs: ["Alerta critico", "Pendencia priorizada"],
+    requiresConfirmation: false,
+  },
+  {
+    title: "Relatorios e analises",
+    objective:
+      "Consolida dados para leitura semanal e mensal.",
+    execution:
+      "Gera sinteses com contagens, evidencias e proximos passos para apoio ao gestor.",
+    icon: BarChart3,
+    signals: ["Dashboard", "Eventos", "Auditoria"],
+    outputs: ["Resumo executivo", "Top riscos"],
+    requiresConfirmation: false,
+  },
+  {
+    title: "Previsao de demanda",
+    objective:
+      "Antecipar picos de movimento para ajustar escala e estoque.",
+    execution:
+      "Analisa vendas, eventos e filas para apontar sinais de pico e necessidade de preparacao.",
+    icon: TrendingUp,
+    signals: ["Vendas", "Filas", "Eventos"],
+    outputs: ["Pico previsto", "Ajuste preventivo"],
+    requiresConfirmation: false,
+  },
+  {
+    title: "Comunicacao interna",
+    objective:
+      "Facilita o alinhamento entre gestor e equipe.",
+    execution:
+      "Transforma notas, comunicados e orientacoes em mensagens curtas e acionaveis.",
+    icon: MessageSquare,
+    signals: ["Comunicados", "Notas", "Checklists"],
+    outputs: ["Mensagem pronta", "Alinhamento da equipe"],
+    requiresConfirmation: true,
+  },
+]
 
 function queuedActionBadgeVariant(status: AiAgentQueuedActionStatus) {
   if (status === "blocked" || status === "failed") return "destructive"
@@ -618,6 +726,13 @@ export function AiPage() {
           : "ok",
     },
   ]
+  const aiPrinciples = [
+    "Proatividade",
+    "Integracao",
+    "Adaptabilidade",
+    "Transparencia",
+    "Colaboracao",
+  ]
 
   return (
     <>
@@ -818,6 +933,65 @@ export function AiPage() {
                 Execute o agente para registrar quais fontes entraram na analise.
               </div>
             )}
+          </CardContent>
+        </Card>
+
+        <Card className="border bg-white shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex flex-wrap items-center gap-2">
+              <Sparkles className="size-5" />
+              <span className="flex-1">Base da IA</span>
+              <Badge variant="outline">9 capacidades</Badge>
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Esta e a base operacional que orienta analises, alertas e sugerencias.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-3 xl:grid-cols-2 2xl:grid-cols-3">
+              {aiCapabilityCards.map((capability) => (
+                <div key={capability.title} className="rounded-lg border bg-slate-50 p-3">
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-md border bg-white p-2 text-slate-700">
+                      <capability.icon className="size-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-semibold">{capability.title}</div>
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                        {capability.objective}
+                      </p>
+                    </div>
+                    <Badge variant={capability.requiresConfirmation ? "outline" : "secondary"}>
+                      {capability.requiresConfirmation ? "confirma" : "auto"}
+                    </Badge>
+                  </div>
+                  <p className="mt-3 text-xs leading-5 text-muted-foreground">
+                    {capability.execution}
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {capability.signals.map((signal) => (
+                      <Badge key={`${capability.title}-${signal}`} variant="outline">
+                        {signal}
+                      </Badge>
+                    ))}
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {capability.outputs.map((output) => (
+                      <Badge key={`${capability.title}-${output}`} variant="secondary">
+                        {output}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {aiPrinciples.map((principle) => (
+                <Badge key={principle} variant="outline">
+                  {principle}
+                </Badge>
+              ))}
+            </div>
           </CardContent>
         </Card>
 

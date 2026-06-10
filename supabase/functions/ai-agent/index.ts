@@ -7,6 +7,16 @@ type AgentActionTool = "generate_delay_report" | "allocate_post"
 type AgentActionMode = "none" | "suggest" | "execute_with_confirmation" | "execute_auto"
 type AgentActionStatus = "none" | "executed" | "pending_confirmation" | "blocked" | "failed"
 
+type AiCapabilityPlaybookItem = {
+  key: string
+  title: string
+  objective: string
+  execution: string
+  signals: string[]
+  outputs: string[]
+  requires_confirmation: boolean
+}
+
 type AgentActionArguments = {
   branch_id?: string | null
   post_id?: string | null
@@ -136,6 +146,108 @@ const actionResultSchema = {
     "artifact_markdown",
   ],
 }
+
+const aiOperationalPlaybook: AiCapabilityPlaybookItem[] = [
+  {
+    key: "schedule_management",
+    title: "Gestao de escalas semanais",
+    objective:
+      "Organizar turnos, cobrir horarios criticos e reduzir sobrecarga da equipe.",
+    execution:
+      "Cruza escalas, status do dia, eventos recentes e cobertura de postos para sugerir ajustes e trocas.",
+    signals: ["schedules_today", "operational_status", "operational_pending_summary"],
+    outputs: ["prioridade de cobertura", "sugestao de troca", "alerta de escala ausente"],
+    requires_confirmation: false,
+  },
+  {
+    key: "delivery_control",
+    title: "Controle de entregas",
+    objective:
+      "Acompanhar pedidos, prazos e rotas para reduzir atraso e falha de despacho.",
+    execution:
+      "Analisa status, prioridade, prazo estimado e filas operacionais para apontar atrasos e riscos.",
+    signals: ["delivery_orders", "operational_pending_summary", "direct_lookup"],
+    outputs: ["alerta de atraso", "painel de risco", "prioridade de despacho"],
+    requires_confirmation: false,
+  },
+  {
+    key: "employee_monitoring",
+    title: "Monitoramento de colaboradores",
+    objective:
+      "Verificar presenca, desempenho e cumprimento das rotinas do turno.",
+    execution:
+      "Cruza ponto, eventos de presenca, status atual e escala para mostrar quem precisa de atencao.",
+    signals: ["attendance_events", "operational_status", "schedules_today"],
+    outputs: ["resumo de presenca", "colaborador recorrente", "lista de faltas e atrasos"],
+    requires_confirmation: false,
+  },
+  {
+    key: "logistics_optimization",
+    title: "Otimizacao logistica",
+    objective:
+      "Reduzir custo e tempo de atendimento com melhor distribuicao da operacao.",
+    execution:
+      "Observa demanda, filas, entregas, producao e cobertura para sugerir redistribuicao.",
+    signals: ["operational_queue", "delivery_orders", "production_orders", "operational_status"],
+    outputs: ["ajuste de fila", "redistribuicao de posto", "prioridade de atendimento"],
+    requires_confirmation: true,
+  },
+  {
+    key: "stock_management",
+    title: "Gestao de estoque",
+    objective:
+      "Controlar entradas e saidas para evitar ruptura e excesso.",
+    execution:
+      "Cruza vendas, pedidos de producao, produtos com baixo estoque e documentos fiscais.",
+    signals: ["sales_today", "production_orders", "products_low_stock_first", "fiscal_documents"],
+    outputs: ["alerta de ruptura", "sugestao de reposicao", "resumo de item critico"],
+    requires_confirmation: false,
+  },
+  {
+    key: "alerts",
+    title: "Emissao de alertas",
+    objective:
+      "Avisar gestores sobre problemas, riscos e pendencias antes que virem incidente.",
+    execution:
+      "Prioriza o resumo operacional, filas e regras de severidade para destacar o que exige acao imediata.",
+    signals: ["operational_pending_summary", "audit_logs", "operational_queue"],
+    outputs: ["alerta critico", "pendencia priorizada", "acao recomendada"],
+    requires_confirmation: false,
+  },
+  {
+    key: "reports",
+    title: "Relatorios e analises",
+    objective:
+      "Consolidar indicadores semanais e mensais para leitura rapida da gerencia.",
+    execution:
+      "Gera sinteses com contagens, evidencias, recorrencias e proximas acoes com base no contexto enviado.",
+    signals: ["dashboard_today", "audit_logs", "recent_events", "sales_today"],
+    outputs: ["resumo executivo", "top riscos", "proxima acao sugerida"],
+    requires_confirmation: false,
+  },
+  {
+    key: "forecast",
+    title: "Previsao de demanda",
+    objective:
+      "Antecipar picos de movimento para ajustar escala, estoque e atendimento.",
+    execution:
+      "Observa historico recente, sazonalidade operacional, filas e atrasos para sugerir preparacao.",
+    signals: ["sales_today", "operational_queue", "recent_events", "schedules_today"],
+    outputs: ["sinal de pico", "ajuste preventivo", "alerta de capacidade"],
+    requires_confirmation: false,
+  },
+  {
+    key: "internal_communication",
+    title: "Comunicacao interna",
+    objective:
+      "Facilitar alinhamento com mensagens, comunicados e registros operacionais.",
+    execution:
+      "Conecta observacoes, notas e comunicados para preparar mensagens objetivas ao gestor e equipe.",
+    signals: ["comms_posts", "operational_notes", "checklist_runs"],
+    outputs: ["mensagem pronta", "comunicado resumido", "acao registrada"],
+    requires_confirmation: true,
+  },
+]
 
 const resolutionSchema = {
   type: "object",
@@ -1591,6 +1703,22 @@ function buildModelContext(context: AgentContext) {
     customer_counts: context.customer_counts,
     pos_counts: context.pos_counts,
     direct_lookup_counts: context.direct_lookup_counts,
+    ai_operational_playbook: aiOperationalPlaybook.map((item) => ({
+      key: item.key,
+      title: item.title,
+      objective: item.objective,
+      execution: item.execution,
+      signals: item.signals,
+      outputs: item.outputs,
+      requires_confirmation: item.requires_confirmation,
+    })),
+    ai_operational_principles: [
+      "Proatividade: antecipe problemas antes que virem incidente.",
+      "Integracao: conecte escala, entrega, estoque, PDV e equipe no mesmo raciocinio.",
+      "Adaptabilidade: ajuste a resposta conforme sazonalidade, pico e falta de cobertura.",
+      "Transparencia: explique sempre quais dados e sinais sustentam a decisao.",
+      "Colaboracao: responda como parte da equipe, com linguagem clara e acionavel.",
+    ],
     action_capabilities: [
       {
         tool_name: "generate_delay_report",
@@ -2985,7 +3113,7 @@ Deno.serve(async (request) => {
           {
             role: "system",
             content:
-              "Voce e o Unyx AI Agent, um agente operacional para varejo, food service e equipes de loja. Analise apenas os dados fornecidos. Considere colaboradores, horarios, dashboard, pendencias operacionais, notas, formularios, comunicados, entregas, clientes, caixa/PDV, producao, fiscal, estoque, auditoria e configuracoes quando vierem no contexto. Trate o fiscal como orquestrador da operacao: cobertura de PDVs, filas, intervalos, sangrias, trocas, apoio, redistribuicao, comunicacao e fechamento. Use context.tools.operational_pending_summary como resumo prioritario da tela Operacao: entradas atrasadas, intervalos a liberar, intervalos vencidos, postos sem cobertura, alocados sem escala, caixas abertos, entregas atrasadas e producao atrasada. Use context.tools.operational_queue para filas, gargalos e pedidos de apoio registrados pelo fiscal. Use context.schedule_scope para diferenciar falta de escala na organizacao de falta de escala apenas na filial selecionada; se houver escala em outra filial, diga isso explicitamente e recomende conferir a filial do topo. Se context.tools.direct_lookup trouxer resultado para horario, posto, PDV ou caixa perguntado pelo gestor, priorize essa consulta direta na resposta e nao responda por amostragem. Seja objetivo, pratico e conservador. Nao invente dados. Para action_plan use apenas generate_delay_report ou allocate_post. Relatorio de atrasos pode ser executado automaticamente; alocacao exige confirmacao humana e escala do dia em context.tools.schedules_today. Se nao houver escala do dia na filial selecionada, nao proponha allocate_post; recomende conferir a filial ou criar/copiar a escala primeiro. Nao diga que executou acoes quando intent nao for act. Quando intent for resolve, gere uma proposta aplicavel para o gestor revisar e registrar como tarefa operacional. Quando intent for analyze, deixe resolution.status como none. Responda em portugues do Brasil sem acentos problematicos quando possivel.",
+              "Voce e o Unyx AI Agent, a IA gestora da operacao. Use o contexto fornecido como fonte de verdade e nao invente dados. Trabalhe com os dominios do playbook: gestao de escalas, controle de entregas, monitoramento de colaboradores, otimizacao logistica, gestao de estoque, emissao de alertas, relatorios e analises, previsao de demanda e comunicacao interna. Em cada resposta, combine leitura operacional com transparencia: diga quais sinais sustentam a conclusao, se a acao depende de confirmacao humana e qual area da operacao foi impactada. Trate o fiscal como orquestrador da loja: cobertura de PDVs, filas, intervalos, sangrias, trocas, apoio, redistribuicao, comunicacao e fechamento. Use context.ai_operational_playbook como mapa oficial das capacidades da IA e context.ai_operational_principles como forma de resposta. Use context.tools.operational_pending_summary como resumo prioritario da tela Operacao: entradas atrasadas, intervalos a liberar, intervalos vencidos, postos sem cobertura, alocados sem escala, caixas abertos, entregas atrasadas e producao atrasada. Use context.tools.operational_queue para filas, gargalos e pedidos de apoio registrados pelo fiscal. Use context.schedule_scope para diferenciar falta de escala na organizacao de falta de escala apenas na filial selecionada; se houver escala em outra filial, diga isso explicitamente e recomende conferir a filial do topo. Se context.tools.direct_lookup trouxer resultado para horario, posto, PDV ou caixa perguntado pelo gestor, priorize essa consulta direta na resposta e nao responda por amostragem. Seja objetivo, pratico e conservador. Nao invente dados. Para action_plan use apenas generate_delay_report ou allocate_post. Relatorio de atrasos pode ser executado automaticamente; alocacao exige confirmacao humana e escala do dia em context.tools.schedules_today. Se nao houver escala do dia na filial selecionada, nao proponha allocate_post; recomende conferir a filial ou criar/copiar a escala primeiro. Nao diga que executou acoes quando intent nao for act. Quando intent for resolve, gere uma proposta aplicavel para o gestor revisar e registrar como tarefa operacional. Quando intent for analyze, deixe resolution.status como none. Responda em portugues do Brasil de forma clara, direta e colaborativa.",
           },
           {
             role: "user",

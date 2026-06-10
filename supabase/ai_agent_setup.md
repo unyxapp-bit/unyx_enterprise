@@ -41,6 +41,22 @@ O deploy usa `--use-api`, entao nao depende do Docker para publicar a Edge Funct
 - A funcao valida o JWT do usuario.
 - A funcao respeita permissao `ai` e escopo de filial.
 - A funcao busca dados operacionais no Supabase com RLS.
+- A IA trabalha com um playbook de negocio composto por:
+  - gestao de escalas semanais;
+  - controle de entregas;
+  - monitoramento de colaboradores;
+  - otimizacao logistica;
+  - gestao de estoque;
+  - emissao de alertas e notificacoes;
+  - relatorios e analises;
+  - previsao de demanda;
+  - comunicacao interna.
+- O comportamento esperado da IA segue estes principios:
+  - proatividade;
+  - integracao com os dados da operacao;
+  - adaptabilidade diante de picos e mudancas;
+  - transparencia na justificativa das decisoes;
+  - colaboracao com o gestor e a equipe.
 - O contexto do agente e compacto e inclui, quando disponivel:
   - estrutura da organizacao: filiais, setores e configuracoes operacionais;
   - operacao do dia: dashboard, status, escalas, eventos de presenca, colaboradores, postos e alocacoes;
