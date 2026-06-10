@@ -888,7 +888,7 @@ async function fetchContext(
 
   let statusesQuery = supabase
     .from("operational_status")
-    .select("id, branch_id, employee_id, schedule_id, current_status, priority_level, delay_minutes, status_reason, updated_at, branches(name), employees(name, role, sectors(name)), schedules(work_date, start_time, break_start, break_end, end_time)")
+    .select("id, branch_id, employee_id, schedule_id, current_status, priority_level, delay_minutes, status_reason, updated_at, branches(name), employees(name, role, sector_id, sectors(name)), schedules(work_date, start_time, break_start, break_end, end_time)")
     .eq("organization_id", profile.organization_id)
     .order("priority_level", { ascending: false })
     .order("updated_at", { ascending: false })
@@ -2032,29 +2032,80 @@ function buildAllocationCandidate(context: AgentContext, requestedArgs?: AgentAc
   const posts = (context.tools.operational_posts as unknown[]).map(asRow)
   const allocations = (context.tools.active_allocations as unknown[]).map(asRow)
   const statuses = (context.tools.operational_status as unknown[]).map(asRow)
+  const queueSignals = (context.tools.operational_queue as unknown[]).map(asRow)
 
   const allocatedPostIds = new Set(allocations.map((item) => readString(item, "post_id")).filter(Boolean))
   const allocatedEmployeeIds = new Set(allocations.map((item) => readString(item, "employee_id")).filter(Boolean))
+  const requestedPostId = requested.post_id
+  const requestedEmployeeId = requested.employee_id
+  const nowMinutes = nowInSaoPauloMinutes()
+
+  function postScore(post: DataRow) {
+    const postId = readString(post, "id")
+    if (!postId) return -1
+    if (allocatedPostIds.has(postId) && postId !== requestedPostId) return -1
+
+    const queueForPost = queueSignals.filter(
+      (signal) => readString(signal, "post_id") === postId
+    )
+    const criticalQueue = queueForPost.some(
+      (signal) => readString(signal, "severity") === "critical"
+    )
+
+    return (
+      (postId === requestedPostId ? 100 : 0) +
+      (queueForPost.length > 0 ? 35 : 0) +
+      (criticalQueue ? 25 : 0) +
+      (readString(post, "type") === "cashier" ? 8 : 0)
+    )
+  }
+
+  function employeeScore(status: DataRow, postSectorId: string | null) {
+    const employeeId = readString(status, "employee_id")
+    if (!employeeId) return -1
+    if (allocatedEmployeeIds.has(employeeId) && employeeId !== requestedEmployeeId) return -1
+
+    const currentStatus = readString(status, "current_status")
+    if (!["trabalhando", "voltou", "apoio_operacional"].includes(currentStatus ?? "")) {
+      if (employeeId !== requestedEmployeeId) return -1
+    }
+
+    const schedule = asRow(status.schedules)
+    const employee = asRow(status.employees)
+    const employeeSectorId = readString(employee, "sector_id")
+    const endMinutes = timeToMinutes(readString(schedule, "end_time"))
+    const breakStartMinutes = timeToMinutes(readString(schedule, "break_start"))
+    const priority = readNumber(status, "priority_level")
+    const delay = readNumber(status, "delay_minutes")
+
+    return (
+      (employeeId === requestedEmployeeId ? 100 : 0) +
+      (postSectorId && employeeSectorId === postSectorId ? 25 : 0) +
+      (currentStatus === "trabalhando" ? 20 : 0) +
+      (currentStatus === "voltou" ? 14 : 0) +
+      (currentStatus === "apoio_operacional" ? 10 : 0) -
+      Math.min(priority, 90) / 3 -
+      (delay > 0 ? 30 : 0) -
+      (endMinutes !== null && endMinutes - nowMinutes <= 45 ? 25 : 0) -
+      (breakStartMinutes !== null && breakStartMinutes - nowMinutes <= 20 ? 15 : 0)
+    )
+  }
 
   const post =
-    posts.find((item) => readString(item, "id") === requested.post_id) ??
-    posts.find((item) => {
-      const postId = readString(item, "id")
-      return Boolean(postId && !allocatedPostIds.has(postId))
-    })
+    posts
+      .map((item) => ({ item, score: postScore(item) }))
+      .filter((item) => item.score >= 0)
+      .sort((a, b) => b.score - a.score)[0]?.item ?? null
+  const postSectorId = readString(post ?? {}, "sector_id")
 
   const employeeStatus =
-    statuses.find((item) => readString(item, "employee_id") === requested.employee_id) ??
-    statuses.find((item) => {
-      const employeeId = readString(item, "employee_id")
-      return (
-        readString(item, "current_status") === "trabalhando" &&
-        Boolean(employeeId && !allocatedEmployeeIds.has(employeeId))
-      )
-    })
+    statuses
+      .map((item) => ({ item, score: employeeScore(item, postSectorId) }))
+      .filter((item) => item.score >= 0)
+      .sort((a, b) => b.score - a.score)[0]?.item ?? null
 
-  const postId = requested.post_id ?? readString(post ?? {}, "id")
-  const employeeId = requested.employee_id ?? readString(employeeStatus ?? {}, "employee_id")
+  const postId = requestedPostId ?? readString(post ?? {}, "id")
+  const employeeId = requestedEmployeeId ?? readString(employeeStatus ?? {}, "employee_id")
   const scheduleId = requested.schedule_id ?? readString(employeeStatus ?? {}, "schedule_id")
   const postName = relationName(post ?? {}, "operational_posts") ?? readString(post ?? {}, "name")
   const employeeName = relationName(employeeStatus ?? {}, "employees")
@@ -2100,7 +2151,7 @@ function buildAllocationActionPlan(context: AgentContext, requestedArgs?: AgentA
   }
 
   const candidate = buildAllocationCandidate(context, requestedArgs)
-  const hasCandidate = Boolean(candidate.postId && candidate.employeeId)
+  const hasCandidate = Boolean(candidate.postId && candidate.employeeId && candidate.scheduleId)
   const args = actionArgs({
     branch_id: candidate.branchId ?? context.branch_id,
     post_id: candidate.postId,
@@ -2115,13 +2166,13 @@ function buildAllocationActionPlan(context: AgentContext, requestedArgs?: AgentA
     title: hasCandidate ? "Alocar colaborador em posto" : "Alocacao precisa de dados",
     description: hasCandidate
       ? `Proposta: ${candidate.employeeName ?? "colaborador selecionado"} em ${candidate.postName ?? "posto sem cobertura"}.`
-      : "Nao encontrei simultaneamente um posto ativo sem cobertura e um colaborador trabalhando sem alocacao.",
+      : "Nao encontrei simultaneamente posto ativo, colaborador trabalhando e escala vinculada para executar com seguranca.",
     confidence: hasCandidate ? 0.78 : 0.35,
     confirmation_required: true,
     arguments: args,
     arguments_summary: hasCandidate
       ? `Posto: ${candidate.postName ?? candidate.postId} | Colaborador: ${candidate.employeeName ?? candidate.employeeId}`
-      : "Sem candidato suficiente para executar.",
+      : "Sem posto, colaborador ou escala suficiente para executar.",
   }
 }
 
@@ -2168,7 +2219,7 @@ async function executeAgentAction(
   const plan = buildAllocationActionPlan(context, action?.arguments)
   const args = plan.arguments
 
-  if (!args.post_id || !args.employee_id) {
+  if (!args.post_id || !args.employee_id || !args.schedule_id) {
     return {
       action_plan: plan,
       action_result: {
@@ -2178,7 +2229,7 @@ async function executeAgentAction(
         message:
           plan.tool_name === null
             ? plan.description
-            : "Nao ha dados suficientes para alocar com seguranca. Cadastre postos, confirme presenca e tente novamente.",
+            : "Nao ha dados suficientes para alocar com seguranca. Cadastre postos, confirme presenca, valide escala e tente novamente.",
         artifact_markdown: "",
       },
     }
@@ -2613,6 +2664,22 @@ function actionQueueContext(
   }
 }
 
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableJson(item)).join(",")}]`
+  }
+
+  if (value && typeof value === "object") {
+    const row = value as Record<string, unknown>
+    return `{${Object.keys(row)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableJson(row[key])}`)
+      .join(",")}}`
+  }
+
+  return JSON.stringify(value) ?? "undefined"
+}
+
 async function saveAgentAction(
   supabase: ReturnType<typeof createClient>,
   profile: UserProfile,
@@ -2639,6 +2706,66 @@ async function saveAgentAction(
   const resultStatus = readString(actionResult, "status")
   const confidence = Math.min(1, Math.max(0, readNumber(actionPlan, "confidence") || 0))
   const resolvedStatus = ["executed", "blocked", "failed"].includes(status)
+  const toolName = readString(actionPlan, "tool_name") || readString(actionResult, "tool_name")
+  const actionArguments = actionPlan["arguments"] ?? {}
+  let existingQuery = supabase
+    .from("ai_agent_actions")
+    .select("id, arguments")
+    .eq("organization_id", profile.organization_id)
+    .eq("source", "agent")
+    .in("status", ["suggested", "ready", "pending_approval", "blocked", "failed"])
+    .order("created_at", { ascending: false })
+    .limit(20)
+
+  existingQuery = branchId
+    ? existingQuery.eq("branch_id", branchId)
+    : existingQuery.is("branch_id", null)
+  existingQuery = toolName
+    ? existingQuery.eq("tool_name", toolName)
+    : existingQuery.is("tool_name", null)
+
+  const { data: existingActions, error: existingError } = await existingQuery
+  if (!existingError) {
+    const sameArguments = stableJson(actionArguments)
+    const existing = (existingActions ?? []).find(
+      (action) => stableJson(asRow(action).arguments ?? {}) === sameArguments
+    )
+
+    if (existing?.id) {
+      const { error } = await supabase
+        .from("ai_agent_actions")
+        .update({
+          snapshot_id: snapshotId,
+          intent,
+          status,
+          mode: readString(actionPlan, "mode") || "suggest",
+          title: trimText(title, 180) || "Acao sugerida pela IA",
+          description: trimText(description, 800) || "A IA gerou uma acao operacional para revisao.",
+          reason:
+            readString(actionPlan, "arguments_summary") ||
+            readString(actionResult, "message") ||
+            null,
+          confidence,
+          confirmation_required:
+            readBoolean(actionPlan, "confirmation_required") ||
+            status === "pending_approval",
+          target,
+          context_snapshot: actionQueueContext(intent, question, target, insight),
+          action_result: actionResult,
+          resolved_by: resolvedStatus ? profile.id : null,
+          resolved_at: resolvedStatus ? new Date().toISOString() : null,
+          approved_at: resultStatus === "executed" ? new Date().toISOString() : null,
+          approved_by: resultStatus === "executed" ? profile.id : null,
+        })
+        .eq("id", existing.id)
+        .eq("organization_id", profile.organization_id)
+
+      if (error) {
+        console.warn("[ai-agent] action queue not updated", error.message)
+      }
+      return
+    }
+  }
 
   const { error } = await supabase.from("ai_agent_actions").insert({
     organization_id: profile.organization_id,
@@ -2650,7 +2777,7 @@ async function saveAgentAction(
     source: "agent",
     status,
     mode: readString(actionPlan, "mode") || "suggest",
-    tool_name: readString(actionPlan, "tool_name") || readString(actionResult, "tool_name"),
+    tool_name: toolName,
     title: trimText(title, 180) || "Acao sugerida pela IA",
     description: trimText(description, 800) || "A IA gerou uma acao operacional para revisao.",
     reason:
@@ -2661,7 +2788,7 @@ async function saveAgentAction(
     confirmation_required:
       readBoolean(actionPlan, "confirmation_required") ||
       status === "pending_approval",
-    arguments: actionPlan["arguments"] ?? {},
+    arguments: actionArguments,
     target,
     context_snapshot: actionQueueContext(intent, question, target, insight),
     action_result: actionResult,
@@ -2744,7 +2871,7 @@ Deno.serve(async (request) => {
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")
     const openaiKey = Deno.env.get("OPENAI_API_KEY")
     const openaiModel = Deno.env.get("OPENAI_MODEL") || "gpt-5.4-mini"
-    const aiProviderMode = (Deno.env.get("AI_PROVIDER_MODE") || "local").toLowerCase()
+    const aiProviderMode = (Deno.env.get("AI_PROVIDER_MODE") || "openai").toLowerCase()
     const authHeader = request.headers.get("Authorization") ?? ""
     const token = authHeader.replace("Bearer ", "")
 

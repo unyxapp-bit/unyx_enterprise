@@ -16,8 +16,8 @@ Use `supabase/.env.local` como base local. Ele deve seguir `supabase/.env.exampl
 
 `AI_PROVIDER_MODE` controla quando a funcao chama a OpenAI:
 
-- `local` ou vazio: padrao atual; usa regras locais e consultas diretas no Supabase, sem gastar limite da OpenAI.
-- `openai` ou `auto`: usa a OpenAI quando a resposta nao for uma acao local ou consulta direta.
+- `openai` ou `auto`: modo recomendado; usa a OpenAI quando a resposta nao for uma acao local ou consulta direta.
+- `local` ou vazio: fallback manual; usa regras locais e consultas diretas no Supabase, sem gastar limite da OpenAI.
 - `off`: equivalente a local, mantendo tudo sem chamada externa.
 
 ## Login e link
@@ -50,7 +50,7 @@ O deploy usa `--use-api`, entao nao depende do Docker para publicar a Edge Funct
   - gestao: treinamentos ativos e auditoria recente.
 - O modelo recebe resumos, contagens e amostras recentes para evitar estourar limite de tokens; a funcao mantem dados completos suficientes para relatorios e acoes locais.
 - Perguntas com horario ou posto/caixa, como "quem entra hoje as 11:20?" ou "quem esta no caixa 101?", ativam uma consulta direta em `schedules`, `operational_posts`, `post_allocations` e `cash_sessions`; essa resposta nao depende da amostra enviada ao modelo.
-- Por padrao, o agente roda em modo local para evitar limite/custo de API; a OpenAI so e chamada se `AI_PROVIDER_MODE` for configurado como `openai` ou `auto`.
+- Por padrao, o agente prioriza OpenAI quando a chave existe; se a chave nao estiver configurada, a funcao cai para o fallback local.
 - A intencao `analyze` gera riscos, recomendacoes e proxima acao.
 - A intencao `resolve` gera um plano assistido para prioridade alta/critica.
 - A intencao `act` executa ferramentas permitidas pelo backend.

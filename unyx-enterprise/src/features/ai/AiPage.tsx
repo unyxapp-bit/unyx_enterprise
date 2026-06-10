@@ -8,9 +8,11 @@ import {
   CheckCircle2,
   ClipboardCheck,
   Clock,
+  Database,
   FileText,
   ListChecks,
   Lightbulb,
+  MessageSquare,
   PlayCircle,
   RefreshCw,
   Send,
@@ -31,6 +33,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { useAuth } from "@/app/providers/auth-context"
 import { MissingSchedulesPrompt } from "@/features/schedules/components/MissingSchedulesPrompt"
 import {
@@ -67,6 +76,20 @@ type CachedAiAgentInsight = {
   data: AiAgentInsight
 }
 
+type ChatEntry = {
+  id: string
+  question: string
+  answer: string
+  createdAt: string
+}
+
+type PendingActionConfirmation = {
+  toolName: AiAgentActionTool
+  title: string
+  description: string
+  arguments: Partial<AiAgentActionArguments> | null
+}
+
 function aiAgentCacheKey(organizationId: string | null | undefined, branchId: string | null) {
   return `unyx-ai-agent:v${AI_AGENT_CACHE_VERSION}:${organizationId ?? "anon"}:${branchId ?? "all"}`
 }
@@ -78,7 +101,7 @@ function readCachedAiAgentInsight(key: string) {
 
     const parsed = JSON.parse(raw) as Partial<CachedAiAgentInsight>
     if (parsed.version !== AI_AGENT_CACHE_VERSION || !parsed.data) return null
-    return parsed.data
+    return parsed as CachedAiAgentInsight
   } catch {
     return null
   }
@@ -104,6 +127,20 @@ function isRecent(dateISO: string, days: number) {
   const cutoff = new Date()
   cutoff.setDate(cutoff.getDate() - days)
   return date >= cutoff
+}
+
+function minutesSince(dateISO: string | null | undefined) {
+  if (!dateISO) return null
+  const date = new Date(dateISO)
+  if (Number.isNaN(date.getTime())) return null
+  return Math.max(0, Math.round((Date.now() - date.getTime()) / 60_000))
+}
+
+function ageLabel(minutes: number | null) {
+  if (minutes === null) return "agora"
+  if (minutes < 1) return "agora"
+  if (minutes < 60) return `${minutes}min`
+  return `${Math.floor(minutes / 60)}h${minutes % 60 ? ` ${minutes % 60}min` : ""}`
 }
 
 function severityBadgeVariant(severity: AiAgentSeverity) {
@@ -182,6 +219,9 @@ export function AiPage() {
   const schedulesToday = useSchedules(today)
   const [question, setQuestion] = useState("")
   const [resolutionTarget, setResolutionTarget] = useState<AiAgentTarget | null>(null)
+  const [chatHistory, setChatHistory] = useState<ChatEntry[]>([])
+  const [pendingAction, setPendingAction] =
+    useState<PendingActionConfirmation | null>(null)
   const cacheKey = useMemo(
     () => aiAgentCacheKey(profile?.organization_id, selectedBranchId),
     [profile?.organization_id, selectedBranchId]
@@ -194,7 +234,21 @@ export function AiPage() {
   const agentInsight =
     aiAgent.data ??
     latestAgentInsight ??
-    cachedAgentInsight
+    cachedAgentInsight?.data
+  const agentInsightSource = aiAgent.data
+    ? "Nova analise"
+    : latestAgentInsight
+      ? "Snapshot"
+      : cachedAgentInsight
+        ? "Cache local"
+        : null
+  const agentInsightAgeMinutes = aiAgent.data
+    ? 0
+    : latestSnapshot.data?.created_at
+      ? minutesSince(latestSnapshot.data.created_at)
+      : minutesSince(cachedAgentInsight?.saved_at)
+  const isAgentInsightStale =
+    agentInsightAgeMinutes !== null && agentInsightAgeMinutes > 15
 
   useEffect(() => {
     if (!latestAgentInsight) return
@@ -387,9 +441,39 @@ export function AiPage() {
     })
   }
 
+  function requestPendingActionConfirmation(
+    toolName: AiAgentActionTool,
+    title: string,
+    description: string,
+    actionArguments?: Partial<AiAgentActionArguments> | null
+  ) {
+    setPendingAction({
+      toolName,
+      title,
+      description,
+      arguments: actionArguments ?? null,
+    })
+  }
+
+  function confirmPendingActionExecution() {
+    if (!pendingAction) return
+    runActiveAction(pendingAction.toolName, true, pendingAction.arguments)
+    setPendingAction(null)
+  }
+
   function runSuggestedAction() {
     const plan = agentInsight?.action_plan
     if (!plan?.tool_name) return
+
+    if (plan.tool_name === "allocate_post") {
+      requestPendingActionConfirmation(
+        plan.tool_name,
+        plan.title,
+        plan.description,
+        plan.arguments
+      )
+      return
+    }
 
     runActiveAction(
       plan.tool_name,
@@ -401,11 +485,33 @@ export function AiPage() {
   function confirmPendingAction() {
     const plan = agentInsight?.action_plan
     if (!plan?.tool_name) return
+    if (plan.tool_name === "allocate_post") {
+      requestPendingActionConfirmation(
+        plan.tool_name,
+        plan.title,
+        plan.description,
+        plan.arguments
+      )
+      return
+    }
     runActiveAction(plan.tool_name, true, plan.arguments)
   }
 
   function runQueuedAction(action: AiAgentQueuedAction) {
     if (!action.tool_name) return
+
+    if (
+      action.tool_name === "allocate_post" &&
+      (action.status === "pending_approval" || action.confirmation_required)
+    ) {
+      requestPendingActionConfirmation(
+        action.tool_name,
+        action.title,
+        action.description,
+        action.arguments
+      )
+      return
+    }
 
     aiAgent.mutate(
       {
@@ -456,8 +562,62 @@ export function AiPage() {
 
   function submitQuestion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    runAgent(question)
+    const nextQuestion = question.trim()
+    if (!nextQuestion) {
+      runAgent(null)
+      return
+    }
+
+    aiAgent.mutate(
+      {
+        intent: "analyze",
+        question: nextQuestion,
+      },
+      {
+        onSuccess: (data) => {
+          setChatHistory((current) =>
+            [
+              {
+                id: `${Date.now()}`,
+                question: nextQuestion,
+                answer: data.chat_answer || data.summary,
+                createdAt: new Date().toISOString(),
+              },
+              ...current,
+            ].slice(0, 5)
+          )
+          setQuestion("")
+        },
+      }
+    )
   }
+
+  const contextHealth = [
+    {
+      label: "Status",
+      value: statuses.data?.length ?? 0,
+      state: statuses.isError ? "erro" : statuses.isLoading ? "carregando" : "ok",
+    },
+    {
+      label: "Eventos",
+      value: events.data?.length ?? 0,
+      state: events.isError ? "erro" : events.isLoading ? "carregando" : "ok",
+    },
+    {
+      label: "Colaboradores",
+      value: employees.data?.length ?? 0,
+      state: employees.isError ? "erro" : employees.isLoading ? "carregando" : "ok",
+    },
+    {
+      label: "Escalas hoje",
+      value: schedulesToday.data?.length ?? 0,
+      state: schedulesToday.isError
+        ? "erro"
+        : schedulesToday.isLoading
+          ? "carregando"
+          : "ok",
+    },
+  ]
 
   return (
     <>
@@ -596,6 +756,66 @@ export function AiPage() {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border bg-white shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex flex-wrap items-center gap-2">
+              <Database className="size-5" />
+              <span className="flex-1">Contexto usado pela IA</span>
+              {agentInsightSource ? (
+                <Badge variant={isAgentInsightStale ? "destructive" : "outline"}>
+                  {agentInsightSource} - {ageLabel(agentInsightAgeMinutes)}
+                </Badge>
+              ) : null}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {isAgentInsightStale ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                A ultima leitura da IA tem mais de 15 minutos. Execute o agente para atualizar a decisao.
+              </div>
+            ) : null}
+            <div className="grid gap-2 md:grid-cols-4">
+              {contextHealth.map((item) => (
+                <div key={item.label} className="rounded-lg border bg-slate-50 p-3">
+                  <div className="text-xs text-muted-foreground">{item.label}</div>
+                  <div className="mt-1 flex items-center justify-between gap-2">
+                    <span className="text-xl font-semibold">{item.value}</span>
+                    <Badge
+                      variant={
+                        item.state === "erro"
+                          ? "destructive"
+                          : item.state === "carregando"
+                            ? "outline"
+                            : "default"
+                      }
+                    >
+                      {item.state}
+                    </Badge>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {agentInsight?.tools_used?.length ? (
+              <div className="flex flex-wrap gap-1.5">
+                {agentInsight.tools_used.slice(0, 18).map((tool) => (
+                  <Badge key={tool} variant="outline">
+                    {tool}
+                  </Badge>
+                ))}
+                {agentInsight.tools_used.length > 18 ? (
+                  <Badge variant="outline">
+                    +{agentInsight.tools_used.length - 18}
+                  </Badge>
+                ) : null}
+              </div>
+            ) : (
+              <div className="text-sm text-muted-foreground">
+                Execute o agente para registrar quais fontes entraram na analise.
               </div>
             )}
           </CardContent>
@@ -1008,36 +1228,68 @@ export function AiPage() {
                     {agentInsight.chat_answer}
                   </div>
                 ) : null}
+
+                {chatHistory.length > 0 ? (
+                  <div className="space-y-2 rounded-lg border bg-slate-50 p-3">
+                    <div className="flex items-center gap-2 text-sm font-semibold">
+                      <MessageSquare className="size-4" />
+                      Conversa recente
+                    </div>
+                    {chatHistory.map((entry) => (
+                      <div key={entry.id} className="rounded-lg border bg-white p-3 text-sm">
+                        <div className="font-medium">{entry.question}</div>
+                        <p className="mt-2 leading-6 text-muted-foreground">
+                          {entry.answer}
+                        </p>
+                        <div className="mt-2 text-xs text-muted-foreground">
+                          {formatDateTimeBR(entry.createdAt)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </CardContent>
             </Card>
 
-            <BentoGrid>
-              <MetricCard
-                title="Riscos ativos"
-                value={insights.critical}
-                detail="Status criticos no agora"
-                icon={<AlertTriangle className="size-5" />}
-                className={insights.critical > 0 ? "border-red-200" : undefined}
-              />
-              <MetricCard
-                title="Atrasos recentes"
-                value={insights.delays}
-                detail="Ultimos 30 dias"
-                icon={<Clock className="size-5" />}
-              />
-              <MetricCard
-                title="Faltas recentes"
-                value={insights.absences}
-                detail="Ultimos 30 dias"
-                icon={<BrainCircuit className="size-5" />}
-              />
-              <MetricCard
-                title="Equipe ativa"
-                value={insights.activeEmployees}
-                detail="Colaboradores disponiveis"
-                icon={<Sparkles className="size-5" />}
-              />
-            </BentoGrid>
+            <Card className="border bg-white shadow-sm">
+              <CardHeader>
+                <CardTitle className="text-base">
+                  Indicadores automaticos locais
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Calculos rapidos feitos na tela, separados da resposta gerada pelo agente.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <BentoGrid>
+                  <MetricCard
+                    title="Riscos ativos"
+                    value={insights.critical}
+                    detail="Status criticos no agora"
+                    icon={<AlertTriangle className="size-5" />}
+                    className={insights.critical > 0 ? "border-red-200" : undefined}
+                  />
+                  <MetricCard
+                    title="Atrasos recentes"
+                    value={insights.delays}
+                    detail="Ultimos 30 dias"
+                    icon={<Clock className="size-5" />}
+                  />
+                  <MetricCard
+                    title="Faltas recentes"
+                    value={insights.absences}
+                    detail="Ultimos 30 dias"
+                    icon={<BrainCircuit className="size-5" />}
+                  />
+                  <MetricCard
+                    title="Equipe ativa"
+                    value={insights.activeEmployees}
+                    detail="Colaboradores disponiveis"
+                    icon={<Sparkles className="size-5" />}
+                  />
+                </BentoGrid>
+              </CardContent>
+            </Card>
 
             <div className="grid gap-4 xl:grid-cols-[1fr_0.7fr]">
               <Card className="border bg-white shadow-sm">
@@ -1106,6 +1358,59 @@ export function AiPage() {
           </>
         )}
       </div>
+
+      <Dialog
+        open={Boolean(pendingAction)}
+        onOpenChange={(open) => {
+          if (!open) setPendingAction(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirmar acao da IA</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              Revise antes de confirmar. Esta acao pode gravar uma alocacao operacional real.
+            </div>
+            <div className="rounded-lg border bg-slate-50 p-3 text-sm">
+              <div className="font-medium">{pendingAction?.title}</div>
+              <p className="mt-2 leading-6 text-muted-foreground">
+                {pendingAction?.description}
+              </p>
+            </div>
+            {pendingAction?.arguments ? (
+              <div className="grid gap-2 text-sm sm:grid-cols-2">
+                <div className="rounded-lg border bg-white p-2">
+                  <div className="text-xs text-muted-foreground">Posto</div>
+                  <div className="truncate">{pendingAction.arguments.post_id ?? "-"}</div>
+                </div>
+                <div className="rounded-lg border bg-white p-2">
+                  <div className="text-xs text-muted-foreground">Colaborador</div>
+                  <div className="truncate">{pendingAction.arguments.employee_id ?? "-"}</div>
+                </div>
+                <div className="rounded-lg border bg-white p-2">
+                  <div className="text-xs text-muted-foreground">Escala</div>
+                  <div className="truncate">{pendingAction.arguments.schedule_id ?? "-"}</div>
+                </div>
+                <div className="rounded-lg border bg-white p-2">
+                  <div className="text-xs text-muted-foreground">Filial</div>
+                  <div className="truncate">{pendingAction.arguments.branch_id ?? "-"}</div>
+                </div>
+              </div>
+            ) : null}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPendingAction(null)}>
+              Cancelar
+            </Button>
+            <Button onClick={confirmPendingActionExecution} disabled={aiAgent.isPending}>
+              <CheckCircle2 className="size-4" />
+              Confirmar e executar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }
