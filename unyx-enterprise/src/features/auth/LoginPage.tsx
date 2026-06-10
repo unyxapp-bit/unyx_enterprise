@@ -67,46 +67,46 @@ export function LoginPage() {
   }
 
   return (
-    <main className="grid min-h-screen bg-slate-50 lg:grid-cols-[1.1fr_0.9fr]">
-      <section className="flex flex-col justify-between bg-slate-950 p-8 text-white lg:p-12">
+    <main className="grid min-h-screen bg-[color:var(--bg-app)] lg:grid-cols-[1.05fr_0.95fr]">
+      <section className="flex flex-col justify-between bg-[color:var(--bg-surface-soft)] p-8 text-[color:var(--text-primary)] lg:p-12">
         <div className="flex items-center gap-3">
-          <div className="flex size-10 items-center justify-center rounded-lg bg-white text-slate-950">
+          <div className="flex size-10 items-center justify-center rounded-2xl bg-[color:var(--primary)] text-[color:var(--primary-foreground)] shadow-sm">
             <Activity className="size-5" />
           </div>
           <div>
             <div className="font-semibold">Unyx Enterprise</div>
-            <div className="text-sm text-slate-300">Unyx Ops</div>
+            <div className="text-sm text-[color:var(--text-muted)]">Unyx Ops</div>
           </div>
         </div>
 
         <div className="max-w-2xl py-16">
-          <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/15 px-3 py-1 text-sm text-slate-200">
+          <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] px-3 py-1 text-sm text-[color:var(--text-secondary)] shadow-sm">
             <ShieldCheck className="size-4" />
             Plataforma operacional segura
           </div>
-          <h1 className="text-4xl font-semibold tracking-tight lg:text-5xl">
+          <h1 className="max-w-xl text-4xl font-semibold tracking-tight lg:text-5xl">
             Centro de comando para a operação do dia.
           </h1>
-          <p className="mt-5 max-w-xl text-base leading-7 text-slate-300">
+          <p className="mt-5 max-w-xl text-base leading-7 text-[color:var(--text-muted)]">
             Crie a conta, complete os dados da empresa e entre no painel
             operacional com o workspace já configurado.
           </p>
         </div>
 
-        <div className="text-sm text-slate-400">
+        <div className="text-sm text-[color:var(--text-muted)]">
           Operational Intelligence Layer
         </div>
       </section>
 
       <section className="flex items-center justify-center p-6">
-        <Card className="w-full max-w-md border bg-white shadow-sm">
+        <Card className="w-full max-w-md border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] shadow-[0_20px_48px_rgb(15_23_42/0.10)]">
           <CardHeader>
             <CardTitle className="text-xl">
               {mode === "sign-in" ? "Entrar no Unyx Ops" : "Criar conta"}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="mb-4 grid grid-cols-2 rounded-lg border bg-slate-50 p-1">
+            <div className="mb-4 grid grid-cols-2 rounded-full border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] p-1">
               <Button
                 type="button"
                 variant={mode === "sign-in" ? "default" : "ghost"}
@@ -171,13 +171,13 @@ export function LoginPage() {
               ) : null}
 
               {error ? (
-                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                   {error}
                 </div>
               ) : null}
 
               {message ? (
-                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
                   {message}
                 </div>
               ) : null}

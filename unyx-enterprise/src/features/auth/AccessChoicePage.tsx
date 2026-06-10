@@ -28,8 +28,8 @@ export function AccessChoicePage() {
 
   if (profileLoading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
-        <div className="text-sm text-muted-foreground">Carregando perfil...</div>
+      <main className="flex min-h-screen items-center justify-center bg-[color:var(--bg-app)] p-6">
+        <div className="text-sm text-[color:var(--text-muted)]">Carregando perfil...</div>
       </main>
     )
   }
@@ -79,20 +79,20 @@ export function AccessChoicePage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 p-6">
+    <main className="min-h-screen bg-[color:var(--bg-app)] p-6">
       <div className="mx-auto flex min-h-[calc(100vh-3rem)] max-w-4xl items-center">
         <div className="w-full space-y-6">
           <div>
-            <div className="text-sm font-medium text-muted-foreground">
+            <div className="text-sm font-medium text-[color:var(--text-muted)]">
               Unyx Enterprise
             </div>
-            <h1 className="mt-2 text-3xl font-semibold tracking-tight">
+            <h1 className="mt-2 text-3xl font-semibold tracking-tight text-[color:var(--text-primary)]">
               O que voce vai fazer agora?
             </h1>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
-            <Card className="h-full border bg-white transition-colors hover:border-slate-400">
+            <Card className="h-full border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] transition-colors hover:border-[color:var(--border-strong)]">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Building2 className="size-5" />
@@ -100,7 +100,7 @@ export function AccessChoicePage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-[color:var(--text-muted)]">
                   Acessar painel completo, cadastros, relatorios, operacao e PDV.
                 </p>
                 <Button type="button" onClick={openSystemConfirmation}>
@@ -109,7 +109,7 @@ export function AccessChoicePage() {
               </CardContent>
             </Card>
 
-            <Card className="h-full border bg-white transition-colors hover:border-slate-400">
+            <Card className="h-full border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] transition-colors hover:border-[color:var(--border-strong)]">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <ShoppingCart className="size-5" />
@@ -117,7 +117,7 @@ export function AccessChoicePage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-[color:var(--text-muted)]">
                   Ir direto para vendas, caixa, produtos e historico do POS.
                 </p>
                 <Button type="button" disabled={!canUsePos} onClick={choosePos}>
@@ -144,7 +144,7 @@ export function AccessChoicePage() {
           }
         }}
       >
-        <DialogContent>
+          <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Building2 className="size-5" />
@@ -152,10 +152,10 @@ export function AccessChoicePage() {
             </DialogTitle>
           </DialogHeader>
           <form className="space-y-4" onSubmit={(event) => void confirmSystemAccess(event)}>
-            <div className="rounded-lg border bg-slate-50 p-3 text-sm">
-              <div className="text-muted-foreground">Usuario</div>
+            <div className="rounded-2xl border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] p-3 text-sm">
+              <div className="text-[color:var(--text-muted)]">Usuario</div>
               <div className="font-semibold">{currentProfile.name}</div>
-              <div className="text-xs text-muted-foreground">{currentProfile.email}</div>
+              <div className="text-xs text-[color:var(--text-muted)]">{currentProfile.email}</div>
             </div>
             <label className="space-y-1 text-sm">
               <span className="font-medium">Senha do sistema</span>
@@ -167,7 +167,7 @@ export function AccessChoicePage() {
               />
             </label>
             {systemError ? (
-              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              <div className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                 {systemError}
               </div>
             ) : null}

@@ -99,7 +99,7 @@ function ProtectedRoute() {
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-slate-50 p-6">
+      <main className="min-h-screen bg-[color:var(--bg-app)] p-6">
         <StateBlock type="loading" title="Iniciando plataforma" />
       </main>
     )
@@ -120,7 +120,7 @@ function RequirePermission({ perm }: { perm: PermissionKey }) {
 
 function RouteFallback() {
   return (
-    <main className="min-h-screen bg-slate-50 p-6">
+    <main className="min-h-screen bg-[color:var(--bg-app)] p-6">
       <StateBlock type="loading" title="Carregando modulo" />
     </main>
   )

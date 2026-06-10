@@ -2,20 +2,20 @@
 [data-theme="light"] {
   color-scheme: light;
 
-  --bg-app: #f5f7fb;
+  --bg-app: #f7f8fc;
   --bg-surface: #ffffff;
-  --bg-surface-soft: #f8fafc;
+  --bg-surface-soft: #f4f6fb;
   --bg-surface-raised: #ffffff;
-  --bg-muted: #eef2f7;
+  --bg-muted: #e9eef7;
 
   --text-primary: #0f172a;
   --text-secondary: #475569;
   --text-muted: #64748b;
   --text-inverse: #ffffff;
 
-  --border-soft: #dbe3ee;
-  --border-strong: #cbd5e1;
-  --ring-soft: #818cf8;
+  --border-soft: #d8e0ec;
+  --border-strong: #c4cfde;
+  --ring-soft: #5b5fe6;
 
   --nav-bg: #0f172a;
   --nav-bg-soft: #1e293b;
@@ -28,13 +28,13 @@
   --card-foreground: var(--text-primary);
   --popover: var(--bg-surface-raised);
   --popover-foreground: var(--text-primary);
-  --primary: #111827;
+  --primary: #4f46e5;
   --primary-foreground: #ffffff;
-  --secondary: #e8eef6;
+  --secondary: #e7ebf7;
   --secondary-foreground: #111827;
   --muted: var(--bg-muted);
   --muted-foreground: var(--text-muted);
-  --accent: #e7eef8;
+  --accent: #e8edff;
   --accent-foreground: #111827;
   --destructive: var(--color-danger);
   --destructive-foreground: #ffffff;
@@ -60,20 +60,20 @@
 [data-theme="dark"] {
   color-scheme: dark;
 
-  --bg-app: #0b1220;
+  --bg-app: #0b1020;
   --bg-surface: #111827;
-  --bg-surface-soft: #172033;
-  --bg-surface-raised: #1f2937;
-  --bg-muted: #1e293b;
+  --bg-surface-soft: #1a2235;
+  --bg-surface-raised: #1f2a40;
+  --bg-muted: #20293d;
 
   --text-primary: #f8fafc;
   --text-secondary: #cbd5e1;
   --text-muted: #94a3b8;
   --text-inverse: #0f172a;
 
-  --border-soft: rgb(148 163 184 / 0.22);
-  --border-strong: rgb(203 213 225 / 0.32);
-  --ring-soft: #818cf8;
+  --border-soft: rgb(148 163 184 / 0.18);
+  --border-strong: rgb(203 213 225 / 0.28);
+  --ring-soft: #8b93ff;
 
   --nav-bg: #050a14;
   --nav-bg-soft: #111827;
@@ -86,13 +86,13 @@
   --card-foreground: var(--text-primary);
   --popover: var(--bg-surface-raised);
   --popover-foreground: var(--text-primary);
-  --primary: #f8fafc;
-  --primary-foreground: #111827;
-  --secondary: #1f2937;
+  --primary: #c7d2fe;
+  --primary-foreground: #0f172a;
+  --secondary: #1f2a40;
   --secondary-foreground: #f8fafc;
   --muted: var(--bg-muted);
   --muted-foreground: var(--text-muted);
-  --accent: #1e293b;
+  --accent: #22304d;
   --accent-foreground: #f8fafc;
   --destructive: #f87171;
   --destructive-foreground: #111827;

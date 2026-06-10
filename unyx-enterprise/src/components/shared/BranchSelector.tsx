@@ -18,10 +18,10 @@ export function BranchSelector() {
   }, [branches, isLoading, selectedBranchId, setSelectedBranchId])
 
   return (
-    <label className="flex min-w-56 items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm">
-      <Building2 className="size-4 text-muted-foreground" />
+    <label className="flex min-w-56 items-center gap-2 rounded-full border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] px-3 py-2 text-sm shadow-sm">
+      <Building2 className="size-4 text-[color:var(--text-muted)]" />
       <select
-        className="w-full bg-transparent outline-none"
+        className="w-full bg-transparent outline-none text-[color:var(--text-primary)]"
         value={selectedBranchId ?? ""}
         disabled={isLoading}
         onChange={(event) => setSelectedBranchId(event.target.value || null)}

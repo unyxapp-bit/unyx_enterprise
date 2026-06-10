@@ -6,15 +6,18 @@ import { cn } from "@/lib/utils"
 type SectionPanelVariant = "original" | "primary" | "secondary"
 
 const headerVariantClass: Record<SectionPanelVariant, string> = {
-  original: "bg-zinc-200 text-zinc-950",
-  primary: "bg-lime-300 text-zinc-950",
-  secondary: "bg-zinc-900 text-lime-300",
+  original:
+    "bg-[color:var(--bg-surface-soft)] text-[color:var(--text-primary)] border border-[color:var(--border-soft)]",
+  primary:
+    "bg-[color-mix(in_srgb,var(--primary)_12%,var(--bg-surface))] text-[color:var(--text-primary)] border border-[color-mix(in_srgb,var(--primary)_22%,var(--border-soft))]",
+  secondary:
+    "bg-[color:var(--bg-surface)] text-[color:var(--text-primary)] border border-[color:var(--border-soft)]",
 }
 
 const iconVariantClass: Record<SectionPanelVariant, string> = {
-  original: "text-zinc-950",
-  primary: "text-zinc-950",
-  secondary: "text-lime-300",
+  original: "text-[color:var(--text-primary)]",
+  primary: "text-[color:var(--text-primary)]",
+  secondary: "text-[color:var(--text-primary)]",
 }
 
 type SectionPanelProps = {
@@ -48,7 +51,7 @@ export function SectionPanel({
     <section id={id} className={cn("scroll-mt-20 space-y-3", className)}>
       <div
         className={cn(
-          "flex min-h-10 items-center gap-3 rounded-md px-3 shadow-sm",
+          "flex min-h-10 items-center gap-3 rounded-2xl px-3 shadow-sm",
           headerVariantClass[variant],
           headerClassName
         )}
@@ -67,10 +70,10 @@ export function SectionPanel({
           {actions}
           <button
             type="button"
-            className={cn(
-              "inline-flex size-7 items-center justify-center rounded-full outline-none transition-opacity hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring/40",
-              iconVariantClass[variant]
-            )}
+          className={cn(
+            "inline-flex size-7 items-center justify-center rounded-full outline-none transition-opacity hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring/40",
+            iconVariantClass[variant]
+          )}
             onClick={() => setOpen((current) => !current)}
             aria-expanded={open}
             aria-label={actionLabel}
@@ -84,7 +87,7 @@ export function SectionPanel({
       {open ? (
         <div
           className={cn(
-            "rounded-lg border border-border bg-card p-4 text-card-foreground shadow-sm",
+            "rounded-2xl border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] p-4 text-card-foreground shadow-sm",
             contentClassName
           )}
         >

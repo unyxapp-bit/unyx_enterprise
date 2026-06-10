@@ -22,14 +22,14 @@ export function MetricCard({
   className?: string
 }) {
   return (
-    <Card className={cn("border bg-white shadow-sm", className)}>
-      <CardHeader className="flex-row items-center justify-between gap-2 pb-1 pt-3 px-4">
-        <CardTitle className="text-xs text-muted-foreground">{title}</CardTitle>
-        {icon ? <div className="text-muted-foreground [&_svg]:size-4">{icon}</div> : null}
+    <Card className={cn("border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] shadow-sm", className)}>
+      <CardHeader className="flex-row items-center justify-between gap-2 px-4 pb-1 pt-3">
+        <CardTitle className="text-xs text-[color:var(--text-muted)]">{title}</CardTitle>
+        {icon ? <div className="text-[color:var(--text-muted)] [&_svg]:size-4">{icon}</div> : null}
       </CardHeader>
       <CardContent className="px-4 pb-3 pt-0">
-        <div className="text-2xl font-semibold tracking-tight">{value}</div>
-        {detail ? <p className="mt-1 text-xs text-muted-foreground">{detail}</p> : null}
+        <div className="text-2xl font-semibold tracking-tight text-[color:var(--text-primary)]">{value}</div>
+        {detail ? <p className="mt-1 text-xs text-[color:var(--text-muted)]">{detail}</p> : null}
       </CardContent>
     </Card>
   )

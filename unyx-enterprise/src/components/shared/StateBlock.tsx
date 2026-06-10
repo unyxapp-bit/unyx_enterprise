@@ -18,7 +18,7 @@ export function StateBlock({
   return (
     <div
       className={cn(
-        "flex min-h-48 flex-col items-center justify-center rounded-lg border border-dashed bg-white px-6 py-10 text-center",
+        "flex min-h-48 flex-col items-center justify-center rounded-2xl border border-dashed border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] px-6 py-10 text-center shadow-sm",
         className
       )}
     >
@@ -28,9 +28,9 @@ export function StateBlock({
           type === "loading" && "animate-spin"
         )}
       />
-      <h3 className="text-sm font-medium">{title}</h3>
+      <h3 className="text-sm font-medium text-[color:var(--text-primary)]">{title}</h3>
       {description ? (
-        <p className="mt-1 max-w-md text-sm text-muted-foreground">{description}</p>
+        <p className="mt-1 max-w-md text-sm text-[color:var(--text-muted)]">{description}</p>
       ) : null}
     </div>
   )

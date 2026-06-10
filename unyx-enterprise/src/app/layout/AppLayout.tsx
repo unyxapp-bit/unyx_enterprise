@@ -187,7 +187,7 @@ function UserAvatar({ name }: { name: string }) {
     .join("")
     .toUpperCase()
   return (
-    <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[var(--brand-primary)] text-xs font-semibold text-white">
+    <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[color:var(--primary)] text-xs font-semibold text-[color:var(--primary-foreground)] shadow-sm">
       {initials}
     </div>
   )
@@ -265,20 +265,20 @@ export function AppLayout() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       {/* ── Top nav ──────────────────────────────────────────── */}
-      <header className="sticky top-0 z-40 bg-[var(--nav-bg)] shadow-md">
-        <div className="flex h-14 items-center gap-1 px-4">
+      <header className="sticky top-0 z-40 border-b border-[color:var(--border-soft)] bg-[color:var(--bg-surface)]/95 backdrop-blur supports-[backdrop-filter]:bg-[color:var(--bg-surface)]/85">
+        <div className="flex h-16 items-center gap-2 px-4">
 
           {/* Logo */}
-          <div className="flex shrink-0 items-center gap-2.5 pr-4">
-            <div className="flex size-7 items-center justify-center rounded-md bg-[var(--brand-primary)]">
-              <span className="text-xs font-bold text-white">U</span>
+          <div className="flex shrink-0 items-center gap-3 pr-2">
+            <div className="flex size-8 items-center justify-center rounded-2xl bg-[color:var(--primary)] shadow-sm">
+              <span className="text-xs font-bold text-[color:var(--primary-foreground)]">U</span>
             </div>
             <div className="hidden min-w-0 sm:block">
-              <div className="text-sm font-semibold leading-tight text-white">
+              <div className="text-sm font-semibold leading-tight text-[color:var(--text-primary)]">
                 Unyx Enterprise
               </div>
               <div
-                className="max-w-36 truncate text-[0.65rem] text-slate-400"
+                className="max-w-36 truncate text-[0.65rem] text-[color:var(--text-muted)]"
                 title={orgDisplayName}
               >
                 {orgDisplayName}
@@ -305,10 +305,10 @@ export function AppLayout() {
                   <DropdownMenuTrigger asChild>
                     <button
                       className={cn(
-                        "flex items-center gap-1 rounded-md px-3 py-1.5 text-sm font-medium outline-none transition-colors",
+                        "flex items-center gap-1 rounded-full px-3.5 py-2 text-sm font-medium outline-none transition-colors",
                         isGroupActive
-                          ? "bg-white/10 text-white"
-                          : "text-slate-400 hover:bg-white/5 hover:text-white"
+                          ? "bg-[color-mix(in_srgb,var(--primary)_12%,var(--bg-surface))] text-[color:var(--text-primary)]"
+                          : "text-[color:var(--text-secondary)] hover:bg-[color:var(--bg-surface-soft)] hover:text-[color:var(--text-primary)]"
                       )}
                     >
                       {group.label}
@@ -318,7 +318,7 @@ export function AppLayout() {
                   <DropdownMenuContent
                     align="center"
                     sideOffset={12}
-                    className="w-[min(92vw,39rem)] overflow-hidden rounded-lg border-slate-200 bg-white p-0 shadow-xl"
+                    className="w-[min(92vw,39rem)] overflow-hidden rounded-[28px] border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] p-0 shadow-[0_12px_30px_rgb(15_23_42/0.12)]"
                   >
                     <div className="grid gap-x-6 gap-y-1 p-6 sm:grid-cols-2">
                       {visibleItems.map((item) => {
@@ -331,22 +331,23 @@ export function AppLayout() {
                             key={item.to}
                             onClick={() => void navigate(item.to)}
                             className={cn(
-                              "flex cursor-pointer items-start gap-4 rounded-lg p-3 text-left outline-none transition-colors",
+                              "flex cursor-pointer items-start gap-4 rounded-2xl p-3 text-left outline-none transition-colors",
                               isActive
-                                ? "bg-slate-100 text-slate-950"
-                                : "text-slate-700 focus:bg-slate-50 focus:text-slate-950"
+                                ? "bg-[color-mix(in_srgb,var(--primary)_10%,var(--bg-surface))] text-[color:var(--text-primary)]"
+                                : "text-[color:var(--text-secondary)] focus:bg-[color:var(--bg-surface-soft)] focus:text-[color:var(--text-primary)]"
                             )}
-                          >
+                            >
                             <span
                               className={cn(
-                                "flex size-10 shrink-0 items-center justify-center rounded-md bg-slate-50 text-slate-500",
-                                isActive && "bg-white text-slate-950"
+                                "flex size-10 shrink-0 items-center justify-center rounded-2xl bg-[color:var(--bg-surface-soft)] text-[color:var(--text-muted)]",
+                                isActive &&
+                                  "bg-[color-mix(in_srgb,var(--primary)_12%,var(--bg-surface))] text-[color:var(--text-primary)]"
                               )}
                             >
                               <item.icon className="size-4" />
                             </span>
                             <span className="min-w-0 flex-1">
-                              <span className="flex items-center gap-2 text-sm font-semibold text-slate-950">
+                              <span className="flex items-center gap-2 text-sm font-semibold text-[color:var(--text-primary)]">
                                 {item.label}
                                 {item.to === "/app/alerts" && criticalCount > 0 ? (
                                   <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
@@ -354,7 +355,7 @@ export function AppLayout() {
                                   </span>
                                 ) : null}
                               </span>
-                              <span className="mt-1 block text-xs leading-5 text-slate-500">
+                              <span className="mt-1 block text-xs leading-5 text-[color:var(--text-muted)]">
                                 {navItemDescriptions[item.to]}
                               </span>
                             </span>
@@ -363,16 +364,16 @@ export function AppLayout() {
                       })}
                     </div>
                     {navGroupFooter[group.label] ? (
-                      <div className="border-t bg-slate-50 px-6 py-4">
-                        <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
+                      <div className="border-t border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] px-6 py-4">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-[color:var(--text-primary)]">
                           {navGroupFooter[group.label].label}
                           {navGroupFooter[group.label].badge ? (
-                            <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-700">
+                            <span className="rounded-full bg-[color-mix(in_srgb,var(--primary)_12%,var(--bg-surface))] px-2 py-0.5 text-[10px] font-semibold text-[color:var(--text-primary)]">
                               {navGroupFooter[group.label].badge}
                             </span>
                           ) : null}
                         </div>
-                        <p className="mt-1 text-xs leading-5 text-slate-500">
+                        <p className="mt-1 text-xs leading-5 text-[color:var(--text-muted)]">
                           {navGroupFooter[group.label].description}
                         </p>
                       </div>
@@ -394,7 +395,7 @@ export function AppLayout() {
               aria-label={themeLabel}
               title={themeLabel}
               onClick={toggleTheme}
-              className="inline-flex size-8 items-center justify-center rounded-md text-slate-400 outline-none transition-colors hover:bg-white/10 hover:text-white focus-visible:ring-2 focus-visible:ring-white/40"
+              className="inline-flex size-9 items-center justify-center rounded-full border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] text-[color:var(--text-secondary)] outline-none transition-colors hover:bg-[color:var(--bg-muted)] hover:text-[color:var(--text-primary)] focus-visible:ring-2 focus-visible:ring-ring/40"
             >
               {resolvedTheme === "dark" ? (
                 <Sun className="size-4" />
@@ -406,27 +407,27 @@ export function AppLayout() {
             {/* User dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className="flex items-center gap-2 rounded-md px-2 py-1.5 text-slate-400 outline-none transition-colors hover:bg-white/5 hover:text-white">
+                <button className="flex items-center gap-2 rounded-full border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] px-2.5 py-1.5 text-[color:var(--text-secondary)] outline-none transition-colors hover:bg-[color:var(--bg-surface-soft)] hover:text-[color:var(--text-primary)]">
                   <UserAvatar name={profile.name} />
                   <div className="hidden min-w-0 text-left lg:block">
-                    <div className="max-w-32 truncate text-sm font-medium leading-tight text-white">
+                    <div className="max-w-32 truncate text-sm font-medium leading-tight text-[color:var(--text-primary)]">
                       {profile.name}
                     </div>
-                    <div className="text-xs text-slate-400">{roleLabel[profile.role]}</div>
+                    <div className="text-xs text-[color:var(--text-muted)]">{roleLabel[profile.role]}</div>
                   </div>
                   <ChevronDown className="hidden size-3 opacity-60 lg:block" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent
                 align="end"
-                className="min-w-44 border-slate-700 bg-slate-800 p-1"
+                className="min-w-44 rounded-[20px] border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] p-1 shadow-[0_12px_30px_rgb(15_23_42/0.12)]"
               >
-                <DropdownMenuLabel className="px-2 py-1.5 text-xs font-medium text-slate-500">
+                <DropdownMenuLabel className="px-2 py-1.5 text-xs font-medium text-[color:var(--text-muted)]">
                   {accessModeLabel}
                 </DropdownMenuLabel>
                 <DropdownMenuItem
                   onClick={handleChangeAccessMode}
-                  className="cursor-pointer gap-2 text-slate-300 focus:bg-white/10 focus:text-white"
+                  className="cursor-pointer gap-2 text-[color:var(--text-primary)] focus:bg-[color:var(--bg-surface-soft)] focus:text-[color:var(--text-primary)]"
                 >
                   {accessMode === "pos" ? (
                     <Building2 className="size-4" />
@@ -435,10 +436,10 @@ export function AppLayout() {
                   )}
                   Mudar acesso
                 </DropdownMenuItem>
-                <DropdownMenuSeparator className="my-1 bg-slate-700" />
+                <DropdownMenuSeparator className="my-1 bg-[color:var(--border-soft)]" />
                 <DropdownMenuItem
                   onClick={() => void handleSignOut()}
-                  className="cursor-pointer gap-2 text-slate-300 focus:bg-white/10 focus:text-white"
+                  className="cursor-pointer gap-2 text-[color:var(--text-primary)] focus:bg-[color:var(--bg-surface-soft)] focus:text-[color:var(--text-primary)]"
                 >
                   <LogOut className="size-4" />
                   Sair
@@ -448,7 +449,7 @@ export function AppLayout() {
 
             {/* Mobile hamburger */}
             <button
-              className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-white/10 hover:text-white lg:hidden"
+              className="rounded-full border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] p-2 text-[color:var(--text-secondary)] transition-colors hover:bg-[color:var(--bg-muted)] hover:text-[color:var(--text-primary)] lg:hidden"
               onClick={() => setMobileOpen(true)}
               aria-label="Abrir menu"
             >
@@ -466,11 +467,11 @@ export function AppLayout() {
             onClick={() => setMobileOpen(false)}
             aria-label="Fechar menu"
           />
-          <div className="absolute left-0 top-0 h-full w-72 overflow-y-auto bg-[var(--nav-bg)]">
+          <div className="absolute left-0 top-0 h-full w-72 overflow-y-auto bg-[color:var(--bg-surface)] text-[color:var(--text-primary)] shadow-[12px_0_30px_rgb(15_23_42/0.16)]">
             <div className="flex h-14 items-center justify-between px-4">
-              <span className="text-sm font-semibold text-white">Unyx Enterprise</span>
+              <span className="text-sm font-semibold text-[color:var(--text-primary)]">Unyx Enterprise</span>
               <button
-                className="rounded-md p-1.5 text-slate-400 hover:text-white"
+                className="rounded-full border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] p-1.5 text-[color:var(--text-secondary)] hover:text-[color:var(--text-primary)]"
                 onClick={() => setMobileOpen(false)}
               >
                 <X className="size-5" />

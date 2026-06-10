@@ -52,7 +52,16 @@ import type {
 } from "@/types/domain"
 
 const fieldClass =
-  "h-8 w-full rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+  "h-10 w-full rounded-full border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] px-3.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+
+const m3SummaryCardClass =
+  "rounded-[28px] border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] shadow-[0_1px_2px_rgb(15_23_42/0.08)]"
+
+const m3ChipClass =
+  "rounded-full border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] px-3 py-1 text-xs text-[color:var(--text-secondary)]"
+
+const m3ButtonTonalClass =
+  "rounded-full bg-[color:var(--bg-muted)] text-[color:var(--text-primary)] hover:bg-[color:var(--bg-surface-soft)]"
 
 const postTypeLabel: Record<OperationalPostType, string> = {
   cashier: "Caixa",
@@ -226,6 +235,7 @@ export function AllocationPage() {
             <Button
               variant="outline"
               size="icon"
+              className="rounded-full border-[color:var(--border-soft)] bg-[color:var(--bg-surface)]"
               onClick={() => void posts.refetch()}
               aria-label="Atualizar postos"
             >
@@ -233,13 +243,18 @@ export function AllocationPage() {
             </Button>
             <Button
               variant="outline"
+              className="rounded-full border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)]"
               onClick={() => setSetupOpen(true)}
               disabled={!defaultBranchId}
             >
               <Wand2 className="size-4" />
               Configurar {SEGMENT_LABELS[segment]}
             </Button>
-            <Button onClick={openCreatePost} disabled={!defaultBranchId}>
+            <Button
+              className="rounded-full bg-[color:var(--primary)] text-[color:var(--primary-foreground)] shadow-sm hover:bg-[color-mix(in_srgb,var(--primary)_88%,var(--bg-surface))]"
+              onClick={openCreatePost}
+              disabled={!defaultBranchId}
+            >
               <Plus className="size-4" />
               Novo posto
             </Button>
@@ -247,7 +262,7 @@ export function AllocationPage() {
         }
       />
 
-      <div className="space-y-6 p-6">
+      <div className="space-y-6 bg-[color:var(--bg-app)] p-6">
         {isLoading ? (
           <StateBlock type="loading" title="Carregando postos" />
         ) : pageError ? (
@@ -258,41 +273,45 @@ export function AllocationPage() {
           />
         ) : (
           <>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <Card className="border bg-white shadow-sm">
-                <CardContent className="flex items-center gap-3 p-4">
-                  <Store className="size-4 text-muted-foreground" />
+            <div className="flex flex-wrap gap-3">
+              <Card className={`${m3SummaryCardClass} w-full sm:w-[220px] md:w-[210px] xl:w-[230px]`}>
+                <CardContent className="flex items-center gap-2.5 p-3.5">
+                  <div className="rounded-full border border-[color:var(--border-soft)] bg-[color-mix(in_srgb,var(--primary)_8%,var(--bg-surface))] p-1.5 text-[color:var(--text-secondary)]">
+                    <Store className="size-3.5" />
+                  </div>
                   <div>
-                    <div className="text-xl font-bold leading-none">
+                    <div className="text-lg font-semibold leading-none text-slate-950">
                       {allPosts.length}
                     </div>
-                    <div className="mt-0.5 text-xs text-muted-foreground">
+                    <div className="mt-0.5 text-[11px] text-muted-foreground">
                       Postos cadastrados
                     </div>
                   </div>
                 </CardContent>
               </Card>
-              <Card className="border bg-white shadow-sm">
-                <CardContent className="flex items-center gap-3 p-4">
-                  <CheckCircle2 className="size-4 text-emerald-600" />
+              <Card className={`${m3SummaryCardClass} w-full sm:w-[220px] md:w-[210px] xl:w-[230px]`}>
+                <CardContent className="flex items-center gap-2.5 p-3.5">
+                  <div className="rounded-full border border-[color:var(--border-soft)] bg-[color-mix(in_srgb,#16a34a_8%,var(--bg-surface))] p-1.5 text-emerald-600">
+                    <CheckCircle2 className="size-3.5" />
+                  </div>
                   <div>
-                    <div className="text-xl font-bold leading-none">
+                    <div className="text-lg font-semibold leading-none text-slate-950">
                       {activePosts.length}
                     </div>
-                    <div className="mt-0.5 text-xs text-muted-foreground">
-                      Ativos
-                    </div>
+                    <div className="mt-0.5 text-[11px] text-muted-foreground">Ativos</div>
                   </div>
                 </CardContent>
               </Card>
-              <Card className="border bg-white shadow-sm">
-                <CardContent className="flex items-center gap-3 p-4">
-                  <ShieldAlert className="size-4 text-amber-600" />
+              <Card className={`${m3SummaryCardClass} w-full sm:w-[220px] md:w-[210px] xl:w-[230px]`}>
+                <CardContent className="flex items-center gap-2.5 p-3.5">
+                  <div className="rounded-full border border-[color:var(--border-soft)] bg-[color-mix(in_srgb,#d97706_8%,var(--bg-surface))] p-1.5 text-amber-500">
+                    <ShieldAlert className="size-3.5" />
+                  </div>
                   <div>
-                    <div className="text-xl font-bold leading-none">
+                    <div className="text-lg font-semibold leading-none text-slate-950">
                       {attentionPostCount}
                     </div>
-                    <div className="mt-0.5 text-xs text-muted-foreground">
+                    <div className="mt-0.5 text-[11px] text-muted-foreground">
                       Inativos ou sem setor
                     </div>
                   </div>
@@ -300,10 +319,16 @@ export function AllocationPage() {
               </Card>
             </div>
 
-            <SectionPanel id="postos-cadastrados" title="Postos cadastrados" variant="original">
+            <SectionPanel
+              id="postos-cadastrados"
+              title="Postos cadastrados"
+              variant="original"
+              headerClassName="rounded-[24px] bg-[color:var(--bg-muted)] px-4 text-[color:var(--text-primary)]"
+              contentClassName="rounded-[28px] bg-[color:var(--bg-surface)] p-4"
+            >
               <div className="mb-4 flex flex-wrap items-center gap-2">
                 <select
-                  className="h-8 rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+                  className={fieldClass}
                   value={statusFilter}
                   onChange={(event) =>
                     setStatusFilter(event.target.value as PostStatusFilter)
@@ -315,7 +340,7 @@ export function AllocationPage() {
                   <option value="without_sector">Sem setor</option>
                 </select>
                 <select
-                  className="h-8 rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+                  className={fieldClass}
                   value={typeFilter}
                   onChange={(event) =>
                     setTypeFilter(event.target.value as OperationalPostType | "all")
@@ -330,7 +355,7 @@ export function AllocationPage() {
                 </select>
                 {sectorFilterOptions.length > 0 ? (
                   <select
-                    className="h-8 rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+                    className={fieldClass}
                     value={sectorFilter}
                     onChange={(event) => setSectorFilter(event.target.value)}
                   >
@@ -347,6 +372,7 @@ export function AllocationPage() {
                     type="button"
                     variant="outline"
                     size="sm"
+                    className="rounded-full"
                     onClick={() => {
                       setStatusFilter("all")
                       setTypeFilter("all")
@@ -369,44 +395,54 @@ export function AllocationPage() {
                   description="Ajuste os filtros para visualizar outros postos cadastrados."
                 />
               ) : (
-                <div className="space-y-5">
+                <div className="space-y-6">
                   {sortedPostTypes
                     .filter((type) => postsByType.has(type))
                     .map((type) => (
-                      <div key={type} className="space-y-2">
+                      <div key={type} className="space-y-3">
                         <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
                           <Store className="size-4" />
                           {postTypeLabel[type]}
-                          <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+                          <Badge
+                            variant="outline"
+                            className={`${m3ChipClass} h-5 px-1.5 text-[10px]`}
+                          >
                             {postsByType.get(type)?.length ?? 0}
                           </Badge>
                         </div>
-                        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5">
                           {(postsByType.get(type) ?? []).map((post) => (
                             <div
                               key={post.id}
-                              className="flex min-h-32 flex-col rounded-lg border bg-white p-4 shadow-sm"
+                              className="flex min-h-32 flex-col justify-between rounded-[20px] border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] p-3.5 shadow-[0_1px_2px_rgb(15_23_42/0.08)] transition-shadow hover:shadow-[0_4px_12px_rgb(15_23_42/0.10)]"
                             >
                               <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
-                                  <div className="truncate font-semibold">
+                                  <div className="truncate text-sm font-semibold text-slate-950">
                                     {post.name}
                                   </div>
-                                  <div className="mt-1 text-sm text-muted-foreground">
+                                  <div className="mt-0.5 text-[11px] text-muted-foreground">
+                                    {postTypeLabel[post.type]}
+                                  </div>
+                                  <div className="mt-0.5 text-[11px] text-muted-foreground">
                                     {post.sectors?.name ?? "Sem setor"}
                                   </div>
-                                  <div className="mt-0.5 text-xs text-muted-foreground">
+                                  <div className="mt-0.5 text-[11px] text-muted-foreground">
                                     {post.branches?.name ?? "Filial"}
                                   </div>
                                 </div>
-                                <Badge variant={post.active ? "outline" : "secondary"}>
+                                <Badge
+                                  variant={post.active ? "outline" : "secondary"}
+                                  className="rounded-full px-2 py-0.5 text-[10px]"
+                                >
                                   {post.active ? "Ativo" : "Inativo"}
                                 </Badge>
                               </div>
-                              <div className="mt-auto flex gap-2 pt-4">
+                              <div className="mt-3 flex gap-2">
                                 <Button
                                   variant="outline"
-                                  size="sm"
+                                  size="xs"
+                                  className={`${m3ButtonTonalClass} rounded-full`}
                                   onClick={() => openEditPost(post)}
                                 >
                                   <Pencil className="size-4" />
@@ -414,7 +450,8 @@ export function AllocationPage() {
                                 </Button>
                                 <Button
                                   variant="outline"
-                                  size="sm"
+                                  size="xs"
+                                  className={`${m3ButtonTonalClass} rounded-full`}
                                   onClick={() =>
                                     togglePost.mutate({
                                       postId: post.id,
