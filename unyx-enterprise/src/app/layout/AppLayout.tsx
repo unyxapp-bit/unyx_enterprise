@@ -49,7 +49,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { OnboardingPage } from "@/features/onboarding/OnboardingPage"
-import { useOperationalStatuses, useOrganization } from "@/hooks/useUnyxData"
+import { useOperationalStatuses } from "@/hooks/useUnyxData"
 import { clearAccessMode, getAccessMode, type AccessMode } from "@/lib/accessMode"
 import { canAccessUser, type PermissionKey } from "@/lib/permissions"
 import { cn } from "@/lib/utils"
@@ -196,7 +196,6 @@ function UserAvatar({ name }: { name: string }) {
 export function AppLayout() {
   const { profile, profileLoading, signOut } = useAuth()
   const { resolvedTheme, toggleTheme } = useTheme()
-  const { data: organization } = useOrganization()
   const { data: opStatuses } = useOperationalStatuses()
   const [accessMode, setAccessModeState] = useState<AccessMode | null>(() =>
     getAccessMode()
@@ -233,8 +232,6 @@ export function AppLayout() {
     return <Navigate to="/app/pos/sell" replace />
   }
 
-  const orgDisplayName =
-    organization?.trade_name ?? organization?.name ?? "Unyx Enterprise"
   const visibleNavGroups =
     accessMode === "pos"
       ? navGroups
@@ -267,25 +264,6 @@ export function AppLayout() {
       {/* ── Top nav ──────────────────────────────────────────── */}
       <header className="sticky top-0 z-40 border-b border-[color:var(--border-soft)] bg-[color:var(--bg-surface)]/95 backdrop-blur supports-[backdrop-filter]:bg-[color:var(--bg-surface)]/85">
         <div className="flex h-16 items-center gap-2 px-4">
-
-          {/* Logo */}
-          <div className="flex shrink-0 items-center gap-3 pr-2">
-            <div className="flex size-8 items-center justify-center rounded-2xl bg-[color:var(--primary)] shadow-sm">
-              <span className="text-xs font-bold text-[color:var(--primary-foreground)]">U</span>
-            </div>
-            <div className="hidden min-w-0 sm:block">
-              <div className="text-sm font-semibold leading-tight text-[color:var(--text-primary)]">
-                Unyx Enterprise
-              </div>
-              <div
-                className="max-w-36 truncate text-[0.65rem] text-[color:var(--text-muted)]"
-                title={orgDisplayName}
-              >
-                {orgDisplayName}
-              </div>
-            </div>
-          </div>
-
           {/* Desktop nav groups */}
           <nav className="hidden flex-1 items-center gap-0.5 lg:flex">
             {visibleNavGroups.map((group) => {

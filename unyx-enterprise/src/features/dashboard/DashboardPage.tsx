@@ -14,12 +14,6 @@ import {
 } from "lucide-react"
 import type { ReactNode } from "react"
 import { useMemo, useState } from "react"
-import {
-  Cell,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-} from "recharts"
 import { Link } from "react-router-dom"
 
 import { StatusBadge } from "@/components/bento/StatusBadge"
@@ -68,23 +62,66 @@ import type {
 } from "@/types/domain"
 
 const fieldClass =
-  "h-8 rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+  "h-8 rounded-full border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] px-3 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
 
 const STATUS_COLORS: Record<string, string> = {
-  alerta_critico:    "#ef4444",
-  aguardando_sangria:"#f97316",
-  troca_de_caixa:    "#0ea5e9",
-  deve_sair:         "#f59e0b",
-  em_intervalo:      "#8b5cf6",
-  voltou:            "#14b8a6",
-  pico:              "#dc2626",
-  apoio_operacional: "#2563eb",
-  fechamento:        "#4f46e5",
-  trabalhando:       "#22c55e",
+  alerta_critico: "#e11d48",
+  aguardando_sangria: "#f59e0b",
+  troca_de_caixa: "#0f766e",
+  deve_sair: "#f97316",
+  em_intervalo: "#8b5cf6",
+  voltou: "#14b8a6",
+  pico: "#dc2626",
+  apoio_operacional: "#4f46e5",
+  fechamento: "#2563eb",
+  trabalhando: "#10b981",
   aguardando_evento: "#94a3b8",
-  finalizado:        "#737373",
-  folga:             "#a1a1aa",
+  finalizado: "#64748b",
+  folga: "#94a3b8",
 }
+
+const METRIC_TONES = {
+  blue: {
+    card: "border-slate-200 bg-white/90 dark:border-slate-700 dark:bg-slate-900/40",
+    icon: "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-200",
+    value: "text-slate-950 dark:text-slate-100",
+    label: "text-blue-600 dark:text-blue-300",
+    detail: "text-slate-500 dark:text-slate-300/70",
+    ring: "ring-blue-200 dark:ring-blue-500/30",
+  },
+  teal: {
+    card: "border-slate-200 bg-white/90 dark:border-slate-700 dark:bg-slate-900/40",
+    icon: "bg-teal-100 text-teal-700 dark:bg-teal-500/15 dark:text-teal-200",
+    value: "text-slate-950 dark:text-slate-100",
+    label: "text-teal-500 dark:text-teal-300",
+    detail: "text-slate-500 dark:text-slate-300/70",
+    ring: "ring-teal-200 dark:ring-teal-500/30",
+  },
+  amber: {
+    card: "border-slate-200 bg-white/90 dark:border-slate-700 dark:bg-slate-900/40",
+    icon: "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-200",
+    value: "text-slate-950 dark:text-slate-100",
+    label: "text-amber-500 dark:text-amber-300",
+    detail: "text-slate-500 dark:text-slate-300/70",
+    ring: "ring-amber-200 dark:ring-amber-500/30",
+  },
+  rose: {
+    card: "border-slate-200 bg-white/90 dark:border-slate-700 dark:bg-slate-900/40",
+    icon: "bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-200",
+    value: "text-slate-950 dark:text-slate-100",
+    label: "text-rose-500 dark:text-rose-300",
+    detail: "text-slate-500 dark:text-slate-300/70",
+    ring: "ring-rose-200 dark:ring-rose-500/30",
+  },
+  slate: {
+    card: "border-slate-200 bg-white/90 dark:border-slate-700 dark:bg-slate-900/40",
+    icon: "bg-slate-100 text-slate-600 dark:bg-slate-700/60 dark:text-slate-200",
+    value: "text-slate-950 dark:text-slate-100",
+    label: "text-slate-500 dark:text-slate-300",
+    detail: "text-slate-500/90 dark:text-slate-300/70",
+    ring: "ring-slate-200 dark:ring-slate-500/30",
+  },
+} as const
 
 const ACTIVE_STATUSES: OperationalStatus[] = [
   "trabalhando",
@@ -338,6 +375,35 @@ function getMetricIcon(key: DashboardMetricKey): ReactNode {
   }
 
   return icons[key]
+}
+
+function getMetricTone(
+  key: DashboardMetricKey,
+  danger?: boolean
+): keyof typeof METRIC_TONES {
+  if (danger) return "rose"
+
+  const tones: Partial<Record<DashboardMetricKey, keyof typeof METRIC_TONES>> = {
+    scheduled: "blue",
+    working: "teal",
+    critical: "rose",
+    breaks: "amber",
+    delay: "amber",
+    cashierCoverage: "rose",
+    activeSectors: "blue",
+    sectorAlerts: "rose",
+    present: "teal",
+    absences: "rose",
+    currentShift: "blue",
+    minimumTeam: "amber",
+    nextPeak: "amber",
+    criticalFunctions: "rose",
+    responsiblePresence: "teal",
+    serviceCoverage: "teal",
+    occurrences: "rose",
+  }
+
+  return tones[key] ?? "slate"
 }
 
 function buildMetric(key: DashboardMetricKey, data: MetricData) {
@@ -742,6 +808,10 @@ export function DashboardPage() {
 
   const workingCount = allocatedWorkingCount
   const scheduledCount = filteredSchedules.length || filteredRows.length
+  const pendingCount = Math.max(0, scheduledCount - workingCount)
+  const criticalCount = statusSource.filter(
+    (row) => row.current_status === "alerta_critico"
+  ).length
   const presencePct =
     scheduledCount > 0 ? Math.round((workingCount / scheduledCount) * 100) : 0
 
@@ -882,7 +952,7 @@ export function DashboardPage() {
         <div className="grid gap-4 xl:grid-cols-[1.5fr_1fr]">
 
           {/* Hero: half-donut gauge + KPI sub-cards */}
-          <Card className="border bg-white shadow-sm">
+          <Card className="border border-slate-200 bg-white/90 shadow-sm dark:border-slate-700 dark:bg-slate-900/40">
             <CardHeader className="pb-2">
               <CardTitle className="text-base">Equipe hoje</CardTitle>
             </CardHeader>
@@ -890,76 +960,124 @@ export function DashboardPage() {
               {dashboard.isLoading ? (
                 <StateBlock type="loading" title="Carregando" />
               ) : (
-                <div className="grid gap-5 lg:grid-cols-[minmax(18rem,1.15fr)_minmax(14rem,0.85fr)] lg:items-center">
-                  <div className="relative h-56 w-full sm:h-60 lg:h-64">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={[
-                            { value: presencePct },
-                            { value: Math.max(0, 100 - presencePct) },
-                          ]}
-                          cx="50%"
-                          cy="82%"
-                          startAngle={210}
-                          endAngle={-30}
-                          innerRadius="57%"
-                          outerRadius="90%"
-                          dataKey="value"
-                          strokeWidth={0}
-                          cornerRadius={8}
-                        >
-                          <Cell fill="#6366f1" />
-                          <Cell fill="#e2e8f0" />
-                        </Pie>
-                      </PieChart>
-                    </ResponsiveContainer>
-                    <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-center">
-                      <p className="text-5xl font-bold tracking-tight tabular-nums text-slate-900">
-                        {presencePct}%
-                      </p>
-                      <p className="text-xs font-medium text-slate-400">
-                        Alocados ativos
-                      </p>
+                <div className="grid gap-5 xl:grid-cols-[minmax(20rem,1.25fr)_minmax(16rem,0.75fr)] xl:items-start">
+                  <div className="space-y-4">
+                    <div className="flex items-end justify-between gap-4">
+                      <div>
+                        <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                          Cobertura do turno
+                        </p>
+                        <p className="mt-1 text-5xl font-bold tracking-tight tabular-nums text-slate-950 dark:text-slate-100">
+                          {presencePct}%
+                        </p>
+                      </div>
+                      <div className="text-right text-xs text-slate-500 dark:text-slate-400">
+                        <p className="font-medium text-slate-900 dark:text-slate-100">
+                          {workingCount} ativos
+                        </p>
+                        <p>de {scheduledCount} escalados</p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="grid gap-3">
+
+                    <div className="overflow-hidden rounded-full bg-slate-100 shadow-inner dark:bg-slate-800">
+                      <div className="flex h-4 w-full">
+                        <div
+                          className="h-full bg-teal-500 transition-all"
+                          style={{ width: `${presencePct}%` }}
+                        />
+                        <div
+                          className="h-full bg-slate-300 transition-all dark:bg-slate-600"
+                          style={{ width: `${Math.max(0, 100 - presencePct)}%` }}
+                        />
+                      </div>
+                    </div>
+
                     <div className="grid grid-cols-2 gap-3">
-                      <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
-                        <p className="text-[11px] font-medium text-slate-400">
+                      <div className="rounded-2xl border border-slate-200 bg-white/90 p-3 dark:border-slate-700 dark:bg-slate-950/30">
+                        <p className="text-[11px] font-medium text-blue-600 dark:text-blue-300">
                           Escalados
                         </p>
-                        <p className="mt-1 text-2xl font-bold tabular-nums text-slate-800">
+                        <p className="mt-1 text-2xl font-bold tabular-nums text-slate-950 dark:text-slate-100">
                           {scheduledCount}
                         </p>
                       </div>
-                      <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-3">
-                        <p className="text-[11px] font-medium text-emerald-500">
-                          Alocados trab.
+                      <div className="rounded-2xl border border-slate-200 bg-white/90 p-3 dark:border-slate-700 dark:bg-slate-950/30">
+                        <p className="text-[11px] font-medium text-teal-600 dark:text-teal-300">
+                          Ativos
                         </p>
-                        <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-800">
+                        <p className="mt-1 text-2xl font-bold tabular-nums text-slate-950 dark:text-slate-100">
                           {workingCount}
+                        </p>
+                      </div>
+                      <div className="rounded-2xl border border-slate-200 bg-white/90 p-3 dark:border-slate-700 dark:bg-slate-950/30">
+                        <p className="text-[11px] font-medium text-amber-600 dark:text-amber-300">
+                          Pendentes
+                        </p>
+                        <p className="mt-1 text-2xl font-bold tabular-nums text-slate-950 dark:text-slate-100">
+                          {pendingCount}
+                        </p>
+                      </div>
+                      <div className="rounded-2xl border border-slate-200 bg-white/90 p-3 dark:border-slate-700 dark:bg-slate-950/30">
+                        <p className="text-[11px] font-medium text-rose-600 dark:text-rose-300">
+                          Críticos
+                        </p>
+                        <p className="mt-1 text-2xl font-bold tabular-nums text-slate-950 dark:text-slate-100">
+                          {criticalCount}
                         </p>
                       </div>
                     </div>
 
-                    <div className="rounded-lg border border-indigo-100 bg-indigo-50 p-3">
-                      <p className="text-[11px] font-medium text-indigo-500">
-                        Nao ativos agora
-                      </p>
-                      <p className="mt-1 text-2xl font-bold tabular-nums text-indigo-900">
-                        {Math.max(0, scheduledCount - workingCount)}
-                      </p>
-                      <p className="mt-1 text-xs text-indigo-600">
-                        Escalados que ainda nao aparecem como alocados trabalhando.
-                      </p>
+                    <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-950/30 dark:text-slate-300/70">
+                      <span>
+                        {pendingCount} escalados ainda nao alocados
+                      </span>
+                      {lastUpdated ? <span>atualizado as {lastUpdated}</span> : null}
                     </div>
-
-                    {lastUpdated ? (
-                      <p className="text-right text-[10px] text-slate-400">
-                        atualizado as {lastUpdated}
-                      </p>
-                    ) : null}
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {modeConfig.dashboardCards.map((key) => {
+                      const metric = buildMetric(key, {
+                        rows: filteredRows,
+                        schedules: filteredSchedules,
+                        statusSource,
+                        occurrencesCount,
+                        minimumTeamSize: modeConfig.minimumTeamSize,
+                      })
+                      const tone = METRIC_TONES[getMetricTone(key, metric.danger)]
+                      const metricFilter = getMetricStatusFilter(key)
+                      const isMetricFilterActive =
+                        metricFilter.length > 0 && statusFilter === metricFilter
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          className={`flex min-h-24 flex-col justify-between rounded-2xl border border-slate-200 bg-white/90 p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-slate-700 dark:bg-slate-950/30 ${isMetricFilterActive ? `ring-2 ${tone.ring}` : ""}`}
+                          onClick={() => {
+                            if (!metricFilter) return
+                            setStatusFilter((current) =>
+                              current === metricFilter ? "" : metricFilter
+                            )
+                          }}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <p className={`text-[11px] font-medium leading-tight ${tone.label}`}>
+                              {metric.title}
+                            </p>
+                            <div className={`shrink-0 rounded-xl p-1.5 ${tone.icon}`}>
+                              <div className="[&_svg]:size-3.5">{getMetricIcon(key)}</div>
+                            </div>
+                          </div>
+                          <div>
+                            <p className={`text-2xl font-bold tracking-tight tabular-nums ${tone.value}`}>
+                              {metric.value}
+                            </p>
+                            <p className={`mt-0.5 text-[10px] leading-tight ${tone.detail}`}>
+                              {metric.detail}
+                            </p>
+                          </div>
+                        </button>
+                      )
+                    })}
                   </div>
                 </div>
               )}
@@ -967,7 +1085,7 @@ export function DashboardPage() {
           </Card>
 
           {/* Status breakdown with progress bars */}
-          <Card className="border bg-white shadow-sm">
+          <Card className="border border-slate-200 bg-white/90 shadow-sm dark:border-slate-700 dark:bg-slate-900/40">
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center justify-between gap-3 text-base">
                 <span>Status operacional</span>
@@ -987,10 +1105,10 @@ export function DashboardPage() {
                   <div className="space-y-2">
                     <div className="flex items-end justify-between gap-3">
                       <div>
-                        <p className="text-3xl font-bold tracking-tight tabular-nums text-slate-900">
+                        <p className="text-3xl font-bold tracking-tight tabular-nums text-teal-950 dark:text-teal-100">
                           {statusSource.length}
                         </p>
-                        <p className="text-xs text-muted-foreground">
+                        <p className="text-xs text-teal-600 dark:text-teal-300">
                           colaboradores no recorte atual
                         </p>
                       </div>
@@ -1005,7 +1123,7 @@ export function DashboardPage() {
                       ) : null}
                     </div>
 
-                    <div className="flex h-3 overflow-hidden rounded-full bg-slate-100">
+                    <div className="flex h-3 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                       {statusChartData.map((entry) => {
                         const pct =
                           statusSource.length > 0
@@ -1033,19 +1151,16 @@ export function DashboardPage() {
                         ? Math.round((entry.total / statusSource.length) * 100)
                         : 0
                     return (
-                      <div
-                        key={entry.status}
-                        className="rounded-lg border border-slate-100 bg-slate-50 p-2.5"
-                      >
+                      <div key={entry.status} className="rounded-2xl border border-slate-200 bg-white/90 p-2.5 dark:border-slate-700 dark:bg-slate-950/30">
                         <div className="flex items-center justify-between gap-3">
                           <div className="flex items-center gap-1.5">
                             <span
                               className="size-2 shrink-0 rounded-full"
                               style={{ backgroundColor: STATUS_COLORS[entry.status] ?? "#94a3b8" }}
                             />
-                            <span className="text-xs text-slate-600">{entry.label}</span>
+                            <span className="text-xs text-slate-600 dark:text-slate-300">{entry.label}</span>
                           </div>
-                          <span className="text-xs font-semibold tabular-nums text-slate-700">
+                          <span className="text-xs font-semibold tabular-nums text-slate-900 dark:text-slate-100">
                             {entry.total} - {pct}%
                           </span>
                         </div>
@@ -1059,64 +1174,10 @@ export function DashboardPage() {
 
         </div>
 
-        {/* Row 2: KPI cards grid */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-          {modeConfig.dashboardCards.map((key) => {
-            const metric = buildMetric(key, {
-              rows: filteredRows,
-              schedules: filteredSchedules,
-              statusSource,
-              occurrencesCount,
-              minimumTeamSize: modeConfig.minimumTeamSize,
-            })
-            const metricFilter = getMetricStatusFilter(key)
-            const isMetricFilterActive =
-              metricFilter.length > 0 && statusFilter === metricFilter
-            return (
-              <button
-                type="button"
-                key={key}
-                className={`rounded-xl border bg-white p-4 text-left shadow-sm transition ${
-                  metric.danger ? "border-red-200 bg-red-50" : "border-slate-200"
-                } ${
-                  metricFilter
-                    ? "hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md"
-                    : "cursor-default"
-                } ${isMetricFilterActive ? "ring-2 ring-indigo-200" : ""}`}
-                onClick={() => {
-                  if (!metricFilter) return
-                  setStatusFilter((current) =>
-                    current === metricFilter ? "" : metricFilter
-                  )
-                }}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <p className="text-[11px] font-medium leading-tight text-slate-500">
-                    {metric.title}
-                  </p>
-                  <div className={`shrink-0 rounded-lg p-1.5 ${metric.danger ? "bg-red-100" : "bg-slate-100"}`}>
-                    <div className={`[&_svg]:size-3.5 ${metric.danger ? "text-red-600" : "text-slate-500"}`}>
-                      {getMetricIcon(key)}
-                    </div>
-                  </div>
-                </div>
-                <p className={`mt-2.5 text-2xl font-bold tracking-tight tabular-nums ${
-                  metric.danger ? "text-red-700" : "text-slate-900"
-                }`}>
-                  {metric.value}
-                </p>
-                <p className="mt-0.5 text-[10px] leading-tight text-slate-400">
-                  {metric.detail}
-                </p>
-              </button>
-            )
-          })}
-        </div>
-
         {shouldShowCoverageRisk ? (
-          <div className="flex items-start gap-3 rounded-xl border border-orange-200 bg-orange-50 p-4">
-            <ShieldAlert className="mt-0.5 size-4 shrink-0 text-orange-600" />
-            <div className="text-sm text-orange-800">
+          <div className="flex items-start gap-3 rounded-[1.25rem] border border-slate-200 bg-white/90 p-4 dark:border-slate-700 dark:bg-slate-900/40">
+            <ShieldAlert className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-300" />
+            <div className="text-sm text-slate-700 dark:text-slate-200">
               <span className="font-medium">Risco de cobertura:</span>{" "}
               {coverageRisk} de {coverageTotal} colaboradores ({coverageRiskPct}%)
               estao em situacao que pode impactar a operacao.
@@ -1126,11 +1187,11 @@ export function DashboardPage() {
 
         {/* Row 3: High priority + secondary */}
         <div className="grid gap-4 xl:grid-cols-2">
-          <Card className="border bg-white shadow-sm">
+          <Card className="border border-slate-200 bg-white/90 shadow-sm dark:border-slate-700 dark:bg-slate-900/40">
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between gap-3">
                 <CardTitle className="flex items-center gap-2 text-base">
-                  <AlertTriangle className="size-4 text-red-500" />
+                  <AlertTriangle className="size-4 text-rose-500" />
                   {modeConfig.highPriorityTitle}
                 </CardTitle>
                 {primaryRows.length > 0 ? (
@@ -1153,42 +1214,42 @@ export function DashboardPage() {
                     const allocation = allocationByEmployeeId.get(row.employee_id)
                     const priority = getPriority(row, mode)
                     return (
-                      <div key={row.id} className="rounded-xl border border-red-100 bg-red-50/70 p-3">
+                      <div key={row.id} className="rounded-2xl border border-slate-200 bg-white/90 p-3 dark:border-slate-700 dark:bg-slate-950/30">
                         <div className="flex items-center gap-3">
-                        <div className="w-1 self-stretch shrink-0 rounded-full bg-red-400" />
-                        <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-red-100 text-xs font-bold text-red-700">
+                        <div className="w-1 self-stretch shrink-0 rounded-full bg-rose-400" />
+                        <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-rose-100 text-xs font-bold text-rose-700 dark:bg-rose-500/15 dark:text-rose-200">
                           {initials}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-semibold text-slate-800">{row.employee_name}</p>
-                          <p className="truncate text-xs text-red-600">
+                          <p className="truncate text-sm font-semibold text-slate-950 dark:text-slate-100">{row.employee_name}</p>
+                          <p className="truncate text-xs text-rose-600 dark:text-rose-300">
                             {row.status_reason ?? "Prioridade operacional alta"}
                           </p>
-                          <p className="mt-0.5 truncate text-[11px] text-red-500">
+                          <p className="mt-0.5 truncate text-[11px] text-slate-500 dark:text-slate-300/70">
                             {[row.sector_name, row.branch_name].filter(Boolean).join(" - ")}
                           </p>
                         </div>
                         <StatusBadge status={row.current_status} />
                         </div>
                         <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
-                          <div className="rounded-lg bg-white/70 px-2.5 py-2">
-                            <p className="text-red-400">Acao</p>
-                            <p className="mt-0.5 font-medium text-red-800">
+                          <div className="rounded-2xl bg-slate-50/70 px-2.5 py-2 dark:bg-slate-950/30">
+                            <p className="text-slate-500">Acao</p>
+                            <p className="mt-0.5 font-medium text-slate-900 dark:text-slate-100">
                               {getNextAction(row)}
                             </p>
                           </div>
-                          <div className="rounded-lg bg-white/70 px-2.5 py-2">
-                            <p className="text-red-400">Prioridade</p>
-                            <p className="mt-0.5 font-medium tabular-nums text-red-800">
+                          <div className="rounded-2xl bg-slate-50/70 px-2.5 py-2 dark:bg-slate-950/30">
+                            <p className="text-slate-500">Prioridade</p>
+                            <p className="mt-0.5 font-medium tabular-nums text-slate-900 dark:text-slate-100">
                               {priority}
                               {row.delay_minutes > 0
                                 ? ` - ${minutesLabel(row.delay_minutes)}`
                                 : ""}
                             </p>
                           </div>
-                          <div className="rounded-lg bg-white/70 px-2.5 py-2">
-                            <p className="text-red-400">Posto</p>
-                            <p className="mt-0.5 truncate font-medium text-red-800">
+                          <div className="rounded-2xl bg-slate-50/70 px-2.5 py-2 dark:bg-slate-950/30">
+                            <p className="text-slate-500">Posto</p>
+                            <p className="mt-0.5 truncate font-medium text-slate-900 dark:text-slate-100">
                               {getPostLabel(allocation)}
                             </p>
                           </div>
@@ -1214,11 +1275,11 @@ export function DashboardPage() {
             </CardContent>
           </Card>
 
-          <Card className="border bg-white shadow-sm">
+          <Card className="border border-slate-200 bg-white/90 shadow-sm dark:border-slate-700 dark:bg-slate-900/40">
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between gap-3">
                 <CardTitle className="flex items-center gap-2 text-base">
-                  <DoorOpen className="size-4 text-amber-500" />
+                  <DoorOpen className="size-4 text-amber-500 dark:text-amber-300" />
                   {modeConfig.secondaryTitle}
                 </CardTitle>
                 {secondaryRows.length > 0 ? (
@@ -1239,14 +1300,11 @@ export function DashboardPage() {
                   {pendingGroupStats.length > 0 ? (
                     <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                       {pendingGroupStats.map((item) => (
-                        <div
-                          key={item.status}
-                          className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2"
-                        >
-                          <p className="text-[11px] font-medium text-amber-500">
+                        <div key={item.status} className="rounded-2xl border border-slate-200 bg-white/90 px-3 py-2 dark:border-slate-700 dark:bg-slate-950/30">
+                          <p className="text-[11px] font-medium text-slate-500 dark:text-slate-300">
                             {item.label}
                           </p>
-                          <p className="mt-0.5 text-xl font-bold tabular-nums text-amber-800">
+                          <p className="mt-0.5 text-xl font-bold tabular-nums text-slate-900 dark:text-slate-100">
                             {item.total}
                           </p>
                         </div>
@@ -1257,36 +1315,36 @@ export function DashboardPage() {
                   const initials = getInitials(row.employee_name)
                   const allocation = allocationByEmployeeId.get(row.employee_id)
                   return (
-                    <div key={row.id} className="rounded-xl border border-amber-100 bg-amber-50/70 p-3">
+                    <div key={row.id} className="rounded-2xl border border-slate-200 bg-white/90 p-3 dark:border-slate-700 dark:bg-slate-950/30">
                       <div className="flex items-center gap-3">
                       <div className="w-1 self-stretch shrink-0 rounded-full bg-amber-400" />
-                      <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-xs font-bold text-amber-700">
+                      <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-xs font-bold text-amber-700 dark:bg-amber-500/15 dark:text-amber-200">
                         {initials}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold text-slate-800">{row.employee_name}</p>
-                        <p className="truncate text-xs text-amber-600">
+                        <p className="truncate text-sm font-semibold text-slate-950 dark:text-slate-100">{row.employee_name}</p>
+                        <p className="truncate text-xs text-slate-500 dark:text-slate-300/70">
                           {row.sector_name ?? "Sem setor"} - {row.branch_name}
                         </p>
                       </div>
                       <StatusBadge status={row.current_status} />
                       </div>
                       <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
-                        <div className="rounded-lg bg-white/70 px-2.5 py-2">
-                          <p className="text-amber-400">Tipo</p>
-                          <p className="mt-0.5 font-medium text-amber-800">
+                        <div className="rounded-2xl bg-slate-50/70 px-2.5 py-2 dark:bg-slate-950/30">
+                          <p className="text-slate-500">Tipo</p>
+                          <p className="mt-0.5 font-medium text-slate-900 dark:text-slate-100">
                             {getPendingGroup(row.current_status)}
                           </p>
                         </div>
-                        <div className="rounded-lg bg-white/70 px-2.5 py-2">
-                          <p className="text-amber-400">Proxima acao</p>
-                          <p className="mt-0.5 font-medium text-amber-800">
+                        <div className="rounded-2xl bg-slate-50/70 px-2.5 py-2 dark:bg-slate-950/30">
+                          <p className="text-slate-500">Proxima acao</p>
+                          <p className="mt-0.5 font-medium text-slate-900 dark:text-slate-100">
                             {getNextAction(row)}
                           </p>
                         </div>
-                        <div className="rounded-lg bg-white/70 px-2.5 py-2">
-                          <p className="text-amber-400">Posto</p>
-                          <p className="mt-0.5 truncate font-medium text-amber-800">
+                        <div className="rounded-2xl bg-slate-50/70 px-2.5 py-2 dark:bg-slate-950/30">
+                          <p className="text-slate-500">Posto</p>
+                          <p className="mt-0.5 truncate font-medium text-slate-900 dark:text-slate-100">
                             {getPostLabel(allocation)}
                           </p>
                         </div>
@@ -1345,7 +1403,7 @@ export function DashboardPage() {
           }
           if (branchMap.size <= 1) return null
           return (
-            <Card className="border bg-white shadow-sm">
+            <Card className="border border-slate-200 bg-white/90 shadow-sm dark:border-slate-700 dark:bg-slate-900/40">
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <Building2 className="size-4" />
@@ -1357,18 +1415,18 @@ export function DashboardPage() {
                   {Array.from(branchMap.values()).map((branch) => (
                     <div
                       key={branch.name}
-                      className={`rounded-xl border p-3 ${
+                      className={`rounded-2xl border p-3 ${
                         branch.critical > 0
-                          ? "border-red-200 bg-red-50"
-                          : "border-slate-200 bg-slate-50"
+                          ? "border-rose-200 bg-rose-50/50 dark:border-rose-900/40 dark:bg-rose-950/20"
+                          : "border-slate-200 bg-slate-50/60 dark:border-slate-700 dark:bg-slate-950/30"
                       }`}
                     >
-                      <p className="font-semibold text-slate-800">{branch.name}</p>
-                      <div className="mt-1.5 flex gap-3 text-sm text-muted-foreground">
+                      <p className="font-semibold text-[color:var(--text-primary)]">{branch.name}</p>
+                      <div className="mt-1.5 flex gap-3 text-sm text-[color:var(--text-muted)]">
                         <span>{branch.working} alocados trab.</span>
                         <span>{branch.total} total</span>
                         {branch.critical > 0 ? (
-                          <span className="font-medium text-red-600">
+                          <span className="font-medium text-rose-600 dark:text-rose-300">
                             {branch.critical} critico{branch.critical > 1 ? "s" : ""}
                           </span>
                         ) : null}
