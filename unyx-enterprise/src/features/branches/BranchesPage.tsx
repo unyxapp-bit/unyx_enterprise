@@ -293,6 +293,25 @@ export function BranchesPage() {
     () => (branches.data ?? []).filter((b) => b.active),
     [branches.data]
   )
+  const inactiveBranches = useMemo(
+    () => (branches.data ?? []).filter((b) => !b.active),
+    [branches.data]
+  )
+  const activeSectorCount = useMemo(
+    () => (sectors.data ?? []).filter((sector) => sector.active).length,
+    [sectors.data]
+  )
+  const activeEmployeeCount = useMemo(
+    () => (allEmployees.data ?? []).filter((employee) => employee.active).length,
+    [allEmployees.data]
+  )
+  const employeesWithoutSectorCount = useMemo(
+    () =>
+      (allEmployees.data ?? []).filter(
+        (employee) => employee.active && !employee.sector_id
+      ).length,
+    [allEmployees.data]
+  )
 
   const employeeCountByBranch = useMemo(() => {
     const counts: Record<string, number> = {}
@@ -512,8 +531,43 @@ export function BranchesPage() {
         }
       />
 
-      <div className="grid gap-4 p-6 xl:grid-cols-[1fr_1fr]">
-        <SectionPanel title="Filiais" variant="original">
+      <div className="space-y-4 p-6">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-lg border bg-white p-4">
+            <div className="text-sm text-muted-foreground">Filiais ativas</div>
+            <div className="mt-2 text-2xl font-semibold">{activeBranches.length}</div>
+          </div>
+          <div className="rounded-lg border bg-white p-4">
+            <div className="text-sm text-muted-foreground">Setores ativos</div>
+            <div className="mt-2 text-2xl font-semibold">{activeSectorCount}</div>
+          </div>
+          <div className="rounded-lg border bg-white p-4">
+            <div className="text-sm text-muted-foreground">Colaboradores ativos</div>
+            <div className="mt-2 text-2xl font-semibold">{activeEmployeeCount}</div>
+          </div>
+          <div
+            className={`rounded-lg border p-4 ${
+              employeesWithoutSectorCount > 0
+                ? "border-amber-200 bg-amber-50"
+                : "bg-white"
+            }`}
+          >
+            <div className="text-sm text-muted-foreground">Sem setor</div>
+            <div className="mt-2 text-2xl font-semibold">
+              {employeesWithoutSectorCount}
+            </div>
+          </div>
+        </div>
+
+        {inactiveBranches.length > 0 ? (
+          <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+            <AlertTriangle className="size-4 shrink-0 text-amber-600" />
+            {inactiveBranches.length} filial(is) inativa(s) permanecem no historico.
+          </div>
+        ) : null}
+
+        <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+          <SectionPanel title="Filiais" variant="original">
             {branches.isLoading ? (
               <StateBlock type="loading" title="Carregando filiais" />
             ) : branches.isError ? (
@@ -598,25 +652,25 @@ export function BranchesPage() {
                 ))}
               </div>
             )}
-        </SectionPanel>
+          </SectionPanel>
 
-        <SectionPanel
-          title={selectedBranchName ? `Setores - ${selectedBranchName}` : "Setores"}
-          variant="original"
-          actions={
-            selectedBranchFilter ? (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 border-zinc-400/50 bg-white/40 text-zinc-900 hover:bg-white/70"
-                onClick={() => setSelectedBranchFilter(null)}
-              >
-                <X className="size-4" />
-                Limpar filtro
-              </Button>
-            ) : null
-          }
-        >
+          <SectionPanel
+            title={selectedBranchName ? `Setores - ${selectedBranchName}` : "Setores"}
+            variant="original"
+            actions={
+              selectedBranchFilter ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 border-zinc-400/50 bg-white/40 text-zinc-900 hover:bg-white/70"
+                  onClick={() => setSelectedBranchFilter(null)}
+                >
+                  <X className="size-4" />
+                  Limpar filtro
+                </Button>
+              ) : null
+            }
+          >
             {sectors.isLoading ? (
               <StateBlock type="loading" title="Carregando setores" />
             ) : sectors.isError ? (
@@ -703,7 +757,8 @@ export function BranchesPage() {
                 )}
               </div>
             )}
-        </SectionPanel>
+          </SectionPanel>
+        </div>
       </div>
     </>
   )

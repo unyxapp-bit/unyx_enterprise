@@ -175,6 +175,10 @@ export function CustomersPage() {
   const activeCount = customerList.filter((customer) => customer.status === "active").length
   const blockedCount = customerList.filter((customer) => customer.status === "blocked").length
   const withAddress = customerList.filter(hasAddress).length
+  const withoutContact = customerList.filter(
+    (customer) => !customer.phone && !customer.email
+  ).length
+  const filtersActive = Boolean(search.trim()) || statusFilter !== "all"
 
   const filteredCustomers = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -300,7 +304,7 @@ export function CustomersPage() {
           />
         ) : (
           <>
-            <BentoGrid>
+            <BentoGrid className="xl:grid-cols-5">
               <MetricCard
                 title="Clientes"
                 value={customerList.length}
@@ -324,6 +328,13 @@ export function CustomersPage() {
                 value={blockedCount}
                 detail="Requerem atencao"
                 icon={<ShieldAlert className="size-5" />}
+              />
+              <MetricCard
+                title="Sem contato"
+                value={withoutContact}
+                detail="Sem telefone ou email"
+                icon={<Ban className="size-5" />}
+                className={withoutContact > 0 ? "border-amber-200 bg-amber-50" : undefined}
               />
             </BentoGrid>
 
@@ -355,7 +366,22 @@ export function CustomersPage() {
                         </option>
                       ))}
                     </select>
+                    {filtersActive ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          setSearch("")
+                          setStatusFilter("all")
+                        }}
+                      >
+                        Limpar filtros
+                      </Button>
+                    ) : null}
                   </div>
+                </div>
+                <div className="pt-2 text-xs text-muted-foreground">
+                  Exibindo {filteredCustomers.length} de {customerList.length} cliente(s).
                 </div>
               </CardHeader>
               <CardContent>

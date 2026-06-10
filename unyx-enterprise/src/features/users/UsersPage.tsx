@@ -850,6 +850,12 @@ export function UsersPage() {
 
   const activeCount   = (profiles.data ?? []).filter((p) =>  p.active).length
   const inactiveCount = (profiles.data ?? []).filter((p) => !p.active).length
+  const adminCount = (profiles.data ?? []).filter(
+    (p) => p.active && (p.role === "owner" || p.role === "admin")
+  ).length
+  const branchScopedCount = (profiles.data ?? []).filter(
+    (p) => p.active && Boolean(p.branch_id)
+  ).length
 
   return (
     <>
@@ -859,6 +865,47 @@ export function UsersPage() {
       />
 
       <div className="space-y-6 p-6">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-lg border bg-white p-4">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Shield className="size-4 text-slate-600" />
+              Usuarios
+            </div>
+            <div className="mt-2 text-2xl font-semibold">
+              {(profiles.data ?? []).length}
+            </div>
+          </div>
+          <div className="rounded-lg border bg-white p-4">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <UserCheck className="size-4 text-emerald-600" />
+              Ativos
+            </div>
+            <div className="mt-2 text-2xl font-semibold">{activeCount}</div>
+          </div>
+          <div
+            className={`rounded-lg border p-4 ${
+              adminCount === 0 ? "border-amber-200 bg-amber-50" : "bg-white"
+            }`}
+          >
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <UserCog className="size-4 text-sky-600" />
+              Admins ativos
+            </div>
+            <div className="mt-2 text-2xl font-semibold">{adminCount}</div>
+          </div>
+          <div className="rounded-lg border bg-white p-4">
+            <div className="text-sm text-muted-foreground">Com filial definida</div>
+            <div className="mt-2 text-2xl font-semibold">{branchScopedCount}</div>
+          </div>
+        </div>
+
+        {inactiveCount > 0 ? (
+          <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+            <UserMinus className="size-4 shrink-0 text-zinc-500" />
+            {inactiveCount} usuario(s) inativo(s) continuam no historico de acesso.
+          </div>
+        ) : null}
+
         <Card className="border bg-white shadow-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">

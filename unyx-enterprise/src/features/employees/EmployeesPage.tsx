@@ -684,12 +684,37 @@ export function EmployeesPage() {
     () => (employees.data ?? []).filter((e) => e.active).length,
     [employees.data]
   )
+  const inactiveCount = useMemo(
+    () => (employees.data ?? []).filter((e) => !e.active).length,
+    [employees.data]
+  )
+  const withoutSectorCount = useMemo(
+    () => (employees.data ?? []).filter((e) => e.active && !e.sector_id).length,
+    [employees.data]
+  )
+  const withOperationalStatusCount = useMemo(
+    () => (employees.data ?? []).filter((e) => statusMap.has(e.id)).length,
+    [employees.data, statusMap]
+  )
 
   const filteredEmployees = useMemo(() => {
     let list = employees.data ?? []
     if (search.trim()) {
       const q = search.trim().toLowerCase()
-      list = list.filter((e) => e.name.toLowerCase().includes(q))
+      list = list.filter((e) =>
+        [
+          e.name,
+          e.role,
+          e.branches?.name,
+          e.sectors?.name,
+          e.document,
+          e.phone,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(q)
+      )
     }
     if (sectorFilter) list = list.filter((e) => e.sectors?.name === sectorFilter)
     if (statusFilter === "active") list = list.filter((e) => e.active)
@@ -961,12 +986,46 @@ export function EmployeesPage() {
       />
 
       <div className="space-y-4 p-6">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-lg border bg-white p-4">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <UserRoundCheck className="size-4 text-emerald-600" />
+              Ativos
+            </div>
+            <div className="mt-2 text-2xl font-semibold">{activeCount}</div>
+          </div>
+          <div className="rounded-lg border bg-white p-4">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <History className="size-4 text-sky-600" />
+              Com status operacional
+            </div>
+            <div className="mt-2 text-2xl font-semibold">
+              {withOperationalStatusCount}
+            </div>
+          </div>
+          <div
+            className={`rounded-lg border p-4 ${
+              withoutSectorCount > 0 ? "border-amber-200 bg-amber-50" : "bg-white"
+            }`}
+          >
+            <div className="text-sm text-muted-foreground">Sem setor</div>
+            <div className="mt-2 text-2xl font-semibold">{withoutSectorCount}</div>
+          </div>
+          <div className="rounded-lg border bg-white p-4">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <UserRoundX className="size-4 text-zinc-500" />
+              Inativos
+            </div>
+            <div className="mt-2 text-2xl font-semibold">{inactiveCount}</div>
+          </div>
+        </div>
+
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative min-w-48 flex-1">
             <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               className="pl-8"
-              placeholder="Buscar por nome..."
+              placeholder="Buscar por nome, cargo ou filial..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -1115,20 +1174,14 @@ export function EmployeesPage() {
                   key={employee.id}
                   className="group flex items-center gap-4 rounded-lg border bg-white p-4 shadow-sm transition-colors hover:bg-slate-50"
                 >
-                  {/* Checkbox — visível no hover ou quando selecionado */}
                   <input
                     type="checkbox"
-                    className={`size-4 shrink-0 rounded border-slate-300 accent-slate-950 transition-opacity ${
-                      selectedIds.has(employee.id)
-                        ? "opacity-100"
-                        : "opacity-0 group-hover:opacity-100"
-                    }`}
+                    className="size-4 shrink-0 rounded border-slate-300 accent-slate-950"
                     aria-label={`Selecionar ${employee.name}`}
                     checked={selectedIds.has(employee.id)}
                     onChange={(e) => toggleEmployeeSelection(employee.id, e.target.checked)}
                   />
 
-                  {/* Avatar */}
                   <div
                     className={`flex size-11 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${
                       employee.active
@@ -1139,7 +1192,6 @@ export function EmployeesPage() {
                     {initials}
                   </div>
 
-                  {/* Info */}
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-semibold text-indigo-600">
                       {employee.name}
@@ -1155,7 +1207,6 @@ export function EmployeesPage() {
                     </div>
                   </div>
 
-                  {/* Actions */}
                   <div className="shrink-0">
                     <EmployeeActionsMenu
                       employee={employee}

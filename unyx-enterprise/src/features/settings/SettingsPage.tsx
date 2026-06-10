@@ -1205,8 +1205,22 @@ export function SettingsPage() {
   const organizationModules = useOrganizationModules()
   const subscription = useSubscription()
   const isAdmin = canManageSettings(profile)
-  const [opsOpen, setOpsOpen] = useState(false)
+  const [opsOpen, setOpsOpen] = useState(true)
   const [userOpen, setUserOpen] = useState(false)
+  const activeBranchCount = (branches.data ?? []).filter((branch) => branch.active).length
+  const activeEmployeeCount = (employees.data ?? []).filter(
+    (employee) => employee.active
+  ).length
+  const enabledModuleCount = (organizationModules.data ?? []).filter(
+    (module) => module.enabled
+  ).length
+  const configChecks = [
+    Boolean(organization.data),
+    activeBranchCount > 0,
+    activeEmployeeCount > 0,
+    enabledModuleCount > 0,
+  ]
+  const completedChecks = configChecks.filter(Boolean).length
 
   return (
     <>
@@ -1215,138 +1229,176 @@ export function SettingsPage() {
         description="Dados da organizacao, perfil, plano, modulos, regras operacionais e auditoria."
       />
 
-      <div className="grid gap-4 p-6 xl:grid-cols-[1fr_0.85fr]">
-        <div className="space-y-4">
-          <Card className="border bg-white shadow-sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Building className="size-5" />
-                Organizacao
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {organization.isLoading ? (
-                <StateBlock type="loading" title="Carregando organizacao" />
-              ) : organization.isError ? (
-                <StateBlock
-                  type="error"
-                  title="Erro ao carregar organizacao"
-                  description={organization.error.message}
-                />
-              ) : organization.data ? (
-                <OrganizationForm
-                  key={`${organization.data.id}-${organization.data.updated_at}`}
-                  disabled={!isAdmin}
-                  organization={organization.data}
-                />
-              ) : (
-                <StateBlock title="Organizacao nao encontrada" />
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="border bg-white shadow-sm">
-            <CardHeader
-              className="cursor-pointer select-none"
-              onClick={() => setOpsOpen((v) => !v)}
-            >
-              <CardTitle className="flex items-center gap-2">
-                <Settings2 className="size-5" />
-                <span className="flex-1">Regras operacionais</span>
-                <ChevronDown
-                  className={`size-4 text-muted-foreground transition-transform duration-200 ${opsOpen ? "rotate-180" : ""}`}
-                />
-              </CardTitle>
-            </CardHeader>
-            {opsOpen ? (
-              <CardContent className="space-y-5">
-                <OperationalSettingsForm
-                  branches={branches.data ?? []}
-                  disabled={!isAdmin}
-                  organization={organization.data}
-                />
-                <div className="space-y-3 border-t pt-4">
-                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                    <Gauge className="size-3.5" />
-                    Saude da configuracao
-                  </div>
-                  {[
-                    { label: "Organizacao cadastrada", done: Boolean(organization.data) },
-                    { label: "Filial ativa", done: Boolean((branches.data ?? []).some((b) => b.active)) },
-                    { label: "Colaboradores ativos", done: Boolean((employees.data ?? []).some((e) => e.active)) },
-                    { label: "Modulos vinculados", done: Boolean((organizationModules.data ?? []).length) },
-                  ].map((item) => (
-                    <div
-                      key={item.label}
-                      className="flex items-center justify-between gap-3 rounded-lg border bg-slate-50 p-3 text-sm"
-                    >
-                      <span>{item.label}</span>
-                      {item.done ? (
-                        <CheckCircle2 className="size-4 text-emerald-600" />
-                      ) : (
-                        <AlertTriangle className="size-4 text-amber-600" />
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            ) : null}
-          </Card>
-
-          <Card className="border bg-white shadow-sm">
-            <CardHeader
-              className="cursor-pointer select-none"
-              onClick={() => setUserOpen((v) => !v)}
-            >
-              <CardTitle className="flex items-center gap-2">
-                <Shield className="size-5" />
-                <span className="flex-1">Usuario atual</span>
-                <ChevronDown
-                  className={`size-4 text-muted-foreground transition-transform duration-200 ${userOpen ? "rotate-180" : ""}`}
-                />
-              </CardTitle>
-            </CardHeader>
-            {userOpen ? (
-              <CardContent>
-                {profile ? (
-                  <CurrentUserForm branches={branches.data ?? []} profile={profile} />
-                ) : (
-                  <StateBlock title="Perfil nao encontrado" />
-                )}
-              </CardContent>
-            ) : null}
-          </Card>
-
+      <div className="space-y-4 p-6">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-lg border bg-white p-4">
+            <div className="text-sm text-muted-foreground">Prontidao</div>
+            <div className="mt-2 flex items-end gap-2">
+              <span className="text-2xl font-semibold">{completedChecks}/4</span>
+              <span className="pb-1 text-xs text-muted-foreground">itens</span>
+            </div>
+          </div>
+          <div className="rounded-lg border bg-white p-4">
+            <div className="text-sm text-muted-foreground">Filiais ativas</div>
+            <div className="mt-2 text-2xl font-semibold">{activeBranchCount}</div>
+          </div>
+          <div className="rounded-lg border bg-white p-4">
+            <div className="text-sm text-muted-foreground">Colaboradores ativos</div>
+            <div className="mt-2 text-2xl font-semibold">{activeEmployeeCount}</div>
+          </div>
+          <div
+            className={`rounded-lg border p-4 ${
+              enabledModuleCount === 0 ? "border-amber-200 bg-amber-50" : "bg-white"
+            }`}
+          >
+            <div className="text-sm text-muted-foreground">Modulos ativos</div>
+            <div className="mt-2 text-2xl font-semibold">{enabledModuleCount}</div>
+          </div>
         </div>
 
-        <div className="space-y-4">
-          {branches.isLoading || employees.isLoading || organizationModules.isLoading ? (
-            <Card className="border bg-white shadow-sm">
-              <CardContent className="pt-6">
-                <StateBlock type="loading" title="Carregando plano e modulos" />
-              </CardContent>
-            </Card>
-          ) : organizationModules.isError ? (
-            <Card className="border bg-white shadow-sm">
-              <CardContent className="pt-6">
-                <StateBlock
-                  type="error"
-                  title="Erro ao carregar modulos da organizacao"
-                  description={organizationModules.error.message}
-                />
-              </CardContent>
-            </Card>
-          ) : (
-            <PlanCard
-              branches={branches.data ?? []}
-              canViewBilling={isAdmin}
-              employees={employees.data ?? []}
-              modules={organizationModules.data ?? []}
-              organization={organization.data}
-              subscription={subscription.isError ? undefined : subscription.data}
-            />
-          )}
+        {completedChecks < configChecks.length ? (
+          <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <AlertTriangle className="size-4 shrink-0" />
+            Existem configuracoes basicas pendentes para deixar a operacao completa.
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+            <CheckCircle2 className="size-4 shrink-0" />
+            Configuracao essencial pronta para uso operacional.
+          </div>
+        )}
 
+        <div className="grid gap-4 xl:grid-cols-[1fr_0.85fr]">
+          <div className="space-y-4">
+            <Card className="border bg-white shadow-sm">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Building className="size-5" />
+                  Organizacao
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {organization.isLoading ? (
+                  <StateBlock type="loading" title="Carregando organizacao" />
+                ) : organization.isError ? (
+                  <StateBlock
+                    type="error"
+                    title="Erro ao carregar organizacao"
+                    description={organization.error.message}
+                  />
+                ) : organization.data ? (
+                  <OrganizationForm
+                    key={`${organization.data.id}-${organization.data.updated_at}`}
+                    disabled={!isAdmin}
+                    organization={organization.data}
+                  />
+                ) : (
+                  <StateBlock title="Organizacao nao encontrada" />
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="border bg-white shadow-sm">
+              <CardHeader
+                className="cursor-pointer select-none"
+                onClick={() => setOpsOpen((v) => !v)}
+              >
+                <CardTitle className="flex items-center gap-2">
+                  <Settings2 className="size-5" />
+                  <span className="flex-1">Regras operacionais</span>
+                  <ChevronDown
+                    className={`size-4 text-muted-foreground transition-transform duration-200 ${opsOpen ? "rotate-180" : ""}`}
+                  />
+                </CardTitle>
+              </CardHeader>
+              {opsOpen ? (
+                <CardContent className="space-y-5">
+                  <OperationalSettingsForm
+                    branches={branches.data ?? []}
+                    disabled={!isAdmin}
+                    organization={organization.data}
+                  />
+                  <div className="space-y-3 border-t pt-4">
+                    <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                      <Gauge className="size-3.5" />
+                      Saude da configuracao
+                    </div>
+                    {[
+                      { label: "Organizacao cadastrada", done: Boolean(organization.data) },
+                      { label: "Filial ativa", done: Boolean((branches.data ?? []).some((b) => b.active)) },
+                      { label: "Colaboradores ativos", done: Boolean((employees.data ?? []).some((e) => e.active)) },
+                      { label: "Modulos vinculados", done: Boolean((organizationModules.data ?? []).length) },
+                    ].map((item) => (
+                      <div
+                        key={item.label}
+                        className="flex items-center justify-between gap-3 rounded-lg border bg-slate-50 p-3 text-sm"
+                      >
+                        <span>{item.label}</span>
+                        {item.done ? (
+                          <CheckCircle2 className="size-4 text-emerald-600" />
+                        ) : (
+                          <AlertTriangle className="size-4 text-amber-600" />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              ) : null}
+            </Card>
+
+            <Card className="border bg-white shadow-sm">
+              <CardHeader
+                className="cursor-pointer select-none"
+                onClick={() => setUserOpen((v) => !v)}
+              >
+                <CardTitle className="flex items-center gap-2">
+                  <Shield className="size-5" />
+                  <span className="flex-1">Usuario atual</span>
+                  <ChevronDown
+                    className={`size-4 text-muted-foreground transition-transform duration-200 ${userOpen ? "rotate-180" : ""}`}
+                  />
+                </CardTitle>
+              </CardHeader>
+              {userOpen ? (
+                <CardContent>
+                  {profile ? (
+                    <CurrentUserForm branches={branches.data ?? []} profile={profile} />
+                  ) : (
+                    <StateBlock title="Perfil nao encontrado" />
+                  )}
+                </CardContent>
+              ) : null}
+            </Card>
+          </div>
+
+          <div className="space-y-4">
+            {branches.isLoading || employees.isLoading || organizationModules.isLoading ? (
+              <Card className="border bg-white shadow-sm">
+                <CardContent className="pt-6">
+                  <StateBlock type="loading" title="Carregando plano e modulos" />
+                </CardContent>
+              </Card>
+            ) : organizationModules.isError ? (
+              <Card className="border bg-white shadow-sm">
+                <CardContent className="pt-6">
+                  <StateBlock
+                    type="error"
+                    title="Erro ao carregar modulos da organizacao"
+                    description={organizationModules.error.message}
+                  />
+                </CardContent>
+              </Card>
+            ) : (
+              <PlanCard
+                branches={branches.data ?? []}
+                canViewBilling={isAdmin}
+                employees={employees.data ?? []}
+                modules={organizationModules.data ?? []}
+                organization={organization.data}
+                subscription={subscription.isError ? undefined : subscription.data}
+              />
+            )}
+          </div>
         </div>
       </div>
     </>
