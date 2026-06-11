@@ -1,12 +1,10 @@
 import { useMemo, useState } from "react"
 import type { FormEvent } from "react"
 import {
-  CheckCircle2,
   Pencil,
   Plus,
   Power,
   RefreshCw,
-  ShieldAlert,
   Store,
   Wand2,
 } from "lucide-react"
@@ -16,10 +14,6 @@ import { SectionPanel } from "@/components/shared/SectionPanel"
 import { StateBlock } from "@/components/shared/StateBlock"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-} from "@/components/ui/card"
 import {
   Dialog,
   DialogContent,
@@ -32,6 +26,7 @@ import {
   useBranches,
   useCreateOperationalPost,
   useOperationalPosts,
+  usePostAllocations,
   useOrganization,
   useSectors,
   useSetupSegmentDefaults,
@@ -50,12 +45,10 @@ import type {
   OperationalPostType,
   Sector,
 } from "@/types/domain"
+import { OperationalPostsMapBoard } from "@/features/operational/components"
 
 const fieldClass =
   "h-10 w-full rounded-full border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] px-3.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
-
-const m3SummaryCardClass =
-  "rounded-[28px] border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] shadow-[0_1px_2px_rgb(15_23_42/0.08)]"
 
 const m3ChipClass =
   "rounded-full border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] px-3 py-1 text-xs text-[color:var(--text-secondary)]"
@@ -104,6 +97,7 @@ export function AllocationPage() {
   const branches = useBranches()
   const sectors = useSectors(null)
   const posts = useOperationalPosts()
+  const postAllocations = usePostAllocations()
   const org = useOrganization()
 
   const createPost = useCreateOperationalPost()
@@ -138,13 +132,6 @@ export function AllocationPage() {
     [posts.data]
   )
 
-  const activePosts = allPosts.filter((post) => post.active)
-  const inactivePosts = allPosts.filter((post) => !post.active)
-  const postsWithoutSector = allPosts.filter((post) => !post.sector_id)
-  const attentionPostCount = new Set(
-    [...inactivePosts, ...postsWithoutSector].map((post) => post.id)
-  ).size
-
   const filteredPosts = useMemo(() => {
     return allPosts.filter((post) => {
       if (statusFilter === "active" && !post.active) return false
@@ -172,8 +159,10 @@ export function AllocationPage() {
     return map
   }, [filteredPosts])
 
-  const isLoading = posts.isLoading || branches.isLoading || sectors.isLoading
-  const pageError = posts.error ?? branches.error ?? sectors.error
+  const isLoading =
+    posts.isLoading || branches.isLoading || sectors.isLoading || postAllocations.isLoading
+  const pageError =
+    posts.error ?? branches.error ?? sectors.error ?? postAllocations.error
 
   function openCreatePost() {
     setEditingPost(null)
@@ -229,43 +218,11 @@ export function AllocationPage() {
     <>
       <PageHeader
         title="Mapa de postos"
-        description="Cadastro, edicao e configuracao dos postos operacionais."
-        action={
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="outline"
-              size="icon"
-              className="rounded-full border-[color:var(--border-soft)] bg-[color:var(--bg-surface)]"
-              onClick={() => void posts.refetch()}
-              aria-label="Atualizar postos"
-            >
-              <RefreshCw className="size-4" />
-            </Button>
-            <Button
-              variant="outline"
-              className="rounded-full border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)]"
-              onClick={() => setSetupOpen(true)}
-              disabled={!defaultBranchId}
-            >
-              <Wand2 className="size-4" />
-              Configurar {SEGMENT_LABELS[segment]}
-            </Button>
-            <Button
-              className="rounded-full bg-[color:var(--primary)] text-[color:var(--primary-foreground)] shadow-sm hover:bg-[color-mix(in_srgb,var(--primary)_88%,var(--bg-surface))]"
-              onClick={openCreatePost}
-              disabled={!defaultBranchId}
-            >
-              <Plus className="size-4" />
-              Novo posto
-            </Button>
-          </div>
-        }
+        description="Mapa de ocupação dos postos operacionais."
       />
 
       <div className="space-y-6 bg-[color:var(--bg-app)] p-6">
-        {isLoading ? (
-          <StateBlock type="loading" title="Carregando postos" />
-        ) : pageError ? (
+        {pageError ? (
           <StateBlock
             type="error"
             title="Erro ao carregar postos"
@@ -273,59 +230,51 @@ export function AllocationPage() {
           />
         ) : (
           <>
-            <div className="flex flex-wrap gap-3">
-              <Card className={`${m3SummaryCardClass} w-full sm:w-[220px] md:w-[210px] xl:w-[230px]`}>
-                <CardContent className="flex items-center gap-2.5 p-3.5">
-                  <div className="rounded-full border border-[color:var(--border-soft)] bg-[color-mix(in_srgb,var(--primary)_8%,var(--bg-surface))] p-1.5 text-[color:var(--text-secondary)]">
-                    <Store className="size-3.5" />
-                  </div>
-                  <div>
-                    <div className="text-lg font-semibold leading-none text-slate-950">
-                      {allPosts.length}
-                    </div>
-                    <div className="mt-0.5 text-[11px] text-muted-foreground">
-                      Postos cadastrados
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-              <Card className={`${m3SummaryCardClass} w-full sm:w-[220px] md:w-[210px] xl:w-[230px]`}>
-                <CardContent className="flex items-center gap-2.5 p-3.5">
-                  <div className="rounded-full border border-[color:var(--border-soft)] bg-[color-mix(in_srgb,#16a34a_8%,var(--bg-surface))] p-1.5 text-emerald-600">
-                    <CheckCircle2 className="size-3.5" />
-                  </div>
-                  <div>
-                    <div className="text-lg font-semibold leading-none text-slate-950">
-                      {activePosts.length}
-                    </div>
-                    <div className="mt-0.5 text-[11px] text-muted-foreground">Ativos</div>
-                  </div>
-                </CardContent>
-              </Card>
-              <Card className={`${m3SummaryCardClass} w-full sm:w-[220px] md:w-[210px] xl:w-[230px]`}>
-                <CardContent className="flex items-center gap-2.5 p-3.5">
-                  <div className="rounded-full border border-[color:var(--border-soft)] bg-[color-mix(in_srgb,#d97706_8%,var(--bg-surface))] p-1.5 text-amber-500">
-                    <ShieldAlert className="size-3.5" />
-                  </div>
-                  <div>
-                    <div className="text-lg font-semibold leading-none text-slate-950">
-                      {attentionPostCount}
-                    </div>
-                    <div className="mt-0.5 text-[11px] text-muted-foreground">
-                      Inativos ou sem setor
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+            <OperationalPostsMapBoard
+              posts={allPosts}
+              allocations={postAllocations.data ?? []}
+              isLoading={isLoading}
+              isError={false}
+              error={undefined}
+            />
 
             <SectionPanel
-              id="postos-cadastrados"
-              title="Postos cadastrados"
+              id="funcoes-gestao"
+              title="Funcoes de gestao"
               variant="original"
+              defaultOpen={false}
               headerClassName="rounded-[24px] bg-[color:var(--bg-muted)] px-4 text-[color:var(--text-primary)]"
               contentClassName="rounded-[28px] bg-[color:var(--bg-surface)] p-4"
             >
+              <div className="mb-4 flex flex-wrap items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="rounded-full border-[color:var(--border-soft)] bg-[color:var(--bg-surface)]"
+                  onClick={() => void posts.refetch()}
+                >
+                  <RefreshCw className="size-4" />
+                  Atualizar
+                </Button>
+                <Button
+                  variant="outline"
+                  className="rounded-full border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)]"
+                  onClick={() => setSetupOpen(true)}
+                  disabled={!defaultBranchId}
+                >
+                  <Wand2 className="size-4" />
+                  Configurar {SEGMENT_LABELS[segment]}
+                </Button>
+                <Button
+                  className="rounded-full bg-[color:var(--primary)] text-[color:var(--primary-foreground)] shadow-sm hover:bg-[color-mix(in_srgb,var(--primary)_88%,var(--bg-surface))]"
+                  onClick={openCreatePost}
+                  disabled={!defaultBranchId}
+                >
+                  <Plus className="size-4" />
+                  Novo posto
+                </Button>
+              </div>
+
               <div className="mb-4 flex flex-wrap items-center gap-2">
                 <select
                   className={fieldClass}

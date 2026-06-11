@@ -10,10 +10,10 @@ export { EmployeeCard } from "./EmployeeCard"
 export { OperationalGrid } from "./OperationalGrid"
 export { OperationalMetrics } from "./OperationalMetrics"
 export { OperationalAlerts } from "./OperationalAlerts"
-export { OperationalPendingPanel } from "./OperationalPendingPanel"
 export { FiscalFlowPanel } from "./FiscalFlowPanel"
 export { OccupiedPostsCard } from "./OccupiedPostsCard"
 export { OperationalPostsManagerCard } from "./OperationalPostsManagerCard"
+export { OperationalPostsMapBoard } from "./OperationalPostsMapBoard"
 
 // Diálogos
 export { EntryDialog } from "./dialogs/EntryDialog"

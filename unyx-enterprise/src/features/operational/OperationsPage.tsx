@@ -53,8 +53,8 @@ import {
   BreakDialog,
   FiscalFlowPanel,
   OperationalGrid,
-  OperationalPendingPanel,
   OperationalPostsManagerCard,
+  OperationalPostsMapBoard,
   OperationalTabs,
   OccupiedPostsCard,
   OccurrenceDialog,
@@ -99,6 +99,7 @@ export function OperationsPage() {
   const [searchParams] = useSearchParams()
   const lastAppliedFocusRef = useRef<string | null>(null)
   const focus = searchParams.get("focus")
+  const [mainView, setMainView] = useState<"live" | "mapa_postos">("live")
 
   // ── Filters & Pagination ──
   const {
@@ -472,257 +473,291 @@ export function OperationsPage() {
         title={modeConfig.liveTitle}
         description={modeConfig.mainFocus}
         action={
-          <div className="flex flex-wrap items-center gap-2">
-            <DropdownMenu modal={false}>
-              <DropdownMenuTrigger asChild>
-                <Button type="button" variant="outline" size="sm">
-                  <Store className="size-3.5" />
-                  Gerenciar postos
-                  <Badge variant="outline" className="ml-1 h-5 px-1.5">
-                    {allPosts.filter((post) => post.active).length}/{allPosts.length}
-                  </Badge>
-                  <ChevronDown className="size-3.5" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="end"
-                className="w-[min(92vw,28rem)] p-0"
-                onCloseAutoFocus={(event) => event.preventDefault()}
-              >
-                <div className="max-h-[70vh] overflow-y-auto">
-                  <OperationalPostsManagerCard
-                    posts={allPosts}
-                    sectors={sectors.data ?? []}
-                    isLoading={operationalPosts.isLoading}
-                    isError={operationalPosts.isError}
-                    error={operationalPosts.error}
-                    defaultOpen
-                    embedded
-                  />
-                </div>
-              </DropdownMenuContent>
-            </DropdownMenu>
+          mainView === "live" ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <DropdownMenu modal={false}>
+                <DropdownMenuTrigger asChild>
+                  <Button type="button" variant="outline" size="sm">
+                    <Store className="size-3.5" />
+                    Gerenciar postos
+                    <Badge variant="outline" className="ml-1 h-5 px-1.5">
+                      {allPosts.filter((post) => post.active).length}/{allPosts.length}
+                    </Badge>
+                    <ChevronDown className="size-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="end"
+                  className="w-[min(92vw,28rem)] p-0"
+                  onCloseAutoFocus={(event) => event.preventDefault()}
+                >
+                  <div className="max-h-[70vh] overflow-y-auto">
+                    <OperationalPostsManagerCard
+                      posts={allPosts}
+                      sectors={sectors.data ?? []}
+                      isLoading={operationalPosts.isLoading}
+                      isError={operationalPosts.isError}
+                      error={operationalPosts.error}
+                      defaultOpen
+                      embedded
+                    />
+                  </div>
+                </DropdownMenuContent>
+              </DropdownMenu>
 
-            <DropdownMenu modal={false}>
-              <DropdownMenuTrigger asChild>
-                <Button type="button" variant="outline" size="sm">
-                  <MapPinned className="size-3.5" />
-                  Alocados trabalhando
-                  <Badge variant="outline" className="ml-1 h-5 px-1.5">
-                    {occupiedPostAllocations.length}
-                  </Badge>
-                  <ChevronDown className="size-3.5" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="end"
-                className="w-[min(92vw,26rem)] p-0"
-                onCloseAutoFocus={(event) => event.preventDefault()}
-              >
-                <div className="max-h-[70vh] overflow-y-auto">
-                  <OccupiedPostsCard
-                    allocations={occupiedPostAllocations}
-                    isLoading={postAllocations.isLoading}
-                    isError={postAllocations.isError}
-                    error={postAllocations.error}
-                    isReleasePending={finalizePostAllocation.isPending}
-                    releasingAllocationId={releasingAllocationId}
-                    onReleasePost={(allocation) => void handleReleasePost(allocation)}
-                    defaultOpen
-                    embedded
-                  />
-                </div>
-              </DropdownMenuContent>
-            </DropdownMenu>
+              <DropdownMenu modal={false}>
+                <DropdownMenuTrigger asChild>
+                  <Button type="button" variant="outline" size="sm">
+                    <MapPinned className="size-3.5" />
+                    Alocados trabalhando
+                    <Badge variant="outline" className="ml-1 h-5 px-1.5">
+                      {occupiedPostAllocations.length}
+                    </Badge>
+                    <ChevronDown className="size-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="end"
+                  className="w-[min(92vw,26rem)] p-0"
+                  onCloseAutoFocus={(event) => event.preventDefault()}
+                >
+                  <div className="max-h-[70vh] overflow-y-auto">
+                    <OccupiedPostsCard
+                      allocations={occupiedPostAllocations}
+                      isLoading={postAllocations.isLoading}
+                      isError={postAllocations.isError}
+                      error={postAllocations.error}
+                      isReleasePending={finalizePostAllocation.isPending}
+                      releasingAllocationId={releasingAllocationId}
+                      onReleasePost={(allocation) => void handleReleasePost(allocation)}
+                      defaultOpen
+                      embedded
+                    />
+                  </div>
+                </DropdownMenuContent>
+              </DropdownMenu>
 
-            <DropdownMenu modal={false}>
-              <DropdownMenuTrigger asChild>
-                <Button type="button" variant="outline" size="sm">
-                  <History className="size-3.5" />
-                  Timeline
-                  <ChevronDown className="size-3.5" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="end"
-                className="w-[min(92vw,26rem)] p-0"
-                onCloseAutoFocus={(event) => event.preventDefault()}
-              >
-                <div className="max-h-[70vh] overflow-y-auto">
-                  <TimelinePanel
-                    isOpen={timelineOpen}
-                    onToggle={() => setTimelineOpen(!timelineOpen)}
-                    events={events.data}
-                    isLoading={events.isLoading}
-                    isError={events.isError}
-                    error={events.error}
-                    embedded
-                  />
-                </div>
-              </DropdownMenuContent>
-            </DropdownMenu>
+              <DropdownMenu modal={false}>
+                <DropdownMenuTrigger asChild>
+                  <Button type="button" variant="outline" size="sm">
+                    <History className="size-3.5" />
+                    Timeline
+                    <ChevronDown className="size-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="end"
+                  className="w-[min(92vw,26rem)] p-0"
+                  onCloseAutoFocus={(event) => event.preventDefault()}
+                >
+                  <div className="max-h-[70vh] overflow-y-auto">
+                    <TimelinePanel
+                      isOpen={timelineOpen}
+                      onToggle={() => setTimelineOpen(!timelineOpen)}
+                      events={events.data}
+                      isLoading={events.isLoading}
+                      isError={events.isError}
+                      error={events.error}
+                      embedded
+                    />
+                  </div>
+                </DropdownMenuContent>
+              </DropdownMenu>
 
-            <Badge variant="outline">{operationalModeNames[mode]}</Badge>
-            <Input
-              className="w-40"
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              aria-label="Data da operação"
-            />
-            <Input
-              className="w-40"
-              type="search"
-              placeholder="Buscar colaborador..."
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              aria-label="Buscar por nome"
-            />
-            {(sectors.data ?? []).length > 0 ? (
+              <Badge variant="outline">{operationalModeNames[mode]}</Badge>
+              <Input
+                className="w-40"
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                aria-label="Data da operação"
+              />
+              <Input
+                className="w-40"
+                type="search"
+                placeholder="Buscar colaborador..."
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                aria-label="Buscar por nome"
+              />
+              {(sectors.data ?? []).length > 0 ? (
+                <select
+                  className={fieldClass}
+                  value={sectorFilter}
+                  onChange={(e) => setSectorFilter(e.target.value)}
+                  aria-label="Filtrar por setor"
+                >
+                  <option value="">Todos os setores</option>
+                  {(sectors.data ?? []).map((sector) => (
+                    <option key={sector.id} value={sector.name}>
+                      {sector.name}
+                    </option>
+                  ))}
+                </select>
+              ) : null}
               <select
                 className={fieldClass}
-                value={sectorFilter}
-                onChange={(e) => setSectorFilter(e.target.value)}
-                aria-label="Filtrar por setor"
+                value={sortBy}
+                onChange={(e) =>
+                  setSortBy(e.target.value as "priority" | "name" | "time")
+                }
+                aria-label="Ordenar por"
               >
-                <option value="">Todos os setores</option>
-                {(sectors.data ?? []).map((sector) => (
-                  <option key={sector.id} value={sector.name}>
-                    {sector.name}
-                  </option>
-                ))}
+                <option value="priority">Por prioridade</option>
+                <option value="name">Por nome</option>
+                <option value="time">Por horário</option>
               </select>
-            ) : null}
-            <select
-              className={fieldClass}
-              value={sortBy}
-              onChange={(e) =>
-                setSortBy(e.target.value as "priority" | "name" | "time")
-              }
-              aria-label="Ordenar por"
-            >
-              <option value="priority">Por prioridade</option>
-              <option value="name">Por nome</option>
-              <option value="time">Por horário</option>
-            </select>
-          </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <Badge variant="outline">Mapa de postos</Badge>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={refetchOperationalScreen}
+              >
+                <RefreshCw className="size-3.5" />
+                Atualizar
+              </Button>
+            </div>
+          )
         }
       />
 
-      <div className="grid gap-4 p-6">
-        <MissingSchedulesPrompt
-          date={date}
-          currentScheduleCount={schedules.data?.length ?? 0}
-          isLoading={schedules.isLoading}
-          onCopied={refetchOperationalScreen}
-        />
-
-        <div id="fluxo-operacional" className="scroll-mt-20">
-          <FiscalFlowPanel
-            activePosts={activePosts}
-            activeAllocations={occupiedPostAllocations}
-            queueSignals={queueSignals.data ?? []}
-            cashSessions={cashSessions.data ?? []}
-            schedulesInTurn={emTurno}
-            statusByScheduleId={statusByScheduleId}
-            currentMinutes={now}
-            breakToleranceMinutes={breakToleranceMinutes}
-            queueAttentionThreshold={queueAttentionThreshold}
-            queueCriticalThreshold={queueCriticalThreshold}
-            cashCountAlertAmount={cashCountAlertAmount}
-            isLoading={queueSignals.isLoading}
-            isPending={
-              createQueueSignal.isPending ||
-              resolveQueueSignal.isPending ||
-              setFlowStatus.isPending
-            }
-            onCreateQueueSignal={(input) => createQueueSignal.mutate(input)}
-            onResolveQueueSignal={(signalId) =>
-              resolveQueueSignal.mutate({ signalId })
-            }
-          />
+      <div className="space-y-4 p-6">
+        <div className="flex flex-wrap gap-2 rounded-2xl border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] p-1.5 shadow-sm">
+          <button
+            type="button"
+            onClick={() => setMainView("live")}
+            className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-colors ${
+              mainView === "live"
+                ? "bg-[color:var(--primary)] text-[color:var(--primary-foreground)] shadow-sm"
+                : "text-[color:var(--text-secondary)] hover:bg-[color:var(--bg-surface-soft)]"
+            }`}
+          >
+            <Store className="size-4" />
+            Frente ao vivo
+          </button>
+          <button
+            type="button"
+            onClick={() => setMainView("mapa_postos")}
+            className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-colors ${
+              mainView === "mapa_postos"
+                ? "bg-[color:var(--primary)] text-[color:var(--primary-foreground)] shadow-sm"
+                : "text-[color:var(--text-secondary)] hover:bg-[color:var(--bg-surface-soft)]"
+            }`}
+          >
+            <MapPinned className="size-4" />
+            Mapa de postos
+          </button>
         </div>
 
-        <OperationalPendingPanel
-          schedulesToArrive={aChegar}
-          schedulesInTurn={emTurno}
-          statusByScheduleId={statusByScheduleId}
-          activePosts={activePosts}
-          occupiedPostIds={occupiedPostIds}
-          activeAllocations={occupiedPostAllocations}
-          cashSessions={cashSessions.data ?? []}
-          deliveryOrders={deliveryOrders.data ?? []}
-          productionOrders={productionOrders.data ?? []}
-          queueSignals={queueSignals.data ?? []}
-          currentMinutes={now}
-          breakToleranceMinutes={breakToleranceMinutes}
-        />
+        {mainView === "live" ? (
+          <div className="grid gap-4">
+            <MissingSchedulesPrompt
+              date={date}
+              currentScheduleCount={schedules.data?.length ?? 0}
+              isLoading={schedules.isLoading}
+              onCopied={refetchOperationalScreen}
+            />
 
-        {/* ── Main Panel ── */}
-        <SectionPanel
-          id="painel-operacional"
-          title="Painel operacional"
-          variant="original"
-          actions={
-            <button
-              className="rounded-md p-1.5 text-zinc-900 transition-colors hover:bg-black/10 disabled:opacity-50"
-              onClick={refetchOperationalScreen}
-              disabled={schedules.isFetching || statuses.isFetching}
-              aria-label="Atualizar painel operacional"
-              title="Atualizar painel operacional"
-            >
-              <RefreshCw
-                className={`size-4 ${
-                  schedules.isFetching || statuses.isFetching
-                    ? "animate-spin"
-                    : ""
-                }`}
+            <div id="fluxo-operacional" className="scroll-mt-20">
+              <FiscalFlowPanel
+                activePosts={activePosts}
+                activeAllocations={occupiedPostAllocations}
+                schedulesToArrive={aChegar}
+                queueSignals={queueSignals.data ?? []}
+                cashSessions={cashSessions.data ?? []}
+                schedulesInTurn={emTurno}
+                statusByScheduleId={statusByScheduleId}
+                currentMinutes={now}
+                breakToleranceMinutes={breakToleranceMinutes}
+                queueAttentionThreshold={queueAttentionThreshold}
+                queueCriticalThreshold={queueCriticalThreshold}
+                cashCountAlertAmount={cashCountAlertAmount}
+                isLoading={queueSignals.isLoading}
+                isPending={
+                  createQueueSignal.isPending ||
+                  resolveQueueSignal.isPending ||
+                  setFlowStatus.isPending
+                }
+                onCreateQueueSignal={(input) => createQueueSignal.mutate(input)}
               />
-            </button>
-          }
-        >
-            {/* Tabs */}
-            <OperationalTabs
-              activeTab={activeTab}
-              emTurnoCount={emTurno.length}
-              aChEgarCount={aChegar.length}
-              onTabChange={setActiveTab}
-            />
+            </div>
 
-            {/* Grid */}
-            <OperationalGrid
-              schedules={activeList}
-              statusByScheduleId={statusByScheduleId}
-              allocationByScheduleId={allocationByScheduleId}
-              allocationByEmployeeId={allocationByEmployeeId}
-              activePosts={activePosts}
-              occupiedPostIds={occupiedPostIds}
-              currentMinutes={now}
-              activeTab={activeTab}
-              pageIndex={pageIndex}
-              onPageChange={setPageIndex}
-              isLoading={schedules.isLoading || statuses.isLoading}
-              isError={schedules.isError || statuses.isError}
-              error={schedules.error || statuses.error}
-              isPending={isPending || setFlowStatus.isPending}
-              onAllocatePost={handleAllocatePostClick}
-              onTransferPost={handleOpenTransferPost}
-              onEntry={handleEntryClick}
-              onBreak={(s) => dialogs.openBreakDialog(s)}
-              onBreakAlreadyDone={handleBreakAlreadyDoneClick}
-              onCashMovement={handleCashMovementClick}
-              onCashierSwap={handleCashierSwapClick}
-              onReturn={(s) => handleReturnClick(s, true)}
-              onCafe={handleCafeClick}
-              onPeak={(s) => handleFlowStatusClick(s, "pico")}
-              onSupport={(s) => handleFlowStatusClick(s, "apoio_operacional")}
-              onClosing={(s) => handleFlowStatusClick(s, "fechamento")}
-              onNormal={(s) => handleFlowStatusClick(s, "trabalhando")}
-              onExit={(s) => {
-                fireAction(s, "saida_confirmada")
-              }}
-            />
-        </SectionPanel>
+            <SectionPanel
+              id="painel-operacional"
+              title="Painel operacional"
+              variant="original"
+              actions={
+                <button
+                  className="rounded-md p-1.5 text-zinc-900 transition-colors hover:bg-black/10 disabled:opacity-50"
+                  onClick={refetchOperationalScreen}
+                  disabled={schedules.isFetching || statuses.isFetching}
+                  aria-label="Atualizar painel operacional"
+                  title="Atualizar painel operacional"
+                >
+                  <RefreshCw
+                    className={`size-4 ${
+                      schedules.isFetching || statuses.isFetching
+                        ? "animate-spin"
+                        : ""
+                    }`}
+                  />
+                </button>
+              }
+            >
+              <OperationalTabs
+                activeTab={activeTab}
+                emTurnoCount={emTurno.length}
+                aChEgarCount={aChegar.length}
+                onTabChange={setActiveTab}
+              />
+
+              <OperationalGrid
+                schedules={activeList}
+                statusByScheduleId={statusByScheduleId}
+                allocationByScheduleId={allocationByScheduleId}
+                allocationByEmployeeId={allocationByEmployeeId}
+                activePosts={activePosts}
+                occupiedPostIds={occupiedPostIds}
+                currentMinutes={now}
+                activeTab={activeTab}
+                pageIndex={pageIndex}
+                onPageChange={setPageIndex}
+                isLoading={schedules.isLoading || statuses.isLoading}
+                isError={schedules.isError || statuses.isError}
+                error={schedules.error || statuses.error}
+                isPending={isPending || setFlowStatus.isPending}
+                onAllocatePost={handleAllocatePostClick}
+                onTransferPost={handleOpenTransferPost}
+                onEntry={handleEntryClick}
+                onBreak={(s) => dialogs.openBreakDialog(s)}
+                onBreakAlreadyDone={handleBreakAlreadyDoneClick}
+                onCashMovement={handleCashMovementClick}
+                onCashierSwap={handleCashierSwapClick}
+                onReturn={(s) => handleReturnClick(s, true)}
+                onCafe={handleCafeClick}
+                onPeak={(s) => handleFlowStatusClick(s, "pico")}
+                onSupport={(s) => handleFlowStatusClick(s, "apoio_operacional")}
+                onClosing={(s) => handleFlowStatusClick(s, "fechamento")}
+                onNormal={(s) => handleFlowStatusClick(s, "trabalhando")}
+                onExit={(s) => {
+                  fireAction(s, "saida_confirmada")
+                }}
+              />
+            </SectionPanel>
+          </div>
+        ) : (
+          <OperationalPostsMapBoard
+            posts={allPosts}
+            allocations={postAllocations.data ?? []}
+            isLoading={operationalPosts.isLoading || postAllocations.isLoading}
+            isError={operationalPosts.isError || postAllocations.isError}
+            error={operationalPosts.error ?? postAllocations.error}
+          />
+        )}
       </div>
 
       {/* ── Dialogs ── */}
