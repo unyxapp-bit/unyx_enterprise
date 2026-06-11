@@ -70,7 +70,7 @@ export const ReturnPromptDialog = React.memo(
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {isCafe ? "☕ Café encerrado" : "Intervalo encerrado"}
+              {isCafe ? "☕ Retorno do café" : "Retorno do intervalo"}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
@@ -84,10 +84,15 @@ export const ReturnPromptDialog = React.memo(
             ) : (
               <p className="text-sm text-slate-600">
                 {isCafe
-                  ? "O café de 10min encerrou. O colaborador já retornou ao posto?"
-                  : "O intervalo encerrou agora. O colaborador já retornou ao posto?"}
+                  ? "O café encerrou. O colaborador já voltou ao posto?"
+                  : "O intervalo encerrou. O colaborador já voltou ao posto?"}
               </p>
             )}
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+              {isCafe
+                ? "Se marcar que nao retornou, o sistema registra atraso do café e mantém o alerta em aberto."
+                : "Se marcar que nao retornou, o sistema registra atraso do intervalo e abre alerta operacional."}
+            </div>
             <DialogFooter className="gap-2">
               <Button
                 variant="outline"
@@ -95,7 +100,7 @@ export const ReturnPromptDialog = React.memo(
                 disabled={isPending}
                 onClick={onReturnNo}
               >
-                Não retornou — marcar atraso
+                Registrar atraso
               </Button>
               <Button disabled={isPending} onClick={onReturnYes}>
                 Sim, retornou
