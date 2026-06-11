@@ -756,6 +756,8 @@ export function OperationsPage() {
             isLoading={operationalPosts.isLoading || postAllocations.isLoading}
             isError={operationalPosts.isError || postAllocations.isError}
             error={operationalPosts.error ?? postAllocations.error}
+            onReleaseAllocation={(allocation) => void handleReleasePost(allocation)}
+            isReleasePending={finalizePostAllocation.isPending}
           />
         )}
       </div>

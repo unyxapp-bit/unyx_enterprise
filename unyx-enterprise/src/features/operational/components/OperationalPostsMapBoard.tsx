@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import {
   AlertTriangle,
   CheckCircle2,
@@ -8,13 +8,21 @@ import {
   type LucideIcon,
 } from "lucide-react"
 
+import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { StateBlock } from "@/components/shared/StateBlock"
 import { formatDateTimeBR } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import type { OperationalPost, PostAllocation } from "@/types/domain"
-import { postTypeLabel } from "../utils"
+import { formatDuration, postTypeLabel } from "../utils"
 
 type PostMapStatus = "occupied" | "free" | "inactive"
 
@@ -24,6 +32,8 @@ interface OperationalPostsMapBoardProps {
   isLoading: boolean
   isError: boolean
   error?: Error | null
+  onReleaseAllocation?: (allocation: PostAllocation) => void | Promise<void>
+  isReleasePending?: boolean
 }
 
 type PostCardModel = {
@@ -71,13 +81,23 @@ function buildCardModel(post: OperationalPost, allocation: PostAllocation | null
   return { post, allocation: null, status: "free" }
 }
 
+function minutesSince(value: string | null | undefined, nowMs: number) {
+  if (!value) return 0
+  const startedAt = new Date(value).getTime()
+  if (Number.isNaN(startedAt)) return 0
+  return Math.max(0, Math.floor((nowMs - startedAt) / 60_000))
+}
+
 export function OperationalPostsMapBoard({
   posts,
   allocations,
   isLoading,
   isError,
   error,
+  onReleaseAllocation,
+  isReleasePending = false,
 }: OperationalPostsMapBoardProps) {
+  const [selectedCard, setSelectedCard] = useState<PostCardModel | null>(null)
   const allocationByPostId = useMemo(() => {
     const map = new Map<string, PostAllocation>()
     for (const allocation of allocations) {
@@ -137,6 +157,12 @@ export function OperationalPostsMapBoard({
       withoutSector,
     }
   }, [allocationByPostId, posts])
+
+  const nowMs = Date.now()
+
+  const selectedMinutes = selectedCard?.allocation
+    ? minutesSince(selectedCard.allocation.started_at, nowMs)
+    : 0
 
   if (isLoading) {
     return <StateBlock type="loading" title="Carregando mapa de postos" />
@@ -214,9 +240,18 @@ export function OperationalPostsMapBoard({
             <Card
               key={post.id}
               className={cn(
-                "rounded-2xl border shadow-sm",
+                "rounded-2xl border shadow-sm transition-shadow hover:shadow-md",
                 config.cardClass
               )}
+              role="button"
+              tabIndex={0}
+              onClick={() => setSelectedCard({ post, allocation, status })}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault()
+                  setSelectedCard({ post, allocation, status })
+                }
+              }}
             >
               <CardContent className="space-y-3 p-3.5">
                 <div className="flex items-start justify-between gap-3">
@@ -290,6 +325,95 @@ export function OperationalPostsMapBoard({
           )
         })}
       </div>
+
+      <Dialog
+        open={Boolean(selectedCard)}
+        onOpenChange={(open) => {
+          if (!open) setSelectedCard(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Detalhes do posto</DialogTitle>
+          </DialogHeader>
+
+          {selectedCard ? (
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] p-4">
+                <div className="text-sm font-semibold text-[color:var(--text-primary)]">
+                  {selectedCard.post.name}
+                </div>
+                <div className="mt-1 text-sm text-muted-foreground">
+                  {postTypeLabel[selectedCard.post.type] ?? selectedCard.post.type}
+                  {" · "}
+                  {selectedCard.post.sectors?.name ?? "Sem setor"}
+                </div>
+                <div className="mt-1 text-sm text-muted-foreground">
+                  {selectedCard.post.branches?.name ?? "Filial"}
+                </div>
+              </div>
+
+              {selectedCard.status === "occupied" && selectedCard.allocation ? (
+                <div className="space-y-3">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-2xl border border-[color:var(--border-soft)] p-4">
+                      <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                        Em uso ha
+                      </div>
+                      <div className="mt-1 text-2xl font-semibold text-[color:var(--text-primary)]">
+                        {formatDuration(selectedMinutes)}
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-[color:var(--border-soft)] p-4">
+                      <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                        Desde
+                      </div>
+                      <div className="mt-1 text-sm font-medium text-[color:var(--text-primary)]">
+                        {formatDateTimeBR(selectedCard.allocation.started_at)}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-[color:var(--border-soft)] p-4">
+                    <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                      Colaborador
+                    </div>
+                    <div className="mt-1 text-sm font-medium text-[color:var(--text-primary)]">
+                      {selectedCard.allocation.employees?.name ?? "Colaborador"}
+                    </div>
+                  </div>
+                </div>
+              ) : selectedCard.status === "free" ? (
+                <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-800">
+                  Este posto esta livre e pronto para receber uma nova alocacao.
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-700">
+                  Este posto esta inativo no momento.
+                </div>
+              )}
+
+              {selectedCard.status === "occupied" &&
+              selectedCard.allocation &&
+              onReleaseAllocation ? (
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    onClick={async () => {
+                      await onReleaseAllocation(selectedCard.allocation!)
+                      setSelectedCard(null)
+                    }}
+                    disabled={isReleasePending}
+                  >
+                    {isReleasePending ? "Liberando..." : "Liberar posto"}
+                  </Button>
+                </DialogFooter>
+              ) : null}
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
