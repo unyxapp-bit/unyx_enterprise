@@ -14,13 +14,13 @@ interface OperationalTabsProps {
 export const OperationalTabs = React.memo(
   ({ activeTab, emTurnoCount, aChEgarCount, onTabChange }: OperationalTabsProps) => {
     return (
-      <div className="mb-4 flex gap-1 rounded-lg border bg-slate-50 p-1">
+      <div className="mb-4 flex gap-1 rounded-lg border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] p-1">
         <button
           onClick={() => onTabChange("em_turno")}
           className={`flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
             activeTab === "em_turno"
-              ? "bg-white shadow-sm text-slate-900"
-              : "text-slate-500 hover:text-slate-700"
+              ? "bg-[color:var(--primary)] text-[color:var(--primary-foreground)] shadow-sm"
+              : "text-[color:var(--text-secondary)] hover:bg-[color:var(--bg-surface)] hover:text-[color:var(--text-primary)]"
           }`}
           aria-pressed={activeTab === "em_turno"}
         >
@@ -28,8 +28,8 @@ export const OperationalTabs = React.memo(
           <span
             className={`rounded-full px-1.5 py-0.5 text-xs tabular-nums ${
               activeTab === "em_turno"
-                ? "bg-emerald-100 text-emerald-700"
-                : "bg-slate-200 text-slate-500"
+                ? "bg-white/20 text-white"
+                : "bg-[color:var(--bg-muted)] text-[color:var(--text-secondary)]"
             }`}
           >
             {emTurnoCount}
@@ -39,8 +39,8 @@ export const OperationalTabs = React.memo(
           onClick={() => onTabChange("a_chegar")}
           className={`flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
             activeTab === "a_chegar"
-              ? "bg-white shadow-sm text-slate-900"
-              : "text-slate-500 hover:text-slate-700"
+              ? "bg-[color:var(--primary)] text-[color:var(--primary-foreground)] shadow-sm"
+              : "text-[color:var(--text-secondary)] hover:bg-[color:var(--bg-surface)] hover:text-[color:var(--text-primary)]"
           }`}
           aria-pressed={activeTab === "a_chegar"}
         >
@@ -48,8 +48,8 @@ export const OperationalTabs = React.memo(
           <span
             className={`rounded-full px-1.5 py-0.5 text-xs tabular-nums ${
               activeTab === "a_chegar"
-                ? "bg-slate-800 text-white"
-                : "bg-slate-200 text-slate-500"
+                ? "bg-white/20 text-white"
+                : "bg-[color:var(--bg-muted)] text-[color:var(--text-secondary)]"
             }`}
           >
             {aChEgarCount}
