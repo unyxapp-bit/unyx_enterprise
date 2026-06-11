@@ -189,6 +189,18 @@ function useRequiredProfile() {
   return profile
 }
 
+function friendlyOperationalActionError(message: string) {
+  if (message.includes("Esta acao nao e permitida no status operacional atual.")) {
+    return "Nao foi possivel iniciar o intervalo porque o colaborador nao esta em um status permitido. Verifique se ele ja entrou, nao esta em sangria/troca e tente novamente."
+  }
+
+  if (message.includes("Confirme a sangria antes de iniciar o intervalo deste caixa.")) {
+    return "Confirme a sangria antes de liberar o intervalo deste caixa."
+  }
+
+  return message
+}
+
 export function useOrganization() {
   const { profile } = useAuth()
 
@@ -1379,7 +1391,7 @@ export function useRecordOperationalEvent() {
       toast.success(eventLabel[variables.event_type] ?? "Evento registrado.")
     },
     onError: (error) => {
-      toast.error(error.message)
+      toast.error(friendlyOperationalActionError(error.message))
     },
   })
 }
@@ -1403,7 +1415,7 @@ export function useRecordBreakAlreadyDone() {
       toast.success("Intervalo marcado como feito.")
     },
     onError: (error) => {
-      toast.error(error.message)
+      toast.error(friendlyOperationalActionError(error.message))
     },
   })
 }
