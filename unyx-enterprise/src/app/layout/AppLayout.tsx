@@ -285,7 +285,7 @@ export function AppLayout() {
                       className={cn(
                         "flex items-center gap-1 rounded-full px-3.5 py-2 text-sm font-medium outline-none transition-colors",
                         isGroupActive
-                          ? "bg-[color-mix(in_srgb,var(--primary)_12%,var(--bg-surface))] text-[color:var(--text-primary)]"
+                          ? "bg-[color:var(--primary)] text-[color:var(--primary-foreground)] shadow-sm"
                           : "text-[color:var(--text-secondary)] hover:bg-[color:var(--bg-surface-soft)] hover:text-[color:var(--text-primary)]"
                       )}
                     >
