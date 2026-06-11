@@ -653,6 +653,7 @@ export function OperationsPage() {
             <SectionPanel
               id="painel-operacional"
               title="Painel operacional"
+              collapsible={false}
               variant="original"
               actions={
                 <button

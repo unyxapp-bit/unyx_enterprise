@@ -26,6 +26,7 @@ type SectionPanelProps = {
   children: ReactNode
   actions?: ReactNode
   defaultOpen?: boolean
+  collapsible?: boolean
   variant?: SectionPanelVariant
   className?: string
   headerClassName?: string
@@ -38,6 +39,7 @@ export function SectionPanel({
   children,
   actions,
   defaultOpen = true,
+  collapsible = true,
   variant = "original",
   className,
   headerClassName,
@@ -56,35 +58,54 @@ export function SectionPanel({
           headerClassName
         )}
       >
-        <button
-          type="button"
-          className="flex min-h-10 min-w-0 flex-1 items-center justify-center px-2 text-center text-sm font-semibold outline-none transition-opacity hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring/40"
-          onClick={() => setOpen((current) => !current)}
-          aria-expanded={open}
-          aria-label={actionLabel}
-        >
-          <span className="truncate">{title}</span>
-        </button>
-
-        <div className="flex shrink-0 items-center gap-2">
-          {actions}
+        {collapsible ? (
           <button
             type="button"
-          className={cn(
-            "inline-flex size-7 items-center justify-center rounded-full outline-none transition-opacity hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring/40",
-            iconVariantClass[variant]
-          )}
+            className="flex min-h-10 min-w-0 flex-1 items-center justify-center px-2 text-center text-sm font-semibold outline-none transition-opacity hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring/40"
             onClick={() => setOpen((current) => !current)}
             aria-expanded={open}
             aria-label={actionLabel}
-            title={actionLabel}
           >
-            <Icon className="size-5" />
+            <span className="truncate">{title}</span>
           </button>
+        ) : (
+          <div className="flex min-h-10 min-w-0 flex-1 items-center px-2 text-sm font-semibold">
+            <span className="truncate">{title}</span>
+          </div>
+        )}
+
+        <div className="flex shrink-0 items-center gap-2">
+          {actions}
+          {collapsible ? (
+            <button
+              type="button"
+              className={cn(
+                "inline-flex size-7 items-center justify-center rounded-full outline-none transition-opacity hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring/40",
+                iconVariantClass[variant]
+              )}
+              onClick={() => setOpen((current) => !current)}
+              aria-expanded={open}
+              aria-label={actionLabel}
+              title={actionLabel}
+            >
+              <Icon className="size-5" />
+            </button>
+          ) : null}
         </div>
       </div>
 
-      {open ? (
+      {collapsible ? (
+        open ? (
+          <div
+            className={cn(
+              "rounded-2xl border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] p-4 text-card-foreground shadow-sm",
+              contentClassName
+            )}
+          >
+            {children}
+          </div>
+        ) : null
+      ) : (
         <div
           className={cn(
             "rounded-2xl border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] p-4 text-card-foreground shadow-sm",
@@ -93,7 +114,7 @@ export function SectionPanel({
         >
           {children}
         </div>
-      ) : null}
+      )}
     </section>
   )
 }
