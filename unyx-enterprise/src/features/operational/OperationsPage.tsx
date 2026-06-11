@@ -411,6 +411,21 @@ export function OperationsPage() {
     }
   }
 
+  const handleOvertimeClick = async (schedule: ScheduleWithRelations) => {
+    try {
+      await setFlowStatus.mutateAsync({
+        branch_id: schedule.branch_id,
+        employee_id: schedule.employee_id,
+        schedule_id: schedule.id,
+        status: "trabalhando",
+        priority_level: flowStatusPriority.trabalhando ?? 30,
+        notes: "Hora extra autorizada pelo fiscal.",
+      })
+    } catch (error) {
+      console.error("Erro ao autorizar hora extra:", error)
+    }
+  }
+
   const handleReturnClick = async (
     schedule: ScheduleWithRelations,
     returned: boolean
@@ -711,6 +726,7 @@ export function OperationsPage() {
                 onExit={(s) => {
                   fireAction(s, "saida_confirmada")
                 }}
+                onOvertime={(s) => handleOvertimeClick(s)}
               />
             </SectionPanel>
           </div>

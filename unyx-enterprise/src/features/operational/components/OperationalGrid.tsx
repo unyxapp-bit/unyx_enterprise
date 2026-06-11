@@ -54,6 +54,7 @@ interface OperationalGridProps {
   onClosing: (schedule: ScheduleWithRelations) => void
   onNormal: (schedule: ScheduleWithRelations) => void
   onExit: (schedule: ScheduleWithRelations) => void
+  onOvertime: (schedule: ScheduleWithRelations) => void
 }
 
 export const OperationalGrid = React.memo(
@@ -86,6 +87,7 @@ export const OperationalGrid = React.memo(
     onClosing,
     onNormal,
     onExit,
+    onOvertime,
   }: OperationalGridProps) => {
     const pageCount = Math.ceil(schedules.length / PAGE_SIZE)
     const pagedSchedules = schedules.slice(
@@ -159,6 +161,7 @@ export const OperationalGrid = React.memo(
                 onClosing={() => onClosing(schedule)}
                 onNormal={() => onNormal(schedule)}
                 onExit={() => onExit(schedule)}
+                onOvertime={() => onOvertime(schedule)}
               />
             )
           })}

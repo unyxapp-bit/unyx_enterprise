@@ -86,6 +86,7 @@ interface EmployeeCardProps {
   onClosing: () => void
   onNormal: () => void
   onExit: () => void
+  onOvertime: () => void
 }
 
 export const EmployeeCard = React.memo(
@@ -112,6 +113,7 @@ export const EmployeeCard = React.memo(
     onClosing,
     onNormal,
     onExit,
+    onOvertime,
   }: EmployeeCardProps) => {
     const [detailsOpen, setDetailsOpen] = useState(false)
     const currentStatus = statusRecord?.current_status
@@ -176,6 +178,22 @@ export const EmployeeCard = React.memo(
       (!currentStatus || currentStatus === "aguardando_evento")
     const lateMinutes = isLate ? currentMinutes - (startMin ?? 0) : 0
     const breakEndMin = timeToMinutes(schedule.break_end)
+    const endMin = timeToMinutes(schedule.end_time)
+    const isExitOverdue =
+      !cardIsDone &&
+      !isOnBreak &&
+      endMin !== null &&
+      currentMinutes > endMin &&
+      [
+        "trabalhando",
+        "voltou",
+        "deve_sair",
+        "pico",
+        "apoio_operacional",
+        "fechamento",
+      ].includes(currentStatus ?? "")
+    const exitOvertimeMinutes =
+      isExitOverdue && endMin !== null ? currentMinutes - endMin : 0
     const shouldOfferBreakAlreadyDone =
       activeTab === "em_turno" &&
       !isOnBreak &&
@@ -261,6 +279,12 @@ export const EmployeeCard = React.memo(
           <div className="mt-2 truncate text-xs text-muted-foreground">
             {scheduleLine}
           </div>
+
+          {isExitOverdue ? (
+            <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-800">
+              Saiu do horario ha {formatDuration(exitOvertimeMinutes)}. Liberar agora ou marcar hora extra?
+            </div>
+          ) : null}
 
           <div className="mt-2 flex items-center gap-2">
             <Badge
@@ -419,6 +443,43 @@ export const EmployeeCard = React.memo(
               {statusRecord?.status_reason ? (
                 <div className="rounded-2xl border border-[color:var(--border-soft)] p-4 text-sm text-muted-foreground">
                   {statusRecord.status_reason}
+                </div>
+              ) : null}
+
+              {isExitOverdue ? (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                  <div className="text-sm font-medium text-amber-900">
+                    Passou do horario de saida
+                  </div>
+                  <div className="mt-1 text-sm text-amber-800">
+                    {schedule.employees?.name ?? "Colaborador"} esta ha{" "}
+                    <span className="font-semibold">
+                      {formatDuration(exitOvertimeMinutes)}
+                    </span>{" "}
+                    alem do horario previsto. O que fazemos?
+                  </div>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full justify-center gap-1.5 border-amber-300 text-amber-800 hover:bg-amber-100"
+                      disabled={isPending}
+                      onClick={onOvertime}
+                    >
+                      <Timer className="size-3.5" />
+                      Hora extra
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full justify-center gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                      disabled={isPending}
+                      onClick={onExit}
+                    >
+                      <LogOut className="size-3.5" />
+                      Liberar saída
+                    </Button>
+                  </div>
                 </div>
               ) : null}
 
@@ -597,7 +658,7 @@ export const EmployeeCard = React.memo(
                       onClick={onExit}
                     >
                       <LogOut className="size-3.5" />
-                      Saída
+                      {isExitOverdue ? "Liberar saída" : "Saída"}
                     </Button>
                     {shouldOfferBreakAlreadyDone ? (
                       <Button
