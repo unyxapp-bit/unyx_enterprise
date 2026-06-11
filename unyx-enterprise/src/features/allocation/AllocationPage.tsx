@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react"
 import type { FormEvent } from "react"
 import {
+  LayoutGrid,
   Pencil,
   Plus,
   Power,
@@ -46,6 +47,7 @@ import type {
   Sector,
 } from "@/types/domain"
 import { OperationalPostsMapBoard } from "@/features/operational/components"
+import { ControlePDVIntervalos } from "@/features/allocation/ControlePDVIntervalos"
 
 const fieldClass =
   "h-10 w-full rounded-full border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] px-3.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
@@ -77,6 +79,7 @@ type PostFormState = {
 }
 
 type PostStatusFilter = "all" | "active" | "inactive" | "without_sector"
+type AllocationViewMode = "mapa" | "controle"
 
 function emptyPostForm(branchId = ""): PostFormState {
   return {
@@ -117,6 +120,7 @@ export function AllocationPage() {
   const [statusFilter, setStatusFilter] = useState<PostStatusFilter>("all")
   const [typeFilter, setTypeFilter] = useState<OperationalPostType | "all">("all")
   const [sectorFilter, setSectorFilter] = useState("")
+  const [viewMode, setViewMode] = useState<AllocationViewMode>("mapa")
 
   const allPosts = useMemo(
     () =>
@@ -230,196 +234,223 @@ export function AllocationPage() {
           />
         ) : (
           <>
-            <OperationalPostsMapBoard
-              posts={allPosts}
-              allocations={postAllocations.data ?? []}
-              isLoading={isLoading}
-              isError={false}
-              error={undefined}
-            />
+            <div className="flex flex-wrap items-center gap-2 rounded-[24px] border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] p-2 shadow-sm">
+              <Button
+                type="button"
+                variant={viewMode === "mapa" ? "default" : "ghost"}
+                className="rounded-full"
+                onClick={() => setViewMode("mapa")}
+              >
+                <LayoutGrid className="size-4" />
+                Mapa de postos
+              </Button>
+              <Button
+                type="button"
+                variant={viewMode === "controle" ? "default" : "ghost"}
+                className="rounded-full"
+                onClick={() => setViewMode("controle")}
+              >
+                <Store className="size-4" />
+                Controle PDV
+              </Button>
+            </div>
 
-            <SectionPanel
-              id="funcoes-gestao"
-              title="Funcoes de gestao"
-              variant="original"
-              defaultOpen={false}
-              headerClassName="rounded-[24px] bg-[color:var(--bg-muted)] px-4 text-[color:var(--text-primary)]"
-              contentClassName="rounded-[28px] bg-[color:var(--bg-surface)] p-4"
-            >
-              <div className="mb-4 flex flex-wrap items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="rounded-full border-[color:var(--border-soft)] bg-[color:var(--bg-surface)]"
-                  onClick={() => void posts.refetch()}
-                >
-                  <RefreshCw className="size-4" />
-                  Atualizar
-                </Button>
-                <Button
-                  variant="outline"
-                  className="rounded-full border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)]"
-                  onClick={() => setSetupOpen(true)}
-                  disabled={!defaultBranchId}
-                >
-                  <Wand2 className="size-4" />
-                  Configurar {SEGMENT_LABELS[segment]}
-                </Button>
-                <Button
-                  className="rounded-full bg-[color:var(--primary)] text-[color:var(--primary-foreground)] shadow-sm hover:bg-[color-mix(in_srgb,var(--primary)_88%,var(--bg-surface))]"
-                  onClick={openCreatePost}
-                  disabled={!defaultBranchId}
-                >
-                  <Plus className="size-4" />
-                  Novo posto
-                </Button>
-              </div>
-
-              <div className="mb-4 flex flex-wrap items-center gap-2">
-                <select
-                  className={fieldClass}
-                  value={statusFilter}
-                  onChange={(event) =>
-                    setStatusFilter(event.target.value as PostStatusFilter)
-                  }
-                >
-                  <option value="all">Todos status</option>
-                  <option value="active">Ativos</option>
-                  <option value="inactive">Inativos</option>
-                  <option value="without_sector">Sem setor</option>
-                </select>
-                <select
-                  className={fieldClass}
-                  value={typeFilter}
-                  onChange={(event) =>
-                    setTypeFilter(event.target.value as OperationalPostType | "all")
-                  }
-                >
-                  <option value="all">Todos tipos</option>
-                  {sortedPostTypes.map((type) => (
-                    <option key={type} value={type}>
-                      {postTypeLabel[type]}
-                    </option>
-                  ))}
-                </select>
-                {sectorFilterOptions.length > 0 ? (
-                  <select
-                    className={fieldClass}
-                    value={sectorFilter}
-                    onChange={(event) => setSectorFilter(event.target.value)}
-                  >
-                    <option value="">Todos setores</option>
-                    {sectorFilterOptions.map((sector) => (
-                      <option key={sector} value={sector}>
-                        {sector}
-                      </option>
-                    ))}
-                  </select>
-                ) : null}
-                {(statusFilter !== "all" || typeFilter !== "all" || sectorFilter) ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="rounded-full"
-                    onClick={() => {
-                      setStatusFilter("all")
-                      setTypeFilter("all")
-                      setSectorFilter("")
-                    }}
-                  >
-                    Limpar
-                  </Button>
-                ) : null}
-              </div>
-
-              {allPosts.length === 0 ? (
-              <StateBlock
-                title="Nenhum posto cadastrado"
-                description="Crie caixas, balcoes e pontos de atendimento para usar nas alocacoes do mapa de postos."
-              />
-              ) : filteredPosts.length === 0 ? (
-                <StateBlock
-                  title="Nenhum posto neste filtro"
-                  description="Ajuste os filtros para visualizar outros postos cadastrados."
+            {viewMode === "controle" ? (
+              <ControlePDVIntervalos />
+            ) : (
+              <>
+                <OperationalPostsMapBoard
+                  posts={allPosts}
+                  allocations={postAllocations.data ?? []}
+                  isLoading={isLoading}
+                  isError={false}
+                  error={undefined}
                 />
-              ) : (
-                <div className="space-y-6">
-                  {sortedPostTypes
-                    .filter((type) => postsByType.has(type))
-                    .map((type) => (
-                      <div key={type} className="space-y-3">
-                        <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-                          <Store className="size-4" />
+
+                <SectionPanel
+                  id="funcoes-gestao"
+                  title="Funcoes de gestao"
+                  variant="original"
+                  defaultOpen={false}
+                  headerClassName="rounded-[24px] bg-[color:var(--bg-muted)] px-4 text-[color:var(--text-primary)]"
+                  contentClassName="rounded-[28px] bg-[color:var(--bg-surface)] p-4"
+                >
+                  <div className="mb-4 flex flex-wrap items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="rounded-full border-[color:var(--border-soft)] bg-[color:var(--bg-surface)]"
+                      onClick={() => void posts.refetch()}
+                    >
+                      <RefreshCw className="size-4" />
+                      Atualizar
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="rounded-full border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)]"
+                      onClick={() => setSetupOpen(true)}
+                      disabled={!defaultBranchId}
+                    >
+                      <Wand2 className="size-4" />
+                      Configurar {SEGMENT_LABELS[segment]}
+                    </Button>
+                    <Button
+                      className="rounded-full bg-[color:var(--primary)] text-[color:var(--primary-foreground)] shadow-sm hover:bg-[color-mix(in_srgb,var(--primary)_88%,var(--bg-surface))]"
+                      onClick={openCreatePost}
+                      disabled={!defaultBranchId}
+                    >
+                      <Plus className="size-4" />
+                      Novo posto
+                    </Button>
+                  </div>
+
+                  <div className="mb-4 flex flex-wrap items-center gap-2">
+                    <select
+                      className={fieldClass}
+                      value={statusFilter}
+                      onChange={(event) =>
+                        setStatusFilter(event.target.value as PostStatusFilter)
+                      }
+                    >
+                      <option value="all">Todos status</option>
+                      <option value="active">Ativos</option>
+                      <option value="inactive">Inativos</option>
+                      <option value="without_sector">Sem setor</option>
+                    </select>
+                    <select
+                      className={fieldClass}
+                      value={typeFilter}
+                      onChange={(event) =>
+                        setTypeFilter(event.target.value as OperationalPostType | "all")
+                      }
+                    >
+                      <option value="all">Todos tipos</option>
+                      {sortedPostTypes.map((type) => (
+                        <option key={type} value={type}>
                           {postTypeLabel[type]}
-                          <Badge
-                            variant="outline"
-                            className={`${m3ChipClass} h-5 px-1.5 text-[10px]`}
-                          >
-                            {postsByType.get(type)?.length ?? 0}
-                          </Badge>
-                        </div>
-                        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5">
-                          {(postsByType.get(type) ?? []).map((post) => (
-                            <div
-                              key={post.id}
-                              className="flex min-h-32 flex-col justify-between rounded-[20px] border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] p-3.5 shadow-[0_1px_2px_rgb(15_23_42/0.08)] transition-shadow hover:shadow-[0_4px_12px_rgb(15_23_42/0.10)]"
-                            >
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                  <div className="truncate text-sm font-semibold text-slate-950">
-                                    {post.name}
+                        </option>
+                      ))}
+                    </select>
+                    {sectorFilterOptions.length > 0 ? (
+                      <select
+                        className={fieldClass}
+                        value={sectorFilter}
+                        onChange={(event) => setSectorFilter(event.target.value)}
+                      >
+                        <option value="">Todos setores</option>
+                        {sectorFilterOptions.map((sector) => (
+                          <option key={sector} value={sector}>
+                            {sector}
+                          </option>
+                        ))}
+                      </select>
+                    ) : null}
+                    {(statusFilter !== "all" || typeFilter !== "all" || sectorFilter) ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="rounded-full"
+                        onClick={() => {
+                          setStatusFilter("all")
+                          setTypeFilter("all")
+                          setSectorFilter("")
+                        }}
+                      >
+                        Limpar
+                      </Button>
+                    ) : null}
+                  </div>
+
+                  {allPosts.length === 0 ? (
+                    <StateBlock
+                      title="Nenhum posto cadastrado"
+                      description="Crie caixas, balcoes e pontos de atendimento para usar nas alocacoes do mapa de postos."
+                    />
+                  ) : filteredPosts.length === 0 ? (
+                    <StateBlock
+                      title="Nenhum posto neste filtro"
+                      description="Ajuste os filtros para visualizar outros postos cadastrados."
+                    />
+                  ) : (
+                    <div className="space-y-6">
+                      {sortedPostTypes
+                        .filter((type) => postsByType.has(type))
+                        .map((type) => (
+                          <div key={type} className="space-y-3">
+                            <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                              <Store className="size-4" />
+                              {postTypeLabel[type]}
+                              <Badge
+                                variant="outline"
+                                className={`${m3ChipClass} h-5 px-1.5 text-[10px]`}
+                              >
+                                {postsByType.get(type)?.length ?? 0}
+                              </Badge>
+                            </div>
+                            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5">
+                              {(postsByType.get(type) ?? []).map((post) => (
+                                <div
+                                  key={post.id}
+                                  className="flex min-h-32 flex-col justify-between rounded-[20px] border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] p-3.5 shadow-[0_1px_2px_rgb(15_23_42/0.08)] transition-shadow hover:shadow-[0_4px_12px_rgb(15_23_42/0.10)]"
+                                >
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                      <div className="truncate text-sm font-semibold text-slate-950">
+                                        {post.name}
+                                      </div>
+                                      <div className="mt-0.5 text-[11px] text-muted-foreground">
+                                        {postTypeLabel[post.type]}
+                                      </div>
+                                      <div className="mt-0.5 text-[11px] text-muted-foreground">
+                                        {post.sectors?.name ?? "Sem setor"}
+                                      </div>
+                                      <div className="mt-0.5 text-[11px] text-muted-foreground">
+                                        {post.branches?.name ?? "Filial"}
+                                      </div>
+                                    </div>
+                                    <Badge
+                                      variant={post.active ? "outline" : "secondary"}
+                                      className="rounded-full px-2 py-0.5 text-[10px]"
+                                    >
+                                      {post.active ? "Ativo" : "Inativo"}
+                                    </Badge>
                                   </div>
-                                  <div className="mt-0.5 text-[11px] text-muted-foreground">
-                                    {postTypeLabel[post.type]}
-                                  </div>
-                                  <div className="mt-0.5 text-[11px] text-muted-foreground">
-                                    {post.sectors?.name ?? "Sem setor"}
-                                  </div>
-                                  <div className="mt-0.5 text-[11px] text-muted-foreground">
-                                    {post.branches?.name ?? "Filial"}
+                                  <div className="mt-3 flex gap-2">
+                                    <Button
+                                      variant="outline"
+                                      size="xs"
+                                      className={`${m3ButtonTonalClass} rounded-full`}
+                                      onClick={() => openEditPost(post)}
+                                    >
+                                      <Pencil className="size-4" />
+                                      Editar
+                                    </Button>
+                                    <Button
+                                      variant="outline"
+                                      size="xs"
+                                      className={`${m3ButtonTonalClass} rounded-full`}
+                                      onClick={() =>
+                                        togglePost.mutate({
+                                          postId: post.id,
+                                          active: !post.active,
+                                        })
+                                      }
+                                    >
+                                      <Power className="size-4" />
+                                      {post.active ? "Desativar" : "Ativar"}
+                                    </Button>
                                   </div>
                                 </div>
-                                <Badge
-                                  variant={post.active ? "outline" : "secondary"}
-                                  className="rounded-full px-2 py-0.5 text-[10px]"
-                                >
-                                  {post.active ? "Ativo" : "Inativo"}
-                                </Badge>
-                              </div>
-                              <div className="mt-3 flex gap-2">
-                                <Button
-                                  variant="outline"
-                                  size="xs"
-                                  className={`${m3ButtonTonalClass} rounded-full`}
-                                  onClick={() => openEditPost(post)}
-                                >
-                                  <Pencil className="size-4" />
-                                  Editar
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  size="xs"
-                                  className={`${m3ButtonTonalClass} rounded-full`}
-                                  onClick={() =>
-                                    togglePost.mutate({
-                                      postId: post.id,
-                                      active: !post.active,
-                                    })
-                                  }
-                                >
-                                  <Power className="size-4" />
-                                  {post.active ? "Desativar" : "Ativar"}
-                                </Button>
-                              </div>
+                              ))}
                             </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              )}
-            </SectionPanel>
+                          </div>
+                        ))}
+                    </div>
+                  )}
+                </SectionPanel>
+              </>
+            )}
           </>
         )}
       </div>
