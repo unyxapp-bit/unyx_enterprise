@@ -3,6 +3,7 @@
  */
 
 import React from "react"
+import { CheckCircle2, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -20,6 +21,8 @@ interface ReturnPromptDialogProps {
   schedule: ScheduleWithRelations | null
   currentMinutes: number
   isPending: boolean
+  feedback: "idle" | "saving" | "success" | "error"
+  feedbackMessage?: string | null
   onReturnYes: () => void
   onReturnNo: () => void
 }
@@ -46,6 +49,8 @@ export const ReturnPromptDialog = React.memo(
     schedule,
     currentMinutes,
     isPending,
+    feedback,
+    feedbackMessage,
     onReturnYes,
     onReturnNo,
   }: ReturnPromptDialogProps) => {
@@ -64,6 +69,9 @@ export const ReturnPromptDialog = React.memo(
     const isCafe = isCafeBreak(schedule.notes)
     const endMin = timeToMinutes(schedule.break_end)
     const overtime = endMin !== null ? Math.max(0, currentMinutes - endMin) : 0
+    const isSaving = feedback === "saving"
+    const showSuccess = feedback === "success"
+    const showError = feedback === "error"
 
     return (
       <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -75,6 +83,23 @@ export const ReturnPromptDialog = React.memo(
           </DialogHeader>
           <div className="space-y-4">
             <EmployeeInfoBlock schedule={schedule} />
+            {isSaving ? (
+              <div className="flex items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800">
+                <Loader2 className="size-4 animate-spin" />
+                Registrando retorno no sistema...
+              </div>
+            ) : null}
+            {showSuccess ? (
+              <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                <CheckCircle2 className="size-4" />
+                {feedbackMessage ?? "Retorno confirmado. O painel esta sendo atualizado."}
+              </div>
+            ) : null}
+            {showError && feedbackMessage ? (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {feedbackMessage}
+              </div>
+            ) : null}
             {overtime > 0 ? (
               <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-800">
                 Está há{" "}
@@ -97,13 +122,25 @@ export const ReturnPromptDialog = React.memo(
               <Button
                 variant="outline"
                 className="border-red-200 text-red-700 hover:bg-red-50"
-                disabled={isPending}
+                disabled={isPending || isSaving || showSuccess}
                 onClick={onReturnNo}
               >
                 Registrar atraso
               </Button>
-              <Button disabled={isPending} onClick={onReturnYes}>
-                Sim, retornou
+              <Button disabled={isPending || isSaving || showSuccess} onClick={onReturnYes}>
+                {isSaving ? (
+                  <>
+                    <Loader2 className="mr-2 size-4 animate-spin" />
+                    Registrando...
+                  </>
+                ) : showSuccess ? (
+                  <>
+                    <CheckCircle2 className="mr-2 size-4" />
+                    Confirmado
+                  </>
+                ) : (
+                  "Sim, retornou"
+                )}
               </Button>
             </DialogFooter>
           </div>

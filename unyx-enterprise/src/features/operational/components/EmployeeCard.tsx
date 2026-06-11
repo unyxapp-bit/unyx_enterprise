@@ -158,6 +158,7 @@ export const EmployeeCard = React.memo(
     const isPeak = currentStatus === "pico"
     const isSupport = currentStatus === "apoio_operacional"
     const isClosing = currentStatus === "fechamento"
+    const isReturned = currentStatus === "voltou" || schedule.status === "returned"
     const isCafe = isCafeBreak(schedule.notes)
     const cardIsDone = isDone(currentStatus)
     const lunchAlreadyDone =
@@ -354,6 +355,12 @@ export const EmployeeCard = React.memo(
           ) : (
             <div className="mt-2 text-xs text-muted-foreground">Entrada confirmada</div>
           )}
+
+          {isReturned ? (
+            <div className="mt-2 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px] text-emerald-800">
+              Retorno registrado no sistema.
+            </div>
+          ) : null}
 
           <div className="mt-3 flex items-center justify-between gap-2">
             {activeTab === "a_chegar" ? (

@@ -246,6 +246,11 @@ export function OperationsPage() {
   } | null>(null)
   const [transferTargetScheduleId, setTransferTargetScheduleId] = useState("")
   const [transferError, setTransferError] = useState<string | null>(null)
+  const [returnFeedback, setReturnFeedback] = useState<{
+    scheduleId: string
+    state: "saving" | "success" | "error"
+    message?: string | null
+  } | null>(null)
 
   const refetchOperationalScreen = () => {
     refetch()
@@ -432,11 +437,41 @@ export function OperationsPage() {
   ) => {
     const isCafe = isCafeBreak(schedule.notes)
     try {
+      if (returned) {
+        setReturnFeedback({
+          scheduleId: schedule.id,
+          state: "saving",
+          message: "Registrando retorno no sistema...",
+        })
+      }
+
       await handleReturnAnswer(schedule, returned, isCafe)
+
       if (returned || !isCafe) {
+        if (returned) {
+          setReturnFeedback({
+            scheduleId: schedule.id,
+            state: "success",
+            message: "Retorno confirmado. O painel está sendo atualizado.",
+          })
+          await new Promise((resolve) => setTimeout(resolve, 1000))
+        }
+
         dismissReturnPrompt(schedule.id)
       }
+
+      setReturnFeedback((current) =>
+        current?.scheduleId === schedule.id ? null : current
+      )
     } catch (error) {
+      setReturnFeedback({
+        scheduleId: schedule.id,
+        state: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Nao foi possivel confirmar o retorno agora.",
+      })
       console.error("Erro ao confirmar retorno:", error)
     }
   }
@@ -836,12 +871,26 @@ export function OperationsPage() {
         isOpen={!!returnPrompt.schedule}
         onOpenChange={(open) => {
           if (!open && returnPrompt.schedule) {
-            dismissReturnPrompt(returnPrompt.schedule.id)
+            const scheduleId = returnPrompt.schedule.id
+            dismissReturnPrompt(scheduleId)
+            setReturnFeedback((current) =>
+              current?.scheduleId === scheduleId ? null : current
+            )
           }
         }}
         schedule={returnPrompt.schedule}
         currentMinutes={now}
         isPending={isPending}
+        feedback={
+          returnPrompt.schedule && returnFeedback?.scheduleId === returnPrompt.schedule.id
+            ? returnFeedback.state
+            : "idle"
+        }
+        feedbackMessage={
+          returnPrompt.schedule && returnFeedback?.scheduleId === returnPrompt.schedule.id
+            ? returnFeedback.message
+            : null
+        }
         onReturnYes={() =>
           returnPrompt.schedule && handleReturnClick(returnPrompt.schedule, true)
         }
