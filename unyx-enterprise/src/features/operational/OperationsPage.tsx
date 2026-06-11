@@ -40,18 +40,15 @@ import { operationalModeNames } from "@/features/ops/modes/operationalModes"
 import { MissingSchedulesPrompt } from "@/features/schedules/components/MissingSchedulesPrompt"
 import {
   useCashSessions,
-  useCreateOperationalQueueSignal,
   useDeliveryOrders,
   useFinalizePostAllocation,
   useOperationalQueueSignals,
   useProductionOrders,
-  useResolveOperationalQueueSignal,
   useSetOperationalFlowStatus,
 } from "@/hooks/useUnyxData"
 
 import {
   BreakDialog,
-  FiscalFlowPanel,
   OperationalGrid,
   OperationalPostsManagerCard,
   OperationalPostsMapBoard,
@@ -152,15 +149,7 @@ export function OperationsPage() {
   const breakToleranceMinutes =
     operationalSettings.data?.break_tolerance_minutes ??
     DEFAULT_BREAK_TOLERANCE_MINUTES
-  const queueAttentionThreshold =
-    operationalSettings.data?.queue_attention_threshold ?? 4
-  const queueCriticalThreshold =
-    operationalSettings.data?.queue_critical_threshold ?? 8
-  const cashCountAlertAmount =
-    operationalSettings.data?.cash_count_alert_amount ?? 500
   const finalizePostAllocation = useFinalizePostAllocation()
-  const createQueueSignal = useCreateOperationalQueueSignal()
-  const resolveQueueSignal = useResolveOperationalQueueSignal()
   const setFlowStatus = useSetOperationalFlowStatus()
   const cashSessions = useCashSessions()
   const queueSignals = useOperationalQueueSignals()
@@ -189,8 +178,7 @@ export function OperationsPage() {
     }
 
     window.requestAnimationFrame(() => {
-      const targetId =
-        focus === "queue-signals" ? "fluxo-operacional" : "painel-operacional"
+      const targetId = "painel-operacional"
       document.getElementById(targetId)?.scrollIntoView({
         behavior: "smooth",
         block: "start",
@@ -661,30 +649,6 @@ export function OperationsPage() {
               isLoading={schedules.isLoading}
               onCopied={refetchOperationalScreen}
             />
-
-            <div id="fluxo-operacional" className="scroll-mt-20">
-              <FiscalFlowPanel
-                activePosts={activePosts}
-                activeAllocations={occupiedPostAllocations}
-                schedulesToArrive={aChegar}
-                queueSignals={queueSignals.data ?? []}
-                cashSessions={cashSessions.data ?? []}
-                schedulesInTurn={emTurno}
-                statusByScheduleId={statusByScheduleId}
-                currentMinutes={now}
-                breakToleranceMinutes={breakToleranceMinutes}
-                queueAttentionThreshold={queueAttentionThreshold}
-                queueCriticalThreshold={queueCriticalThreshold}
-                cashCountAlertAmount={cashCountAlertAmount}
-                isLoading={queueSignals.isLoading}
-                isPending={
-                  createQueueSignal.isPending ||
-                  resolveQueueSignal.isPending ||
-                  setFlowStatus.isPending
-                }
-                onCreateQueueSignal={(input) => createQueueSignal.mutate(input)}
-              />
-            </div>
 
             <SectionPanel
               id="painel-operacional"
