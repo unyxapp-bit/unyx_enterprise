@@ -1268,7 +1268,7 @@ export function DashboardPage() {
                     </Button>
                   ) : null}
                   <Button asChild variant="outline" size="sm" className="w-full">
-                    <Link to="/app/operations">Abrir frente de caixa</Link>
+                    <Link to="/app/allocation">Abrir mapa de postos</Link>
                   </Button>
                 </>
               )}
@@ -1365,7 +1365,7 @@ export function DashboardPage() {
                     </Button>
                   ) : null}
                   <Button asChild variant="outline" size="sm" className="w-full">
-                    <Link to="/app/operations">Abrir frente de caixa</Link>
+                    <Link to="/app/allocation">Abrir mapa de postos</Link>
                   </Button>
                 </>
               )}

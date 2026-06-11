@@ -1,14 +1,12 @@
 import { useState } from "react"
 
 import {
-  Activity,
   BarChart2,
   BellRing,
   Building2,
   CalendarDays,
   ClipboardList,
   Contact,
-  Coffee,
   FileText,
   GraduationCap,
   ChevronDown,
@@ -69,9 +67,7 @@ const navGroups = [
     label: "Unyx Ops",
     items: [
       { to: "/app",            label: "Dashboard", icon: LayoutDashboard, perm: "dashboard"  as PermissionKey },
-      { to: "/app/operations", label: "Operacao",  icon: Activity,        perm: "operations" as PermissionKey },
-      { to: "/app/allocation", label: "Postos",    icon: MapPinned,       perm: "operations" as PermissionKey },
-      { to: "/app/break-room", label: "Intervalos", icon: Coffee,         perm: "operations" as PermissionKey },
+      { to: "/app/allocation", label: "Mapa de postos", icon: MapPinned,  perm: "operations" as PermissionKey },
       { to: "/app/alerts",     label: "Alertas",   icon: BellRing,        perm: "alerts"     as PermissionKey },
       { to: "/app/schedules",  label: "Escalas",   icon: CalendarDays,    perm: "schedules"  as PermissionKey },
       { to: "/app/checklists", label: "Checklists", icon: ListChecks,      perm: "checklists" as PermissionKey },
@@ -121,9 +117,7 @@ const navGroups = [
 
 const navItemDescriptions: Record<string, string> = {
   "/app": "Visao geral da operacao e indicadores do dia.",
-  "/app/operations": "Painel vivo para entradas, intervalos e alocacoes.",
-  "/app/allocation": "Cadastre e organize caixas, balcoes e postos.",
-  "/app/break-room": "Acompanhe pausas, cafes e retornos pendentes.",
+  "/app/allocation": "Mapa de postos para ocupados, livres e inativos.",
   "/app/alerts": "Riscos operacionais e pendencias criticas.",
   "/app/schedules": "Monte, importe e confira a escala por filial.",
   "/app/checklists": "Rotinas de abertura, fechamento e verificacoes.",
@@ -152,9 +146,9 @@ const navItemDescriptions: Record<string, string> = {
 
 const navGroupFooter: Record<string, { label: string; badge?: string; description: string }> = {
   "Unyx Ops": {
-    label: "Operacao ativa",
+    label: "Mapa ativo",
     badge: "Live",
-    description: "Controle entradas, postos e pendencias do turno no mesmo fluxo.",
+    description: "Controle a ocupacao dos postos em tempo real.",
   },
   "Unyx Control": {
     label: "Base administrativa",

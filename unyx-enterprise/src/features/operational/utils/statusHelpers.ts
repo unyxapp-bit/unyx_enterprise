@@ -1,16 +1,8 @@
 /**
- * Status Helpers - Funções relacionadas a status de operação
+ * Status Helpers - Funções genéricas de apoio ao mapa de postos.
  */
 
 import type { OperationalStatus } from "@/types/domain"
-import {
-  canFlowReturnFromBreak,
-  canFlowStartBreak,
-  canFlowStartCafe,
-  canFlowStartEntry,
-  canFlowStartExit,
-  FLOW_ENTERED_STATUSES,
-} from "./flowPolicy"
 
 export function getInitials(name: string): string {
   const parts = name.trim().split(" ").filter(Boolean)
@@ -45,33 +37,6 @@ export const postTypeLabel: Record<string, string> = {
   closing: "Fechamento",
   stock: "Estoque",
   kitchen: "Cozinha",
-}
-
-// Statuses que significam que o colaborador já entrou (exclui finalizado)
-export const ENTERED_STATUSES = FLOW_ENTERED_STATUSES
-
-export function canStartEntry(status: OperationalStatus | null | undefined): boolean {
-  return canFlowStartEntry(status)
-}
-
-export function canStartBreak(status: OperationalStatus | null | undefined): boolean {
-  return canFlowStartBreak(status)
-}
-
-export function canReturnFromBreak(status: OperationalStatus | null | undefined): boolean {
-  return canFlowReturnFromBreak(status)
-}
-
-export function canStartCafe(status: OperationalStatus | null | undefined): boolean {
-  return canFlowStartCafe(status)
-}
-
-export function canStartExit(status: OperationalStatus | null | undefined): boolean {
-  return canFlowStartExit(status)
-}
-
-export function isCafeBreak(notes: string | null | undefined): boolean {
-  return notes?.includes("cafe_active") ?? false
 }
 
 export function isDone(status: OperationalStatus | null | undefined): boolean {

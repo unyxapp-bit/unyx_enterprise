@@ -27,9 +27,6 @@ const AuditPage = lazy(() =>
 const BranchesPage = lazy(() =>
   import("@/features/branches/BranchesPage").then((m) => ({ default: m.BranchesPage }))
 )
-const BreakRoomPage = lazy(() =>
-  import("@/features/allocation/BreakRoomPage").then((m) => ({ default: m.BreakRoomPage }))
-)
 const ChecklistsPage = lazy(() =>
   import("@/features/checklists/ChecklistsPage").then((m) => ({ default: m.ChecklistsPage }))
 )
@@ -62,9 +59,6 @@ const OperationalFormsPage = lazy(() =>
 )
 const OperationalNotesPage = lazy(() =>
   import("@/features/frontstore/OperationalNotesPage").then((m) => ({ default: m.OperationalNotesPage }))
-)
-const OperationsPage = lazy(() =>
-  import("@/features/operational/OperationsPage").then((m) => ({ default: m.OperationsPage }))
 )
 const PosCashPage = lazy(() =>
   import("@/features/pos/PosCashPage").then((m) => ({ default: m.PosCashPage }))
@@ -144,9 +138,9 @@ export function AppRouter() {
               <Route index element={<DashboardPage />} />
 
             <Route element={<RequirePermission perm="operations" />}>
-              <Route path="operations" element={<OperationsPage />} />
               <Route path="allocation" element={<AllocationPage />} />
-              <Route path="break-room" element={<BreakRoomPage />} />
+              <Route path="operations" element={<Navigate to="/app/allocation" replace />} />
+              <Route path="break-room" element={<Navigate to="/app/allocation" replace />} />
             </Route>
             <Route element={<RequirePermission perm="alerts" />}>
               <Route path="alerts" element={<AlertsPage />} />

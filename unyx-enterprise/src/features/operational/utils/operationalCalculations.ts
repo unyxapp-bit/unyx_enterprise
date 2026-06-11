@@ -18,6 +18,23 @@ export function minutesToTime(minutes: number): string {
   return `${pad(h)}:${pad(m)}`
 }
 
+export function ensureScheduleEndAfter(
+  referenceTime: string,
+  currentEndTime: string | null | undefined
+): string {
+  const referenceMin = timeToMinutes(referenceTime)
+  if (referenceMin === null) {
+    return currentEndTime ?? referenceTime
+  }
+
+  const endMin = timeToMinutes(currentEndTime)
+  if (endMin !== null && endMin > referenceMin) {
+    return currentEndTime ?? referenceTime
+  }
+
+  return minutesToTime(referenceMin + 1)
+}
+
 export function nowMinutes(): number {
   const now = new Date()
   return now.getHours() * 60 + now.getMinutes()

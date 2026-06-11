@@ -6,6 +6,7 @@ import { describe, it, expect } from "vitest"
 import {
   timeToMinutes,
   minutesToTime,
+  ensureScheduleEndAfter,
   formatDuration,
   calculateBreakProgress,
   isLateForBreak,
@@ -40,6 +41,18 @@ describe("operationalCalculations", () => {
     it("handles hours overflow", () => {
       expect(minutesToTime(1440)).toBe("00:00") // 24h + 0 min
       expect(minutesToTime(1500)).toBe("01:00") // 25h + 0 min
+    })
+  })
+
+  describe("ensureScheduleEndAfter", () => {
+    it("keeps a valid end time when it is already after the reference", () => {
+      expect(ensureScheduleEndAfter("17:00", "18:00")).toBe("18:00")
+    })
+
+    it("pushes the end time forward when it would otherwise be invalid", () => {
+      expect(ensureScheduleEndAfter("17:00", "17:00")).toBe("17:01")
+      expect(ensureScheduleEndAfter("17:00", "16:30")).toBe("17:01")
+      expect(ensureScheduleEndAfter("17:00", null)).toBe("17:01")
     })
   })
 

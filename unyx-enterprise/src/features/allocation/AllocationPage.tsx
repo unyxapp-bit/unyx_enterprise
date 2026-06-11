@@ -334,10 +334,10 @@ export function AllocationPage() {
               </div>
 
               {allPosts.length === 0 ? (
-                <StateBlock
-                  title="Nenhum posto cadastrado"
-                  description="Crie caixas, balcoes e pontos de atendimento para usar nas alocacoes do Painel operacional."
-                />
+              <StateBlock
+                title="Nenhum posto cadastrado"
+                description="Crie caixas, balcoes e pontos de atendimento para usar nas alocacoes do mapa de postos."
+              />
               ) : filteredPosts.length === 0 ? (
                 <StateBlock
                   title="Nenhum posto neste filtro"

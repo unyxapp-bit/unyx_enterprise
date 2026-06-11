@@ -159,12 +159,6 @@ export const operationalActions: Array<{
     priorityLevel: 110,
   },
   {
-    eventType: "intervalo_solicitado",
-    label: "Intervalo",
-    nextStatus: "aguardando_sangria",
-    priorityLevel: 80,
-  },
-  {
     eventType: "sangria_confirmada",
     label: "Sangria",
     nextStatus: "troca_de_caixa",
@@ -175,12 +169,6 @@ export const operationalActions: Array<{
     label: "Troca",
     nextStatus: "deve_sair",
     priorityLevel: 60,
-  },
-  {
-    eventType: "intervalo_iniciado",
-    label: "Iniciar",
-    nextStatus: "em_intervalo",
-    priorityLevel: 50,
   },
   {
     eventType: "retorno_confirmado",
