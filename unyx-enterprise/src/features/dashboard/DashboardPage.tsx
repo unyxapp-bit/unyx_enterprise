@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   Building2,
+  ClipboardCheck,
   Clock,
   Coffee,
   DoorOpen,
@@ -43,6 +44,8 @@ import {
 } from "@/features/ops/modes/priorityRules"
 import {
   useAttendanceEvents,
+  useChecklistProcedures,
+  useChecklistRuns,
   useDashboardRows,
   useOperationalSettings,
   useOperationalStatuses,
@@ -55,6 +58,7 @@ import { operationalStatuses, statusMeta } from "@/lib/status"
 import { localDateKey, operationalMinutesForDate } from "@/features/operational/utils"
 import type {
   DashboardRow,
+  ChecklistProcedure,
   OperationalStatus,
   OperationalStatusRecord,
   PostAllocation,
@@ -205,6 +209,22 @@ function normalize(value?: string | null) {
     .toLowerCase()
 }
 
+function dateStartISO(dateKey: string) {
+  const [year, month, day] = dateKey.split("-").map(Number)
+  return new Date(year, month - 1, day, 0, 0, 0, 0).toISOString()
+}
+
+function checklistDueDateForDate(
+  procedure: Pick<ChecklistProcedure, "due_time">,
+  dateKey: string
+) {
+  if (!procedure.due_time) return null
+  const [hours, minutes] = procedure.due_time.slice(0, 5).split(":").map(Number)
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null
+  const [year, month, day] = dateKey.split("-").map(Number)
+  return new Date(year, month - 1, day, hours, minutes, 0, 0)
+}
+
 function rowMatchesSearch(row: DashboardRow, searchText: string) {
   const query = normalize(searchText)
   if (!query) return true
@@ -233,6 +253,17 @@ function rowMatchesStatusFilter(row: DashboardRow, statusFilter: string) {
     return normalize(row.status_reason).includes("falta")
   }
   return row.current_status === statusFilter
+}
+
+function isAbsenceRow(row: Pick<DashboardRow, "current_status" | "status_reason">) {
+  return (
+    row.current_status === "alerta_critico" &&
+    normalize(row.status_reason).includes("falta")
+  )
+}
+
+function isFinishedRow(row: Pick<DashboardRow, "current_status">) {
+  return row.current_status === "finalizado"
 }
 
 function getMetricStatusFilter(key: DashboardMetricKey) {
@@ -586,6 +617,8 @@ export function DashboardPage() {
   const operationalSettings = useOperationalSettings()
   const attendanceEvents = useAttendanceEvents()
   const postAllocations = usePostAllocations()
+  const checklistProcedures = useChecklistProcedures()
+  const checklistRuns = useChecklistRuns(dateStartISO(date))
 
   const mode = getOperationalMode(
     operationalSettings.data?.mode ?? organization.data?.segment
@@ -702,6 +735,43 @@ export function DashboardPage() {
     ).length
   }, [attendanceEvents.data, date])
 
+  const checklistSummary = useMemo(() => {
+    const checklistRows = (checklistProcedures.data ?? []).filter(
+      (procedure) => procedure.checklist_items.length > 0
+    )
+    const checklistIds = new Set(checklistRows.map((procedure) => procedure.id))
+    const runsForDate = (checklistRuns.data ?? []).filter(
+      (run) =>
+        checklistIds.has(run.procedure_id) &&
+        (run.completed_at ?? run.created_at).slice(0, 10) === date
+    )
+    const completedProcedureIds = new Set(runsForDate.map((run) => run.procedure_id))
+    const dailyProcedures = checklistRows.filter(
+      (procedure) => procedure.frequency === "daily"
+    )
+    const pendingProcedures = dailyProcedures.filter(
+      (procedure) => !completedProcedureIds.has(procedure.id)
+    )
+    const today = localDateKey()
+    const nowMs = Date.now()
+    const overdue = pendingProcedures.filter((procedure) => {
+      const dueAt = checklistDueDateForDate(procedure, date)
+      if (!dueAt) return false
+      return date < today || (date === today && dueAt.getTime() < nowMs)
+    }).length
+    const approvals = (checklistRuns.data ?? []).filter(
+      (run) =>
+        checklistIds.has(run.procedure_id) && run.approval_status === "pending"
+    ).length
+
+    return {
+      approvals,
+      completed: runsForDate.length,
+      overdue,
+      pending: pendingProcedures.length,
+    }
+  }, [checklistProcedures.data, checklistRuns.data, date])
+
   const toMin = (t: string | null) => {
     if (!t) return null
     const [h, m] = t.split(":").map(Number)
@@ -808,12 +878,28 @@ export function DashboardPage() {
 
   const workingCount = allocatedWorkingCount
   const scheduledCount = filteredSchedules.length || filteredRows.length
-  const pendingCount = Math.max(0, scheduledCount - workingCount)
+  const finishedCount = filteredRows.filter(isFinishedRow).length
+  const activeScheduleRows = liveRows.filter(
+    (row) =>
+      !isFinishedRow(row) &&
+      !isAbsenceRow(row) &&
+      row.current_status !== "folga"
+  )
+  const activeScheduleCount = Math.max(activeScheduleRows.length, workingCount)
+  const pendingCount = activeScheduleRows.filter(
+    (row) =>
+      row.current_status !== "em_intervalo" &&
+      !allocationByEmployeeId.has(row.employee_id)
+  ).length
   const criticalCount = statusSource.filter(
     (row) => row.current_status === "alerta_critico"
   ).length
   const presencePct =
-    scheduledCount > 0 ? Math.round((workingCount / scheduledCount) * 100) : 0
+    activeScheduleCount > 0
+      ? Math.min(100, Math.round((workingCount / activeScheduleCount) * 100))
+      : finishedCount > 0
+        ? 100
+        : 0
 
   const refetchDashboardScreen = () => {
     void dashboard.refetch()
@@ -918,7 +1004,9 @@ export function DashboardPage() {
                 schedules.isFetching ||
                 statuses.isFetching ||
                 attendanceEvents.isFetching ||
-                postAllocations.isFetching
+                postAllocations.isFetching ||
+                checklistProcedures.isFetching ||
+                checklistRuns.isFetching
               }
               aria-label="Atualizar"
             >
@@ -928,7 +1016,9 @@ export function DashboardPage() {
                   schedules.isFetching ||
                   statuses.isFetching ||
                   attendanceEvents.isFetching ||
-                  postAllocations.isFetching
+                  postAllocations.isFetching ||
+                  checklistProcedures.isFetching ||
+                  checklistRuns.isFetching
                     ? "animate-spin"
                     : ""
                 }`}
@@ -975,7 +1065,7 @@ export function DashboardPage() {
                         <p className="font-medium text-slate-900 dark:text-slate-100">
                           {workingCount} ativos
                         </p>
-                        <p>de {scheduledCount} escalados</p>
+                        <p>de {activeScheduleCount} em turno</p>
                       </div>
                     </div>
 
@@ -1027,9 +1117,61 @@ export function DashboardPage() {
                       </div>
                     </div>
 
+                    <Link
+                      to="/app/checklists"
+                      className="block rounded-2xl border border-slate-200 bg-white/90 p-3 shadow-sm transition hover:border-indigo-200 hover:shadow-md dark:border-slate-700 dark:bg-slate-950/30"
+                    >
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 text-xs font-semibold text-slate-800 dark:text-slate-100">
+                          <ClipboardCheck className="size-4 text-indigo-500" />
+                          Rotinas de checklist
+                        </div>
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                          ver detalhes
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-4 gap-2 text-center">
+                        <div>
+                          <p className="text-[11px] text-emerald-600 dark:text-emerald-300">
+                            Feitos
+                          </p>
+                          <p className="mt-0.5 text-lg font-bold tabular-nums text-slate-950 dark:text-slate-100">
+                            {checklistSummary.completed}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] text-amber-600 dark:text-amber-300">
+                            Pend.
+                          </p>
+                          <p className="mt-0.5 text-lg font-bold tabular-nums text-slate-950 dark:text-slate-100">
+                            {checklistSummary.pending}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] text-rose-600 dark:text-rose-300">
+                            Atras.
+                          </p>
+                          <p className="mt-0.5 text-lg font-bold tabular-nums text-slate-950 dark:text-slate-100">
+                            {checklistSummary.overdue}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] text-indigo-600 dark:text-indigo-300">
+                            Aprov.
+                          </p>
+                          <p className="mt-0.5 text-lg font-bold tabular-nums text-slate-950 dark:text-slate-100">
+                            {checklistSummary.approvals}
+                          </p>
+                        </div>
+                      </div>
+                    </Link>
+
                     <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-950/30 dark:text-slate-300/70">
-                      <span>
-                        {pendingCount} escalados ainda nao alocados
+                      <span className="flex flex-wrap gap-x-3 gap-y-1">
+                        <span>{pendingCount} em turno ainda nao alocados</span>
+                        {finishedCount > 0 ? (
+                          <span>{finishedCount} ja sairam</span>
+                        ) : null}
                       </span>
                       {lastUpdated ? <span>atualizado as {lastUpdated}</span> : null}
                     </div>

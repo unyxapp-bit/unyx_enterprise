@@ -1,21 +1,24 @@
 import { useMemo, useState } from "react"
-import type { FormEvent } from "react"
+import type { Dispatch, FormEvent, ReactNode, SetStateAction } from "react"
 import {
+  AlertTriangle,
+  BookOpenText,
   Building2,
   CheckCircle2,
   ClipboardCheck,
   ClipboardList,
   Clock3,
   History,
+  ImagePlus,
   ListChecks,
   Plus,
   RotateCcw,
+  ShieldCheck,
   Timer,
+  XCircle,
 } from "lucide-react"
 
 import { useAuth } from "@/app/providers/auth-context"
-import { BentoGrid } from "@/components/bento/BentoGrid"
-import { MetricCard } from "@/components/bento/MetricCard"
 import { PageHeader } from "@/components/shared/PageHeader"
 import { StateBlock } from "@/components/shared/StateBlock"
 import { Badge } from "@/components/ui/badge"
@@ -37,6 +40,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import {
+  useApproveChecklistRun,
   useBranches,
   useChecklistProcedures,
   useChecklistRuns,
@@ -45,10 +49,13 @@ import {
   useSectors,
 } from "@/hooks/useUnyxData"
 import { formatDateTimeBR } from "@/lib/format"
+import { cn } from "@/lib/utils"
 import { useAppStore } from "@/store/useAppStore"
 import type {
+  ChecklistApprovalStatus,
   ChecklistProcedure,
   ChecklistProcedureFrequency,
+  ChecklistRun,
   UserRole,
 } from "@/types/domain"
 
@@ -56,7 +63,7 @@ const fieldClass =
   "h-8 w-full rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
 
 const textareaClass =
-  "min-h-24 w-full rounded-lg border bg-white px-2.5 py-2 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+  "min-h-20 w-full rounded-lg border bg-white px-2.5 py-2 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
 
 const frequencyLabel: Record<ChecklistProcedureFrequency, string> = {
   daily: "Diario",
@@ -74,16 +81,44 @@ const frequencyOptions: ChecklistProcedureFrequency[] = [
 
 const managerRoles: UserRole[] = ["owner", "admin", "branch_manager", "supervisor"]
 const checklistViews = [
-  ["execute", "Executar"],
+  ["checklists", "Checklists"],
+  ["procedures", "Procedimentos"],
   ["pending", "Pendentes"],
   ["history", "Historico"],
-  ["models", "Modelos"],
 ] as const
+
+type ChecklistView = (typeof checklistViews)[number][0]
+type ChecklistToolKind = "checklist" | "procedure"
+type TextByProcedure = Record<string, Record<string, string>>
+
+const emptyForm = {
+  kind: "checklist" as ChecklistToolKind,
+  branch_id: "",
+  sector_id: "",
+  title: "",
+  category: "",
+  frequency: "daily" as ChecklistProcedureFrequency,
+  estimated_minutes: "",
+  owner_role: "",
+  due_time: "",
+  evidence_required: false,
+  requires_approval: false,
+  approval_role: "",
+  instructions: "",
+  checklist_items: "",
+}
 
 function todayStartISO() {
   const date = new Date()
   date.setHours(0, 0, 0, 0)
   return date.toISOString()
+}
+
+function localDateKey(date = new Date()) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
 }
 
 function splitChecklistItems(value: string) {
@@ -97,130 +132,514 @@ function canManageProcedures(role: UserRole | undefined) {
   return Boolean(role && managerRoles.includes(role))
 }
 
-function ProcedureCard({
+function isChecklist(procedure: ChecklistProcedure) {
+  return procedure.checklist_items.length > 0
+}
+
+function isProcedureDocument(procedure: ChecklistProcedure) {
+  return !isChecklist(procedure) && Boolean(procedure.instructions?.trim())
+}
+
+function procedureSteps(instructions: string) {
+  return instructions
+    .split("\n")
+    .map((step) => step.trim())
+    .filter(Boolean)
+}
+
+function formatTime(value: string | null | undefined) {
+  return value ? value.slice(0, 5) : "--:--"
+}
+
+function scopeLabel(procedure: ChecklistProcedure) {
+  const branch = procedure.branches?.name ?? "Toda empresa"
+  return procedure.sectors?.name ? `${branch} - ${procedure.sectors.name}` : branch
+}
+
+function dueDateForProcedure(procedure: ChecklistProcedure, dateKey = localDateKey()) {
+  if (!procedure.due_time) return null
+  const [hours, minutes] = procedure.due_time.slice(0, 5).split(":").map(Number)
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null
+  const [year, month, day] = dateKey.split("-").map(Number)
+  return new Date(year, month - 1, day, hours, minutes, 0, 0)
+}
+
+function procedureStatus(procedure: ChecklistProcedure, isCompletedToday: boolean) {
+  if (isCompletedToday) {
+    return {
+      label: "Concluido",
+      className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+      priority: 4,
+    }
+  }
+
+  if (procedure.frequency === "on_demand") {
+    return {
+      label: "Sob demanda",
+      className: "border-slate-200 bg-slate-50 text-slate-600",
+      priority: 3,
+    }
+  }
+
+  const dueAt = dueDateForProcedure(procedure)
+  if (dueAt) {
+    const delta = dueAt.getTime() - Date.now()
+    if (delta < 0) {
+      return {
+        label: "Atrasado",
+        className: "border-red-200 bg-red-50 text-red-700",
+        priority: 0,
+      }
+    }
+    if (delta <= 60 * 60 * 1000) {
+      return {
+        label: "Proximo",
+        className: "border-amber-200 bg-amber-50 text-amber-700",
+        priority: 1,
+      }
+    }
+  }
+
+  return {
+    label: "Pendente",
+    className: "border-sky-200 bg-sky-50 text-sky-700",
+    priority: 2,
+  }
+}
+
+function approvalClassName(status: ChecklistApprovalStatus) {
+  if (status === "approved") return "border-emerald-200 bg-emerald-50 text-emerald-700"
+  if (status === "rejected") return "border-red-200 bg-red-50 text-red-700"
+  if (status === "pending") return "border-amber-200 bg-amber-50 text-amber-700"
+  return "border-slate-200 bg-slate-50 text-slate-600"
+}
+
+function approvalLabel(status: ChecklistApprovalStatus) {
+  if (status === "approved") return "Aprovado"
+  if (status === "rejected") return "Reprovado"
+  if (status === "pending") return "Aguardando aprovacao"
+  return "Sem aprovacao"
+}
+
+function CompactMetric({
+  detail,
+  icon,
+  title,
+  value,
+  tone = "slate",
+}: {
+  detail: string
+  icon: ReactNode
+  title: string
+  value: number
+  tone?: "slate" | "emerald" | "amber" | "red" | "sky"
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-xl border bg-[color:var(--bg-surface)] px-3 py-2.5 shadow-sm",
+        tone === "emerald" && "border-emerald-200 bg-emerald-50/40",
+        tone === "amber" && "border-amber-200 bg-amber-50/40",
+        tone === "red" && "border-red-200 bg-red-50/40",
+        tone === "sky" && "border-sky-200 bg-sky-50/40",
+        tone === "slate" && "border-[color:var(--border-soft)]"
+      )}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate text-[11px] font-medium text-muted-foreground">
+            {title}
+          </p>
+          <p className="mt-1 text-xl font-semibold leading-none text-[color:var(--text-primary)]">
+            {value}
+          </p>
+        </div>
+        <div className="shrink-0 text-muted-foreground [&_svg]:size-4">{icon}</div>
+      </div>
+      <p className="mt-1 truncate text-[11px] text-muted-foreground">{detail}</p>
+    </div>
+  )
+}
+
+function ChecklistCard({
   checkedItems,
+  evidenceNotes,
   isCompletedToday,
   isPending,
+  itemEvidence,
+  itemOccurrence,
   notes,
   onComplete,
+  onEvidenceChange,
+  onItemEvidenceChange,
+  onItemOccurrenceChange,
   onNotesChange,
   onReset,
-  onToggleItem,
   onToggleAll,
+  onToggleItem,
   procedure,
 }: {
   checkedItems: string[]
+  evidenceNotes: string
   isCompletedToday: boolean
   isPending: boolean
+  itemEvidence: Record<string, string>
+  itemOccurrence: Record<string, string>
   notes: string
   onComplete: () => void
+  onEvidenceChange: (value: string) => void
+  onItemEvidenceChange: (item: string, value: string) => void
+  onItemOccurrenceChange: (item: string, value: string) => void
   onNotesChange: (value: string) => void
   onReset: () => void
-  onToggleItem: (item: string) => void
   onToggleAll: () => void
+  onToggleItem: (item: string) => void
   procedure: ChecklistProcedure
 }) {
   const totalItems = procedure.checklist_items.length
   const checkedCount = checkedItems.length
   const complete = totalItems > 0 && checkedCount === totalItems
+  const status = procedureStatus(procedure, isCompletedToday)
+  const progress = totalItems > 0 ? Math.round((checkedCount / totalItems) * 100) : 0
+  const evidenceMissing =
+    procedure.evidence_required &&
+    !evidenceNotes.trim() &&
+    !procedure.checklist_items.every((item) => itemEvidence[item]?.trim())
 
   return (
-    <Card className="border bg-white shadow-sm">
-      <CardHeader>
-        <div className="flex flex-wrap items-start justify-between gap-3">
+    <Card className="border border-[color:var(--border-soft)] bg-white shadow-sm" size="sm">
+      <CardHeader className="gap-2 px-3 pb-0">
+        <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <ClipboardList className="size-4 shrink-0" />
-              <span className="min-w-0 break-words">{procedure.title}</span>
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <ClipboardList className="size-4 shrink-0 text-muted-foreground" />
+              <span className="truncate">{procedure.title}</span>
             </CardTitle>
-            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-              <span>{procedure.branches?.name ?? "Toda empresa"}</span>
-              {procedure.sectors?.name ? <span>{procedure.sectors.name}</span> : null}
+            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+              <span>{scopeLabel(procedure)}</span>
               {procedure.estimated_minutes ? (
                 <span>{procedure.estimated_minutes} min</span>
               ) : null}
+              {procedure.due_time ? <span>ate {formatTime(procedure.due_time)}</span> : null}
             </div>
           </div>
-          <div className="flex flex-wrap gap-1.5">
-            <Badge variant={isCompletedToday ? "default" : "outline"}>
-              {isCompletedToday ? "Feito hoje" : frequencyLabel[procedure.frequency]}
+          <Badge
+            variant="outline"
+            className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px]", status.className)}
+          >
+            {status.label}
+          </Badge>
+        </div>
+
+        <div className="flex flex-wrap gap-1.5">
+          <Badge variant="outline" className="rounded-full px-2 py-0.5 text-[10px]">
+            {frequencyLabel[procedure.frequency]}
+          </Badge>
+          {procedure.category ? (
+            <Badge variant="secondary" className="rounded-full px-2 py-0.5 text-[10px]">
+              {procedure.category}
             </Badge>
-            {procedure.category ? (
-              <Badge variant="secondary">{procedure.category}</Badge>
-            ) : null}
-          </div>
+          ) : null}
+          {procedure.evidence_required ? (
+            <Badge variant="outline" className="rounded-full border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] text-sky-700">
+              Evidencia
+            </Badge>
+          ) : null}
+          {procedure.requires_approval ? (
+            <Badge variant="outline" className="rounded-full border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] text-amber-700">
+              Aprovacao
+            </Badge>
+          ) : null}
         </div>
       </CardHeader>
 
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-3 px-3">
         {procedure.instructions ? (
-          <p className="whitespace-pre-wrap rounded-lg border bg-slate-50 px-3 py-2 text-sm leading-6 text-slate-700">
+          <p className="line-clamp-3 rounded-lg border bg-slate-50 px-2.5 py-2 text-xs leading-5 text-slate-700">
             {procedure.instructions}
           </p>
         ) : null}
 
-        <div className="space-y-2">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="text-sm font-medium">
+        <div>
+          <div className="mb-1.5 flex items-center justify-between gap-2 text-xs">
+            <span className="font-medium">
               {checkedCount} de {totalItems} itens
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={onToggleAll}
-              >
-                <CheckCircle2 className="size-4" />
-                Marcar todos
-              </Button>
-              <Button type="button" variant="ghost" size="sm" onClick={onReset}>
-                <RotateCcw className="size-4" />
-                Limpar
-              </Button>
-            </div>
+            </span>
+            <span className="text-muted-foreground">{progress}%</span>
           </div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+            <div
+              className="h-full rounded-full bg-[color:var(--color-primary,#4f46e5)] transition-all"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        </div>
 
-          <div className="grid gap-2">
-            {procedure.checklist_items.map((item) => {
-              const checked = checkedItems.includes(item)
-              return (
-                <label
-                  key={item}
-                  className={`flex items-start gap-3 rounded-lg border p-3 text-sm transition-colors ${
-                    checked ? "border-emerald-200 bg-emerald-50" : "bg-white"
-                  }`}
-                >
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" size="sm" className="h-8 rounded-full px-3 text-xs" onClick={onToggleAll}>
+            <CheckCircle2 className="size-3.5" />
+            Marcar todos
+          </Button>
+          <Button type="button" variant="ghost" size="sm" className="h-8 rounded-full px-3 text-xs" onClick={onReset}>
+            <RotateCcw className="size-3.5" />
+            Limpar
+          </Button>
+        </div>
+
+        <div className="space-y-2">
+          {procedure.checklist_items.map((item) => {
+            const checked = checkedItems.includes(item)
+            return (
+              <div
+                key={item}
+                className={cn(
+                  "rounded-lg border px-2.5 py-2 text-sm transition-colors",
+                  checked ? "border-emerald-200 bg-emerald-50" : "bg-white"
+                )}
+              >
+                <label className="flex items-start gap-2">
                   <input
                     className="mt-1"
                     type="checkbox"
                     checked={checked}
                     onChange={() => onToggleItem(item)}
                   />
-                  <span className={checked ? "text-emerald-900" : "text-slate-700"}>
+                  <span className={cn("min-w-0 flex-1 text-xs leading-5", checked ? "text-emerald-900" : "text-slate-700")}>
                     {item}
                   </span>
                 </label>
-              )
-            })}
-          </div>
+                {checked ? (
+                  <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                    <Input
+                      value={itemEvidence[item] ?? ""}
+                      onChange={(event) => onItemEvidenceChange(item, event.target.value)}
+                      placeholder="Evidencia ou link"
+                      className="h-8 text-xs"
+                    />
+                    <Input
+                      value={itemOccurrence[item] ?? ""}
+                      onChange={(event) => onItemOccurrenceChange(item, event.target.value)}
+                      placeholder="Ocorrencia do item"
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                ) : null}
+              </div>
+            )
+          })}
         </div>
 
-        <label className="space-y-1 text-sm">
-          <span className="font-medium">Observacao da execucao</span>
+        <div className="grid gap-2">
+          <Input
+            value={evidenceNotes}
+            onChange={(event) => onEvidenceChange(event.target.value)}
+            placeholder="Evidencia geral, foto ou link"
+            className="h-8 text-xs"
+          />
           <textarea
-            className="min-h-16 w-full rounded-lg border bg-white px-2.5 py-2 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+            className="min-h-14 w-full rounded-lg border bg-white px-2.5 py-2 text-xs outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
             value={notes}
             onChange={(event) => onNotesChange(event.target.value)}
+            placeholder="Observacao da execucao"
           />
-        </label>
+        </div>
 
-        <Button onClick={onComplete} disabled={!complete || isPending}>
+        {evidenceMissing ? (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-700">
+            Informe uma evidencia geral ou uma evidencia em todos os itens.
+          </div>
+        ) : null}
+
+        <Button
+          className="h-9 w-full rounded-full text-xs"
+          onClick={onComplete}
+          disabled={!complete || isPending || isCompletedToday || evidenceMissing}
+        >
           <ClipboardCheck className="size-4" />
-          {isPending ? "Finalizando..." : "Finalizar checklist"}
+          {isPending ? "Finalizando..." : isCompletedToday ? "Concluido hoje" : "Finalizar checklist"}
         </Button>
       </CardContent>
     </Card>
+  )
+}
+
+function ProcedureDocumentCard({ procedure }: { procedure: ChecklistProcedure }) {
+  const steps = procedureSteps(procedure.instructions ?? "")
+
+  return (
+    <Card className="border border-[color:var(--border-soft)] bg-white shadow-sm" size="sm">
+      <CardHeader className="gap-2 px-3 pb-0">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <BookOpenText className="size-4 shrink-0 text-muted-foreground" />
+              <span className="break-words">{procedure.title}</span>
+            </CardTitle>
+            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+              <span>{scopeLabel(procedure)}</span>
+              {procedure.owner_role ? <span>{procedure.owner_role}</span> : null}
+              {procedure.estimated_minutes ? (
+                <span>{procedure.estimated_minutes} min</span>
+              ) : null}
+            </div>
+          </div>
+          <Badge
+            variant="outline"
+            className="shrink-0 rounded-full border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] text-sky-700"
+          >
+            Procedimento
+          </Badge>
+        </div>
+        {procedure.category ? (
+          <Badge variant="secondary" className="w-fit rounded-full px-2 py-0.5 text-[10px]">
+            {procedure.category}
+          </Badge>
+        ) : null}
+      </CardHeader>
+
+      <CardContent className="px-3">
+        <div className="space-y-2">
+          {steps.map((step, index) => (
+            <div key={`${procedure.id}-${index}`} className="flex items-start gap-2 text-xs leading-5 text-slate-700">
+              <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-semibold text-slate-600">
+                {index + 1}
+              </span>
+              <p className="min-w-0 whitespace-pre-wrap break-words">{step}</p>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function HistoryList({
+  canApprove,
+  isApproving,
+  onApprove,
+  onReject,
+  runs,
+}: {
+  canApprove: boolean
+  isApproving: boolean
+  onApprove: (run: ChecklistRun) => void
+  onReject: (run: ChecklistRun) => void
+  runs: ChecklistRun[]
+}) {
+  if (runs.length === 0) {
+    return (
+      <StateBlock
+        className="min-h-40"
+        title="Sem execucoes"
+        description="Os checklists finalizados aparecem aqui."
+      />
+    )
+  }
+
+  return (
+    <div className="grid gap-3">
+      {runs.map((run) => {
+        const hasOccurrence = Boolean(run.occurrence_notes)
+        const completedLate =
+          Boolean(run.due_at && run.completed_at) &&
+          new Date(run.completed_at as string).getTime() >
+            new Date(run.due_at as string).getTime()
+
+        return (
+          <div key={run.id} className="rounded-xl border border-[color:var(--border-soft)] bg-white p-3 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold text-[color:var(--text-primary)]">
+                  {run.checklist_procedures?.title ?? "Checklist"}
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                  <Building2 className="size-3.5" />
+                  <span>{run.branches?.name ?? "Empresa"}</span>
+                  <span>{run.user_profiles?.name ?? "Usuario"}</span>
+                  <span>{formatDateTimeBR(run.completed_at ?? run.created_at)}</span>
+                </div>
+              </div>
+              <div className="flex flex-wrap justify-end gap-1.5">
+                <Badge variant="outline" className="rounded-full px-2 py-0.5 text-[10px]">
+                  {run.checked_items.length} itens
+                </Badge>
+                {completedLate ? (
+                  <Badge variant="outline" className="rounded-full border-red-200 bg-red-50 px-2 py-0.5 text-[10px] text-red-700">
+                    Atrasado
+                  </Badge>
+                ) : null}
+                {hasOccurrence ? (
+                  <Badge variant="outline" className="rounded-full border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] text-amber-700">
+                    Ocorrencia
+                  </Badge>
+                ) : null}
+                <Badge
+                  variant="outline"
+                  className={cn("rounded-full px-2 py-0.5 text-[10px]", approvalClassName(run.approval_status))}
+                >
+                  {approvalLabel(run.approval_status)}
+                </Badge>
+              </div>
+            </div>
+
+            {run.evidence_notes ? (
+              <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-sky-50 px-2.5 py-2 text-xs leading-5 text-sky-800">
+                <ImagePlus className="mt-0.5 size-3.5 shrink-0" />
+                <span>{run.evidence_notes}</span>
+              </p>
+            ) : null}
+
+            {run.occurrence_notes ? (
+              <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-amber-50 px-2.5 py-2 text-xs leading-5 text-amber-800">
+                <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                <span className="whitespace-pre-wrap">{run.occurrence_notes}</span>
+              </p>
+            ) : null}
+
+            {run.notes ? (
+              <p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-slate-600">
+                {run.notes}
+              </p>
+            ) : null}
+
+            {run.approved_profile?.name || run.rejected_reason ? (
+              <div className="mt-2 rounded-lg bg-slate-50 px-2.5 py-2 text-xs text-muted-foreground">
+                {run.approved_profile?.name ? `Responsavel: ${run.approved_profile.name}` : null}
+                {run.rejected_reason ? (
+                  <span className="block text-red-700">{run.rejected_reason}</span>
+                ) : null}
+              </div>
+            ) : null}
+
+            {canApprove && run.approval_status === "pending" ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-8 rounded-full px-3 text-xs"
+                  disabled={isApproving}
+                  onClick={() => onApprove(run)}
+                >
+                  <ShieldCheck className="size-3.5" />
+                  Aprovar
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="destructive"
+                  className="h-8 rounded-full px-3 text-xs"
+                  disabled={isApproving}
+                  onClick={() => onReject(run)}
+                >
+                  <XCircle className="size-3.5" />
+                  Reprovar
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        )
+      })}
+    </div>
   )
 }
 
@@ -233,64 +652,140 @@ export function ChecklistsPage() {
   const branches = useBranches()
   const createProcedure = useCreateChecklistProcedure()
   const completeRun = useCompleteChecklistRun()
+  const approveRun = useApproveChecklistRun()
   const [open, setOpen] = useState(false)
-  const [view, setView] = useState<"execute" | "pending" | "history" | "models">("execute")
+  const [view, setView] = useState<ChecklistView>("checklists")
   const [checkedByProcedure, setCheckedByProcedure] = useState<Record<string, string[]>>({})
   const [notesByProcedure, setNotesByProcedure] = useState<Record<string, string>>({})
-  const [form, setForm] = useState({
-    branch_id: "",
-    sector_id: "",
-    title: "",
-    category: "",
-    frequency: "daily" as ChecklistProcedureFrequency,
-    estimated_minutes: "",
-    owner_role: "",
-    instructions: "",
-    checklist_items: "",
-  })
+  const [evidenceByProcedure, setEvidenceByProcedure] = useState<Record<string, string>>({})
+  const [itemEvidenceByProcedure, setItemEvidenceByProcedure] = useState<TextByProcedure>({})
+  const [itemOccurrenceByProcedure, setItemOccurrenceByProcedure] = useState<TextByProcedure>({})
+  const [form, setForm] = useState(emptyForm)
   const isOrgAdmin = profile?.role === "owner" || profile?.role === "admin"
   const effectiveFormBranchId =
     form.branch_id || (!isOrgAdmin ? profile?.branch_id ?? "" : "")
   const sectors = useSectors(effectiveFormBranchId || null)
   const canCreate = canManageProcedures(profile?.role)
 
+  const checklistIds = useMemo(
+    () =>
+      new Set(
+        (procedures.data ?? []).filter(isChecklist).map((procedure) => procedure.id)
+      ),
+    [procedures.data]
+  )
+  const completedTodayRuns = useMemo(
+    () => (runsToday.data ?? []).filter((run) => checklistIds.has(run.procedure_id)),
+    [checklistIds, runsToday.data]
+  )
+  const checklistHistory = useMemo(
+    () => (history.data ?? []).filter((run) => checklistIds.has(run.procedure_id)),
+    [checklistIds, history.data]
+  )
   const completedTodayIds = useMemo(
-    () => new Set((runsToday.data ?? []).map((run) => run.procedure_id)),
-    [runsToday.data]
+    () => new Set(completedTodayRuns.map((run) => run.procedure_id)),
+    [completedTodayRuns]
   )
 
   const stats = useMemo(() => {
-    const activeProcedures = procedures.data ?? []
-    const dailyProcedures = activeProcedures.filter(
+    const activeChecklists = (procedures.data ?? []).filter(isChecklist)
+    const procedureDocuments = (procedures.data ?? []).filter(isProcedureDocument)
+    const dailyProcedures = activeChecklists.filter(
       (procedure) => procedure.frequency === "daily"
     )
-    const totalItems = activeProcedures.reduce(
-      (sum, procedure) => sum + procedure.checklist_items.length,
-      0
-    )
-    const dailyPending = dailyProcedures.filter(
+    const dailyPendingRows = dailyProcedures.filter(
       (procedure) => !completedTodayIds.has(procedure.id)
+    )
+    const overdueRows = dailyPendingRows.filter(
+      (procedure) => procedureStatus(procedure, false).label === "Atrasado"
+    )
+    const approvalPending = checklistHistory.filter(
+      (run) => run.approval_status === "pending"
     ).length
-    const completedToday = runsToday.data?.length ?? 0
 
     return {
-      active: activeProcedures.length,
-      completedToday,
-      dailyPending,
-      totalItems,
+      activeChecklists: activeChecklists.length,
+      procedureDocuments: procedureDocuments.length,
+      completedToday: completedTodayRuns.length,
+      dailyPending: dailyPendingRows.length,
+      overdue: overdueRows.length,
+      approvalPending,
     }
-  }, [completedTodayIds, procedures.data, runsToday.data])
+  }, [checklistHistory, completedTodayIds, completedTodayRuns.length, procedures.data])
 
-  const displayedProcedures = useMemo(() => {
-    const rows = procedures.data ?? []
-    if (view === "pending") {
-      return rows.filter(
-        (procedure) =>
-          procedure.frequency === "daily" && !completedTodayIds.has(procedure.id)
-      )
-    }
-    return rows
+  const viewCounts: Record<ChecklistView, number> = {
+    checklists: stats.activeChecklists,
+    procedures: stats.procedureDocuments,
+    pending: stats.dailyPending,
+    history: checklistHistory.length,
+  }
+
+  const displayedChecklists = useMemo(() => {
+    const rows = (procedures.data ?? []).filter(isChecklist)
+    const base =
+      view === "pending"
+        ? rows.filter(
+            (procedure) =>
+              procedure.frequency === "daily" && !completedTodayIds.has(procedure.id)
+          )
+        : rows
+
+    return base.slice().sort((left, right) => {
+      const leftStatus = procedureStatus(left, completedTodayIds.has(left.id))
+      const rightStatus = procedureStatus(right, completedTodayIds.has(right.id))
+      if (leftStatus.priority !== rightStatus.priority) {
+        return leftStatus.priority - rightStatus.priority
+      }
+      return left.title.localeCompare(right.title)
+    })
   }, [completedTodayIds, procedures.data, view])
+
+  const displayedProcedureDocuments = useMemo(
+    () =>
+      (procedures.data ?? [])
+        .filter(isProcedureDocument)
+        .slice()
+        .sort((left, right) => left.title.localeCompare(right.title)),
+    [procedures.data]
+  )
+
+  function resetForm() {
+    setForm(emptyForm)
+  }
+
+  function openCreate(kind: ChecklistToolKind = "checklist") {
+    setForm({ ...emptyForm, kind, branch_id: selectedBranchId ?? "" })
+    setOpen(true)
+  }
+
+  function changeFormKind(kind: ChecklistToolKind) {
+    setForm((current) => ({
+      ...current,
+      kind,
+      frequency: kind === "checklist" ? current.frequency : "on_demand",
+      due_time: kind === "checklist" ? current.due_time : "",
+      evidence_required: kind === "checklist" && current.evidence_required,
+      requires_approval: kind === "checklist" && current.requires_approval,
+      approval_role: kind === "checklist" ? current.approval_role : "",
+      instructions: kind === "procedure" ? current.instructions : "",
+      checklist_items: kind === "checklist" ? current.checklist_items : "",
+    }))
+  }
+
+  function setItemText(
+    setter: Dispatch<SetStateAction<TextByProcedure>>,
+    procedureId: string,
+    item: string,
+    value: string
+  ) {
+    setter((current) => ({
+      ...current,
+      [procedureId]: {
+        ...(current[procedureId] ?? {}),
+        [item]: value,
+      },
+    }))
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -300,26 +795,22 @@ export function ChecklistsPage() {
       sector_id: form.sector_id || null,
       title: form.title.trim(),
       category: form.category.trim() || null,
-      frequency: form.frequency,
+      frequency: form.kind === "checklist" ? form.frequency : "on_demand",
       estimated_minutes: form.estimated_minutes
         ? Number(form.estimated_minutes)
         : null,
       owner_role: form.owner_role.trim() || null,
-      instructions: form.instructions.trim() || null,
-      checklist_items: splitChecklistItems(form.checklist_items),
+      due_time: form.kind === "checklist" ? form.due_time || null : null,
+      evidence_required: form.kind === "checklist" && form.evidence_required,
+      requires_approval: form.kind === "checklist" && form.requires_approval,
+      approval_role:
+        form.kind === "checklist" ? form.approval_role.trim() || null : null,
+      instructions: form.kind === "procedure" ? form.instructions.trim() : null,
+      checklist_items:
+        form.kind === "checklist" ? splitChecklistItems(form.checklist_items) : [],
     })
 
-    setForm({
-      branch_id: "",
-      sector_id: "",
-      title: "",
-      category: "",
-      frequency: "daily",
-      estimated_minutes: "",
-      owner_role: "",
-      instructions: "",
-      checklist_items: "",
-    })
+    resetForm()
     setOpen(false)
   }
 
@@ -349,39 +840,117 @@ export function ChecklistsPage() {
   function resetProcedure(procedureId: string) {
     setCheckedByProcedure((current) => ({ ...current, [procedureId]: [] }))
     setNotesByProcedure((current) => ({ ...current, [procedureId]: "" }))
+    setEvidenceByProcedure((current) => ({ ...current, [procedureId]: "" }))
+    setItemEvidenceByProcedure((current) => ({ ...current, [procedureId]: {} }))
+    setItemOccurrenceByProcedure((current) => ({ ...current, [procedureId]: {} }))
   }
 
   async function completeProcedure(procedure: ChecklistProcedure) {
+    const checkedItems = checkedByProcedure[procedure.id] ?? []
+    const evidenceMap = itemEvidenceByProcedure[procedure.id] ?? {}
+    const occurrenceMap = itemOccurrenceByProcedure[procedure.id] ?? {}
+    const itemResults = procedure.checklist_items.map((item) => ({
+      item,
+      checked: checkedItems.includes(item),
+      evidence: evidenceMap[item]?.trim() || null,
+      occurrence: occurrenceMap[item]?.trim() || null,
+    }))
+
     await completeRun.mutateAsync({
       procedure_id: procedure.id,
       branch_id: procedure.branch_id ?? selectedBranchId,
-      checked_items: checkedByProcedure[procedure.id] ?? [],
+      checked_items: checkedItems,
+      item_results: itemResults,
+      evidence_notes: evidenceByProcedure[procedure.id]?.trim() || null,
       notes: notesByProcedure[procedure.id]?.trim() || null,
     })
     resetProcedure(procedure.id)
+  }
+
+  function renderEmptyState(kind: ChecklistToolKind) {
+    const isProcedure = kind === "procedure"
+    return (
+      <div className="rounded-2xl border border-dashed border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] px-5 py-8 text-center shadow-sm">
+        {isProcedure ? (
+          <BookOpenText className="mx-auto mb-3 size-7 text-muted-foreground" />
+        ) : (
+          <ClipboardList className="mx-auto mb-3 size-7 text-muted-foreground" />
+        )}
+        <h3 className="text-sm font-medium text-[color:var(--text-primary)]">
+          {isProcedure ? "Nenhum procedimento cadastrado" : "Nenhum checklist cadastrado"}
+        </h3>
+        <p className="mx-auto mt-1 max-w-md text-sm text-[color:var(--text-muted)]">
+          {isProcedure
+            ? "Cadastre o passo a passo detalhado de uma atividade."
+            : "Cadastre os itens que precisam ser conferidos durante uma atividade."}
+        </p>
+        {canCreate ? (
+          <Button
+            type="button"
+            size="sm"
+            className="mt-4"
+            onClick={() => openCreate(kind)}
+          >
+            <Plus className="size-4" />
+            {isProcedure ? "Novo procedimento" : "Novo checklist"}
+          </Button>
+        ) : null}
+      </div>
+    )
   }
 
   return (
     <>
       <PageHeader
         title="Checklists e Procedimentos"
-        description="Padronize rotinas, execute checklists e registre evidencias operacionais."
+        description="Use checklists para conferir tarefas e procedimentos para orientar como executa-las."
         action={
           canCreate ? (
             <Dialog open={open} onOpenChange={setOpen}>
               <DialogTrigger asChild>
-                <Button>
+                <Button
+                  onClick={() =>
+                    openCreate(view === "procedures" ? "procedure" : "checklist")
+                  }
+                >
                   <Plus className="size-4" />
-                  Novo procedimento
+                  Novo cadastro
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+              <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
                 <DialogHeader>
-                  <DialogTitle>Cadastrar procedimento</DialogTitle>
+                  <DialogTitle>
+                    {form.kind === "checklist" ? "Cadastrar checklist" : "Cadastrar procedimento"}
+                  </DialogTitle>
                   <DialogDescription>
-                    Defina escopo, instrucoes e itens do checklist para execucao do time.
+                    {form.kind === "checklist"
+                      ? "Crie uma lista objetiva com os itens que devem ser conferidos."
+                      : "Documente o passo a passo detalhado de como a atividade deve ser executada."}
                   </DialogDescription>
                 </DialogHeader>
+
+                <div className="grid grid-cols-2 rounded-lg border bg-slate-50 p-1">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={form.kind === "checklist" ? "default" : "ghost"}
+                    className="rounded-md"
+                    onClick={() => changeFormKind("checklist")}
+                  >
+                    <ClipboardList className="size-4" />
+                    Checklist
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={form.kind === "procedure" ? "default" : "ghost"}
+                    className="rounded-md"
+                    onClick={() => changeFormKind("procedure")}
+                  >
+                    <BookOpenText className="size-4" />
+                    Procedimento
+                  </Button>
+                </div>
 
                 <form className="space-y-4" onSubmit={handleSubmit}>
                   <div className="grid gap-3 sm:grid-cols-2">
@@ -450,7 +1019,12 @@ export function ChecklistsPage() {
                     />
                   </label>
 
-                  <div className="grid gap-3 sm:grid-cols-4">
+                  <div
+                    className={cn(
+                      "grid gap-3",
+                      form.kind === "checklist" ? "sm:grid-cols-5" : "sm:grid-cols-3"
+                    )}
+                  >
                     <label className="space-y-1 text-sm sm:col-span-2">
                       <span className="font-medium">Categoria</span>
                       <Input
@@ -464,25 +1038,42 @@ export function ChecklistsPage() {
                         }
                       />
                     </label>
-                    <label className="space-y-1 text-sm">
-                      <span className="font-medium">Frequencia</span>
-                      <select
-                        className={fieldClass}
-                        value={form.frequency}
-                        onChange={(event) =>
-                          setForm((current) => ({
-                            ...current,
-                            frequency: event.target.value as ChecklistProcedureFrequency,
-                          }))
-                        }
-                      >
-                        {frequencyOptions.map((frequency) => (
-                          <option key={frequency} value={frequency}>
-                            {frequencyLabel[frequency]}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                    {form.kind === "checklist" ? (
+                      <>
+                        <label className="space-y-1 text-sm">
+                          <span className="font-medium">Frequencia</span>
+                          <select
+                            className={fieldClass}
+                            value={form.frequency}
+                            onChange={(event) =>
+                              setForm((current) => ({
+                                ...current,
+                                frequency: event.target.value as ChecklistProcedureFrequency,
+                              }))
+                            }
+                          >
+                            {frequencyOptions.map((frequency) => (
+                              <option key={frequency} value={frequency}>
+                                {frequencyLabel[frequency]}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="space-y-1 text-sm">
+                          <span className="font-medium">Prazo</span>
+                          <Input
+                            type="time"
+                            value={form.due_time}
+                            onChange={(event) =>
+                              setForm((current) => ({
+                                ...current,
+                                due_time: event.target.value,
+                              }))
+                            }
+                          />
+                        </label>
+                      </>
+                    ) : null}
                     <label className="space-y-1 text-sm">
                       <span className="font-medium">Minutos</span>
                       <Input
@@ -499,49 +1090,106 @@ export function ChecklistsPage() {
                     </label>
                   </div>
 
-                  <label className="space-y-1 text-sm">
-                    <span className="font-medium">Responsavel padrao</span>
-                    <Input
-                      value={form.owner_role}
-                      placeholder="Operador, supervisor, lider de turno..."
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          owner_role: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
+                  <div
+                    className={cn(
+                      "grid gap-3",
+                      form.kind === "checklist" ? "sm:grid-cols-3" : "sm:grid-cols-2"
+                    )}
+                  >
+                    <label className="space-y-1 text-sm">
+                      <span className="font-medium">Responsavel padrao</span>
+                      <Input
+                        value={form.owner_role}
+                        placeholder="Operador, supervisor..."
+                        onChange={(event) =>
+                          setForm((current) => ({
+                            ...current,
+                            owner_role: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                    {form.kind === "checklist" ? (
+                      <>
+                        <label className="space-y-1 text-sm">
+                          <span className="font-medium">Aprovador</span>
+                          <Input
+                            value={form.approval_role}
+                            placeholder="Supervisor, gerente..."
+                            disabled={!form.requires_approval}
+                            onChange={(event) =>
+                              setForm((current) => ({
+                                ...current,
+                                approval_role: event.target.value,
+                              }))
+                            }
+                          />
+                        </label>
+                        <div className="grid gap-2 rounded-xl border border-[color:var(--border-soft)] bg-slate-50 px-3 py-2 text-sm">
+                          <label className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={form.evidence_required}
+                              onChange={(event) =>
+                                setForm((current) => ({
+                                  ...current,
+                                  evidence_required: event.target.checked,
+                                }))
+                              }
+                            />
+                            Exigir evidencia
+                          </label>
+                          <label className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={form.requires_approval}
+                              onChange={(event) =>
+                                setForm((current) => ({
+                                  ...current,
+                                  requires_approval: event.target.checked,
+                                }))
+                              }
+                            />
+                            Exigir aprovacao
+                          </label>
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
 
-                  <label className="space-y-1 text-sm">
-                    <span className="font-medium">Procedimento</span>
-                    <textarea
-                      className={textareaClass}
-                      value={form.instructions}
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          instructions: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
-
-                  <label className="space-y-1 text-sm">
-                    <span className="font-medium">Itens do checklist</span>
-                    <textarea
-                      required
-                      className={textareaClass}
-                      placeholder={"Um item por linha"}
-                      value={form.checklist_items}
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          checklist_items: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
+                  {form.kind === "procedure" ? (
+                    <label className="space-y-1 text-sm">
+                      <span className="font-medium">Passo a passo detalhado</span>
+                      <textarea
+                        required
+                        className={cn(textareaClass, "min-h-44")}
+                        placeholder="Descreva cada etapa em uma nova linha."
+                        value={form.instructions}
+                        onChange={(event) =>
+                          setForm((current) => ({
+                            ...current,
+                            instructions: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                  ) : (
+                    <label className="space-y-1 text-sm">
+                      <span className="font-medium">Itens a verificar</span>
+                      <textarea
+                        required
+                        className={cn(textareaClass, "min-h-36")}
+                        placeholder="Digite um item por linha."
+                        value={form.checklist_items}
+                        onChange={(event) =>
+                          setForm((current) => ({
+                            ...current,
+                            checklist_items: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                  )}
 
                   {createProcedure.error ? (
                     <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -551,7 +1199,11 @@ export function ChecklistsPage() {
 
                   <DialogFooter>
                     <Button type="submit" disabled={createProcedure.isPending}>
-                      {createProcedure.isPending ? "Criando..." : "Criar procedimento"}
+                      {createProcedure.isPending
+                        ? "Criando..."
+                        : form.kind === "checklist"
+                          ? "Criar checklist"
+                          : "Criar procedimento"}
                     </Button>
                   </DialogFooter>
                 </form>
@@ -561,13 +1213,13 @@ export function ChecklistsPage() {
         }
       />
 
-      <div className="space-y-6 p-6">
+      <div className="space-y-5 p-6">
         {procedures.isLoading || runsToday.isLoading ? (
           <StateBlock type="loading" title="Carregando checklists" />
         ) : procedures.isError ? (
           <StateBlock
             type="error"
-            title="Erro ao carregar procedimentos"
+            title="Erro ao carregar checklists e procedimentos"
             description={procedures.error.message}
           />
         ) : runsToday.isError ? (
@@ -578,155 +1230,195 @@ export function ChecklistsPage() {
           />
         ) : (
           <>
-            <BentoGrid>
-              <MetricCard
-                title="Procedimentos"
-                value={stats.active}
-                detail="Ativos no escopo atual"
-                icon={<ListChecks className="size-5" />}
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+              <CompactMetric
+                title="Checklists"
+                value={stats.activeChecklists}
+                detail="Ativos no escopo"
+                icon={<ListChecks />}
+                tone="sky"
               />
-              <MetricCard
+              <CompactMetric
+                title="Procedimentos"
+                value={stats.procedureDocuments}
+                detail="Passos documentados"
+                icon={<BookOpenText />}
+              />
+              <CompactMetric
                 title="Concluidos hoje"
                 value={stats.completedToday}
                 detail="Execucoes registradas"
-                icon={<CheckCircle2 className="size-5" />}
+                icon={<CheckCircle2 />}
+                tone="emerald"
               />
-              <MetricCard
-                title="Rotinas pendentes"
+              <CompactMetric
+                title="Pendentes"
                 value={stats.dailyPending}
-                detail="Checklists diarios sem baixa"
-                icon={<Clock3 className="size-5" />}
+                detail="Rotinas diarias"
+                icon={<Clock3 />}
+                tone="amber"
               />
-              <MetricCard
-                title="Itens padronizados"
-                value={stats.totalItems}
-                detail="Passos documentados"
-                icon={<ClipboardCheck className="size-5" />}
+              <CompactMetric
+                title="Atrasados"
+                value={stats.overdue}
+                detail="Passaram do prazo"
+                icon={<AlertTriangle />}
+                tone={stats.overdue > 0 ? "red" : "slate"}
               />
-            </BentoGrid>
+              <CompactMetric
+                title="Aprovacao"
+                value={stats.approvalPending}
+                detail="Aguardando lideranca"
+                icon={<ShieldCheck />}
+                tone={stats.approvalPending > 0 ? "amber" : "slate"}
+              />
+            </div>
 
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] px-3 py-2 shadow-sm">
               {checklistViews.map(([key, label]) => (
                 <Button
                   key={key}
                   type="button"
                   size="sm"
                   variant={view === key ? "default" : "outline"}
+                  className="h-8 rounded-full px-3 text-xs"
                   onClick={() => setView(key)}
                 >
                   {label}
+                  <span className="ml-1 rounded-full bg-white/20 px-1.5 text-[10px]">
+                    {viewCounts[key]}
+                  </span>
                 </Button>
               ))}
             </div>
 
-            <div className={`grid gap-4 ${view === "execute" ? "xl:grid-cols-[1fr_22rem]" : ""}`}>
-              {view !== "history" ? (
-              <div className="space-y-4">
-                {(procedures.data ?? []).length === 0 ? (
-                  <StateBlock
-                    title="Nenhum procedimento cadastrado"
-                    description="Cadastre o primeiro checklist para padronizar uma rotina operacional."
-                  />
-                ) : displayedProcedures.length === 0 ? (
-                  <StateBlock
-                    title="Nenhum checklist pendente"
-                    description="As rotinas diarias do recorte atual ja foram baixadas."
-                  />
-                ) : (
-                  displayedProcedures.map((procedure) =>
-                    view === "models" ? (
-                      <Card key={procedure.id} className="border bg-white shadow-sm">
-                        <CardHeader>
-                          <CardTitle className="text-base">{procedure.title}</CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-2 text-sm text-muted-foreground">
-                          <div>{frequencyLabel[procedure.frequency]}</div>
-                          <div>{procedure.checklist_items.length} item(ns)</div>
-                          {procedure.instructions ? (
-                            <p className="whitespace-pre-wrap">{procedure.instructions}</p>
-                          ) : null}
-                        </CardContent>
-                      </Card>
-                    ) : (
-                      <ProcedureCard
-                        key={procedure.id}
-                        procedure={procedure}
-                        checkedItems={checkedByProcedure[procedure.id] ?? []}
-                        notes={notesByProcedure[procedure.id] ?? ""}
-                        isCompletedToday={completedTodayIds.has(procedure.id)}
-                        isPending={completeRun.isPending}
-                        onToggleItem={(item) => toggleItem(procedure.id, item)}
-                        onToggleAll={() => toggleAll(procedure)}
-                        onReset={() => resetProcedure(procedure.id)}
-                        onNotesChange={(value) =>
-                          setNotesByProcedure((current) => ({
-                            ...current,
-                            [procedure.id]: value,
-                          }))
-                        }
-                        onComplete={() => void completeProcedure(procedure)}
-                      />
-                    )
-                  )
-                )}
-              </div>
-              ) : null}
-
-              {view === "execute" || view === "history" ? (
-              <Card className="border bg-white shadow-sm">
+            {view === "history" ? (
+              <Card className="border border-[color:var(--border-soft)] bg-white shadow-sm">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-base">
                     <History className="size-4" />
-                    Historico recente
+                    Historico de execucoes
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-3">
-                  {history.isLoading ? (
-                    <StateBlock type="loading" title="Carregando historico" />
-                  ) : history.isError ? (
-                    <StateBlock
-                      type="error"
-                      title="Erro no historico"
-                      description={history.error.message}
-                    />
-                  ) : (history.data ?? []).length === 0 ? (
-                    <StateBlock
-                      title="Sem execucoes"
-                      description="Os checklists finalizados aparecem aqui."
-                    />
-                  ) : (
-                    (history.data ?? []).slice(0, 8).map((run) => (
-                      <div key={run.id} className="rounded-lg border bg-slate-50 p-3">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="break-words text-sm font-medium">
-                              {run.checklist_procedures?.title ?? "Procedimento"}
-                            </div>
-                            <div className="mt-1 text-xs text-muted-foreground">
-                              {formatDateTimeBR(run.completed_at ?? run.created_at)}
-                            </div>
-                          </div>
-                          <Badge variant="outline">
-                            {run.checked_items.length} itens
-                          </Badge>
-                        </div>
-                        <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                          <Building2 className="size-3.5" />
-                          <span>{run.branches?.name ?? "Empresa"}</span>
-                          <span>{run.user_profiles?.name ?? "Usuario"}</span>
-                        </div>
-                        {run.notes ? (
-                          <p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-slate-600">
-                            {run.notes}
-                          </p>
-                        ) : null}
-                      </div>
-                    ))
-                  )}
+                <CardContent>
+                  <HistoryList
+                    canApprove={canCreate}
+                    isApproving={approveRun.isPending}
+                    runs={checklistHistory}
+                    onApprove={(run) =>
+                      void approveRun.mutateAsync({
+                        run_id: run.id,
+                        approval_status: "approved",
+                      })
+                    }
+                    onReject={(run) =>
+                      void approveRun.mutateAsync({
+                        run_id: run.id,
+                        approval_status: "rejected",
+                      })
+                    }
+                  />
                 </CardContent>
               </Card>
-              ) : null}
-            </div>
+            ) : (
+              <div
+                className={cn(
+                  "grid gap-4",
+                  view === "checklists" && checklistHistory.length > 0
+                    ? "xl:grid-cols-[1fr_22rem]"
+                    : ""
+                )}
+              >
+                <div>
+                  {view === "procedures" ? (
+                    displayedProcedureDocuments.length === 0 ? (
+                      renderEmptyState("procedure")
+                    ) : (
+                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                        {displayedProcedureDocuments.map((procedure) => (
+                          <ProcedureDocumentCard key={procedure.id} procedure={procedure} />
+                        ))}
+                      </div>
+                    )
+                  ) : stats.activeChecklists === 0 ? (
+                    renderEmptyState("checklist")
+                  ) : displayedChecklists.length === 0 ? (
+                    <StateBlock
+                      title="Nenhum checklist pendente"
+                      description="As rotinas diarias do recorte atual ja foram concluidas."
+                    />
+                  ) : (
+                    <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
+                      {displayedChecklists.map((procedure) => (
+                        <ChecklistCard
+                          key={procedure.id}
+                          procedure={procedure}
+                          checkedItems={checkedByProcedure[procedure.id] ?? []}
+                          notes={notesByProcedure[procedure.id] ?? ""}
+                          evidenceNotes={evidenceByProcedure[procedure.id] ?? ""}
+                          itemEvidence={itemEvidenceByProcedure[procedure.id] ?? {}}
+                          itemOccurrence={itemOccurrenceByProcedure[procedure.id] ?? {}}
+                          isCompletedToday={completedTodayIds.has(procedure.id)}
+                          isPending={completeRun.isPending}
+                          onToggleItem={(item) => toggleItem(procedure.id, item)}
+                          onToggleAll={() => toggleAll(procedure)}
+                          onReset={() => resetProcedure(procedure.id)}
+                          onNotesChange={(value) =>
+                            setNotesByProcedure((current) => ({
+                              ...current,
+                              [procedure.id]: value,
+                            }))
+                          }
+                          onEvidenceChange={(value) =>
+                            setEvidenceByProcedure((current) => ({
+                              ...current,
+                              [procedure.id]: value,
+                            }))
+                          }
+                          onItemEvidenceChange={(item, value) =>
+                            setItemText(setItemEvidenceByProcedure, procedure.id, item, value)
+                          }
+                          onItemOccurrenceChange={(item, value) =>
+                            setItemText(setItemOccurrenceByProcedure, procedure.id, item, value)
+                          }
+                          onComplete={() => void completeProcedure(procedure)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {view === "checklists" && checklistHistory.length > 0 ? (
+                  <Card className="border border-[color:var(--border-soft)] bg-white shadow-sm">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <History className="size-4" />
+                        Historico recente
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <HistoryList
+                        canApprove={canCreate}
+                        isApproving={approveRun.isPending}
+                        runs={checklistHistory.slice(0, 6)}
+                        onApprove={(run) =>
+                          void approveRun.mutateAsync({
+                            run_id: run.id,
+                            approval_status: "approved",
+                          })
+                        }
+                        onReject={(run) =>
+                          void approveRun.mutateAsync({
+                            run_id: run.id,
+                            approval_status: "rejected",
+                          })
+                        }
+                      />
+                    </CardContent>
+                  </Card>
+                ) : null}
+              </div>
+            )}
 
             {completeRun.error ? (
               <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -737,7 +1429,7 @@ export function ChecklistsPage() {
             {!canCreate ? (
               <div className="flex items-center gap-2 rounded-lg border bg-slate-50 px-3 py-2 text-sm text-muted-foreground">
                 <Timer className="size-4" />
-                A execucao esta liberada para o time. O cadastro de procedimentos fica com lideranca e administradores.
+                A execucao esta liberada para o time. O cadastro e a aprovacao ficam com lideranca e administradores.
               </div>
             ) : null}
           </>

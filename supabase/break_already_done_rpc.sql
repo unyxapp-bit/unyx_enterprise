@@ -16,6 +16,7 @@ declare
   v_employee public.employees%rowtype;
   v_current_status public.operational_status_type;
   v_previous_status jsonb;
+  v_has_active_allocation boolean := false;
   v_event public.attendance_events%rowtype;
 begin
   if v_auth_user_id is null then
@@ -75,7 +76,21 @@ begin
     and os.schedule_id = p_schedule_id
   for update;
 
-  if coalesce(v_current_status, 'aguardando_evento') in ('aguardando_evento', 'finalizado', 'folga') then
+  select exists (
+    select 1
+    from public.post_allocations pa
+    where pa.organization_id = v_profile.organization_id
+      and pa.branch_id = p_branch_id
+      and pa.employee_id = p_employee_id
+      and pa.schedule_id = p_schedule_id
+      and pa.status in ('alocado', 'aguardando_troca', 'em_troca')
+  )
+  into v_has_active_allocation;
+
+  if coalesce(v_current_status, 'aguardando_evento') in ('aguardando_evento', 'finalizado', 'folga')
+    and v_schedule.status::text not in ('working', 'on_break', 'returned')
+    and not v_has_active_allocation
+  then
     raise exception 'Confirme a entrada antes de marcar o intervalo como feito.';
   end if;
 

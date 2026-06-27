@@ -119,7 +119,7 @@ function itemClassName(severity: AlertSeverity) {
   if (severity === "critical") return "border-red-200 bg-red-50"
   if (severity === "attention") return "border-amber-200 bg-amber-50"
   if (severity === "review") return "border-sky-200 bg-sky-50"
-  return "border-border bg-white"
+  return "border-border bg-[color:var(--bg-surface)]"
 }
 
 function dedupeByEmployee(items: AlertItem[]) {
@@ -243,37 +243,37 @@ export function AlertsPage() {
 
       <div className="space-y-5 p-6">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-          <div className="rounded-lg border bg-white p-4">
+          <div className="rounded-lg border bg-[color:var(--bg-surface)] p-4">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <AlertTriangle className="size-4 text-red-600" />
               Criticos
             </div>
             <div className="mt-2 text-2xl font-semibold">{criticalItems.length}</div>
           </div>
-          <div className="rounded-lg border bg-white p-4">
+          <div className="rounded-lg border bg-[color:var(--bg-surface)] p-4">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Clock className="size-4 text-amber-600" />
               Atencao
             </div>
             <div className="mt-2 text-2xl font-semibold">{attentionItems.length}</div>
           </div>
-          <div className="rounded-lg border bg-white p-4">
+          <div className="rounded-lg border bg-[color:var(--bg-surface)] p-4">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <History className="size-4 text-sky-600" />
               Revisao
             </div>
             <div className="mt-2 text-2xl font-semibold">{reviewItems.length}</div>
           </div>
-          <div className="rounded-lg border bg-white p-4">
+          <div className="rounded-lg border bg-[color:var(--bg-surface)] p-4">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <CheckCircle2 className="size-4 text-emerald-600" />
               Normal
             </div>
             <div className="mt-2 text-2xl font-semibold">{normalItems.length}</div>
           </div>
-          <div className="rounded-lg border bg-white p-4">
+          <div className="rounded-lg border bg-[color:var(--bg-surface)] p-4">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <History className="size-4 text-slate-500" />
+              <History className="size-4 text-[color:var(--text-muted)]" />
               Monitorados
             </div>
             <div className="mt-2 text-2xl font-semibold">{alertItems.length}</div>
@@ -316,7 +316,7 @@ export function AlertsPage() {
             description="Registre eventos na Operacao do Dia para gerar alertas."
           />
         ) : visibleItems.length === 0 ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-[color:var(--text-secondary)]">
             <div className="flex items-center gap-2">
               <CheckCircle2 className="size-4 shrink-0" />
               <span>
@@ -330,7 +330,7 @@ export function AlertsPage() {
                 type="button"
                 size="sm"
                 variant="outline"
-                className="border-emerald-200 bg-white text-emerald-800 hover:bg-emerald-100"
+                className="border-emerald-200 bg-[color:var(--bg-surface)] text-[color:var(--text-primary)] hover:bg-[color:var(--bg-surface-soft)]"
                 onClick={() => setView("review")}
               >
                 Ver revisao ({reviewItems.length})
@@ -365,12 +365,12 @@ export function AlertsPage() {
                     <StatusBadge status={status.current_status} />
                   </div>
 
-                  <div className="mt-3 text-sm text-slate-700">{item.reason}</div>
+                  <div className="mt-3 text-sm text-[color:var(--text-secondary)]">{item.reason}</div>
 
                   <div className="mt-3 flex flex-wrap items-center gap-2">
                     <Badge variant="outline">Prioridade {item.priority}</Badge>
                     {item.stale ? (
-                      <Badge className="border-sky-200 bg-white text-sky-700" variant="outline">
+                      <Badge className="border-sky-200 bg-[color:var(--bg-surface)] text-sky-700" variant="outline">
                         Revisar fechamento
                       </Badge>
                     ) : null}
@@ -411,7 +411,7 @@ export function AlertsPage() {
             <DialogTitle>Registrar acao operacional</DialogTitle>
           </DialogHeader>
           <form className="space-y-4" onSubmit={handleSubmit}>
-            <div className="rounded-lg border bg-slate-50 p-3 text-sm">
+            <div className="rounded-lg border bg-[color:var(--bg-surface-soft)] p-3 text-sm">
               <div className="font-medium">
                 {selected?.employees?.name ?? "Colaborador"}
               </div>
@@ -424,7 +424,7 @@ export function AlertsPage() {
             <label className="space-y-1 text-sm">
               <span className="font-medium">Evento</span>
               <select
-                className="h-8 w-full rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+                className="h-8 w-full rounded-lg border bg-[color:var(--bg-surface)] px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
                 value={eventType}
                 onChange={(e) => setEventType(e.target.value as AttendanceEventType)}
               >
@@ -441,7 +441,7 @@ export function AlertsPage() {
             <label className="space-y-1 text-sm">
               <span className="font-medium">Observacoes (opcional)</span>
               <textarea
-                className="min-h-20 w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+                className="min-h-20 w-full rounded-lg border bg-[color:var(--bg-surface)] px-3 py-2 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Ex.: colaborador avisou atraso por transporte."
@@ -449,9 +449,9 @@ export function AlertsPage() {
             </label>
 
             {error || recordEvent.error ? (
-              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                {error ?? recordEvent.error?.message}
-              </div>
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-[color:var(--text-secondary)]">
+              {error ?? recordEvent.error?.message}
+            </div>
             ) : null}
 
             <DialogFooter>

@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react"
 import type { FormEvent } from "react"
 import {
+  Coffee,
   LayoutGrid,
   Pencil,
   Plus,
@@ -26,6 +27,7 @@ import { Input } from "@/components/ui/input"
 import {
   useBranches,
   useCreateOperationalPost,
+  useOperationalBreaks,
   useOperationalPosts,
   usePostAllocations,
   useOrganization,
@@ -40,14 +42,17 @@ import {
   SEGMENT_LABELS,
   SEGMENT_POST_TYPES,
 } from "@/lib/segmentConfig"
+import { finalizePostAllocation as finalizePostAllocationRequest } from "@/services/unyxApi"
 import { useAppStore } from "@/store/useAppStore"
 import type {
   OperationalPost,
   OperationalPostType,
+  PostAllocation,
   Sector,
 } from "@/types/domain"
 import { OperationalPostsMapBoard } from "@/features/operational/components"
 import { ControlePDVIntervalos } from "@/features/allocation/ControlePDVIntervalos"
+import { toast } from "sonner"
 
 const fieldClass =
   "h-10 w-full rounded-full border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] px-3.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
@@ -79,7 +84,28 @@ type PostFormState = {
 }
 
 type PostStatusFilter = "all" | "active" | "inactive" | "without_sector"
-type AllocationViewMode = "mapa" | "controle"
+type AllocationViewMode = "mapa" | "controle" | "liberacoes"
+
+const viewMeta: Record<
+  AllocationViewMode,
+  {
+    title: string
+    description: string
+  }
+> = {
+  mapa: {
+    title: "Mapa de caixas",
+    description: "Ocupacao dos caixas e postos operacionais.",
+  },
+  controle: {
+    title: "Controle PDV",
+    description: "Acompanhamento da escala real e alocacao dos operadores.",
+  },
+  liberacoes: {
+    title: "Liberacoes operacionais",
+    description: "Controle de cafes, intervalos, retornos e atrasos.",
+  },
+}
 
 function emptyPostForm(branchId = ""): PostFormState {
   return {
@@ -101,6 +127,7 @@ export function AllocationPage() {
   const sectors = useSectors(null)
   const posts = useOperationalPosts()
   const postAllocations = usePostAllocations()
+  const operationalBreaks = useOperationalBreaks()
   const org = useOrganization()
 
   const createPost = useCreateOperationalPost()
@@ -121,6 +148,7 @@ export function AllocationPage() {
   const [typeFilter, setTypeFilter] = useState<OperationalPostType | "all">("all")
   const [sectorFilter, setSectorFilter] = useState("")
   const [viewMode, setViewMode] = useState<AllocationViewMode>("mapa")
+  const [releasePending, setReleasePending] = useState(false)
 
   const allPosts = useMemo(
     () =>
@@ -164,9 +192,15 @@ export function AllocationPage() {
   }, [filteredPosts])
 
   const isLoading =
-    posts.isLoading || branches.isLoading || sectors.isLoading || postAllocations.isLoading
+    posts.isLoading ||
+    branches.isLoading ||
+    sectors.isLoading ||
+    postAllocations.isLoading
   const pageError =
-    posts.error ?? branches.error ?? sectors.error ?? postAllocations.error
+    posts.error ??
+    branches.error ??
+    sectors.error ??
+    postAllocations.error
 
   function openCreatePost() {
     setEditingPost(null)
@@ -218,11 +252,32 @@ export function AllocationPage() {
     }
   }
 
+  async function handleReleaseAllocation(allocation: PostAllocation) {
+    setReleasePending(true)
+    try {
+      const isCashier = allocation.operational_posts?.type === "cashier"
+      await finalizePostAllocationRequest({
+        allocation_id: allocation.id,
+        notes: isCashier
+          ? "Caixa liberado pelo mapa de postos"
+          : "Posto liberado pelo mapa de postos",
+      })
+      toast.success(isCashier ? "Caixa liberado." : "Posto liberado.")
+      window.setTimeout(() => window.location.reload(), 120)
+    } catch (error) {
+      setReleasePending(false)
+      toast.error(error instanceof Error ? error.message : "Nao foi possivel liberar.")
+      throw error
+    }
+  }
+
+  const currentView = viewMeta[viewMode]
+
   return (
     <>
       <PageHeader
-        title="Mapa de postos"
-        description="Mapa de ocupação dos postos operacionais."
+        title={currentView.title}
+        description={currentView.description}
       />
 
       <div className="space-y-6 bg-[color:var(--bg-app)] p-6">
@@ -242,7 +297,7 @@ export function AllocationPage() {
                 onClick={() => setViewMode("mapa")}
               >
                 <LayoutGrid className="size-4" />
-                Mapa de postos
+                Mapa de caixas
               </Button>
               <Button
                 type="button"
@@ -253,18 +308,32 @@ export function AllocationPage() {
                 <Store className="size-4" />
                 Controle PDV
               </Button>
+              <Button
+                type="button"
+                variant={viewMode === "liberacoes" ? "default" : "ghost"}
+                className="rounded-full"
+                onClick={() => setViewMode("liberacoes")}
+              >
+                <Coffee className="size-4" />
+                Liberacoes
+              </Button>
             </div>
 
             {viewMode === "controle" ? (
-              <ControlePDVIntervalos />
+              <ControlePDVIntervalos tab="overview" />
+            ) : viewMode === "liberacoes" ? (
+              <ControlePDVIntervalos tab="releases" />
             ) : (
               <>
                 <OperationalPostsMapBoard
                   posts={allPosts}
                   allocations={postAllocations.data ?? []}
+                  operationalBreaks={operationalBreaks.data ?? []}
                   isLoading={isLoading}
                   isError={false}
                   error={undefined}
+                  onReleaseAllocation={handleReleaseAllocation}
+                  isReleasePending={releasePending}
                 />
 
                 <SectionPanel

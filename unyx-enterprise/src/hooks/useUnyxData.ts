@@ -16,6 +16,7 @@ import {
   createProductVariant,
   createProductionOrder,
   allocatePost,
+  approveChecklistRun,
   confirmCashMovement,
   createBranch,
   createChecklistProcedure,
@@ -42,10 +43,12 @@ import {
   deleteOperationalForm,
   deleteOperationalNote,
   cancelFiscalDocument,
+  cancelEmployeeBreak,
   deleteSchedulesBulk,
   listSchedulesRange,
   deleteSchedule,
   finalizePostAllocation,
+  getOperationalBreakSettings,
   getOrganization,
   getOperationalSettings,
   getSubscription,
@@ -90,6 +93,7 @@ import {
   listOperationalForms,
   listOperationalFormResponses,
   listOperationalNotes,
+  listOperationalBreaks,
   listOperationalPosts,
   listOperationalQueueSignals,
   listOperationalStatuses,
@@ -109,7 +113,11 @@ import {
   markCommsPostRead,
   recordBreakAlreadyDone,
   recordOperationalEvent,
+  registerEmployeeBreakDelay,
+  releaseEmployeeBreak,
   resolveOperationalQueueSignal,
+  rescheduleEmployeeBreak,
+  returnEmployeeBreak,
   runAiAgent,
   saveOperationalSettings,
   setTrainingProgress,
@@ -156,6 +164,7 @@ import type {
   OperationalFormResponseInput,
   OperationalNoteInput,
   OperationalQueueInput,
+  OperationalBreakReleaseInput,
   ScheduleImportInput,
 } from "@/services/unyxApi"
 import type {
@@ -163,6 +172,7 @@ import type {
   Branch,
   BusinessSegment,
   CashMovementType,
+  ChecklistApprovalStatus,
   FiscalDocumentType,
   Invitation,
   OperationalPost,
@@ -378,6 +388,35 @@ export function usePostAllocations(
       listPostAllocations(effectiveBranchId, activeOnly, profile!.organization_id),
     enabled: Boolean(profile),
     refetchInterval: 45_000,
+  })
+}
+
+export function useOperationalBreaks(branchId?: string | null) {
+  const { profile } = useAuth()
+  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
+  const effectiveBranchId =
+    arguments.length > 0 ? branchId ?? null : selectedBranchId
+
+  return useQuery({
+    queryKey: ["operational-breaks", profile?.organization_id, effectiveBranchId],
+    queryFn: () => listOperationalBreaks(effectiveBranchId, profile!.organization_id),
+    enabled: Boolean(profile),
+    retry: 1,
+    refetchInterval: 30_000,
+  })
+}
+
+export function useOperationalBreakSettings(branchId?: string | null) {
+  const { profile } = useAuth()
+  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
+  const effectiveBranchId =
+    arguments.length > 0 ? branchId ?? null : selectedBranchId
+
+  return useQuery({
+    queryKey: ["operational-break-settings", profile?.organization_id, effectiveBranchId],
+    queryFn: () => getOperationalBreakSettings(profile!, effectiveBranchId),
+    enabled: Boolean(profile) && Boolean(effectiveBranchId),
+    retry: 1,
   })
 }
 
@@ -763,6 +802,7 @@ export function useCreateChecklistProcedure() {
       createChecklistProcedure(profile, input),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["checklist-procedures"] })
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
       await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
       await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
       toast.success("Procedimento cadastrado.")
@@ -782,13 +822,49 @@ export function useCompleteChecklistRun() {
       procedure_id: string
       branch_id: string | null
       checked_items: string[]
+      item_results?: {
+        item: string
+        checked: boolean
+        evidence: string | null
+        occurrence: string | null
+      }[]
+      evidence_notes?: string | null
+      occurrence_notes?: string | null
       notes: string | null
     }) => completeChecklistRun(profile, input),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["checklist-runs"] })
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
       await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
       await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
       toast.success("Checklist concluido.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useApproveChecklistRun() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: {
+      run_id: string
+      approval_status: Extract<ChecklistApprovalStatus, "approved" | "rejected">
+      rejected_reason?: string | null
+    }) => approveChecklistRun(profile, input),
+    onSuccess: async (_, input) => {
+      await queryClient.invalidateQueries({ queryKey: ["checklist-runs"] })
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success(
+        input.approval_status === "approved"
+          ? "Checklist aprovado."
+          : "Checklist reprovado."
+      )
     },
     onError: (error) => {
       toast.error(error.message)
@@ -1256,6 +1332,121 @@ export function useFinalizePostAllocation() {
   })
 }
 
+export function useReleaseEmployeeBreak() {
+  const queryClient = useQueryClient()
+  useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: OperationalBreakReleaseInput) => releaseEmployeeBreak(input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["operational-breaks"] })
+      await queryClient.invalidateQueries({ queryKey: ["post-allocations"] })
+      await queryClient.invalidateQueries({ queryKey: ["allocation-history"] })
+      await queryClient.invalidateQueries({ queryKey: ["operational-posts"] })
+      await queryClient.invalidateQueries({ queryKey: ["operational-status"] })
+      await queryClient.invalidateQueries({ queryKey: ["attendance-events"] })
+      await queryClient.invalidateQueries({ queryKey: ["schedules"] })
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success("Liberacao registrada.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useReturnEmployeeBreak() {
+  const queryClient = useQueryClient()
+  useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: { break_id: string; notes?: string | null }) =>
+      returnEmployeeBreak(input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["operational-breaks"] })
+      await queryClient.invalidateQueries({ queryKey: ["operational-status"] })
+      await queryClient.invalidateQueries({ queryKey: ["attendance-events"] })
+      await queryClient.invalidateQueries({ queryKey: ["schedules"] })
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success("Retorno confirmado.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useCancelEmployeeBreak() {
+  const queryClient = useQueryClient()
+  useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: { break_id: string; notes?: string | null }) =>
+      cancelEmployeeBreak(input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["operational-breaks"] })
+      await queryClient.invalidateQueries({ queryKey: ["operational-status"] })
+      await queryClient.invalidateQueries({ queryKey: ["attendance-events"] })
+      await queryClient.invalidateQueries({ queryKey: ["schedules"] })
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success("Liberacao cancelada.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useRescheduleEmployeeBreak() {
+  const queryClient = useQueryClient()
+  useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: { break_id: string; minutes?: number; notes?: string | null }) =>
+      rescheduleEmployeeBreak(input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["operational-breaks"] })
+      await queryClient.invalidateQueries({ queryKey: ["operational-status"] })
+      await queryClient.invalidateQueries({ queryKey: ["attendance-events"] })
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success("Liberacao reagendada.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useRegisterEmployeeBreakDelay() {
+  const queryClient = useQueryClient()
+  useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: { break_id: string; notes?: string | null }) =>
+      registerEmployeeBreakDelay(input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["operational-breaks"] })
+      await queryClient.invalidateQueries({ queryKey: ["operational-status"] })
+      await queryClient.invalidateQueries({ queryKey: ["attendance-events"] })
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success("Atraso registrado.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
 export function useConfirmCashMovement() {
   const queryClient = useQueryClient()
   useRequiredProfile()
@@ -1382,13 +1573,17 @@ export function useRecordOperationalEvent() {
       event_type: AttendanceEventType
       delay_minutes?: number
       notes?: string | null
+      silent?: boolean
     }) => recordOperationalEvent(profile, input),
     onSuccess: async (_, variables) => {
       await queryClient.invalidateQueries({ queryKey: ["operational-status"] })
       await queryClient.invalidateQueries({ queryKey: ["attendance-events"] })
+      await queryClient.invalidateQueries({ queryKey: ["schedules"] })
       await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
       await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
-      toast.success(eventLabel[variables.event_type] ?? "Evento registrado.")
+      if (!variables.silent) {
+        toast.success(eventLabel[variables.event_type] ?? "Evento registrado.")
+      }
     },
     onError: (error) => {
       toast.error(friendlyOperationalActionError(error.message))
@@ -1410,7 +1605,9 @@ export function useRecordBreakAlreadyDone() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["operational-status"] })
       await queryClient.invalidateQueries({ queryKey: ["attendance-events"] })
+      await queryClient.invalidateQueries({ queryKey: ["schedules"] })
       await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
       await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
       toast.success("Intervalo marcado como feito.")
     },

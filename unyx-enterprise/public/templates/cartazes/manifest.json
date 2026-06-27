@@ -1,35 +1,19 @@
 {
   "templates": [
     {
-      "file": "aproveite agora.svg",
+      "file": "aproveite-agora.png",
       "name": "Aproveite Agora"
     },
     {
-      "file": "cartaz-oferta-do-dia.svg",
-      "name": "Cartaz Oferta do Dia"
+      "file": "super-dia.png",
+      "name": "Super Dia"
     },
     {
-      "file": "Cartaz Oferta.svg",
-      "name": "Cartaz Oferta"
-    },
-    {
-      "file": "Oferta (2).svg",
-      "name": "Oferta 2"
-    },
-    {
-      "file": "Oferta do Dia Tradicional.svg",
-      "name": "Oferta Dia Tradicional"
-    },
-    {
-      "file": "oferta.svg",
-      "name": "Oferta"
-    },
-    {
-      "file": "proximo vencimento.svg",
+      "file": "proximo-vencimento.png",
       "name": "Proximo Vencimento"
     },
     {
-      "file": "super oferta.svg",
+      "file": "super-oferta.png",
       "name": "Super Oferta"
     }
   ]

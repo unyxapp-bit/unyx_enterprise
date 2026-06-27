@@ -1721,7 +1721,7 @@ export function PosSellPage({
 
   if (!session && openCashSessions.length === 0) {
     return (
-      <main className="flex h-[calc(100dvh-3.5rem)] items-center justify-center bg-gray-950 p-6 text-white">
+      <main className="pos-surface pos-viewport flex items-center justify-center bg-gray-950 p-6 text-white">
         <div className="w-full max-w-lg">
           <div className="mb-8 text-center">
             <div className="text-4xl font-black tracking-tight text-blue-300">PDV</div>
@@ -1748,7 +1748,7 @@ export function PosSellPage({
 
   if (!session) {
     return (
-      <main className="flex h-[calc(100dvh-3.5rem)] items-center justify-center bg-gray-950 p-6 text-white">
+      <main className="pos-surface flex h-[calc(100dvh-3.5rem)] items-center justify-center bg-gray-950 p-6 text-white">
         <div className="w-full max-w-xl">
           <div className="mb-8 text-center">
             <div className="text-4xl font-black tracking-tight text-blue-300">PDV</div>
@@ -1787,7 +1787,7 @@ export function PosSellPage({
 
   return (
     <>
-      <div className="flex h-[calc(100dvh-3.5rem)] min-h-[38rem] flex-col overflow-hidden bg-gray-950 text-white">
+      <div className="pos-surface pos-viewport flex min-h-[38rem] flex-col overflow-hidden bg-gray-950 text-white">
         <div className="flex flex-col gap-2 border-b border-gray-800 bg-gray-900 px-4 py-2 md:flex-row md:items-center md:justify-between">
           <div className="flex min-w-0 items-center gap-3">
             <div className="hidden shrink-0 md:block">
@@ -2007,9 +2007,9 @@ export function PosSellPage({
             </Card>
           </div>
 
-          <div className="flex min-h-0 flex-col border-l border-gray-800 bg-gray-900">
-            <Card className="flex min-h-[30rem] flex-col rounded-none border-0 bg-gray-900 text-white shadow-none xl:min-h-0 xl:flex-1">
-              <CardHeader className="shrink-0 space-y-3 border-b border-gray-800 p-3">
+          <div className="flex min-h-0 flex-col overflow-hidden border-l border-gray-800 bg-gray-900">
+            <Card className="flex min-h-[30rem] flex-col overflow-hidden rounded-none border-0 bg-gray-900 text-white shadow-none xl:min-h-0 xl:flex-1">
+              <CardHeader className="shrink-0 space-y-2 border-b border-gray-800 p-3">
                 <div className="flex items-center justify-between gap-2">
                   <CardTitle className="flex items-center gap-2">
                     <ShoppingCart className="size-5" />
@@ -2019,7 +2019,7 @@ export function PosSellPage({
                     {cart.length} {cart.length === 1 ? "item" : "itens"}
                   </Badge>
                 </div>
-                <div className="grid gap-2">
+                <div className="grid grid-cols-2 gap-2">
                   <label className="space-y-1 text-sm">
                     <span className="flex items-center gap-1.5 font-medium">
                       Cliente cadastrado
@@ -2062,7 +2062,7 @@ export function PosSellPage({
                   </label>
                 </div>
               </CardHeader>
-              <CardContent className="flex min-h-0 flex-1 flex-col space-y-3 p-2">
+              <CardContent className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden p-2">
                 {cart.length === 0 ? (
                   <div className="flex min-h-40 flex-1 flex-col items-center justify-center rounded-xl border border-dashed border-gray-800 text-center text-gray-600">
                     <ShoppingCart className="mb-2 size-8" />
@@ -2071,7 +2071,7 @@ export function PosSellPage({
                   </div>
                 ) : (
                   <>
-                    <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+                    <div className="min-h-24 flex-1 space-y-2 overflow-y-auto pr-1">
                       {cart.map((item) => {
                         const needsPrescription = itemHasPrescriptionRule(item)
                         const isSelected = selectedCartItem?.key === item.key
@@ -2320,7 +2320,7 @@ export function PosSellPage({
               </CardContent>
             </Card>
 
-            <Card className="shrink-0 rounded-none border-0 border-t border-gray-800 bg-gray-900 text-white shadow-none xl:max-h-56">
+            <Card className="shrink-0 rounded-none border-0 border-t border-gray-800 bg-gray-900 text-white shadow-none xl:max-h-40">
               <CardHeader className="p-3">
                 <CardTitle className="flex items-center gap-2">
                   <History className="size-5" />
@@ -2331,12 +2331,8 @@ export function PosSellPage({
                   ) : null}
                 </CardTitle>
               </CardHeader>
-              <CardContent className="px-3 pb-3 xl:min-h-0 xl:overflow-y-auto">
-                {heldSalesForBranch.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-gray-800 px-3 py-4 text-center text-xs text-gray-500">
-                    Nenhuma venda em espera
-                  </div>
-                ) : (
+              {heldSalesForBranch.length > 0 ? (
+                <CardContent className="px-3 pb-3 xl:min-h-0 xl:overflow-y-auto">
                   <div className="space-y-2">
                     {heldSalesForBranch.map((held) => (
                       <div
@@ -2377,8 +2373,8 @@ export function PosSellPage({
                       </div>
                     ))}
                   </div>
-                )}
-              </CardContent>
+                </CardContent>
+              ) : null}
             </Card>
               </div>
             </div>

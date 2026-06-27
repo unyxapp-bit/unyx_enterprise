@@ -7,6 +7,7 @@ import { useAuth } from "@/app/providers/auth-context"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { getAccessMode, setAccessMode } from "@/lib/accessMode"
 
 type AuthMode = "sign-in" | "sign-up"
 
@@ -20,7 +21,10 @@ export function LoginPage() {
   const [message, setMessage] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  if (session) return <Navigate to="/access" replace />
+  if (session) {
+    if (!getAccessMode()) setAccessMode("system")
+    return <Navigate to="/app" replace />
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()

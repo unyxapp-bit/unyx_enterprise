@@ -58,10 +58,10 @@ import type {
 } from "@/types/domain"
 
 const fieldClass =
-  "h-8 w-full rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+  "h-8 w-full rounded-lg border bg-[color:var(--bg-surface)] px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
 
 const filterClass =
-  "h-8 rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+  "h-8 rounded-lg border bg-[color:var(--bg-surface)] px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
 
 interface ScheduleFormState {
   branch_id: string
@@ -247,7 +247,7 @@ function ScheduleEditDialog({ schedule }: { schedule: ScheduleWithRelations }) {
           </label>
 
           {updateSchedule.error ? (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-[color:var(--text-secondary)]">
               {updateSchedule.error.message}
             </div>
           ) : null}
@@ -286,7 +286,7 @@ function ScheduleDeleteDialog({ schedule }: { schedule: ScheduleWithRelations })
         </DialogHeader>
         <p className="text-sm text-muted-foreground">
           Deseja remover a escala de{" "}
-          <span className="font-medium text-slate-950">
+          <span className="font-medium text-[color:var(--text-primary)]">
             {schedule.employees?.name ?? "Colaborador"}
           </span>{" "}
           do dia {formatDateBR(schedule.work_date)}? Esta ação não pode ser desfeita.
@@ -350,7 +350,7 @@ function CopyDayDialog({
         <form className="space-y-4" onSubmit={handleSubmit}>
           <p className="text-sm text-muted-foreground">
             Selecione a data de origem. Todas as escalas desse dia serão copiadas
-            para <span className="font-medium text-slate-950">{formatDateBR(currentDate)}</span>.
+            para <span className="font-medium text-[color:var(--text-primary)]">{formatDateBR(currentDate)}</span>.
           </p>
           <label className="space-y-1 text-sm">
             <span className="font-medium">Escopo</span>
@@ -378,7 +378,7 @@ function CopyDayDialog({
             />
           </label>
           {copySchedules.error ? (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-[color:var(--text-secondary)]">
               {copySchedules.error.message}
             </div>
           ) : null}
@@ -605,7 +605,7 @@ function SchedulesImportDialog({
 
   const tabClass = (active: boolean) =>
     `flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-      active ? "bg-white shadow-sm" : "text-muted-foreground hover:text-foreground"
+      active ? "bg-[color:var(--bg-surface)] shadow-sm" : "text-muted-foreground hover:text-foreground"
     }`
 
   return (
@@ -621,7 +621,7 @@ function SchedulesImportDialog({
           <DialogTitle>Importar escalas</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
-          <div className="flex gap-1 rounded-lg border bg-slate-100 p-1">
+          <div className="flex gap-1 rounded-lg border bg-[color:var(--bg-muted)] p-1">
             <button
               className={tabClass(inputMode === "file")}
               onClick={() => { setInputMode("file"); setRows([]); setErrors([]); setDateRange(null); setPasteText("") }}
@@ -638,7 +638,7 @@ function SchedulesImportDialog({
 
           {inputMode === "file" ? (
             <>
-              <div className="rounded-lg border bg-slate-50 p-3 text-sm text-slate-700">
+              <div className="rounded-lg border bg-[color:var(--bg-surface-soft)] p-3 text-sm text-[color:var(--text-secondary)]">
                 Colunas aceitas: colaborador, cpf/documento, filial, data, entrada,
                 intervalo, retorno, saida, status e observacoes. Status aceita Folga,
                 Trabalhando e Banco de horas. Use .xlsx ou .csv.
@@ -656,13 +656,13 @@ function SchedulesImportDialog({
             </>
           ) : (
             <>
-              <div className="rounded-lg border bg-slate-50 p-3 text-sm text-slate-700">
+              <div className="rounded-lg border bg-[color:var(--bg-surface-soft)] p-3 text-sm text-[color:var(--text-secondary)]">
                 Cole o texto copiado da planilha. Colunas esperadas (separadas por tabulacao):{" "}
                 <span className="font-medium">nome, documento, filial, data, entrada, inicio intervalo, fim intervalo, saida, status, observacoes</span>.
                 Use Banco de horas no status quando for banco.
               </div>
               <textarea
-                className="h-40 w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50 resize-none font-mono"
+                className="h-40 w-full rounded-lg border bg-[color:var(--bg-surface)] px-3 py-2 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50 resize-none font-mono"
                 placeholder={"JOAO\tnull\tloja principal\t05/05/2026\t07:40\t12:30\t14:30\t17:40\tTrabalhando\tnull"}
                 value={pasteText}
                 onChange={(e) => handlePasteChange(e.target.value)}
@@ -676,14 +676,14 @@ function SchedulesImportDialog({
           )}
 
           {dateRange ? (
-            <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
-              Periodo detectado: <strong>{formatDateBR(dateRange.min)}</strong> a{" "}
-              <strong>{formatDateBR(dateRange.max)}</strong>. Confirme que as datas
-              estao corretas antes de importar.
-            </div>
-          ) : null}
-          {errors.length > 0 ? (
-            <div className="max-h-40 overflow-auto rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-[color:var(--text-secondary)]">
+            Periodo detectado: <strong>{formatDateBR(dateRange.min)}</strong> a{" "}
+            <strong>{formatDateBR(dateRange.max)}</strong>. Confirme que as datas
+            estao corretas antes de importar.
+          </div>
+        ) : null}
+        {errors.length > 0 ? (
+            <div className="max-h-40 overflow-auto rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-[color:var(--text-secondary)]">
               {errors.slice(0, 12).map((error) => (
                 <div key={error}>{error}</div>
               ))}
@@ -765,21 +765,21 @@ function MonthCalendarView({
   return (
     <div className="grid gap-6 lg:grid-cols-[300px_1fr]">
       {/* Monthly calendar */}
-      <div className="rounded-lg border bg-white p-5 shadow-sm">
+      <div className="rounded-lg border bg-[color:var(--bg-surface)] p-5 shadow-sm">
         <div className="mb-5 flex items-center justify-between">
-          <span className="text-sm font-semibold text-slate-800">
+          <span className="text-sm font-semibold text-[color:var(--text-primary)]">
             {PT_MONTHS[monthNum - 1]} {yearNum}
           </span>
           <div className="flex gap-0.5">
             <button
               onClick={prevMonth}
-              className="rounded-md p-1 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
+              className="rounded-md p-1 text-[color:var(--text-muted)] transition-colors hover:bg-[color:var(--bg-muted)] hover:text-[color:var(--text-secondary)]"
             >
               <ChevronLeft className="size-4" />
             </button>
             <button
               onClick={nextMonth}
-              className="rounded-md p-1 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
+              className="rounded-md p-1 text-[color:var(--text-muted)] transition-colors hover:bg-[color:var(--bg-muted)] hover:text-[color:var(--text-secondary)]"
             >
               <ChevronRight className="size-4" />
             </button>
@@ -814,10 +814,10 @@ function MonthCalendarView({
                 className={cn(
                   "relative flex h-9 w-full flex-col items-center justify-center rounded-full text-sm transition-colors",
                   isSelected
-                    ? "bg-slate-900 font-semibold text-white"
+                    ? "bg-[color:var(--primary)] font-semibold text-[color:var(--primary-foreground)]"
                     : isToday
-                    ? "font-semibold text-blue-600 hover:bg-blue-50"
-                    : "text-slate-700 hover:bg-slate-100"
+                    ? "font-semibold text-[color:var(--primary)] hover:bg-[color:var(--bg-surface-soft)]"
+                    : "text-[color:var(--text-secondary)] hover:bg-[color:var(--bg-muted)]"
                 )}
               >
                 {day}
@@ -831,10 +831,10 @@ function MonthCalendarView({
       </div>
 
       {/* Schedule list for selected day */}
-      <div className="rounded-lg border bg-white p-5 shadow-sm">
+      <div className="rounded-lg border bg-[color:var(--bg-surface)] p-5 shadow-sm">
         {selectedDay ? (
           <>
-            <h3 className="mb-4 text-base font-semibold text-slate-800">
+            <h3 className="mb-4 text-base font-semibold text-[color:var(--text-primary)]">
               Escala de {formatDateBR(selectedDay)}
               <span className="ml-2 text-sm font-normal text-muted-foreground">
                 {selectedDaySchedules.length} escala(s)
@@ -849,18 +849,18 @@ function MonthCalendarView({
                   return (
                     <div
                       key={schedule.id}
-                      className="flex items-center gap-3 rounded-lg border border-slate-100 p-3 transition-colors hover:bg-slate-50"
+                      className="flex items-center gap-3 rounded-lg border border-[color:var(--border-soft)] p-3 transition-colors hover:bg-[color:var(--bg-surface-soft)]"
                     >
-                      <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-semibold text-indigo-700">
+                      <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[color:var(--bg-surface-soft)] text-sm font-semibold text-[color:var(--text-primary)] ring-1 ring-[color:var(--border-soft)]">
                         {getScheduleInitials(schedule.employees?.name ?? "?")}
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-indigo-600">
+                          <span className="text-sm font-medium text-[color:var(--text-primary)]">
                             {schedule.employees?.name ?? "-"}
                           </span>
                           {incomplete ? (
-                            <span className="inline-flex h-4 items-center rounded border border-amber-200 bg-amber-50 px-1.5 text-[10px] font-medium text-amber-700">
+                            <span className="inline-flex h-4 items-center rounded border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] px-1.5 text-[10px] font-medium text-[color:var(--text-secondary)]">
                               Incompleta
                             </span>
                           ) : null}
@@ -868,7 +868,7 @@ function MonthCalendarView({
                         <div className="mt-0.5 text-xs text-muted-foreground">
                           {scheduleSummary(schedule)}
                           {schedule.employees?.sectors?.name ? (
-                            <span className="ml-2 text-slate-400">
+                            <span className="ml-2 text-muted-foreground">
                               · {schedule.employees.sectors.name}
                             </span>
                           ) : null}
@@ -886,7 +886,7 @@ function MonthCalendarView({
           </>
         ) : (
           <div className="flex h-full min-h-64 items-center justify-center">
-            <div className="flex flex-col items-center gap-2 text-slate-400">
+            <div className="flex flex-col items-center gap-2 text-muted-foreground">
               <CalendarDays className="size-8" />
               <span className="text-sm">Clique em um dia para ver as escalas</span>
             </div>
@@ -1088,7 +1088,7 @@ export function SchedulesPage() {
                 onClick={() => setViewMode("calendar")}
                 className={cn(
                   "px-3 py-1.5 text-sm font-medium transition-colors",
-                  viewMode === "calendar" ? "bg-slate-950 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
+                  viewMode === "calendar" ? "bg-[color:var(--primary)] text-[color:var(--primary-foreground)]" : "bg-[color:var(--bg-surface)] text-[color:var(--text-muted)] hover:bg-[color:var(--bg-surface-soft)]"
                 )}
               >
                 Calendário
@@ -1098,7 +1098,7 @@ export function SchedulesPage() {
                 onClick={() => setViewMode("range")}
                 className={cn(
                   "border-l px-3 py-1.5 text-sm font-medium transition-colors",
-                  viewMode === "range" ? "bg-slate-950 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
+                  viewMode === "range" ? "bg-[color:var(--primary)] text-[color:var(--primary-foreground)]" : "bg-[color:var(--bg-surface)] text-[color:var(--text-muted)] hover:bg-[color:var(--bg-surface-soft)]"
                 )}
               >
                 Período
@@ -1206,7 +1206,7 @@ export function SchedulesPage() {
                     <Input value={form.notes} onChange={(e) => setForm((c) => ({ ...c, notes: e.target.value }))} />
                   </label>
                   {formError || createSchedule.error ? (
-                    <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-[color:var(--text-secondary)]">
                       {formError ?? createSchedule.error?.message}
                     </div>
                   ) : null}
@@ -1225,8 +1225,8 @@ export function SchedulesPage() {
       <div className="space-y-4 p-6">
         {/* Barra de seleção */}
         {selectedCount > 0 ? (
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-slate-50 px-3 py-2 text-sm">
-            <span className="font-medium text-slate-700">{selectedCount} escala(s) selecionada(s)</span>
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-[color:var(--bg-surface-soft)] px-3 py-2 text-sm">
+            <span className="font-medium text-[color:var(--text-secondary)]">{selectedCount} escala(s) selecionada(s)</span>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={() => setSelectedIds(new Set())}>Limpar seleção</Button>
               <Dialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
@@ -1255,7 +1255,7 @@ export function SchedulesPage() {
         ) : null}
 
         {conflictCount > 0 ? (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-[color:var(--text-secondary)]">
             {conflictCount} colaborador(es) com mais de uma escala no mesmo dia neste recorte.
           </div>
         ) : null}
@@ -1280,14 +1280,14 @@ export function SchedulesPage() {
             description={(currentQuery.data ?? []).length === 0 && viewMode !== "range" ? "Importe ou cadastre escalas para este período." : undefined}
           />
         ) : (
-          <div className="overflow-hidden rounded-lg border bg-white shadow-sm">
+          <div className="overflow-hidden rounded-lg border bg-[color:var(--bg-surface)] shadow-sm">
             <table className="w-full text-left text-sm">
-              <thead className="border-b bg-slate-50 text-xs uppercase text-muted-foreground">
+              <thead className="border-b bg-[color:var(--bg-surface-soft)] text-xs uppercase text-muted-foreground">
                 <tr>
                   <th className="w-10 px-4 py-3">
                     <input
                       type="checkbox"
-                      className="size-4 rounded border-slate-300 accent-slate-950"
+                      className="size-4 rounded border-[color:var(--border-strong)] accent-[color:var(--primary)]"
                       checked={allSelected}
                       onChange={(e) => toggleAll(e.target.checked)}
                       aria-label="Selecionar todas as escalas"
@@ -1308,11 +1308,11 @@ export function SchedulesPage() {
                 {filteredSchedules.map((schedule) => {
                   const incomplete = isScheduleIncomplete(schedule)
                   return (
-                    <tr key={schedule.id} className="hover:bg-slate-50">
+                    <tr key={schedule.id} className="hover:bg-[color:var(--bg-surface-soft)]">
                       <td className="px-4 py-3">
                         <input
                           type="checkbox"
-                          className="size-4 rounded border-slate-300 accent-slate-950"
+                          className="size-4 rounded border-[color:var(--border-strong)] accent-[color:var(--primary)]"
                           checked={selectedIds.has(schedule.id)}
                           onChange={(e) => toggleOne(schedule.id, e.target.checked)}
                         />
@@ -1324,7 +1324,7 @@ export function SchedulesPage() {
                         <div className="flex items-center gap-2">
                           {schedule.employees?.name ?? "-"}
                           {incomplete ? (
-                            <span className="inline-flex h-4 items-center rounded border border-amber-200 bg-amber-50 px-1.5 text-[10px] font-medium text-amber-700">
+                          <span className="inline-flex h-4 items-center rounded border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] px-1.5 text-[10px] font-medium text-[color:var(--text-secondary)]">
                               Incompleta
                             </span>
                           ) : null}

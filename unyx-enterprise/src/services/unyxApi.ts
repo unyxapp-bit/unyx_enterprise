@@ -13,7 +13,9 @@ import type {
   CashSessionStatus,
   ChecklistProcedure,
   ChecklistProcedureFrequency,
+  ChecklistApprovalStatus,
   ChecklistRun,
+  ChecklistRunItemResult,
   CommsPost,
   CommsPostComment,
   DashboardRow,
@@ -39,6 +41,9 @@ import type {
   OperationalFormResponse,
   OperationalNote,
   OperationalNoteStatus,
+  OperationalBreak,
+  OperationalBreakSettings,
+  OperationalBreakType,
   OperationalQueueSeverity,
   OperationalQueueSignal,
   OperationalQueueStatus,
@@ -80,6 +85,13 @@ export interface BulkImportResult {
   skipped: number
   errors: string[]
 }
+
+const CHECKLIST_MANAGER_ROLES = new Set([
+  "owner",
+  "admin",
+  "branch_manager",
+  "supervisor",
+])
 
 export interface EmployeeImportInput {
   branch_id: string
@@ -123,6 +135,15 @@ export interface OperationalQueueInput {
   wait_minutes?: number
   required_posts?: number | null
   active_posts?: number | null
+  notes?: string | null
+}
+
+export interface OperationalBreakReleaseInput {
+  employee_id: string
+  allocation_id: string
+  post_id: string
+  schedule_id?: string | null
+  break_type: OperationalBreakType
   notes?: string | null
 }
 
@@ -186,6 +207,36 @@ function isMissingFiscalFlowFeature(error: { code?: string; message: string } | 
 
 function allocationFeatureMessage() {
   return "Os recursos de postos operacionais ainda nao apareceram na API do Supabase. Rode o supabase/onboarding_first_access.sql atualizado no SQL Editor, aguarde alguns segundos e recarregue o app."
+}
+
+function isMissingOperationalBreakFeature(error: { code?: string; message: string } | null) {
+  if (!error) return false
+  const message = error.message.toLowerCase()
+  const mentionsBreakObject =
+    message.includes("operational_breaks") ||
+    message.includes("operational_break_settings") ||
+    message.includes("release_employee_break") ||
+    message.includes("return_employee_break") ||
+    message.includes("cancel_employee_break") ||
+    message.includes("reschedule_employee_break") ||
+    message.includes("register_employee_break_delay")
+
+  return (
+    mentionsBreakObject &&
+    (
+      error.code === "42P01" ||
+      error.code === "PGRST202" ||
+      error.code === "PGRST204" ||
+      error.code === "PGRST205" ||
+      message.includes("schema cache") ||
+      message.includes("does not exist") ||
+      message.includes("could not find")
+    )
+  )
+}
+
+function operationalBreakFeatureMessage() {
+  return "O modulo de liberacoes operacionais ainda nao apareceu na API do Supabase. Rode supabase/operational_breaks_setup.sql no SQL Editor, aguarde alguns segundos e recarregue o app."
 }
 
 function isMissingChecklistFeature(error: { code?: string; message: string } | null) {
@@ -295,6 +346,21 @@ function isMissingOperationalActionRpc(
   )
 }
 
+function shouldFallbackOperationalAction(
+  eventType: AttendanceEventType,
+  error: { code?: string; message: string } | null
+) {
+  if (isMissingOperationalActionRpc(error)) return true
+
+  return (
+    eventType === "saida_confirmada" &&
+    Boolean(error?.message.includes("Esta acao nao e permitida"))
+  ) || (
+    eventType === "falta_detectada" &&
+    Boolean(error?.message.includes("Esta acao nao e permitida"))
+  )
+}
+
 function isMissingBreakAlreadyDoneRpc(
   error: { code?: string; message: string } | null
 ) {
@@ -302,6 +368,16 @@ function isMissingBreakAlreadyDoneRpc(
   return (
     error.code === "PGRST202" ||
     error.message.includes("record_break_already_done")
+  )
+}
+
+function isBreakAlreadyDoneMissingEntry(
+  error: { message: string } | null
+) {
+  return Boolean(
+    error?.message.includes(
+      "Confirme a entrada antes de marcar o intervalo como feito"
+    )
   )
 }
 
@@ -427,6 +503,37 @@ function normalizeChecklistItems(items: string[]) {
         .filter(Boolean)
     )
   )
+}
+
+function normalizeChecklistItemResults(
+  requiredItems: string[],
+  checkedItems: string[],
+  itemResults?: ChecklistRunItemResult[]
+) {
+  return requiredItems.map((item) => {
+    const provided = itemResults?.find((result) => result.item === item)
+    return {
+      item,
+      checked: checkedItems.includes(item),
+      evidence: provided?.evidence?.trim() || null,
+      occurrence: provided?.occurrence?.trim() || null,
+    }
+  })
+}
+
+function localDateKeyFrom(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
+function dueAtFromTime(dueTime: string | null | undefined, baseDate: Date) {
+  if (!dueTime) return null
+  const [hours, minutes] = dueTime.slice(0, 5).split(":").map(Number)
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null
+  const [year, month, day] = localDateKeyFrom(baseDate).split("-").map(Number)
+  return new Date(year, month - 1, day, hours, minutes, 0, 0).toISOString()
 }
 
 function timeToMinutes(value: string | null | undefined) {
@@ -1686,6 +1793,59 @@ export async function listAllocationHistory(
   return listPostAllocations(branchId, false, organizationId)
 }
 
+export async function listOperationalBreaks(
+  branchId?: string | null,
+  organizationId?: string | null
+) {
+  let query = supabase
+    .from("operational_breaks")
+    .select(
+      "*, operational_posts(*, branches(name), sectors(name)), employees(*, sectors(name)), schedules(work_date, start_time, break_start, break_end, end_time)"
+    )
+    .order("planned_start", { ascending: false })
+    .limit(300)
+
+  if (organizationId) query = query.eq("organization_id", organizationId)
+  if (branchId) query = query.eq("branch_id", branchId)
+
+  const { data, error } = await query
+  if (isMissingOperationalBreakFeature(error)) return []
+  raise(error)
+  return (data ?? []) as OperationalBreak[]
+}
+
+export async function getOperationalBreakSettings(
+  profile: UserProfile,
+  branchId?: string | null
+) {
+  if (!branchId) return null
+
+  const { data, error } = await supabase
+    .from("operational_break_settings")
+    .select("*")
+    .eq("organization_id", profile.organization_id)
+    .eq("branch_id", branchId)
+    .maybeSingle()
+
+  if (isMissingOperationalBreakFeature(error)) return null
+  raise(error)
+
+  if (data) return data as OperationalBreakSettings
+
+  const { data: created, error: createError } = await supabase
+    .from("operational_break_settings")
+    .insert({
+      organization_id: profile.organization_id,
+      branch_id: branchId,
+    })
+    .select("*")
+    .single()
+
+  if (isMissingOperationalBreakFeature(createError)) return null
+  raise(createError)
+  return created as OperationalBreakSettings
+}
+
 export async function listCashMovements(
   branchId?: string | null,
   organizationId?: string | null
@@ -1894,6 +2054,89 @@ export async function finalizePostAllocation(input: {
   return data as PostAllocation
 }
 
+export async function releaseEmployeeBreak(input: OperationalBreakReleaseInput) {
+  const { data, error } = await supabase.rpc("release_employee_break", {
+    p_employee_id: input.employee_id,
+    p_allocation_id: input.allocation_id,
+    p_post_id: input.post_id,
+    p_schedule_id: input.schedule_id ?? null,
+    p_break_type: input.break_type,
+    p_notes: input.notes ?? null,
+  })
+
+  if (isMissingOperationalBreakFeature(error)) {
+    throw new Error(operationalBreakFeatureMessage())
+  }
+  raise(error)
+  return data as OperationalBreak
+}
+
+export async function returnEmployeeBreak(input: {
+  break_id: string
+  notes?: string | null
+}) {
+  const { data, error } = await supabase.rpc("return_employee_break", {
+    p_break_id: input.break_id,
+    p_notes: input.notes ?? null,
+  })
+
+  if (isMissingOperationalBreakFeature(error)) {
+    throw new Error(operationalBreakFeatureMessage())
+  }
+  raise(error)
+  return data as OperationalBreak
+}
+
+export async function cancelEmployeeBreak(input: {
+  break_id: string
+  notes?: string | null
+}) {
+  const { data, error } = await supabase.rpc("cancel_employee_break", {
+    p_break_id: input.break_id,
+    p_notes: input.notes ?? null,
+  })
+
+  if (isMissingOperationalBreakFeature(error)) {
+    throw new Error(operationalBreakFeatureMessage())
+  }
+  raise(error)
+  return data as OperationalBreak
+}
+
+export async function rescheduleEmployeeBreak(input: {
+  break_id: string
+  minutes?: number
+  notes?: string | null
+}) {
+  const { data, error } = await supabase.rpc("reschedule_employee_break", {
+    p_break_id: input.break_id,
+    p_minutes: input.minutes ?? 10,
+    p_notes: input.notes ?? null,
+  })
+
+  if (isMissingOperationalBreakFeature(error)) {
+    throw new Error(operationalBreakFeatureMessage())
+  }
+  raise(error)
+  return data as OperationalBreak
+}
+
+export async function registerEmployeeBreakDelay(input: {
+  break_id: string
+  notes?: string | null
+}) {
+  const { data, error } = await supabase.rpc("register_employee_break_delay", {
+    p_break_id: input.break_id,
+    p_notes: input.notes ?? null,
+  })
+
+  if (isMissingOperationalBreakFeature(error)) {
+    throw new Error(operationalBreakFeatureMessage())
+  }
+  raise(error)
+  return data as OperationalBreak
+}
+
 export async function confirmCashMovement(input: {
   allocation_id: string
   movement_type: CashMovementType
@@ -2096,6 +2339,10 @@ export interface ChecklistProcedureInput {
   frequency: ChecklistProcedureFrequency
   estimated_minutes: number | null
   owner_role: string | null
+  due_time: string | null
+  evidence_required: boolean
+  requires_approval: boolean
+  approval_role: string | null
   instructions: string | null
   checklist_items: string[]
 }
@@ -2126,10 +2373,13 @@ export async function createChecklistProcedure(
 ) {
   const title = input.title.trim()
   const checklistItems = normalizeChecklistItems(input.checklist_items)
+  const instructions = input.instructions?.trim() || null
 
-  if (!title) throw new Error("Informe o titulo do procedimento.")
-  if (checklistItems.length === 0) {
-    throw new Error("Adicione pelo menos um item no checklist.")
+  if (!title) throw new Error("Informe o titulo do cadastro.")
+  if (checklistItems.length === 0 && !instructions) {
+    throw new Error(
+      "Adicione os itens do checklist ou descreva o passo a passo do procedimento."
+    )
   }
   if (input.sector_id && !input.branch_id) {
     throw new Error("Selecione uma filial antes de escolher o setor.")
@@ -2146,7 +2396,11 @@ export async function createChecklistProcedure(
       title,
       category: input.category?.trim() || null,
       owner_role: input.owner_role?.trim() || null,
-      instructions: input.instructions?.trim() || null,
+      due_time: input.due_time || null,
+      evidence_required: input.evidence_required,
+      requires_approval: input.requires_approval,
+      approval_role: input.approval_role?.trim() || null,
+      instructions,
       checklist_items: checklistItems,
       organization_id: profile.organization_id,
       created_by: profile.id,
@@ -2176,7 +2430,7 @@ export async function listChecklistRuns(
 ) {
   let query = supabase
     .from("checklist_runs")
-    .select("*, checklist_procedures(title, category), branches(name), user_profiles!user_id(name)")
+    .select("*, checklist_procedures(title, category, requires_approval, due_time), branches(name), user_profiles!user_id(name), approved_profile:approved_by(name)")
     .order("created_at", { ascending: false })
     .limit(120)
 
@@ -2197,12 +2451,15 @@ export async function completeChecklistRun(
     procedure_id: string
     branch_id: string | null
     checked_items: string[]
+    item_results?: ChecklistRunItemResult[]
+    evidence_notes?: string | null
+    occurrence_notes?: string | null
     notes: string | null
   }
 ) {
   const { data: procedure, error: procedureError } = await supabase
     .from("checklist_procedures")
-    .select("id, organization_id, branch_id, active, checklist_items")
+    .select("id, organization_id, branch_id, active, checklist_items, due_time, evidence_required, requires_approval")
     .eq("id", input.procedure_id)
     .maybeSingle()
 
@@ -2221,14 +2478,41 @@ export async function completeChecklistRun(
 
   const requiredItems = normalizeChecklistItems(procedure.checklist_items ?? [])
   const checkedItems = normalizeChecklistItems(input.checked_items)
+
+  if (requiredItems.length === 0) {
+    throw new Error("Procedimentos sao documentos de consulta e nao possuem execucao.")
+  }
+
   const missingItems = requiredItems.filter((item) => !checkedItems.includes(item))
+  const itemResults = normalizeChecklistItemResults(
+    requiredItems,
+    checkedItems,
+    input.item_results
+  )
 
   if (missingItems.length > 0) {
     throw new Error("Conclua todos os itens antes de finalizar o checklist.")
   }
 
+  const evidenceNotes = input.evidence_notes?.trim() || null
+  const hasRequiredEvidence =
+    !procedure.evidence_required ||
+    Boolean(evidenceNotes) ||
+    itemResults.every((result) => Boolean(result.evidence))
+
+  if (!hasRequiredEvidence) {
+    throw new Error("Informe uma evidencia geral ou por item antes de finalizar.")
+  }
+
   const branchId = procedure.branch_id ?? input.branch_id ?? profile.branch_id ?? null
   const completedAt = new Date().toISOString()
+  const occurrenceNotes =
+    input.occurrence_notes?.trim() ||
+    itemResults
+      .filter((result) => result.occurrence)
+      .map((result) => `${result.item}: ${result.occurrence}`)
+      .join("\n") ||
+    null
 
   const { data, error } = await supabase
     .from("checklist_runs")
@@ -2239,11 +2523,16 @@ export async function completeChecklistRun(
       user_id: profile.id,
       status: "completed",
       checked_items: checkedItems,
+      item_results: itemResults,
       notes: input.notes?.trim() || null,
+      evidence_notes: evidenceNotes,
+      occurrence_notes: occurrenceNotes,
+      due_at: dueAtFromTime(procedure.due_time, new Date(completedAt)),
+      approval_status: procedure.requires_approval ? "pending" : "not_required",
       started_at: completedAt,
       completed_at: completedAt,
     })
-    .select("*, checklist_procedures(title, category), branches(name), user_profiles!user_id(name)")
+    .select("*, checklist_procedures(title, category, requires_approval, due_time), branches(name), user_profiles!user_id(name), approved_profile:approved_by(name)")
     .single()
 
   if (isMissingChecklistFeature(error)) throw new Error(checklistFeatureMessage())
@@ -2255,6 +2544,69 @@ export async function completeChecklistRun(
     entity_type: "checklist_runs",
     entity_id: data.id,
     old_value: null,
+    new_value: data,
+  })
+
+  return data as ChecklistRun
+}
+
+export async function approveChecklistRun(
+  profile: UserProfile,
+  input: {
+    run_id: string
+    approval_status: Extract<ChecklistApprovalStatus, "approved" | "rejected">
+    rejected_reason?: string | null
+  }
+) {
+  if (!CHECKLIST_MANAGER_ROLES.has(profile.role)) {
+    throw new Error("Apenas lideranca pode aprovar ou reprovar checklists.")
+  }
+
+  const { data: current, error: currentError } = await supabase
+    .from("checklist_runs")
+    .select("id, organization_id, branch_id, approval_status")
+    .eq("id", input.run_id)
+    .maybeSingle()
+
+  if (isMissingChecklistFeature(currentError)) {
+    throw new Error(checklistFeatureMessage())
+  }
+  raise(currentError)
+
+  if (!current || current.organization_id !== profile.organization_id) {
+    throw new Error("Execucao de checklist invalida.")
+  }
+
+  const now = new Date().toISOString()
+  const payload = {
+    approval_status: input.approval_status,
+    approved_by: profile.id,
+    approved_at: now,
+    rejected_reason:
+      input.approval_status === "rejected"
+        ? input.rejected_reason?.trim() || "Reprovado pela lideranca."
+        : null,
+  }
+
+  const { data, error } = await supabase
+    .from("checklist_runs")
+    .update(payload)
+    .eq("id", input.run_id)
+    .select("*, checklist_procedures(title, category, requires_approval, due_time), branches(name), user_profiles!user_id(name), approved_profile:approved_by(name)")
+    .single()
+
+  if (isMissingChecklistFeature(error)) throw new Error(checklistFeatureMessage())
+  raise(error)
+
+  await createAuditLog(profile, {
+    branch_id: current.branch_id,
+    action:
+      input.approval_status === "approved"
+        ? "checklist_run_approved"
+        : "checklist_run_rejected",
+    entity_type: "checklist_runs",
+    entity_id: data.id,
+    old_value: current,
     new_value: data,
   })
 
@@ -3035,7 +3387,7 @@ export async function recordOperationalEvent(
   )
 
   if (!rpcError) return rpcEvent as AttendanceEvent
-  if (!isMissingOperationalActionRpc(rpcError)) {
+  if (!shouldFallbackOperationalAction(input.event_type, rpcError)) {
     await createOperationalActionBlockedAudit(profile, {
       branch_id: input.branch_id,
       employee_id: input.employee_id,
@@ -3119,6 +3471,121 @@ export async function recordOperationalEvent(
   return event as AttendanceEvent
 }
 
+async function recordBreakAlreadyDoneFallback(
+  profile: UserProfile,
+  input: {
+    branch_id: string
+    employee_id: string
+    schedule_id: string
+    notes?: string | null
+  }
+) {
+  const { data: schedule, error: scheduleError } = await supabase
+    .from("schedules")
+    .select("id, organization_id, branch_id, employee_id, status")
+    .eq("id", input.schedule_id)
+    .eq("organization_id", profile.organization_id)
+    .maybeSingle()
+
+  raise(scheduleError)
+
+  if (!schedule) throw new Error("Escala nao encontrada.")
+  if (
+    schedule.branch_id !== input.branch_id ||
+    schedule.employee_id !== input.employee_id
+  ) {
+    throw new Error("Evento nao corresponde a escala informada.")
+  }
+
+  const { data: allocation, error: allocationError } = await supabase
+    .from("post_allocations")
+    .select("id")
+    .eq("organization_id", profile.organization_id)
+    .eq("branch_id", input.branch_id)
+    .eq("employee_id", input.employee_id)
+    .eq("schedule_id", input.schedule_id)
+    .in("status", ["alocado", "aguardando_troca", "em_troca"])
+    .limit(1)
+    .maybeSingle()
+
+  if (allocationError && !isMissingAllocationFeature(allocationError)) {
+    raise(allocationError)
+  }
+
+  const scheduleStatus = schedule.status as ScheduleStatus
+  const hasStarted =
+    ["working", "on_break", "returned"].includes(scheduleStatus) ||
+    Boolean(allocation)
+
+  if (!hasStarted) {
+    throw new Error(
+      "Confirme a entrada antes de marcar o intervalo como feito."
+    )
+  }
+
+  const notes =
+    input.notes?.trim() || "Intervalo ja feito confirmado pelo gestor."
+
+  const { data: previousStatus } = await supabase
+    .from("operational_status")
+    .select("*")
+    .eq("employee_id", input.employee_id)
+    .eq("schedule_id", input.schedule_id)
+    .maybeSingle()
+
+  const { data: event, error: eventError } = await supabase
+    .from("attendance_events")
+    .insert({
+      organization_id: profile.organization_id,
+      branch_id: input.branch_id,
+      employee_id: input.employee_id,
+      schedule_id: input.schedule_id,
+      event_type: "retorno_confirmado",
+      created_by: profile.id,
+      notes,
+    })
+    .select("*")
+    .single()
+
+  raise(eventError)
+
+  const { error: scheduleUpdateError } = await supabase
+    .from("schedules")
+    .update({ status: "returned" })
+    .eq("id", input.schedule_id)
+    .eq("organization_id", profile.organization_id)
+
+  raise(scheduleUpdateError)
+
+  const statusPayload = {
+    organization_id: profile.organization_id,
+    branch_id: input.branch_id,
+    employee_id: input.employee_id,
+    schedule_id: input.schedule_id,
+    current_status: "voltou" as OperationalStatus,
+    priority_level: 30,
+    delay_minutes: 0,
+    status_reason: notes,
+    updated_at: new Date().toISOString(),
+  }
+  const { error: statusError } = await supabase
+    .from("operational_status")
+    .upsert(statusPayload, { onConflict: "employee_id,schedule_id" })
+
+  raise(statusError)
+
+  await createAuditLog(profile, {
+    branch_id: input.branch_id,
+    action: "intervalo_ja_feito",
+    entity_type: "attendance_events",
+    entity_id: (event as AttendanceEvent).id,
+    old_value: previousStatus,
+    new_value: event,
+  })
+
+  return event as AttendanceEvent
+}
+
 export async function recordBreakAlreadyDone(
   profile: UserProfile,
   input: {
@@ -3139,6 +3606,9 @@ export async function recordBreakAlreadyDone(
     throw new Error(
       "A acao 'intervalo ja feito' ainda nao esta instalada no Supabase. Rode supabase/break_already_done_rpc.sql e tente novamente."
     )
+  }
+  if (isBreakAlreadyDoneMissingEntry(error)) {
+    return recordBreakAlreadyDoneFallback(profile, input)
   }
   if (error) {
     await createOperationalActionBlockedAudit(profile, {

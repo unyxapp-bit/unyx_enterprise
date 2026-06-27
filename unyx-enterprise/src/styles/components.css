@@ -182,3 +182,365 @@
   background: rgb(56 189 248 / 0.18);
   color: #7dd3fc;
 }
+
+.app-content {
+  --app-top-nav-height: 4rem;
+}
+
+@media (min-width: 1024px) {
+  .app-content[data-nav-collapsed="true"] {
+    --app-top-nav-height: 0rem;
+  }
+}
+
+[data-theme="dark"] .app-content .bg-white,
+.dark .app-content .bg-white {
+  background: var(--bg-surface) !important;
+}
+
+[data-theme="dark"] .app-content .bg-slate-50,
+.dark .app-content .bg-slate-50 {
+  background: var(--bg-surface-soft) !important;
+}
+
+[data-theme="dark"] .app-content .bg-slate-100,
+.dark .app-content .bg-slate-100 {
+  background: var(--bg-muted) !important;
+}
+
+[data-theme="dark"] .app-content .bg-red-50,
+.dark .app-content .bg-red-50,
+[data-theme="dark"] .app-content .bg-amber-50,
+.dark .app-content .bg-amber-50,
+[data-theme="dark"] .app-content .bg-blue-50,
+.dark .app-content .bg-blue-50,
+[data-theme="dark"] .app-content .bg-sky-50,
+.dark .app-content .bg-sky-50,
+[data-theme="dark"] .app-content .bg-emerald-50,
+.dark .app-content .bg-emerald-50,
+[data-theme="dark"] .app-content .bg-rose-50,
+.dark .app-content .bg-rose-50,
+[data-theme="dark"] .app-content .bg-violet-50,
+.dark .app-content .bg-violet-50,
+[data-theme="dark"] .app-content .bg-zinc-50,
+.dark .app-content .bg-zinc-50,
+[data-theme="dark"] .app-content .bg-neutral-50,
+.dark .app-content .bg-neutral-50,
+[data-theme="dark"] .app-content .bg-indigo-100,
+.dark .app-content .bg-indigo-100 {
+  background: color-mix(in srgb, var(--bg-surface) 84%, var(--bg-surface-soft)) !important;
+}
+
+[data-theme="dark"] .app-content .border-slate-100,
+.dark .app-content .border-slate-100,
+[data-theme="dark"] .app-content .border-slate-200,
+.dark .app-content .border-slate-200 {
+  border-color: var(--border-soft) !important;
+}
+
+[data-theme="dark"] .app-content .border-red-200,
+.dark .app-content .border-red-200,
+[data-theme="dark"] .app-content .border-amber-200,
+.dark .app-content .border-amber-200,
+[data-theme="dark"] .app-content .border-blue-200,
+.dark .app-content .border-blue-200,
+[data-theme="dark"] .app-content .border-sky-200,
+.dark .app-content .border-sky-200,
+[data-theme="dark"] .app-content .border-emerald-200,
+.dark .app-content .border-emerald-200,
+[data-theme="dark"] .app-content .border-rose-200,
+.dark .app-content .border-rose-200,
+[data-theme="dark"] .app-content .border-violet-200,
+.dark .app-content .border-violet-200,
+[data-theme="dark"] .app-content .border-zinc-200,
+.dark .app-content .border-zinc-200,
+[data-theme="dark"] .app-content .border-neutral-200,
+.dark .app-content .border-neutral-200,
+[data-theme="dark"] .app-content .border-indigo-200,
+.dark .app-content .border-indigo-200 {
+  border-color: var(--border-soft) !important;
+}
+
+[data-theme="dark"] .app-content .text-zinc-600,
+.dark .app-content .text-zinc-600,
+[data-theme="dark"] .app-content .text-zinc-700,
+.dark .app-content .text-zinc-700,
+[data-theme="dark"] .app-content .text-neutral-600,
+.dark .app-content .text-neutral-600,
+[data-theme="dark"] .app-content .text-neutral-700,
+.dark .app-content .text-neutral-700 {
+  color: var(--text-secondary) !important;
+}
+
+[data-theme="dark"] .app-content .text-red-700,
+.dark .app-content .text-red-700,
+[data-theme="dark"] .app-content .text-red-800,
+.dark .app-content .text-red-800,
+[data-theme="dark"] .app-content .text-amber-700,
+.dark .app-content .text-amber-700,
+[data-theme="dark"] .app-content .text-amber-800,
+.dark .app-content .text-amber-800,
+[data-theme="dark"] .app-content .text-blue-700,
+.dark .app-content .text-blue-700,
+[data-theme="dark"] .app-content .text-blue-800,
+.dark .app-content .text-blue-800,
+[data-theme="dark"] .app-content .text-sky-700,
+.dark .app-content .text-sky-700,
+[data-theme="dark"] .app-content .text-sky-800,
+.dark .app-content .text-sky-800,
+[data-theme="dark"] .app-content .text-emerald-700,
+.dark .app-content .text-emerald-700,
+[data-theme="dark"] .app-content .text-emerald-800,
+.dark .app-content .text-emerald-800,
+[data-theme="dark"] .app-content .text-rose-700,
+.dark .app-content .text-rose-700,
+[data-theme="dark"] .app-content .text-rose-800,
+.dark .app-content .text-rose-800,
+[data-theme="dark"] .app-content .text-violet-700,
+.dark .app-content .text-violet-700,
+[data-theme="dark"] .app-content .text-violet-800,
+.dark .app-content .text-violet-800,
+[data-theme="dark"] .app-content .text-indigo-700,
+.dark .app-content .text-indigo-700,
+[data-theme="dark"] .app-content .text-indigo-800,
+.dark .app-content .text-indigo-800,
+[data-theme="dark"] .app-content .text-orange-700,
+.dark .app-content .text-orange-700,
+[data-theme="dark"] .app-content .text-orange-800,
+.dark .app-content .text-orange-800 {
+  color: var(--text-secondary) !important;
+}
+
+[data-theme="dark"] .app-content .border-slate-300,
+.dark .app-content .border-slate-300 {
+  border-color: var(--border-strong) !important;
+}
+
+[data-theme="dark"] .app-content .text-slate-950,
+.dark .app-content .text-slate-950,
+[data-theme="dark"] .app-content .text-slate-900,
+.dark .app-content .text-slate-900,
+[data-theme="dark"] .app-content .text-slate-800,
+.dark .app-content .text-slate-800 {
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .app-content .text-slate-700,
+.dark .app-content .text-slate-700,
+[data-theme="dark"] .app-content .text-slate-600,
+.dark .app-content .text-slate-600 {
+  color: var(--text-secondary) !important;
+}
+
+[data-theme="dark"] .app-content .text-slate-500,
+.dark .app-content .text-slate-500,
+[data-theme="dark"] .app-content .text-slate-400,
+.dark .app-content .text-slate-400 {
+  color: var(--text-muted) !important;
+}
+
+.pos-viewport {
+  height: calc(100dvh - var(--app-top-nav-height, 4rem));
+}
+
+.pos-surface {
+  background: var(--bg-app);
+  color: var(--text-primary);
+}
+
+.pos-surface .bg-gray-950,
+.pos-surface .bg-gray-950\/60,
+.pos-surface .bg-gray-950\/70 {
+  background: var(--bg-app) !important;
+}
+
+.pos-surface .bg-gray-900,
+.pos-surface .bg-gray-900\/80 {
+  background: var(--bg-surface) !important;
+}
+
+.pos-surface .bg-gray-800,
+.pos-surface .bg-gray-800\/70,
+.pos-surface .bg-gray-800\/80 {
+  background: var(--bg-surface-soft) !important;
+}
+
+.pos-surface .bg-gray-700 {
+  background: var(--bg-muted) !important;
+}
+
+.pos-surface .border-gray-900,
+.pos-surface .border-gray-800,
+.pos-surface .border-gray-700,
+.pos-surface .border-gray-600 {
+  border-color: var(--border-soft) !important;
+}
+
+.pos-surface .text-white,
+.pos-surface .text-gray-950,
+.pos-surface .text-slate-950 {
+  color: var(--text-primary) !important;
+}
+
+.pos-surface .text-gray-100,
+.pos-surface .text-gray-200,
+.pos-surface .text-gray-300,
+.pos-surface .text-slate-300 {
+  color: var(--text-secondary) !important;
+}
+
+.pos-surface .text-gray-400,
+.pos-surface .text-gray-500,
+.pos-surface .text-gray-600,
+.pos-surface .text-slate-400 {
+  color: var(--text-muted) !important;
+}
+
+.pos-surface .text-blue-200,
+.pos-surface .text-blue-300,
+.pos-surface .text-orange-300 {
+  color: var(--primary) !important;
+}
+
+.pos-surface .text-green-300 {
+  color: #047857 !important;
+}
+
+.pos-surface .text-yellow-300 {
+  color: #b45309 !important;
+}
+
+.pos-surface .bg-green-900\/50 {
+  background: var(--color-success-soft) !important;
+}
+
+.pos-surface .bg-yellow-950\/25,
+.pos-surface .bg-yellow-900\/20,
+.pos-surface .bg-yellow-900\/30,
+.pos-surface .bg-yellow-900\/35 {
+  background: var(--color-warning-soft) !important;
+}
+
+.pos-surface .bg-blue-950\/25,
+.pos-surface .bg-blue-900\/20,
+.pos-surface .bg-blue-900\/30,
+.pos-surface .bg-blue-900\/35 {
+  background: color-mix(in srgb, var(--primary) 10%, var(--bg-surface)) !important;
+}
+
+.pos-surface .bg-green-950\/25,
+.pos-surface .bg-green-900\/20,
+.pos-surface .bg-green-900\/30,
+.pos-surface .bg-green-900\/35 {
+  background: var(--color-success-soft) !important;
+}
+
+.pos-surface .bg-orange-950\/35 {
+  background: var(--color-warning-soft) !important;
+}
+
+.pos-surface .hover\:bg-white\/5:hover,
+.pos-surface .hover\:bg-white\/10:hover,
+.pos-surface .hover\:bg-gray-800:hover,
+.pos-surface .hover\:bg-gray-800\/70:hover,
+.pos-surface .hover\:bg-gray-700:hover,
+.pos-surface .hover\:bg-gray-600:hover {
+  background: var(--bg-muted) !important;
+}
+
+.pos-surface .hover\:text-white:hover {
+  color: var(--text-primary) !important;
+}
+
+.pos-surface .placeholder\:text-gray-500::placeholder {
+  color: var(--text-muted) !important;
+}
+
+.pos-surface .bg-blue-600.text-white,
+.pos-surface .bg-green-600.text-white,
+.pos-surface .bg-orange-500.text-white,
+.pos-surface .bg-purple-700.text-white,
+.pos-surface .bg-red-500.text-white {
+  color: #fff !important;
+}
+
+.pos-surface .hover\:bg-blue-500:hover,
+.pos-surface .hover\:bg-green-500:hover,
+.pos-surface .hover\:bg-orange-500:hover,
+.pos-surface .hover\:bg-purple-600:hover {
+  color: #fff !important;
+}
+
+.poster-surface {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+@media (min-width: 1024px) {
+  .poster-editor-workspace {
+    height: calc(100dvh - var(--app-top-nav-height, 4rem) - 6rem);
+  }
+}
+
+.poster-surface .bg-slate-950 {
+  background: var(--bg-app) !important;
+}
+
+.poster-surface .bg-slate-900,
+.poster-surface .bg-slate-900\/80 {
+  background: var(--bg-surface) !important;
+}
+
+.poster-surface .bg-slate-800,
+.poster-surface .bg-slate-800\/70 {
+  background: var(--bg-surface-soft) !important;
+}
+
+.poster-surface .bg-slate-700 {
+  background: var(--bg-muted) !important;
+}
+
+.poster-surface .border-slate-900,
+.poster-surface .border-slate-800,
+.poster-surface .border-slate-700,
+.poster-surface .border-slate-600 {
+  border-color: var(--border-soft) !important;
+}
+
+.poster-surface .text-white,
+.poster-surface .text-slate-100,
+.poster-surface .text-slate-950 {
+  color: var(--text-primary) !important;
+}
+
+.poster-surface .text-slate-300 {
+  color: var(--text-secondary) !important;
+}
+
+.poster-surface .text-slate-400,
+.poster-surface .text-slate-500,
+.poster-surface .text-slate-600 {
+  color: var(--text-muted) !important;
+}
+
+.poster-surface .hover\:bg-slate-800:hover,
+.poster-surface .hover\:bg-slate-700:hover {
+  background: var(--bg-muted) !important;
+}
+
+.poster-surface .hover\:border-slate-700:hover,
+.poster-surface .hover\:border-slate-600:hover {
+  border-color: var(--border-strong) !important;
+}
+
+.poster-surface .hover\:text-slate-300:hover {
+  color: var(--text-primary) !important;
+}
+
+.poster-surface .placeholder\:text-slate-600::placeholder {
+  color: var(--text-muted) !important;
+}
+
+.poster-surface .bg-primary.text-primary-foreground {
+  color: var(--primary-foreground) !important;
+}

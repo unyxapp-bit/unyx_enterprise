@@ -76,6 +76,18 @@ export type PostAllocationStatus =
   | "finalizado"
   | "sem_cobertura"
 
+export type OperationalBreakType =
+  | "cafe_manha"
+  | "cafe_tarde"
+  | "intervalo"
+
+export type OperationalBreakStatus =
+  | "pendente"
+  | "liberado"
+  | "retornou"
+  | "atrasado"
+  | "cancelado"
+
 export type CashMovementType =
   | "sangria_confirmada"
   | "abertura_caixa"
@@ -116,6 +128,19 @@ export interface OperationalSettings {
   coffee_window_start: string | null
   coffee_window_end: string | null
   coffee_order: "inverse" | "same" | "none" | null
+  created_at: string
+  updated_at: string
+}
+
+export interface OperationalBreakSettings {
+  id: string
+  organization_id: string
+  branch_id: string
+  coffee_duration_minutes: number
+  coffee_interval_minutes: number
+  lunch_stagger_minutes: number
+  minimum_active_operators: number
+  delay_tolerance_minutes: number
   created_at: string
   updated_at: string
 }
@@ -311,6 +336,33 @@ export interface PostAllocation {
   > | null
 }
 
+export interface OperationalBreak {
+  id: string
+  organization_id: string
+  branch_id: string
+  employee_id: string
+  schedule_id: string | null
+  post_id: string | null
+  allocation_id: string | null
+  break_type: OperationalBreakType
+  planned_start: string
+  planned_end: string
+  actual_start: string | null
+  actual_end: string | null
+  status: OperationalBreakStatus
+  released_by: string | null
+  returned_by: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+  operational_posts?: OperationalPost | null
+  employees?: EmployeeWithRelations | null
+  schedules?: Pick<
+    Schedule,
+    "work_date" | "start_time" | "break_start" | "break_end" | "end_time"
+  > | null
+}
+
 export interface CashMovement {
   id: string
   organization_id: string
@@ -387,6 +439,18 @@ export type ChecklistProcedureFrequency =
   | "on_demand"
 
 export type ChecklistRunStatus = "in_progress" | "completed"
+export type ChecklistApprovalStatus =
+  | "not_required"
+  | "pending"
+  | "approved"
+  | "rejected"
+
+export interface ChecklistRunItemResult {
+  item: string
+  checked: boolean
+  evidence: string | null
+  occurrence: string | null
+}
 
 export interface ChecklistProcedure {
   id: string
@@ -399,6 +463,10 @@ export interface ChecklistProcedure {
   frequency: ChecklistProcedureFrequency
   estimated_minutes: number | null
   owner_role: string | null
+  due_time: string | null
+  evidence_required: boolean
+  requires_approval: boolean
+  approval_role: string | null
   instructions: string | null
   checklist_items: string[]
   active: boolean
@@ -417,14 +485,26 @@ export interface ChecklistRun {
   user_id: string | null
   status: ChecklistRunStatus
   checked_items: string[]
+  item_results: ChecklistRunItemResult[]
   notes: string | null
+  evidence_notes: string | null
+  occurrence_notes: string | null
+  due_at: string | null
+  approval_status: ChecklistApprovalStatus
+  approved_by: string | null
+  approved_at: string | null
+  rejected_reason: string | null
   started_at: string
   completed_at: string | null
   created_at: string
   updated_at: string
-  checklist_procedures?: Pick<ChecklistProcedure, "title" | "category"> | null
+  checklist_procedures?: Pick<
+    ChecklistProcedure,
+    "title" | "category" | "requires_approval" | "due_time"
+  > | null
   branches?: Pick<Branch, "name"> | null
   user_profiles?: Pick<UserProfile, "name"> | null
+  approved_profile?: Pick<UserProfile, "name"> | null
 }
 
 export type OperationalSupportPriority = "low" | "normal" | "high" | "urgent"

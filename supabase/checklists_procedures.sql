@@ -32,6 +32,10 @@ create table if not exists public.checklist_procedures (
     check (frequency in ('daily', 'weekly', 'monthly', 'on_demand')),
   estimated_minutes integer check (estimated_minutes is null or estimated_minutes > 0),
   owner_role text,
+  due_time time,
+  evidence_required boolean not null default false,
+  requires_approval boolean not null default false,
+  approval_role text,
   instructions text,
   checklist_items text[] not null default array[]::text[],
   active boolean not null default true,
@@ -62,7 +66,15 @@ create table if not exists public.checklist_runs (
   status text not null default 'completed'
     check (status in ('in_progress', 'completed')),
   checked_items text[] not null default array[]::text[],
+  item_results jsonb not null default '[]'::jsonb,
   notes text,
+  evidence_notes text,
+  occurrence_notes text,
+  due_at timestamptz,
+  approval_status text not null default 'not_required',
+  approved_by uuid references public.user_profiles(id) on delete set null,
+  approved_at timestamptz,
+  rejected_reason text,
   started_at timestamptz not null default now(),
   completed_at timestamptz,
   created_at timestamptz not null default now(),
@@ -85,6 +97,43 @@ drop trigger if exists trg_checklist_runs_updated_at on public.checklist_runs;
 create trigger trg_checklist_runs_updated_at
 before update on public.checklist_runs
 for each row execute function public.set_updated_at();
+
+alter table public.checklist_procedures
+  add column if not exists due_time time,
+  add column if not exists evidence_required boolean not null default false,
+  add column if not exists requires_approval boolean not null default false,
+  add column if not exists approval_role text;
+
+alter table public.checklist_runs
+  add column if not exists item_results jsonb not null default '[]'::jsonb,
+  add column if not exists evidence_notes text,
+  add column if not exists occurrence_notes text,
+  add column if not exists due_at timestamptz,
+  add column if not exists approval_status text not null default 'not_required',
+  add column if not exists approved_by uuid references public.user_profiles(id) on delete set null,
+  add column if not exists approved_at timestamptz,
+  add column if not exists rejected_reason text;
+
+create index if not exists idx_checklist_runs_due
+on public.checklist_runs(organization_id, due_at)
+where due_at is not null;
+
+create index if not exists idx_checklist_runs_approval
+on public.checklist_runs(organization_id, approval_status, created_at desc);
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'checklist_runs_approval_status_check'
+      and conrelid = 'public.checklist_runs'::regclass
+  ) then
+    alter table public.checklist_runs
+      add constraint checklist_runs_approval_status_check
+      check (approval_status in ('not_required', 'pending', 'approved', 'rejected'));
+  end if;
+end $$;
 
 alter table public.checklist_procedures enable row level security;
 alter table public.checklist_runs enable row level security;
@@ -154,3 +203,25 @@ on public.checklist_runs
 for update
 using (user_id = public.current_user_profile_id())
 with check (user_id = public.current_user_profile_id());
+
+drop policy if exists "Managers can approve checklist runs"
+on public.checklist_runs;
+create policy "Managers can approve checklist runs"
+on public.checklist_runs
+for update
+using (
+  organization_id = public.current_organization_id()
+  and (
+    public.is_org_admin()
+    or (branch_id is not null and public.can_manage_branch(branch_id))
+  )
+)
+with check (
+  organization_id = public.current_organization_id()
+  and (
+    public.is_org_admin()
+    or (branch_id is not null and public.can_manage_branch(branch_id))
+  )
+);
+
+notify pgrst, 'reload schema';

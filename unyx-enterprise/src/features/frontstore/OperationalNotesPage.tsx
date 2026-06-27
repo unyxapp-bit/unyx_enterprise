@@ -42,10 +42,10 @@ import type {
 } from "@/types/domain"
 
 const fieldClass =
-  "h-8 w-full rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+  "h-8 w-full rounded-lg border bg-[color:var(--bg-surface)] px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
 
 const textareaClass =
-  "min-h-28 w-full rounded-lg border bg-white px-2.5 py-2 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+  "min-h-28 w-full rounded-lg border bg-[color:var(--bg-surface)] px-2.5 py-2 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
 
 const priorityLabel: Record<OperationalSupportPriority, string> = {
   low: "Baixa",
@@ -396,25 +396,25 @@ export function OperationalNotesPage() {
 
       <div className="space-y-6 p-6">
         <div className="grid gap-3 sm:grid-cols-4">
-          <Card className="border bg-white shadow-sm">
+          <Card className="border bg-[color:var(--bg-surface)] shadow-sm">
             <CardContent className="p-4">
               <div className="text-xs text-muted-foreground">Total</div>
               <div className="text-2xl font-semibold">{stats.total}</div>
             </CardContent>
           </Card>
-          <Card className="border bg-white shadow-sm">
+          <Card className="border bg-[color:var(--bg-surface)] shadow-sm">
             <CardContent className="p-4">
               <div className="text-xs text-muted-foreground">Abertas</div>
               <div className="text-2xl font-semibold">{stats.open}</div>
             </CardContent>
           </Card>
-          <Card className="border bg-white shadow-sm">
+          <Card className="border bg-[color:var(--bg-surface)] shadow-sm">
             <CardContent className="p-4">
               <div className="text-xs text-muted-foreground">Em analise</div>
               <div className="text-2xl font-semibold">{stats.review}</div>
             </CardContent>
           </Card>
-          <Card className="border bg-white shadow-sm">
+          <Card className="border bg-[color:var(--bg-surface)] shadow-sm">
             <CardContent className="p-4">
               <div className="text-xs text-muted-foreground">Urgentes / vencidas</div>
               <div className="text-2xl font-semibold">
@@ -453,7 +453,7 @@ export function OperationalNotesPage() {
               return (
               <Card
                 key={note.id}
-                className={`border bg-white shadow-sm ${
+                className={`border bg-[color:var(--bg-surface)] shadow-sm ${
                   isOverdue ? "border-amber-200 bg-amber-50" : ""
                 }`}
               >
@@ -479,7 +479,7 @@ export function OperationalNotesPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <p className="whitespace-pre-wrap rounded-lg border bg-slate-50 p-3 text-sm leading-6 text-slate-700">
+                  <p className="whitespace-pre-wrap rounded-lg border bg-[color:var(--bg-surface-soft)] p-3 text-sm leading-6 text-[color:var(--text-secondary)]">
                     {note.content}
                   </p>
                   <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -488,7 +488,7 @@ export function OperationalNotesPage() {
                     ) : null}
                     <span>{note.user_profiles?.name ?? "Usuario"}</span>
                     {note.due_at ? (
-                      <span className={`inline-flex items-center gap-1 ${isOverdue ? "font-medium text-amber-700" : ""}`}>
+                      <span className={`inline-flex items-center gap-1 ${isOverdue ? "font-medium text-[color:var(--text-secondary)]" : ""}`}>
                         <Clock3 className="size-3.5" />
                         Prazo {formatDateTimeBR(note.due_at)}
                       </span>
@@ -537,7 +537,7 @@ export function OperationalNotesPage() {
         )}
 
         {createNote.error || updateNote.error || deleteNote.error ? (
-          <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-[color:var(--text-secondary)]">
             <ClipboardEdit className="size-4" />
             {(createNote.error || updateNote.error || deleteNote.error)?.message}
           </div>
