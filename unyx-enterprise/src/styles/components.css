@@ -311,6 +311,21 @@
   color: var(--text-secondary) !important;
 }
 
+:is(.dark, [data-theme="dark"]) [data-slot="dialog-content"] :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+  background: var(--bg-surface) !important;
+  border-color: var(--border-soft) !important;
+  color: var(--text-primary) !important;
+}
+
+:is(.dark, [data-theme="dark"]) [data-slot="dialog-content"] :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea)::placeholder {
+  color: var(--text-muted) !important;
+}
+
+:is(.dark, [data-theme="dark"]) [data-slot="dialog-content"] select option {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
 [data-theme="dark"] .app-content .border-slate-300,
 .dark .app-content .border-slate-300 {
   border-color: var(--border-strong) !important;

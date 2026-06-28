@@ -60,10 +60,10 @@ import type {
 } from "@/types/domain"
 
 const fieldClass =
-  "h-8 w-full rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+  "h-8 w-full rounded-lg border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] px-2.5 text-sm text-[color:var(--text-primary)] outline-none transition-colors placeholder:text-[color:var(--text-muted)] focus:border-ring focus:ring-3 focus:ring-ring/50 disabled:cursor-not-allowed disabled:bg-[color:var(--bg-muted)] disabled:text-[color:var(--text-muted)] disabled:opacity-70"
 
 const textareaClass =
-  "min-h-20 w-full rounded-lg border bg-white px-2.5 py-2 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+  "min-h-20 w-full rounded-lg border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] px-2.5 py-2 text-sm text-[color:var(--text-primary)] outline-none transition-colors placeholder:text-[color:var(--text-muted)] focus:border-ring focus:ring-3 focus:ring-ring/50 disabled:cursor-not-allowed disabled:bg-[color:var(--bg-muted)] disabled:text-[color:var(--text-muted)] disabled:opacity-70"
 
 const frequencyLabel: Record<ChecklistProcedureFrequency, string> = {
   daily: "Diario",
@@ -929,7 +929,7 @@ export function ChecklistsPage() {
                   </DialogDescription>
                 </DialogHeader>
 
-                <div className="grid grid-cols-2 rounded-lg border bg-slate-50 p-1">
+                <div className="grid grid-cols-2 rounded-lg border bg-[color:var(--bg-surface-soft)] p-1">
                   <Button
                     type="button"
                     size="sm"
@@ -1008,6 +1008,7 @@ export function ChecklistsPage() {
                   <label className="space-y-1 text-sm">
                     <span className="font-medium">Titulo</span>
                     <Input
+                      className={fieldClass}
                       required
                       value={form.title}
                       onChange={(event) =>
@@ -1028,6 +1029,7 @@ export function ChecklistsPage() {
                     <label className="space-y-1 text-sm sm:col-span-2">
                       <span className="font-medium">Categoria</span>
                       <Input
+                        className={fieldClass}
                         value={form.category}
                         placeholder="Abertura, fechamento, higiene..."
                         onChange={(event) =>
@@ -1062,6 +1064,7 @@ export function ChecklistsPage() {
                         <label className="space-y-1 text-sm">
                           <span className="font-medium">Prazo</span>
                           <Input
+                            className={fieldClass}
                             type="time"
                             value={form.due_time}
                             onChange={(event) =>
@@ -1077,6 +1080,7 @@ export function ChecklistsPage() {
                     <label className="space-y-1 text-sm">
                       <span className="font-medium">Minutos</span>
                       <Input
+                        className={fieldClass}
                         type="number"
                         min={1}
                         value={form.estimated_minutes}
@@ -1099,6 +1103,7 @@ export function ChecklistsPage() {
                     <label className="space-y-1 text-sm">
                       <span className="font-medium">Responsavel padrao</span>
                       <Input
+                        className={fieldClass}
                         value={form.owner_role}
                         placeholder="Operador, supervisor..."
                         onChange={(event) =>
@@ -1114,6 +1119,7 @@ export function ChecklistsPage() {
                         <label className="space-y-1 text-sm">
                           <span className="font-medium">Aprovador</span>
                           <Input
+                            className={fieldClass}
                             value={form.approval_role}
                             placeholder="Supervisor, gerente..."
                             disabled={!form.requires_approval}
@@ -1125,7 +1131,7 @@ export function ChecklistsPage() {
                             }
                           />
                         </label>
-                        <div className="grid gap-2 rounded-xl border border-[color:var(--border-soft)] bg-slate-50 px-3 py-2 text-sm">
+                        <div className="grid gap-2 rounded-xl border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] px-3 py-2 text-sm">
                           <label className="flex items-center gap-2">
                             <input
                               type="checkbox"
