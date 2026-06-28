@@ -1,22 +1,28 @@
 import {
   AlertTriangle,
   Building2,
+  CheckCircle2,
   ClipboardCheck,
   Clock,
   Coffee,
   DoorOpen,
+  Edit3,
   Gauge,
-  RefreshCw,
+  Plus,
   ShieldAlert,
   ShieldCheck,
+  StickyNote,
   Store,
+  Trash2,
   Users,
   Utensils,
+  X,
 } from "lucide-react"
-import type { ReactNode } from "react"
-import { useMemo, useState } from "react"
+import type { FormEvent, ReactNode } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
 
+import { useAuth } from "@/app/providers/auth-context"
 import { StatusBadge } from "@/components/bento/StatusBadge"
 import { PageHeader } from "@/components/shared/PageHeader"
 import { StateBlock } from "@/components/shared/StateBlock"
@@ -28,12 +34,18 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import type { DashboardMetricKey } from "@/features/ops/modes/modeUiConfig"
 import { modeUiConfig } from "@/features/ops/modes/modeUiConfig"
 import {
   getOperationalMode,
-  operationalModeNames,
 } from "@/features/ops/modes/operationalModes"
 import { MissingSchedulesPrompt } from "@/features/schedules/components/MissingSchedulesPrompt"
 import {
@@ -47,26 +59,34 @@ import {
   useChecklistProcedures,
   useChecklistRuns,
   useDashboardRows,
+  useCreateOperationalNote,
+  useDeleteOperationalNote,
   useOperationalSettings,
+  useOperationalNotes,
   useOperationalStatuses,
   useOrganization,
   usePostAllocations,
   useSchedules,
+  useUpdateOperationalNote,
 } from "@/hooks/useUnyxData"
-import { minutesLabel } from "@/lib/format"
+import { formatDateBR, formatDateTimeBR, minutesLabel } from "@/lib/format"
 import { operationalStatuses, statusMeta } from "@/lib/status"
 import { localDateKey, operationalMinutesForDate } from "@/features/operational/utils"
+import { useAppStore } from "@/store/useAppStore"
 import type {
   DashboardRow,
   ChecklistProcedure,
+  OperationalNote,
   OperationalStatus,
   OperationalStatusRecord,
   PostAllocation,
   ScheduleWithRelations,
 } from "@/types/domain"
 
-const fieldClass =
-  "h-8 rounded-full border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] px-3 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+const quickNoteTextareaClass =
+  "min-h-16 w-full resize-none rounded-xl border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] px-3 py-2 text-sm text-[color:var(--text-primary)] outline-none transition-colors placeholder:text-[color:var(--text-muted)] focus:border-ring focus:ring-3 focus:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-70"
+
+const QUICK_NOTE_CATEGORY = "Lembrete rapido"
 
 const STATUS_COLORS: Record<string, string> = {
   alerta_critico: "#e11d48",
@@ -594,6 +614,434 @@ function buildMetric(key: DashboardMetricKey, data: MetricData) {
   return metrics[key]
 }
 
+function emptyQuickNoteForm() {
+  return {
+    content: "",
+    due_at: localDateKey(),
+  }
+}
+
+function quickNoteDueAt(dateKey: string | null) {
+  if (!dateKey) return null
+
+  const [year, month, day] = dateKey.split("-").map(Number)
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+    return null
+  }
+
+  return new Date(year, month - 1, day, 23, 59, 0, 0).toISOString()
+}
+
+function buildQuickNoteTitle(content: string) {
+  const firstLine = content
+    .trim()
+    .split(/\r?\n/)
+    .find((line) => line.trim())
+    ?.trim()
+
+  if (!firstLine) return "Lembrete rapido"
+  return firstLine.length > 80 ? `${firstLine.slice(0, 77)}...` : firstLine
+}
+
+function isQuickNote(note: OperationalNote) {
+  return normalize(note.category) === normalize(QUICK_NOTE_CATEGORY)
+}
+
+function isQuickNoteDone(note: OperationalNote) {
+  return note.status === "resolved" || note.status === "archived"
+}
+
+function isQuickNoteOverdue(note: OperationalNote, nowMs: number) {
+  return Boolean(
+    note.due_at &&
+      !isQuickNoteDone(note) &&
+      new Date(note.due_at).getTime() < nowMs
+  )
+}
+
+function quickNoteScopeLabel(note: OperationalNote) {
+  if (note.sectors?.name) return note.sectors.name
+  if (note.branches?.name) return note.branches.name
+  return "Toda empresa"
+}
+
+function DashboardQuickNotesPanel({ nowMs }: { nowMs: number }) {
+  const { profile } = useAuth()
+  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
+  const notes = useOperationalNotes("all")
+  const createNote = useCreateOperationalNote()
+  const updateNote = useUpdateOperationalNote()
+  const deleteNote = useDeleteOperationalNote()
+  const [form, setForm] = useState(() => emptyQuickNoteForm())
+  const [editing, setEditing] = useState<OperationalNote | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<OperationalNote | null>(null)
+  const [viewingNote, setViewingNote] = useState<OperationalNote | null>(null)
+
+  const quickNotes = useMemo(() => {
+    return (notes.data ?? [])
+      .filter(isQuickNote)
+      .sort((a, b) => {
+        const aDone = isQuickNoteDone(a)
+        const bDone = isQuickNoteDone(b)
+        if (aDone !== bDone) return aDone ? 1 : -1
+
+        const aOverdue = isQuickNoteOverdue(a, nowMs)
+        const bOverdue = isQuickNoteOverdue(b, nowMs)
+        if (aOverdue !== bOverdue) return aOverdue ? -1 : 1
+
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      })
+  }, [notes.data, nowMs])
+
+  const visibleQuickNotes = quickNotes.slice(0, 4)
+  const openQuickNotes = quickNotes.filter((note) => !isQuickNoteDone(note)).length
+  const isSaving = createNote.isPending || updateNote.isPending
+
+  function resetQuickNoteForm() {
+    setForm(emptyQuickNoteForm())
+    setEditing(null)
+  }
+
+  async function handleQuickNoteSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    const content = form.content.trim()
+    if (!content) return
+
+    const title = buildQuickNoteTitle(content)
+    const values = {
+      title,
+      content,
+      category: QUICK_NOTE_CATEGORY,
+      due_at: quickNoteDueAt(form.due_at),
+    }
+
+    if (editing) {
+      await updateNote.mutateAsync({
+        noteId: editing.id,
+        values,
+      })
+    } else {
+      await createNote.mutateAsync({
+        ...values,
+        branch_id: selectedBranchId ?? profile?.branch_id ?? null,
+        sector_id: null,
+        priority: "normal",
+        status: "open",
+      })
+    }
+
+    resetQuickNoteForm()
+  }
+
+  function startEditingQuickNote(note: OperationalNote) {
+    setViewingNote(null)
+    setEditing(note)
+    setForm({
+      content: note.content,
+      due_at: note.due_at ? note.due_at.slice(0, 10) : localDateKey(),
+    })
+  }
+
+  async function toggleQuickNoteDone(note: OperationalNote) {
+    const updated = await updateNote.mutateAsync({
+      noteId: note.id,
+      values: {
+        status: isQuickNoteDone(note) ? "open" : "resolved",
+      },
+    })
+    setViewingNote((current) => (current?.id === note.id ? updated : current))
+  }
+
+  async function confirmDeleteQuickNote() {
+    if (!deleteTarget) return
+
+    const deletedId = deleteTarget.id
+    await deleteNote.mutateAsync(deletedId)
+    if (editing?.id === deletedId) resetQuickNoteForm()
+    if (viewingNote?.id === deletedId) setViewingNote(null)
+    setDeleteTarget(null)
+  }
+
+  const mutationError = createNote.error || updateNote.error || deleteNote.error
+  const currentTimeLabel = useMemo(
+    () =>
+      new Intl.DateTimeFormat("pt-BR", {
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(new Date(nowMs)),
+    [nowMs]
+  )
+
+  return (
+    <>
+      <Card className="border border-slate-200 bg-white/90 shadow-sm dark:border-slate-700 dark:bg-slate-900/40">
+        <CardContent className="p-4">
+          <div className="grid gap-4 xl:grid-cols-2">
+            <section className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <StickyNote className="size-4 text-amber-500 dark:text-amber-300" />
+                  Notas rapidas
+                </CardTitle>
+                <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-slate-700 dark:border-slate-700 dark:bg-slate-950/30 dark:text-slate-100">
+                  <Clock className="size-4 text-amber-500 dark:text-amber-300" />
+                  <span className="text-lg font-semibold tabular-nums leading-none">
+                    {currentTimeLabel}
+                  </span>
+                </div>
+              </div>
+
+              <form className="space-y-3" onSubmit={handleQuickNoteSubmit}>
+                <textarea
+                  className={quickNoteTextareaClass}
+                  placeholder="Nota rapida ou lembrete..."
+                  value={form.content}
+                  disabled={isSaving}
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, content: event.target.value }))
+                  }
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <Input
+                    className="h-9 w-full rounded-xl sm:w-40"
+                    type="date"
+                    value={form.due_at}
+                    disabled={isSaving}
+                    aria-label="Data do lembrete"
+                    onChange={(event) =>
+                      setForm((current) => ({ ...current, due_at: event.target.value }))
+                    }
+                  />
+                  <div className="flex flex-1 gap-2 sm:flex-none">
+                    <Button
+                      type="submit"
+                      className="flex-1 sm:flex-none"
+                      disabled={isSaving || !form.content.trim()}
+                    >
+                      {editing ? <Edit3 className="size-4" /> : <Plus className="size-4" />}
+                      {isSaving ? "Salvando..." : editing ? "Salvar" : "Adicionar"}
+                    </Button>
+                    {editing ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        aria-label="Cancelar edicao"
+                        onClick={resetQuickNoteForm}
+                      >
+                        <X className="size-4" />
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              </form>
+            </section>
+
+            <section className="space-y-3 border-t border-slate-200 pt-3 dark:border-slate-700 xl:border-t-0 xl:border-l xl:pt-0 xl:pl-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline">{openQuickNotes} abertas</Badge>
+                  {quickNotes.length > visibleQuickNotes.length ? (
+                    <span className="text-xs text-slate-500 dark:text-slate-300/70">
+                      {visibleQuickNotes.length} de {quickNotes.length}
+                    </span>
+                  ) : null}
+                </div>
+                <Button asChild variant="outline" size="sm">
+                  <Link to="/app/notes">Ver todas</Link>
+                </Button>
+              </div>
+
+              {notes.isLoading ? (
+                <div className="flex min-h-28 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-300/70">
+                  Carregando lembretes
+                </div>
+              ) : notes.isError ? (
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200">
+                  {notes.error.message}
+                </div>
+              ) : visibleQuickNotes.length === 0 ? (
+                <div className="flex min-h-28 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-sm font-medium text-slate-500 dark:border-slate-700 dark:text-slate-300/70">
+                  Nenhum lembrete rapido
+                </div>
+              ) : (
+                <div className="grid max-h-56 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
+                  {visibleQuickNotes.map((note) => {
+                    const done = isQuickNoteDone(note)
+                    const overdue = isQuickNoteOverdue(note, nowMs)
+                    const hasLongContent =
+                      note.content.length > 90 || note.content.includes("\n")
+
+                    return (
+                      <div
+                        key={note.id}
+                        className={`rounded-2xl border p-2.5 ${
+                          overdue
+                            ? "border-amber-200 bg-amber-50/80 dark:border-amber-500/30 dark:bg-amber-500/10"
+                            : "border-slate-200 bg-white/90 dark:border-slate-700 dark:bg-slate-950/30"
+                        } ${done ? "opacity-70" : ""}`}
+                      >
+                        <div className="flex items-start gap-2.5">
+                          <button
+                            type="button"
+                            className={`mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border transition ${
+                              done
+                                ? "border-emerald-500 bg-emerald-500 text-white"
+                                : "border-slate-300 text-slate-400 hover:border-emerald-500 hover:text-emerald-600 dark:border-slate-600"
+                            }`}
+                            aria-label={done ? "Reabrir lembrete" : "Concluir lembrete"}
+                            onClick={() => void toggleQuickNoteDone(note)}
+                            disabled={updateNote.isPending}
+                          >
+                            <CheckCircle2 className="size-4" />
+                          </button>
+                          <div className="min-w-0 flex-1">
+                            <button
+                              type="button"
+                              className={`block w-full max-h-16 overflow-hidden whitespace-pre-wrap text-left text-sm leading-5 text-slate-800 outline-none transition hover:text-slate-950 focus-visible:rounded-lg focus-visible:ring-3 focus-visible:ring-ring/50 dark:text-slate-100 dark:hover:text-white ${done ? "line-through" : ""}`}
+                              onClick={() => setViewingNote(note)}
+                            >
+                              {note.content}
+                            </button>
+                            <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px] text-slate-500 dark:text-slate-300/70">
+                              <span>{quickNoteScopeLabel(note)}</span>
+                              {note.due_at ? (
+	                                <Badge variant={overdue ? "secondary" : "outline"}>
+	                                  {formatDateBR(note.due_at)}
+	                                </Badge>
+                              ) : (
+                                <span>{formatDateTimeBR(note.created_at)}</span>
+                              )}
+                              {hasLongContent ? <span>Abrir</span> : null}
+                            </div>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-1">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon-sm"
+                              aria-label="Editar lembrete"
+                              onClick={() => startEditingQuickNote(note)}
+                            >
+                              <Edit3 className="size-4" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              size="icon-sm"
+                              aria-label="Excluir lembrete"
+                              onClick={() => setDeleteTarget(note)}
+                            >
+                              <Trash2 className="size-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              {mutationError ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200">
+                  {mutationError.message}
+                </div>
+              ) : null}
+            </section>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => {
+        if (!open) setDeleteTarget(null)
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Excluir lembrete</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Deseja excluir este lembrete?
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deleteNote.isPending}
+              onClick={() => void confirmDeleteQuickNote()}
+            >
+              {deleteNote.isPending ? "Excluindo..." : "Excluir"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(viewingNote)} onOpenChange={(open) => {
+        if (!open) setViewingNote(null)
+      }}>
+        <DialogContent className="top-0 right-0 left-auto h-dvh max-h-dvh w-full max-w-md translate-x-0 translate-y-0 overflow-y-auto rounded-none rounded-l-[1.5rem] sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Lembrete</DialogTitle>
+          </DialogHeader>
+          {viewingNote ? (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-300/70">
+                <Badge variant={isQuickNoteDone(viewingNote) ? "default" : "outline"}>
+                  {isQuickNoteDone(viewingNote) ? "Concluido" : "Aberto"}
+                </Badge>
+                <span>{quickNoteScopeLabel(viewingNote)}</span>
+                <span>{formatDateTimeBR(viewingNote.created_at)}</span>
+                {viewingNote.due_at ? (
+	                  <Badge
+	                    variant={isQuickNoteOverdue(viewingNote, nowMs) ? "secondary" : "outline"}
+	                  >
+	                    {formatDateBR(viewingNote.due_at)}
+	                  </Badge>
+                ) : null}
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 text-sm leading-6 text-slate-800 dark:border-slate-700 dark:bg-slate-950/30 dark:text-slate-100">
+                <p className="whitespace-pre-wrap">{viewingNote.content}</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void toggleQuickNoteDone(viewingNote)}
+                  disabled={updateNote.isPending}
+                >
+                  <CheckCircle2 className="size-4" />
+                  {isQuickNoteDone(viewingNote) ? "Reabrir" : "Concluir"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => startEditingQuickNote(viewingNote)}
+                >
+                  <Edit3 className="size-4" />
+                  Editar
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={() => {
+                    setDeleteTarget(viewingNote)
+                    setViewingNote(null)
+                  }}
+                >
+                  <Trash2 className="size-4" />
+                  Excluir
+                </Button>
+              </div>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}
+
 function getPriority(row: DashboardRow, mode: ReturnType<typeof getOperationalMode>) {
   return getPriorityByMode(mode, row.current_status, {
     delayMinutes: row.delay_minutes,
@@ -604,12 +1052,13 @@ function getPriority(row: DashboardRow, mode: ReturnType<typeof getOperationalMo
 }
 
 export function DashboardPage() {
-  const [date, setDate] = useState(localDateKey())
-  const [sectorFilter, setSectorFilter] = useState("")
-  const [searchText, setSearchText] = useState("")
   const [statusFilter, setStatusFilter] = useState("")
   const [showAllPrimary, setShowAllPrimary] = useState(false)
   const [showAllSecondary, setShowAllSecondary] = useState(false)
+  const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now())
+  const date = localDateKey(new Date(currentTimeMs))
+  const searchText = ""
+  const sectorFilter = ""
   const dashboard = useDashboardRows(date)
   const schedules = useSchedules(date)
   const statuses = useOperationalStatuses()
@@ -619,6 +1068,14 @@ export function DashboardPage() {
   const postAllocations = usePostAllocations()
   const checklistProcedures = useChecklistProcedures()
   const checklistRuns = useChecklistRuns(dateStartISO(date))
+
+  useEffect(() => {
+    const timerId = window.setInterval(() => {
+      setCurrentTimeMs(Date.now())
+    }, 60_000)
+
+    return () => window.clearInterval(timerId)
+  }, [])
 
   const mode = getOperationalMode(
     operationalSettings.data?.mode ?? organization.data?.segment
@@ -682,10 +1139,6 @@ export function DashboardPage() {
       ])
     )
   }, [activePostAllocations])
-  const sectorOptions = useMemo(() => {
-    const names = new Set(rows.map((r) => r.sector_name).filter(Boolean) as string[])
-    return Array.from(names).sort()
-  }, [rows])
 
   const filteredRows = useMemo(() => {
     let list = sectorFilter
@@ -753,11 +1206,10 @@ export function DashboardPage() {
       (procedure) => !completedProcedureIds.has(procedure.id)
     )
     const today = localDateKey()
-    const nowMs = Date.now()
     const overdue = pendingProcedures.filter((procedure) => {
       const dueAt = checklistDueDateForDate(procedure, date)
       if (!dueAt) return false
-      return date < today || (date === today && dueAt.getTime() < nowMs)
+      return date < today || (date === today && dueAt.getTime() < currentTimeMs)
     }).length
     const approvals = (checklistRuns.data ?? []).filter(
       (run) =>
@@ -770,7 +1222,7 @@ export function DashboardPage() {
       overdue,
       pending: pendingProcedures.length,
     }
-  }, [checklistProcedures.data, checklistRuns.data, date])
+  }, [checklistProcedures.data, checklistRuns.data, currentTimeMs, date])
 
   const toMin = (t: string | null) => {
     if (!t) return null
@@ -929,103 +1381,6 @@ export function DashboardPage() {
       <PageHeader
         title={modeConfig.title}
         description={modeConfig.mainFocus}
-        action={
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline">{operationalModeNames[mode]}</Badge>
-            <Input
-              className="w-40"
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setDate(localDateKey())}
-            >
-              Hoje
-            </Button>
-            <Input
-              className="w-52"
-              type="search"
-              placeholder="Buscar colaborador..."
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              aria-label="Buscar colaborador"
-            />
-            {sectorOptions.length > 0 ? (
-              <select
-                className={fieldClass}
-                value={sectorFilter}
-                onChange={(e) => setSectorFilter(e.target.value)}
-              >
-                <option value="">Todos os setores</option>
-                {sectorOptions.map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
-            ) : null}
-            <select
-              className={fieldClass}
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              aria-label="Filtrar por status"
-            >
-              <option value="">Todos os status</option>
-              <option value="active">Ativos agora</option>
-              <option value="risk">Em risco</option>
-              <option value="delayed">Com atraso</option>
-              <option value="absences">Faltas</option>
-              {operationalStatuses.map((status) => (
-                <option key={status} value={status}>
-                  {statusMeta[status].label}
-                </option>
-              ))}
-            </select>
-            {searchText || sectorFilter || statusFilter ? (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setSearchText("")
-                  setSectorFilter("")
-                  setStatusFilter("")
-                }}
-              >
-                Limpar
-              </Button>
-            ) : null}
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={refetchDashboardScreen}
-              disabled={
-                dashboard.isFetching ||
-                schedules.isFetching ||
-                statuses.isFetching ||
-                attendanceEvents.isFetching ||
-                postAllocations.isFetching ||
-                checklistProcedures.isFetching ||
-                checklistRuns.isFetching
-              }
-              aria-label="Atualizar"
-            >
-              <RefreshCw
-                className={`size-4 ${
-                  dashboard.isFetching ||
-                  schedules.isFetching ||
-                  statuses.isFetching ||
-                  attendanceEvents.isFetching ||
-                  postAllocations.isFetching ||
-                  checklistProcedures.isFetching ||
-                  checklistRuns.isFetching
-                    ? "animate-spin"
-                    : ""
-                }`}
-              />
-            </Button>
-          </div>
-        }
       />
 
       <div className="space-y-5 p-6">
@@ -1037,6 +1392,8 @@ export function DashboardPage() {
             refetchDashboardScreen()
           }}
         />
+
+        <DashboardQuickNotesPanel nowMs={currentTimeMs} />
 
         {/* Row 1: Hero gauge + status breakdown */}
         <div className="grid gap-4 xl:grid-cols-[1.5fr_1fr]">
