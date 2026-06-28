@@ -70,7 +70,7 @@ import {
   useUpdateOperationalNote,
 } from "@/hooks/useUnyxData"
 import { formatDateBR, formatDateTimeBR, minutesLabel } from "@/lib/format"
-import { operationalStatuses, statusMeta } from "@/lib/status"
+import { statusMeta } from "@/lib/status"
 import { localDateKey, operationalMinutesForDate } from "@/features/operational/utils"
 import { useAppStore } from "@/store/useAppStore"
 import type {
@@ -87,22 +87,6 @@ const quickNoteTextareaClass =
   "min-h-16 w-full resize-none rounded-xl border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] px-3 py-2 text-sm text-[color:var(--text-primary)] outline-none transition-colors placeholder:text-[color:var(--text-muted)] focus:border-ring focus:ring-3 focus:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-70"
 
 const QUICK_NOTE_CATEGORY = "Lembrete rapido"
-
-const STATUS_COLORS: Record<string, string> = {
-  alerta_critico: "#e11d48",
-  aguardando_sangria: "#f59e0b",
-  troca_de_caixa: "#0f766e",
-  deve_sair: "#f97316",
-  em_intervalo: "#8b5cf6",
-  voltou: "#14b8a6",
-  pico: "#dc2626",
-  apoio_operacional: "#4f46e5",
-  fechamento: "#2563eb",
-  trabalhando: "#10b981",
-  aguardando_evento: "#94a3b8",
-  finalizado: "#64748b",
-  folga: "#94a3b8",
-}
 
 const METRIC_TONES = {
   blue: {
@@ -1287,14 +1271,6 @@ export function DashboardPage() {
       }))
   }, [date, liveRows, filteredRows, liveStatuses])
 
-  const statusChartData = operationalStatuses
-    .map((status) => ({
-      status,
-      label: statusMeta[status].label,
-      total: statusSource.filter((row) => row.current_status === status).length,
-    }))
-    .filter((d) => d.total > 0)
-
   const primaryRows = filteredRows
     .filter(
       (row) =>
@@ -1581,94 +1557,6 @@ export function DashboardPage() {
                       )
                     })}
                   </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Status breakdown with progress bars */}
-          <Card className="border border-slate-200 bg-white/90 shadow-sm dark:border-slate-700 dark:bg-slate-900/40">
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-center justify-between gap-3 text-base">
-                <span>Status operacional</span>
-                <Badge variant="outline">{statusSource.length} registros</Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {dashboard.isLoading || statuses.isLoading ? (
-                <StateBlock type="loading" title="Carregando" />
-              ) : statusChartData.length === 0 ? (
-                <StateBlock
-                  title="Sem status"
-                  description="Registre eventos para visualizar."
-                />
-              ) : (
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <div className="flex items-end justify-between gap-3">
-                      <div>
-                        <p className="text-3xl font-bold tracking-tight tabular-nums text-teal-950 dark:text-teal-100">
-                          {statusSource.length}
-                        </p>
-                        <p className="text-xs text-teal-600 dark:text-teal-300">
-                          colaboradores no recorte atual
-                        </p>
-                      </div>
-                      {statusFilter ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setStatusFilter("")}
-                        >
-                          Ver todos
-                        </Button>
-                      ) : null}
-                    </div>
-
-                    <div className="flex h-3 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                      {statusChartData.map((entry) => {
-                        const pct =
-                          statusSource.length > 0
-                            ? (entry.total / statusSource.length) * 100
-                            : 0
-                        return (
-                          <div
-                            key={entry.status}
-                            className="h-full transition-all"
-                            style={{
-                              width: `${pct}%`,
-                              backgroundColor:
-                                STATUS_COLORS[entry.status] ?? "#94a3b8",
-                            }}
-                            title={`${entry.label}: ${entry.total}`}
-                          />
-                        )
-                      })}
-                    </div>
-                  </div>
-
-                  {statusChartData.map((entry) => {
-                    const pct =
-                      statusSource.length > 0
-                        ? Math.round((entry.total / statusSource.length) * 100)
-                        : 0
-                    return (
-                      <div key={entry.status} className="rounded-2xl border border-slate-200 bg-white/90 p-2.5 dark:border-slate-700 dark:bg-slate-950/30">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-1.5">
-                            <span
-                              className="size-2 shrink-0 rounded-full"
-                              style={{ backgroundColor: STATUS_COLORS[entry.status] ?? "#94a3b8" }}
-                            />
-                            <span className="text-xs text-slate-600 dark:text-slate-300">{entry.label}</span>
-                          </div>
-                          <span className="text-xs font-semibold tabular-nums text-slate-900 dark:text-slate-100">
-                            {entry.total} - {pct}%
-                          </span>
-                        </div>
-                      </div>
-                    )
-                  })}
                 </div>
               )}
             </CardContent>
