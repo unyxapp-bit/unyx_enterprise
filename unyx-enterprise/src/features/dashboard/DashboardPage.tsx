@@ -981,12 +981,12 @@ function DashboardQuickNotesPanel({ nowMs }: { nowMs: number }) {
       <Dialog open={Boolean(viewingNote)} onOpenChange={(open) => {
         if (!open) setViewingNote(null)
       }}>
-        <DialogContent className="top-0 right-0 left-auto h-dvh max-h-dvh w-full max-w-md translate-x-0 translate-y-0 overflow-y-auto rounded-none rounded-l-[1.5rem] sm:max-w-lg">
+        <DialogContent className="top-4 right-4 left-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-none translate-x-0 translate-y-0 overflow-y-auto rounded-[1.25rem] p-4 sm:top-6 sm:right-6 sm:w-[28rem] sm:max-w-none">
           <DialogHeader>
             <DialogTitle>Lembrete</DialogTitle>
           </DialogHeader>
           {viewingNote ? (
-            <div className="space-y-4">
+            <div className="space-y-3">
               <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-300/70">
                 <Badge variant={isQuickNoteDone(viewingNote) ? "default" : "outline"}>
                   {isQuickNoteDone(viewingNote) ? "Concluido" : "Aberto"}
@@ -994,19 +994,20 @@ function DashboardQuickNotesPanel({ nowMs }: { nowMs: number }) {
                 <span>{quickNoteScopeLabel(viewingNote)}</span>
                 <span>{formatDateTimeBR(viewingNote.created_at)}</span>
                 {viewingNote.due_at ? (
-	                  <Badge
-	                    variant={isQuickNoteOverdue(viewingNote, nowMs) ? "secondary" : "outline"}
-	                  >
-	                    {formatDateBR(viewingNote.due_at)}
-	                  </Badge>
+                  <Badge
+                    variant={isQuickNoteOverdue(viewingNote, nowMs) ? "secondary" : "outline"}
+                  >
+                    {formatDateBR(viewingNote.due_at)}
+                  </Badge>
                 ) : null}
               </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 text-sm leading-6 text-slate-800 dark:border-slate-700 dark:bg-slate-950/30 dark:text-slate-100">
+              <div className="max-h-72 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50/80 p-3 text-sm leading-6 text-slate-800 dark:border-slate-700 dark:bg-slate-950/30 dark:text-slate-100">
                 <p className="whitespace-pre-wrap">{viewingNote.content}</p>
               </div>
               <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
+                  size="sm"
                   variant="outline"
                   onClick={() => void toggleQuickNoteDone(viewingNote)}
                   disabled={updateNote.isPending}
@@ -1016,6 +1017,7 @@ function DashboardQuickNotesPanel({ nowMs }: { nowMs: number }) {
                 </Button>
                 <Button
                   type="button"
+                  size="sm"
                   variant="outline"
                   onClick={() => startEditingQuickNote(viewingNote)}
                 >
@@ -1024,6 +1026,7 @@ function DashboardQuickNotesPanel({ nowMs }: { nowMs: number }) {
                 </Button>
                 <Button
                   type="button"
+                  size="sm"
                   variant="destructive"
                   onClick={() => {
                     setDeleteTarget(viewingNote)
