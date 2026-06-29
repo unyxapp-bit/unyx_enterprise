@@ -8,15 +8,21 @@ import {
   ClipboardCheck,
   ClipboardList,
   Clock3,
+  FileSpreadsheet,
   History,
   ImagePlus,
   ListChecks,
+  MoreVertical,
   Plus,
+  PencilLine,
   RotateCcw,
   ShieldCheck,
   Timer,
+  Trash2,
   XCircle,
 } from "lucide-react"
+import { useQueryClient } from "@tanstack/react-query"
+import { toast } from "sonner"
 
 import { useAuth } from "@/app/providers/auth-context"
 import { PageHeader } from "@/components/shared/PageHeader"
@@ -40,13 +46,29 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
+  cellToText,
+  cellToTime,
+  getCell,
+  normalizeColumn,
+  parseSpreadsheet,
+} from "@/lib/spreadsheet"
+import { createChecklistProcedure } from "@/services/unyxApi"
+import {
   useApproveChecklistRun,
   useBranches,
   useChecklistProcedures,
   useChecklistRuns,
   useCompleteChecklistRun,
   useCreateChecklistProcedure,
+  useDeleteChecklistProcedure,
   useSectors,
+  useUpdateChecklistProcedure,
 } from "@/hooks/useUnyxData"
 import { formatDateTimeBR } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -56,8 +78,10 @@ import type {
   ChecklistProcedure,
   ChecklistProcedureFrequency,
   ChecklistRun,
+  UserProfile,
   UserRole,
 } from "@/types/domain"
+import type { ChecklistProcedureInput } from "@/services/unyxApi"
 
 const fieldClass =
   "h-8 w-full rounded-lg border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] px-2.5 text-sm text-[color:var(--text-primary)] outline-none transition-colors placeholder:text-[color:var(--text-muted)] focus:border-ring focus:ring-3 focus:ring-ring/50 disabled:cursor-not-allowed disabled:bg-[color:var(--bg-muted)] disabled:text-[color:var(--text-muted)] disabled:opacity-70"
@@ -106,6 +130,137 @@ const emptyForm = {
   approval_role: "",
   instructions: "",
   checklist_items: "",
+}
+
+function procedureToForm(procedure: ChecklistProcedure) {
+  return {
+    kind: isChecklist(procedure) ? ("checklist" as ChecklistToolKind) : ("procedure" as ChecklistToolKind),
+    branch_id: procedure.branch_id ?? "",
+    sector_id: procedure.sector_id ?? "",
+    title: procedure.title,
+    category: procedure.category ?? "",
+    frequency: procedure.frequency as ChecklistProcedureFrequency,
+    estimated_minutes: procedure.estimated_minutes ? String(procedure.estimated_minutes) : "",
+    owner_role: procedure.owner_role ?? "",
+    due_time: procedure.due_time ?? "",
+    evidence_required: procedure.evidence_required,
+    requires_approval: procedure.requires_approval,
+    approval_role: procedure.approval_role ?? "",
+    instructions: procedure.instructions ?? "",
+    checklist_items: procedure.checklist_items.join("\n"),
+  }
+}
+
+function normalizeImportValue(value: string) {
+  return normalizeColumn(value)
+}
+
+function parseImportBoolean(value: unknown) {
+  const normalized = normalizeImportValue(cellToText(value))
+  return ["1", "sim", "s", "true", "yes", "y", "x"].includes(normalized)
+}
+
+function parseImportFrequency(
+  value: unknown,
+  fallback: ChecklistProcedureFrequency
+): ChecklistProcedureFrequency {
+  const normalized = normalizeImportValue(cellToText(value))
+  if (!normalized) return fallback
+  if (["daily", "diario", "diaria", "dia"].includes(normalized)) return "daily"
+  if (["weekly", "semanal", "semana"].includes(normalized)) return "weekly"
+  if (["monthly", "mensal", "mes"].includes(normalized)) return "monthly"
+  if (
+    ["on_demand", "ondemand", "sob_demanda", "sobdemanda", "demanda"].includes(normalized)
+  ) {
+    return "on_demand"
+  }
+  return fallback
+}
+
+function splitImportItems(value: string) {
+  return value
+    .replace(/\r/g, "")
+    .split(/\n|;|\|/g)
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function parseImportMinutes(value: unknown) {
+  const text = cellToText(value)
+  if (!text) return null
+  const normalized = text.replace(/[^\d]/g, "")
+  if (!normalized) return null
+  const minutes = Number(normalized)
+  return Number.isFinite(minutes) && minutes > 0 ? minutes : null
+}
+
+function buildImportProcedureInput(
+  row: Record<string, unknown>,
+  defaultBranchId: string | null,
+  defaultKind: ChecklistToolKind
+): { input?: ChecklistProcedureInput; error?: string } {
+  const title = cellToText(getCell(row, ["titulo", "title", "nome"]))
+  if (!title) {
+    return { error: "titulo obrigatorio." }
+  }
+
+  const rawItems = cellToText(getCell(row, ["itens", "items", "checklist_items"]))
+  const instructions = cellToText(
+    getCell(row, ["instrucoes", "instructions", "passo_a_passo", "passos"])
+  )
+  const checklistItems = splitImportItems(rawItems)
+  const kindRaw = normalizeImportValue(
+    cellToText(getCell(row, ["tipo", "kind", "modelo", "categoria_tipo"]))
+  )
+  const inferredKind: ChecklistToolKind =
+    checklistItems.length > 0 ? "checklist" : instructions ? "procedure" : defaultKind
+  const kind: ChecklistToolKind =
+    kindRaw.includes("proc") || kindRaw === "procedimento"
+      ? "procedure"
+      : kindRaw.includes("check")
+        ? "checklist"
+        : inferredKind
+
+  if (kind === "checklist" && checklistItems.length === 0) {
+    return { error: "itens do checklist obrigatorios." }
+  }
+  if (kind === "procedure" && !instructions) {
+    return { error: "passo a passo do procedimento obrigatorio." }
+  }
+
+  const estimatedMinutes = parseImportMinutes(
+    getCell(row, ["minutos", "tempo", "estimated_minutes"])
+  )
+  const dueTime = cellToTime(getCell(row, ["prazo", "hora", "due_time"])) || null
+  const frequency = parseImportFrequency(
+    getCell(row, ["frequencia", "frequence", "frequency"]),
+    kind === "procedure" ? "on_demand" : "daily"
+  )
+  const category = cellToText(getCell(row, ["categoria", "grupo", "tag"])) || null
+  const ownerRole = cellToText(getCell(row, ["responsavel", "responsavel_padrao", "owner_role"]))
+  const approvalRole = cellToText(getCell(row, ["aprovador", "approval_role"]))
+
+  return {
+    input: {
+      branch_id: defaultBranchId,
+      sector_id: null,
+      title,
+      category,
+      frequency,
+      estimated_minutes: estimatedMinutes,
+      owner_role: ownerRole || null,
+      due_time: dueTime,
+      evidence_required: parseImportBoolean(
+        getCell(row, ["evidencia", "exige_evidencia", "evidence_required"])
+      ),
+      requires_approval: parseImportBoolean(
+        getCell(row, ["aprovacao", "exige_aprovacao", "requires_approval"])
+      ),
+      approval_role: approvalRole || null,
+      instructions: instructions || null,
+      checklist_items: kind === "checklist" ? checklistItems : [],
+    },
+  }
 }
 
 function todayStartISO() {
@@ -277,6 +432,9 @@ function ChecklistCard({
   onReset,
   onToggleAll,
   onToggleItem,
+  onEdit,
+  onDelete,
+  canManage,
   procedure,
 }: {
   checkedItems: string[]
@@ -294,6 +452,9 @@ function ChecklistCard({
   onReset: () => void
   onToggleAll: () => void
   onToggleItem: (item: string) => void
+  onEdit: () => void
+  onDelete: () => void
+  canManage: boolean
   procedure: ChecklistProcedure
 }) {
   const totalItems = procedure.checklist_items.length
@@ -323,12 +484,20 @@ function ChecklistCard({
               {procedure.due_time ? <span>ate {formatTime(procedure.due_time)}</span> : null}
             </div>
           </div>
-          <Badge
-            variant="outline"
-            className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px]", status.className)}
-          >
-            {status.label}
-          </Badge>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <Badge
+              variant="outline"
+              className={cn(
+                "rounded-full px-2 py-0.5 text-[10px]",
+                status.className
+              )}
+            >
+              {status.label}
+            </Badge>
+            {canManage ? (
+              <ProcedureActionsMenu onEdit={onEdit} onDelete={onDelete} />
+            ) : null}
+          </div>
         </div>
 
         <div className="flex flex-wrap gap-1.5">
@@ -463,7 +632,17 @@ function ChecklistCard({
   )
 }
 
-function ProcedureDocumentCard({ procedure }: { procedure: ChecklistProcedure }) {
+function ProcedureDocumentCard({
+  canManage,
+  onDelete,
+  onEdit,
+  procedure,
+}: {
+  canManage: boolean
+  onDelete: () => void
+  onEdit: () => void
+  procedure: ChecklistProcedure
+}) {
   const steps = procedureSteps(procedure.instructions ?? "")
 
   return (
@@ -483,12 +662,17 @@ function ProcedureDocumentCard({ procedure }: { procedure: ChecklistProcedure })
               ) : null}
             </div>
           </div>
-          <Badge
-            variant="outline"
-            className="shrink-0 rounded-full border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] text-sky-700"
-          >
-            Procedimento
-          </Badge>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <Badge
+              variant="outline"
+              className="rounded-full border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] text-sky-700"
+            >
+              Procedimento
+            </Badge>
+            {canManage ? (
+              <ProcedureActionsMenu onEdit={onEdit} onDelete={onDelete} />
+            ) : null}
+          </div>
         </div>
         {procedure.category ? (
           <Badge variant="secondary" className="w-fit rounded-full px-2 py-0.5 text-[10px]">
@@ -643,6 +827,302 @@ function HistoryList({
   )
 }
 
+function ProcedureActionsMenu({
+  onEdit,
+  onDelete,
+}: {
+  onEdit: () => void
+  onDelete: () => void
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          className="text-muted-foreground hover:text-[color:var(--text-primary)]"
+        >
+          <MoreVertical className="size-4" />
+          <span className="sr-only">Abrir acoes</span>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onSelect={onEdit}>
+          <PencilLine className="mr-2 size-3.5" />
+          Editar
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          className="text-red-700 focus:text-red-700"
+          onSelect={onDelete}
+        >
+          <Trash2 className="mr-2 size-3.5" />
+          Excluir
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+function ChecklistDeleteDialog({
+  open,
+  procedure,
+  isDeleting,
+  onOpenChange,
+  onConfirm,
+}: {
+  open: boolean
+  procedure: ChecklistProcedure | null
+  isDeleting: boolean
+  onOpenChange: (open: boolean) => void
+  onConfirm: () => void
+}) {
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        onOpenChange(nextOpen)
+      }}
+    >
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Excluir procedimento</DialogTitle>
+          <DialogDescription>
+            Essa acao desativa o item sem apagar o historico das execucoes.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="rounded-xl border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] px-3 py-2 text-sm text-[color:var(--text-secondary)]">
+          <div className="font-medium text-[color:var(--text-primary)]">
+            {procedure?.title ?? "Registro selecionado"}
+          </div>
+          <div className="mt-1">
+            {procedure?.checklist_items.length ? "Checklist" : "Procedimento"}
+            {" · "}
+            {procedure?.category ?? "Sem categoria"}
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            Cancelar
+          </Button>
+          <Button type="button" variant="destructive" disabled={isDeleting} onClick={onConfirm}>
+            {isDeleting ? "Excluindo..." : "Excluir"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function ChecklistImportDialog({
+  defaultKind,
+  profile,
+  selectedBranchId,
+}: {
+  defaultKind: ChecklistToolKind
+  profile: UserProfile | null | undefined
+  selectedBranchId: string | null
+}) {
+  const queryClient = useQueryClient()
+  const [open, setOpen] = useState(false)
+  const [fileName, setFileName] = useState("")
+  const [rows, setRows] = useState<ChecklistProcedureInput[]>([])
+  const [errors, setErrors] = useState<string[]>([])
+  const [isImporting, setIsImporting] = useState(false)
+
+  const isOrgAdmin = profile?.role === "owner" || profile?.role === "admin"
+  const branchId = selectedBranchId || (!isOrgAdmin ? profile?.branch_id ?? null : null)
+
+  function resetState() {
+    setFileName("")
+    setRows([])
+    setErrors([])
+    setIsImporting(false)
+  }
+
+  async function handleFile(file: File | null) {
+    setRows([])
+    setErrors([])
+    setFileName(file?.name ?? "")
+
+    if (!file) return
+
+    if (!branchId && !isOrgAdmin) {
+      setErrors([
+        "Selecione uma filial na tela antes de importar a planilha.",
+      ])
+      return
+    }
+
+    try {
+      const parsed = await parseSpreadsheet(file)
+      const nextRows: ChecklistProcedureInput[] = []
+      const nextErrors: string[] = []
+
+      parsed.forEach((row, index) => {
+        const result = buildImportProcedureInput(row, branchId, defaultKind)
+        if (result.error || !result.input) {
+          nextErrors.push(`Linha ${index + 2}: ${result.error ?? "registro invalido."}`)
+          return
+        }
+        nextRows.push(result.input)
+      })
+
+      setRows(nextRows)
+      setErrors(nextErrors)
+    } catch (error) {
+      setErrors([error instanceof Error ? error.message : "Nao foi possivel ler a planilha."])
+    }
+  }
+
+  async function handleImport() {
+    if (!profile) {
+      setErrors(["Nao foi possivel identificar o usuario logado."])
+      return
+    }
+
+    if (rows.length === 0) return
+
+    setIsImporting(true)
+    const nextErrors = [...errors]
+    let createdCount = 0
+
+    try {
+      for (const row of rows) {
+        try {
+          await createChecklistProcedure(profile, row)
+          createdCount += 1
+        } catch (error) {
+          nextErrors.push(
+            error instanceof Error ? error.message : `Falha ao importar ${row.title}.`
+          )
+        }
+      }
+
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["checklist-procedures"] }),
+        queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
+        queryClient.invalidateQueries({ queryKey: ["audit-logs"] }),
+        queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] }),
+      ])
+
+      setErrors(nextErrors)
+
+      if (createdCount > 0) {
+        toast.success(
+          createdCount === 1
+            ? "1 registro importado."
+            : `${createdCount} registros importados.`
+        )
+      }
+
+      if (createdCount > 0 && nextErrors.length === 0) {
+        setOpen(false)
+        resetState()
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao importar a planilha.")
+      setErrors([
+        error instanceof Error ? error.message : "Falha ao importar a planilha.",
+      ])
+    } finally {
+      setIsImporting(false)
+    }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen)
+        if (!nextOpen) resetState()
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button variant="outline">
+          <FileSpreadsheet className="size-4" />
+          Importar XLSX
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Importar planilha</DialogTitle>
+          <DialogDescription>
+            Crie checklists e procedimentos em lote a partir de um arquivo .xlsx.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] p-3">
+              <div className="flex items-center gap-2 text-sm font-semibold text-[color:var(--text-primary)]">
+                <ClipboardList className="size-4 text-sky-600" />
+                Checklist
+              </div>
+              <p className="mt-1 text-sm leading-5 text-[color:var(--text-secondary)]">
+                Lista objetiva do que verificar. Use a coluna <span className="font-medium">itens</span>{" "}
+                com um item por linha.
+              </p>
+            </div>
+            <div className="rounded-xl border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] p-3">
+              <div className="flex items-center gap-2 text-sm font-semibold text-[color:var(--text-primary)]">
+                <BookOpenText className="size-4 text-violet-600" />
+                Procedimento
+              </div>
+              <p className="mt-1 text-sm leading-5 text-[color:var(--text-secondary)]">
+                Passo a passo detalhado. Use a coluna <span className="font-medium">instrucoes</span>{" "}
+                para descrever a execução.
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] p-3 text-sm text-[color:var(--text-secondary)]">
+            A filial segue a seleção atual da tela. Se a coluna <span className="font-medium">tipo</span>{" "}
+            estiver vazia, o app usa a aba atual como padrão.
+          </div>
+
+          <div className="rounded-xl border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] p-3 text-sm text-[color:var(--text-secondary)]">
+            Colunas aceitas: <span className="font-medium">tipo, titulo, categoria, frequencia, minutos, responsavel, prazo, aprovador, evidencia, aprovacao, itens, instrucoes</span>.
+          </div>
+
+          <Input
+            type="file"
+            accept=".xlsx,.csv"
+            onChange={(event) => void handleFile(event.target.files?.[0] ?? null)}
+          />
+
+          {fileName ? (
+            <div className="text-sm text-muted-foreground">
+              {fileName}: {rows.length} linha(s) prontas para importar.
+            </div>
+          ) : null}
+
+          {errors.length > 0 ? (
+            <div className="max-h-40 overflow-auto rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-[color:var(--text-secondary)]">
+              {errors.slice(0, 12).map((error) => (
+                <div key={error}>{error}</div>
+              ))}
+              {errors.length > 12 ? <div>...mais {errors.length - 12}</div> : null}
+            </div>
+          ) : null}
+        </div>
+
+        <DialogFooter>
+          <Button
+            disabled={rows.length === 0 || isImporting}
+            onClick={() => void handleImport()}
+          >
+            <FileSpreadsheet className="size-4" />
+            {isImporting ? "Importando..." : "Importar XLSX"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export function ChecklistsPage() {
   const { profile } = useAuth()
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
@@ -651,10 +1131,14 @@ export function ChecklistsPage() {
   const history = useChecklistRuns()
   const branches = useBranches()
   const createProcedure = useCreateChecklistProcedure()
+  const updateProcedure = useUpdateChecklistProcedure()
+  const deleteProcedure = useDeleteChecklistProcedure()
   const completeRun = useCompleteChecklistRun()
   const approveRun = useApproveChecklistRun()
   const [open, setOpen] = useState(false)
   const [view, setView] = useState<ChecklistView>("checklists")
+  const [editingProcedure, setEditingProcedure] = useState<ChecklistProcedure | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<ChecklistProcedure | null>(null)
   const [checkedByProcedure, setCheckedByProcedure] = useState<Record<string, string[]>>({})
   const [notesByProcedure, setNotesByProcedure] = useState<Record<string, string>>({})
   const [evidenceByProcedure, setEvidenceByProcedure] = useState<Record<string, string>>({})
@@ -663,9 +1147,10 @@ export function ChecklistsPage() {
   const [form, setForm] = useState(emptyForm)
   const isOrgAdmin = profile?.role === "owner" || profile?.role === "admin"
   const effectiveFormBranchId =
-    form.branch_id || (!isOrgAdmin ? profile?.branch_id ?? "" : "")
+    form.branch_id || (!isOrgAdmin && !editingProcedure ? profile?.branch_id ?? "" : "")
   const sectors = useSectors(effectiveFormBranchId || null)
   const canCreate = canManageProcedures(profile?.role)
+  const isSaving = createProcedure.isPending || updateProcedure.isPending
 
   const checklistIds = useMemo(
     () =>
@@ -751,10 +1236,20 @@ export function ChecklistsPage() {
 
   function resetForm() {
     setForm(emptyForm)
+    setEditingProcedure(null)
   }
 
   function openCreate(kind: ChecklistToolKind = "checklist") {
+    setDeleteTarget(null)
+    setEditingProcedure(null)
     setForm({ ...emptyForm, kind, branch_id: selectedBranchId ?? "" })
+    setOpen(true)
+  }
+
+  function openEdit(procedure: ChecklistProcedure) {
+    setDeleteTarget(null)
+    setEditingProcedure(procedure)
+    setForm(procedureToForm(procedure))
     setOpen(true)
   }
 
@@ -790,7 +1285,7 @@ export function ChecklistsPage() {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
-    await createProcedure.mutateAsync({
+    const payload = {
       branch_id: effectiveFormBranchId || null,
       sector_id: form.sector_id || null,
       title: form.title.trim(),
@@ -808,10 +1303,25 @@ export function ChecklistsPage() {
       instructions: form.kind === "procedure" ? form.instructions.trim() : null,
       checklist_items:
         form.kind === "checklist" ? splitChecklistItems(form.checklist_items) : [],
-    })
+    }
+
+    if (editingProcedure) {
+      await updateProcedure.mutateAsync({
+        procedureId: editingProcedure.id,
+        checklist: payload,
+      })
+    } else {
+      await createProcedure.mutateAsync(payload)
+    }
 
     resetForm()
     setOpen(false)
+  }
+
+  async function handleDelete() {
+    if (!deleteTarget) return
+    await deleteProcedure.mutateAsync(deleteTarget.id)
+    setDeleteTarget(null)
   }
 
   function toggleItem(procedureId: string, item: string) {
@@ -903,318 +1413,343 @@ export function ChecklistsPage() {
     <>
       <PageHeader
         title="Checklists e Procedimentos"
-        description="Use checklists para conferir tarefas e procedimentos para orientar como executa-las."
+        description="Checklist mostra o que conferir. Procedimento mostra como executar."
         action={
           canCreate ? (
-            <Dialog open={open} onOpenChange={setOpen}>
-              <DialogTrigger asChild>
-                <Button
-                  onClick={() =>
-                    openCreate(view === "procedures" ? "procedure" : "checklist")
-                  }
-                >
-                  <Plus className="size-4" />
-                  Novo cadastro
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
-                <DialogHeader>
-                  <DialogTitle>
-                    {form.kind === "checklist" ? "Cadastrar checklist" : "Cadastrar procedimento"}
-                  </DialogTitle>
-                  <DialogDescription>
-                    {form.kind === "checklist"
-                      ? "Crie uma lista objetiva com os itens que devem ser conferidos."
-                      : "Documente o passo a passo detalhado de como a atividade deve ser executada."}
-                  </DialogDescription>
-                </DialogHeader>
-
-                <div className="grid grid-cols-2 rounded-lg border bg-[color:var(--bg-surface-soft)] p-1">
+            <div className="flex items-center gap-2">
+              <ChecklistImportDialog
+                defaultKind={view === "procedures" ? "procedure" : "checklist"}
+                profile={profile}
+                selectedBranchId={selectedBranchId}
+              />
+              <Dialog
+                open={open}
+                onOpenChange={(nextOpen) => {
+                  setOpen(nextOpen)
+                  if (!nextOpen) resetForm()
+                }}
+              >
+                <DialogTrigger asChild>
                   <Button
-                    type="button"
-                    size="sm"
-                    variant={form.kind === "checklist" ? "default" : "ghost"}
-                    className="rounded-md"
-                    onClick={() => changeFormKind("checklist")}
+                    onClick={() =>
+                      openCreate(view === "procedures" ? "procedure" : "checklist")
+                    }
                   >
-                    <ClipboardList className="size-4" />
-                    Checklist
+                    <Plus className="size-4" />
+                    Novo cadastro
                   </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={form.kind === "procedure" ? "default" : "ghost"}
-                    className="rounded-md"
-                    onClick={() => changeFormKind("procedure")}
-                  >
-                    <BookOpenText className="size-4" />
-                    Procedimento
-                  </Button>
-                </div>
+                </DialogTrigger>
+                <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+                  <DialogHeader>
+                    <DialogTitle>
+                      {editingProcedure
+                        ? form.kind === "checklist"
+                          ? "Editar checklist"
+                          : "Editar procedimento"
+                        : form.kind === "checklist"
+                          ? "Cadastrar checklist"
+                          : "Cadastrar procedimento"}
+                    </DialogTitle>
+                    <DialogDescription>
+                      {editingProcedure
+                        ? "Ajuste os dados e salve a nova versao direto no app."
+                        : form.kind === "checklist"
+                          ? "Crie uma lista objetiva com os itens que devem ser conferidos."
+                          : "Documente o passo a passo detalhado de como a atividade deve ser executada."}
+                    </DialogDescription>
+                  </DialogHeader>
 
-                <form className="space-y-4" onSubmit={handleSubmit}>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <label className="space-y-1 text-sm">
-                      <span className="font-medium">Filial</span>
-                      <select
-                        className={fieldClass}
-                        disabled={!isOrgAdmin}
-                        value={effectiveFormBranchId}
-                        onChange={(event) =>
-                          setForm((current) => ({
-                            ...current,
-                            branch_id: event.target.value,
-                            sector_id: "",
-                          }))
-                        }
-                      >
-                        {isOrgAdmin ? <option value="">Toda a empresa</option> : null}
-                        {!isOrgAdmin && profile?.branch_id && !(branches.data ?? []).some((branch) => branch.id === profile.branch_id) ? (
-                          <option value={profile.branch_id}>Minha filial</option>
-                        ) : null}
-                        {!isOrgAdmin && !profile?.branch_id ? (
-                          <option value="">Sem filial vinculada</option>
-                        ) : null}
-                        {(branches.data ?? []).map((branch) => (
-                          <option key={branch.id} value={branch.id}>
-                            {branch.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="space-y-1 text-sm">
-                      <span className="font-medium">Setor</span>
-                      <select
-                        className={fieldClass}
-                        disabled={!effectiveFormBranchId}
-                        value={form.sector_id}
-                        onChange={(event) =>
-                          setForm((current) => ({
-                            ...current,
-                            sector_id: event.target.value,
-                          }))
-                        }
-                      >
-                        <option value="">Todos os setores</option>
-                        {(sectors.data ?? []).map((sector) => (
-                          <option key={sector.id} value={sector.id}>
-                            {sector.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                  <div className="grid grid-cols-2 rounded-lg border bg-[color:var(--bg-surface-soft)] p-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={form.kind === "checklist" ? "default" : "ghost"}
+                      className="rounded-md"
+                      onClick={() => changeFormKind("checklist")}
+                    >
+                      <ClipboardList className="size-4" />
+                      Checklist
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={form.kind === "procedure" ? "default" : "ghost"}
+                      className="rounded-md"
+                      onClick={() => changeFormKind("procedure")}
+                    >
+                      <BookOpenText className="size-4" />
+                      Procedimento
+                    </Button>
                   </div>
 
-                  <label className="space-y-1 text-sm">
-                    <span className="font-medium">Titulo</span>
-                    <Input
-                      className={fieldClass}
-                      required
-                      value={form.title}
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          title: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
+                  <form className="space-y-4" onSubmit={handleSubmit}>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <label className="space-y-1 text-sm">
+                        <span className="font-medium">Filial</span>
+                        <select
+                          className={fieldClass}
+                          disabled={!isOrgAdmin}
+                          value={effectiveFormBranchId}
+                          onChange={(event) =>
+                            setForm((current) => ({
+                              ...current,
+                              branch_id: event.target.value,
+                              sector_id: "",
+                            }))
+                          }
+                        >
+                          {isOrgAdmin ? <option value="">Toda a empresa</option> : null}
+                          {!isOrgAdmin && profile?.branch_id && !(branches.data ?? []).some((branch) => branch.id === profile.branch_id) ? (
+                            <option value={profile.branch_id}>Minha filial</option>
+                          ) : null}
+                          {!isOrgAdmin && !profile?.branch_id ? (
+                            <option value="">Sem filial vinculada</option>
+                          ) : null}
+                          {(branches.data ?? []).map((branch) => (
+                            <option key={branch.id} value={branch.id}>
+                              {branch.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="space-y-1 text-sm">
+                        <span className="font-medium">Setor</span>
+                        <select
+                          className={fieldClass}
+                          disabled={!effectiveFormBranchId}
+                          value={form.sector_id}
+                          onChange={(event) =>
+                            setForm((current) => ({
+                              ...current,
+                              sector_id: event.target.value,
+                            }))
+                          }
+                        >
+                          <option value="">Todos os setores</option>
+                          {(sectors.data ?? []).map((sector) => (
+                            <option key={sector.id} value={sector.id}>
+                              {sector.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
 
-                  <div
-                    className={cn(
-                      "grid gap-3",
-                      form.kind === "checklist" ? "sm:grid-cols-5" : "sm:grid-cols-3"
-                    )}
-                  >
-                    <label className="space-y-1 text-sm sm:col-span-2">
-                      <span className="font-medium">Categoria</span>
-                      <Input
-                        className={fieldClass}
-                        value={form.category}
-                        placeholder="Abertura, fechamento, higiene..."
-                        onChange={(event) =>
-                          setForm((current) => ({
-                            ...current,
-                            category: event.target.value,
-                          }))
-                        }
-                      />
-                    </label>
-                    {form.kind === "checklist" ? (
-                      <>
-                        <label className="space-y-1 text-sm">
-                          <span className="font-medium">Frequencia</span>
-                          <select
-                            className={fieldClass}
-                            value={form.frequency}
-                            onChange={(event) =>
-                              setForm((current) => ({
-                                ...current,
-                                frequency: event.target.value as ChecklistProcedureFrequency,
-                              }))
-                            }
-                          >
-                            {frequencyOptions.map((frequency) => (
-                              <option key={frequency} value={frequency}>
-                                {frequencyLabel[frequency]}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label className="space-y-1 text-sm">
-                          <span className="font-medium">Prazo</span>
-                          <Input
-                            className={fieldClass}
-                            type="time"
-                            value={form.due_time}
-                            onChange={(event) =>
-                              setForm((current) => ({
-                                ...current,
-                                due_time: event.target.value,
-                              }))
-                            }
-                          />
-                        </label>
-                      </>
-                    ) : null}
                     <label className="space-y-1 text-sm">
-                      <span className="font-medium">Minutos</span>
+                      <span className="font-medium">Titulo</span>
                       <Input
                         className={fieldClass}
-                        type="number"
-                        min={1}
-                        value={form.estimated_minutes}
+                        required
+                        value={form.title}
                         onChange={(event) =>
                           setForm((current) => ({
                             ...current,
-                            estimated_minutes: event.target.value,
+                            title: event.target.value,
                           }))
                         }
                       />
                     </label>
-                  </div>
 
-                  <div
-                    className={cn(
-                      "grid gap-3",
-                      form.kind === "checklist" ? "sm:grid-cols-3" : "sm:grid-cols-2"
-                    )}
-                  >
-                    <label className="space-y-1 text-sm">
-                      <span className="font-medium">Responsavel padrao</span>
-                      <Input
-                        className={fieldClass}
-                        value={form.owner_role}
-                        placeholder="Operador, supervisor..."
-                        onChange={(event) =>
-                          setForm((current) => ({
-                            ...current,
-                            owner_role: event.target.value,
-                          }))
-                        }
-                      />
-                    </label>
-                    {form.kind === "checklist" ? (
-                      <>
-                        <label className="space-y-1 text-sm">
-                          <span className="font-medium">Aprovador</span>
-                          <Input
-                            className={fieldClass}
-                            value={form.approval_role}
-                            placeholder="Supervisor, gerente..."
-                            disabled={!form.requires_approval}
-                            onChange={(event) =>
-                              setForm((current) => ({
-                                ...current,
-                                approval_role: event.target.value,
-                              }))
-                            }
-                          />
-                        </label>
-                        <div className="grid gap-2 rounded-xl border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] px-3 py-2 text-sm">
-                          <label className="flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              checked={form.evidence_required}
+                    <div
+                      className={cn(
+                        "grid gap-3",
+                        form.kind === "checklist" ? "sm:grid-cols-5" : "sm:grid-cols-3"
+                      )}
+                    >
+                      <label className="space-y-1 text-sm sm:col-span-2">
+                        <span className="font-medium">Categoria</span>
+                        <Input
+                          className={fieldClass}
+                          value={form.category}
+                          placeholder="Abertura, fechamento, higiene..."
+                          onChange={(event) =>
+                            setForm((current) => ({
+                              ...current,
+                              category: event.target.value,
+                            }))
+                          }
+                        />
+                      </label>
+                      {form.kind === "checklist" ? (
+                        <>
+                          <label className="space-y-1 text-sm">
+                            <span className="font-medium">Frequencia</span>
+                            <select
+                              className={fieldClass}
+                              value={form.frequency}
                               onChange={(event) =>
                                 setForm((current) => ({
                                   ...current,
-                                  evidence_required: event.target.checked,
+                                  frequency: event.target.value as ChecklistProcedureFrequency,
                                 }))
                               }
-                            />
-                            Exigir evidencia
+                            >
+                              {frequencyOptions.map((frequency) => (
+                                <option key={frequency} value={frequency}>
+                                  {frequencyLabel[frequency]}
+                                </option>
+                              ))}
+                            </select>
                           </label>
-                          <label className="flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              checked={form.requires_approval}
+                          <label className="space-y-1 text-sm">
+                            <span className="font-medium">Prazo</span>
+                            <Input
+                              className={fieldClass}
+                              type="time"
+                              value={form.due_time}
                               onChange={(event) =>
                                 setForm((current) => ({
                                   ...current,
-                                  requires_approval: event.target.checked,
+                                  due_time: event.target.value,
                                 }))
                               }
                             />
-                            Exigir aprovacao
                           </label>
-                        </div>
-                      </>
-                    ) : null}
-                  </div>
+                        </>
+                      ) : null}
+                      <label className="space-y-1 text-sm">
+                        <span className="font-medium">Minutos</span>
+                        <Input
+                          className={fieldClass}
+                          type="number"
+                          min={1}
+                          value={form.estimated_minutes}
+                          onChange={(event) =>
+                            setForm((current) => ({
+                              ...current,
+                              estimated_minutes: event.target.value,
+                            }))
+                          }
+                        />
+                      </label>
+                    </div>
 
-                  {form.kind === "procedure" ? (
-                    <label className="space-y-1 text-sm">
-                      <span className="font-medium">Passo a passo detalhado</span>
-                      <textarea
-                        required
-                        className={cn(textareaClass, "min-h-44")}
-                        placeholder="Descreva cada etapa em uma nova linha."
-                        value={form.instructions}
-                        onChange={(event) =>
-                          setForm((current) => ({
-                            ...current,
-                            instructions: event.target.value,
-                          }))
-                        }
-                      />
-                    </label>
-                  ) : (
-                    <label className="space-y-1 text-sm">
-                      <span className="font-medium">Itens a verificar</span>
-                      <textarea
-                        required
-                        className={cn(textareaClass, "min-h-36")}
-                        placeholder="Digite um item por linha."
-                        value={form.checklist_items}
-                        onChange={(event) =>
-                          setForm((current) => ({
-                            ...current,
-                            checklist_items: event.target.value,
-                          }))
-                        }
-                      />
-                    </label>
-                  )}
+                    <div
+                      className={cn(
+                        "grid gap-3",
+                        form.kind === "checklist" ? "sm:grid-cols-3" : "sm:grid-cols-2"
+                      )}
+                    >
+                      <label className="space-y-1 text-sm">
+                        <span className="font-medium">Responsavel padrao</span>
+                        <Input
+                          className={fieldClass}
+                          value={form.owner_role}
+                          placeholder="Operador, supervisor..."
+                          onChange={(event) =>
+                            setForm((current) => ({
+                              ...current,
+                              owner_role: event.target.value,
+                            }))
+                          }
+                        />
+                      </label>
+                      {form.kind === "checklist" ? (
+                        <>
+                          <label className="space-y-1 text-sm">
+                            <span className="font-medium">Aprovador</span>
+                            <Input
+                              className={fieldClass}
+                              value={form.approval_role}
+                              placeholder="Supervisor, gerente..."
+                              disabled={!form.requires_approval}
+                              onChange={(event) =>
+                                setForm((current) => ({
+                                  ...current,
+                                  approval_role: event.target.value,
+                                }))
+                              }
+                            />
+                          </label>
+                          <div className="grid gap-2 rounded-xl border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] px-3 py-2 text-sm">
+                            <label className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={form.evidence_required}
+                                onChange={(event) =>
+                                  setForm((current) => ({
+                                    ...current,
+                                    evidence_required: event.target.checked,
+                                  }))
+                                }
+                              />
+                              Exigir evidencia
+                            </label>
+                            <label className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={form.requires_approval}
+                                onChange={(event) =>
+                                  setForm((current) => ({
+                                    ...current,
+                                    requires_approval: event.target.checked,
+                                  }))
+                                }
+                              />
+                              Exigir aprovacao
+                            </label>
+                          </div>
+                        </>
+                      ) : null}
+                    </div>
 
-                  {createProcedure.error ? (
+                    {form.kind === "procedure" ? (
+                      <label className="space-y-1 text-sm">
+                        <span className="font-medium">Passo a passo detalhado</span>
+                        <textarea
+                          required
+                          className={cn(textareaClass, "min-h-44")}
+                          placeholder="Descreva cada etapa em uma nova linha."
+                          value={form.instructions}
+                          onChange={(event) =>
+                            setForm((current) => ({
+                              ...current,
+                              instructions: event.target.value,
+                            }))
+                          }
+                        />
+                      </label>
+                    ) : (
+                      <label className="space-y-1 text-sm">
+                        <span className="font-medium">Itens a verificar</span>
+                        <textarea
+                          required
+                          className={cn(textareaClass, "min-h-36")}
+                          placeholder="Digite um item por linha."
+                          value={form.checklist_items}
+                          onChange={(event) =>
+                            setForm((current) => ({
+                              ...current,
+                              checklist_items: event.target.value,
+                            }))
+                          }
+                        />
+                      </label>
+                    )}
+
+                  {createProcedure.error || updateProcedure.error ? (
                     <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                      {createProcedure.error.message}
+                      {(createProcedure.error ?? updateProcedure.error)?.message}
                     </div>
                   ) : null}
 
                   <DialogFooter>
-                    <Button type="submit" disabled={createProcedure.isPending}>
-                      {createProcedure.isPending
-                        ? "Criando..."
-                        : form.kind === "checklist"
-                          ? "Criar checklist"
-                          : "Criar procedimento"}
+                    <Button type="submit" disabled={isSaving}>
+                      {isSaving
+                        ? editingProcedure
+                          ? "Salvando..."
+                          : "Criando..."
+                        : editingProcedure
+                          ? "Salvar alteracoes"
+                          : form.kind === "checklist"
+                            ? "Criar checklist"
+                            : "Criar procedimento"}
                     </Button>
                   </DialogFooter>
                 </form>
               </DialogContent>
-            </Dialog>
+              </Dialog>
+            </div>
           ) : null
         }
       />
@@ -1236,6 +1771,39 @@ export function ChecklistsPage() {
           />
         ) : (
           <>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Card className="border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] shadow-sm">
+                <CardContent className="flex items-start gap-3 p-4">
+                  <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-sky-50 text-sky-600">
+                    <ClipboardList className="size-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-[color:var(--text-primary)]">
+                      Checklist
+                    </p>
+                    <p className="mt-1 text-sm leading-5 text-[color:var(--text-secondary)]">
+                      Lista objetiva do que conferir. Cada item vira uma verificacao direta.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] shadow-sm">
+                <CardContent className="flex items-start gap-3 p-4">
+                  <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-violet-50 text-violet-600">
+                    <BookOpenText className="size-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-[color:var(--text-primary)]">
+                      Procedimento
+                    </p>
+                    <p className="mt-1 text-sm leading-5 text-[color:var(--text-secondary)]">
+                      Passo a passo detalhado para orientar como a tarefa deve ser executada.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
               <CompactMetric
                 title="Checklists"
@@ -1342,7 +1910,13 @@ export function ChecklistsPage() {
                     ) : (
                       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                         {displayedProcedureDocuments.map((procedure) => (
-                          <ProcedureDocumentCard key={procedure.id} procedure={procedure} />
+                          <ProcedureDocumentCard
+                            key={procedure.id}
+                            procedure={procedure}
+                            canManage={canCreate}
+                            onEdit={() => openEdit(procedure)}
+                            onDelete={() => setDeleteTarget(procedure)}
+                          />
                         ))}
                       </div>
                     )
@@ -1359,6 +1933,9 @@ export function ChecklistsPage() {
                         <ChecklistCard
                           key={procedure.id}
                           procedure={procedure}
+                          canManage={canCreate}
+                          onEdit={() => openEdit(procedure)}
+                          onDelete={() => setDeleteTarget(procedure)}
                           checkedItems={checkedByProcedure[procedure.id] ?? []}
                           notes={notesByProcedure[procedure.id] ?? ""}
                           evidenceNotes={evidenceByProcedure[procedure.id] ?? ""}
@@ -1438,6 +2015,16 @@ export function ChecklistsPage() {
                 A execucao esta liberada para o time. O cadastro e a aprovacao ficam com lideranca e administradores.
               </div>
             ) : null}
+
+            <ChecklistDeleteDialog
+              open={Boolean(deleteTarget)}
+              procedure={deleteTarget}
+              isDeleting={deleteProcedure.isPending}
+              onOpenChange={(nextOpen) => {
+                if (!nextOpen) setDeleteTarget(null)
+              }}
+              onConfirm={() => void handleDelete()}
+            />
           </>
         )}
       </div>

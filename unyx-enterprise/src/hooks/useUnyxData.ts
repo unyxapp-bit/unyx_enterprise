@@ -40,6 +40,7 @@ import {
   deleteProductionOrder,
   deleteEmployees,
   deleteDeliveryOrder,
+  deleteChecklistProcedure,
   deleteOperationalForm,
   deleteOperationalNote,
   cancelFiscalDocument,
@@ -76,6 +77,7 @@ import {
   updateProductCategory,
   updateProductVariant,
   updateProductionOrderStatus,
+  updateChecklistProcedure,
   listAllAuditLogs,
   listAttendanceEvents,
   listAuditLogs,
@@ -806,6 +808,45 @@ export function useCreateChecklistProcedure() {
       await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
       await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
       toast.success("Procedimento cadastrado.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useUpdateChecklistProcedure() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: { procedureId: string; checklist: ChecklistProcedureInput }) =>
+      updateChecklistProcedure(profile, input.procedureId, input.checklist),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["checklist-procedures"] })
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success("Procedimento atualizado.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useDeleteChecklistProcedure() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (procedureId: string) => deleteChecklistProcedure(profile, procedureId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["checklist-procedures"] })
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success("Procedimento excluido.")
     },
     onError: (error) => {
       toast.error(error.message)

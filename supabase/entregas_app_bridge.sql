@@ -17,6 +17,12 @@ alter table public.entregas
 alter table public.entregas
   add column if not exists branch_id uuid;
 
+alter table public.entregas
+  add column if not exists origem text not null default 'app_android_ocr';
+
+alter table public.entregas
+  alter column origem set default 'app_android_ocr';
+
 create or replace function public.map_app_entrega_status(status text)
 returns text
 language sql
@@ -165,7 +171,11 @@ begin
 
   v_notes := concat_ws(
     E'\n',
-    'Importado automaticamente pelo app Android OCR.',
+    case
+      when new.origem = 'app_android_manual'
+        then 'Criado manualmente no app Android.'
+      else 'Importado automaticamente pelo app Android OCR.'
+    end,
     'Nota: ' || nullif(new.nota, ''),
     'Empacotador: ' || nullif(new.empacotador, ''),
     case
@@ -236,7 +246,11 @@ begin
     0,
     coalesce(new.valor, 0),
     coalesce(new.valor, 0),
-    'paid',
+    case
+      when new.origem = 'app_android_manual' then 'collect_on_delivery'
+      when new.origem = 'app_android_ocr' then 'paid'
+      else 'pending'
+    end,
     null,
     null,
     case when v_status = 'out_for_delivery' then now() else null end,
@@ -261,6 +275,7 @@ begin
     city = excluded.city,
     order_amount = excluded.order_amount,
     total_amount = excluded.total_amount,
+    payment_status = excluded.payment_status,
     notes = excluded.notes,
     items = excluded.items,
     dispatched_at = coalesce(public.delivery_orders.dispatched_at, excluded.dispatched_at),
@@ -273,7 +288,6 @@ begin
       else public.delivery_orders.cancelled_at
     end,
     updated_at = now();
-
   return new;
 end;
 $$;
@@ -287,7 +301,6 @@ as $$
 begin
   delete from public.delivery_orders
   where app_entrega_id = old.id;
-
   return old;
 end;
 $$;
@@ -344,10 +357,18 @@ select
   0,
   coalesce(entregas.valor, 0),
   coalesce(entregas.valor, 0),
-  'paid',
+  case
+    when entregas.origem = 'app_android_manual' then 'collect_on_delivery'
+    when entregas.origem = 'app_android_ocr' then 'paid'
+    else 'pending'
+  end,
   concat_ws(
     E'\n',
-    'Importado automaticamente pelo app Android OCR.',
+    case
+      when entregas.origem = 'app_android_manual'
+        then 'Criado manualmente no app Android.'
+      else 'Importado automaticamente pelo app Android OCR.'
+    end,
     'Nota: ' || nullif(entregas.nota, ''),
     'Empacotador: ' || nullif(entregas.empacotador, ''),
     case

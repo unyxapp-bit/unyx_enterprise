@@ -2347,6 +2347,44 @@ export interface ChecklistProcedureInput {
   checklist_items: string[]
 }
 
+function normalizeChecklistProcedureInput(input: ChecklistProcedureInput) {
+  const title = input.title.trim()
+  const checklistItems = normalizeChecklistItems(input.checklist_items)
+  const instructions = input.instructions?.trim() || null
+
+  if (!title) throw new Error("Informe o titulo do cadastro.")
+  if (checklistItems.length === 0 && !instructions) {
+    throw new Error(
+      "Adicione os itens do checklist ou descreva o passo a passo do procedimento."
+    )
+  }
+  if (input.sector_id && !input.branch_id) {
+    throw new Error("Selecione uma filial antes de escolher o setor.")
+  }
+
+  return { title, checklistItems, instructions }
+}
+
+async function getChecklistProcedureForMutation(
+  profile: UserProfile,
+  procedureId: string
+) {
+  const { data, error } = await supabase
+    .from("checklist_procedures")
+    .select("*")
+    .eq("id", procedureId)
+    .maybeSingle()
+
+  if (isMissingChecklistFeature(error)) throw new Error(checklistFeatureMessage())
+  raise(error)
+
+  if (!data || data.organization_id !== profile.organization_id) {
+    throw new Error("Procedimento nao encontrado.")
+  }
+
+  return data as ChecklistProcedure
+}
+
 export async function listChecklistProcedures(
   branchId?: string | null,
   organizationId?: string | null
@@ -2371,19 +2409,8 @@ export async function createChecklistProcedure(
   profile: UserProfile,
   input: ChecklistProcedureInput
 ) {
-  const title = input.title.trim()
-  const checklistItems = normalizeChecklistItems(input.checklist_items)
-  const instructions = input.instructions?.trim() || null
-
-  if (!title) throw new Error("Informe o titulo do cadastro.")
-  if (checklistItems.length === 0 && !instructions) {
-    throw new Error(
-      "Adicione os itens do checklist ou descreva o passo a passo do procedimento."
-    )
-  }
-  if (input.sector_id && !input.branch_id) {
-    throw new Error("Selecione uma filial antes de escolher o setor.")
-  }
+  const { title, checklistItems, instructions } =
+    normalizeChecklistProcedureInput(input)
 
   if (input.branch_id) {
     await validateBranchAndSector(profile, input.branch_id, input.sector_id)
@@ -2417,6 +2444,90 @@ export async function createChecklistProcedure(
     entity_type: "checklist_procedures",
     entity_id: data.id,
     old_value: null,
+    new_value: data,
+  })
+
+  return data as ChecklistProcedure
+}
+
+export async function updateChecklistProcedure(
+  profile: UserProfile,
+  procedureId: string,
+  input: ChecklistProcedureInput
+) {
+  const previous = await getChecklistProcedureForMutation(profile, procedureId)
+  const { title, checklistItems, instructions } =
+    normalizeChecklistProcedureInput(input)
+
+  if (input.branch_id) {
+    await validateBranchAndSector(profile, input.branch_id, input.sector_id)
+  }
+
+  const { data, error } = await supabase
+    .from("checklist_procedures")
+    .update({
+      branch_id: input.branch_id,
+      sector_id: input.sector_id,
+      title,
+      category: input.category?.trim() || null,
+      frequency: input.frequency,
+      estimated_minutes: input.estimated_minutes,
+      owner_role: input.owner_role?.trim() || null,
+      due_time: input.due_time || null,
+      evidence_required: input.evidence_required,
+      requires_approval: input.requires_approval,
+      approval_role: input.approval_role?.trim() || null,
+      instructions,
+      checklist_items: checklistItems,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", procedureId)
+    .eq("organization_id", profile.organization_id)
+    .select("*, branches(name), sectors(name), user_profiles!created_by(name)")
+    .single()
+
+  if (isMissingChecklistFeature(error)) throw new Error(checklistFeatureMessage())
+  raise(error)
+
+  await createAuditLog(profile, {
+    branch_id: input.branch_id,
+    action: "checklist_procedure_updated",
+    entity_type: "checklist_procedures",
+    entity_id: data.id,
+    old_value: previous,
+    new_value: data,
+  })
+
+  return data as ChecklistProcedure
+}
+
+export async function deleteChecklistProcedure(
+  profile: UserProfile,
+  procedureId: string
+) {
+  const previous = await getChecklistProcedureForMutation(profile, procedureId)
+  if (!previous.active) return previous
+
+  const { data, error } = await supabase
+    .from("checklist_procedures")
+    .update({
+      active: false,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", procedureId)
+    .eq("organization_id", profile.organization_id)
+    .select("*, branches(name), sectors(name), user_profiles!created_by(name)")
+    .single()
+
+  if (isMissingChecklistFeature(error)) throw new Error(checklistFeatureMessage())
+  raise(error)
+
+  await createAuditLog(profile, {
+    branch_id: previous.branch_id,
+    action: "checklist_procedure_deleted",
+    entity_type: "checklist_procedures",
+    entity_id: previous.id,
+    old_value: previous,
     new_value: data,
   })
 
