@@ -18,8 +18,8 @@ export function BranchSelector() {
   }, [branches, isLoading, selectedBranchId, setSelectedBranchId])
 
   return (
-    <label className="flex min-w-56 items-center gap-2 rounded-full border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] px-3 py-2 text-sm shadow-sm">
-      <Building2 className="size-4 text-[color:var(--text-muted)]" />
+    <label className="flex h-9 min-w-48 items-center gap-2 rounded-full border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] px-2.5 text-xs shadow-sm">
+      <Building2 className="size-3.5 text-[color:var(--text-muted)]" />
       <select
         className="w-full bg-transparent outline-none text-[color:var(--text-primary)]"
         value={selectedBranchId ?? ""}

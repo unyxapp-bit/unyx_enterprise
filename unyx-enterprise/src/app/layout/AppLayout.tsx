@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useState } from "react"
 
 import {
   BarChart2,
@@ -19,9 +19,6 @@ import {
   MessageSquareText,
   Moon,
   Package,
-  PanelTopOpen,
-  Pin,
-  PinOff,
   ReceiptText,
   Settings,
   ShoppingCart,
@@ -64,8 +61,6 @@ const roleLabel: Record<UserRole, string> = {
   operator: "Operador",
   employee: "Colaborador",
 }
-
-const NAV_PINNED_STORAGE_KEY = "unyx-top-nav-pinned"
 
 const navGroups = [
   {
@@ -186,7 +181,7 @@ function UserAvatar({ name }: { name: string }) {
     .join("")
     .toUpperCase()
   return (
-    <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[color:var(--primary)] text-xs font-semibold text-[color:var(--primary-foreground)] shadow-sm">
+    <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-[color:var(--primary)] text-[11px] font-semibold text-[color:var(--primary-foreground)] shadow-sm">
       {initials}
     </div>
   )
@@ -200,78 +195,8 @@ export function AppLayout() {
     getAccessMode()
   )
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [navHidden, setNavHidden] = useState(false)
-  const [navMenuOpen, setNavMenuOpen] = useState(false)
-  const [navPinned, setNavPinned] = useState(
-    () => window.localStorage.getItem(NAV_PINNED_STORAGE_KEY) === "true"
-  )
-  const navHideTimerRef = useRef<number | null>(null)
-  const navHoveredRef = useRef(false)
-  const lastScrollYRef = useRef(0)
   const location = useLocation()
   const navigate = useNavigate()
-
-  function clearNavHideTimer() {
-    if (navHideTimerRef.current !== null) {
-      window.clearTimeout(navHideTimerRef.current)
-      navHideTimerRef.current = null
-    }
-  }
-
-  function showTopNav() {
-    clearNavHideTimer()
-    setNavHidden(false)
-  }
-
-  function scheduleTopNavHide(delay = 1800) {
-    clearNavHideTimer()
-    if (navPinned || navMenuOpen || mobileOpen) return
-    navHideTimerRef.current = window.setTimeout(() => {
-      if (!navHoveredRef.current) setNavHidden(true)
-    }, delay)
-  }
-
-  function handleNavMenuChange(open: boolean) {
-    setNavMenuOpen(open)
-    if (open) showTopNav()
-    else scheduleTopNavHide()
-  }
-
-  function toggleNavPinned() {
-    const nextPinned = !navPinned
-    window.localStorage.setItem(NAV_PINNED_STORAGE_KEY, String(nextPinned))
-    setNavPinned(nextPinned)
-    setNavHidden(false)
-    if (nextPinned) clearNavHideTimer()
-    else scheduleTopNavHide(2600)
-  }
-
-  useEffect(() => {
-    clearNavHideTimer()
-    if (!navPinned && !navMenuOpen && !mobileOpen) {
-      navHideTimerRef.current = window.setTimeout(() => {
-        if (!navHoveredRef.current) setNavHidden(true)
-      }, 4500)
-    }
-    return clearNavHideTimer
-  }, [location.pathname, mobileOpen, navMenuOpen, navPinned])
-
-  useEffect(() => {
-    function handleScroll() {
-      const nextScrollY = window.scrollY
-      if (!navPinned && !navMenuOpen && !mobileOpen) {
-        if (nextScrollY > lastScrollYRef.current + 8 && nextScrollY > 64) {
-          setNavHidden(true)
-        } else if (nextScrollY < lastScrollYRef.current - 8) {
-          setNavHidden(false)
-        }
-      }
-      lastScrollYRef.current = nextScrollY
-    }
-
-    window.addEventListener("scroll", handleScroll, { passive: true })
-    return () => window.removeEventListener("scroll", handleScroll)
-  }, [mobileOpen, navMenuOpen, navPinned])
 
   const criticalCount = (opStatuses ?? []).filter(
     (s) => s.current_status === "alerta_critico"
@@ -331,39 +256,10 @@ export function AppLayout() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       {/* ── Top nav ──────────────────────────────────────────── */}
-      {navHidden && !navPinned ? (
-        <>
-          <div
-            className="fixed inset-x-0 top-0 z-40 hidden h-2 lg:block"
-            onMouseEnter={showTopNav}
-          />
-          <button
-            type="button"
-            className="fixed left-1/2 top-1 z-50 hidden -translate-x-1/2 items-center justify-center rounded-full border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] p-1.5 text-[color:var(--text-secondary)] shadow-md transition-colors hover:bg-[color:var(--bg-surface-soft)] hover:text-[color:var(--text-primary)] lg:inline-flex"
-            onClick={showTopNav}
-            aria-label="Mostrar navegacao"
-            title="Mostrar navegacao"
-          >
-            <PanelTopOpen className="size-4" />
-          </button>
-        </>
-      ) : null}
       <header
-        className={cn(
-          "sticky top-0 z-40 max-h-16 overflow-hidden border-b border-[color:var(--border-soft)] bg-[color:var(--bg-surface)]/95 opacity-100 backdrop-blur transition-[max-height,transform,opacity] duration-200 supports-[backdrop-filter]:bg-[color:var(--bg-surface)]/85",
-          navHidden &&
-            "lg:max-h-0 lg:-translate-y-full lg:border-transparent lg:opacity-0"
-        )}
-        onMouseEnter={() => {
-          navHoveredRef.current = true
-          showTopNav()
-        }}
-        onMouseLeave={() => {
-          navHoveredRef.current = false
-          scheduleTopNavHide()
-        }}
+        className="sticky top-0 z-40 border-b border-[color:var(--border-soft)] bg-[color:var(--bg-surface)]/95 backdrop-blur supports-[backdrop-filter]:bg-[color:var(--bg-surface)]/85"
       >
-        <div className="flex h-16 items-center gap-2 px-4">
+        <div className="flex h-12 items-center gap-2 px-3">
           {/* Desktop nav groups */}
           <nav className="hidden flex-1 items-center gap-0.5 lg:flex">
             {visibleNavGroups.map((group) => {
@@ -379,11 +275,11 @@ export function AppLayout() {
               )
 
               return (
-                <DropdownMenu key={group.label} onOpenChange={handleNavMenuChange}>
+                <DropdownMenu key={group.label}>
                   <DropdownMenuTrigger asChild>
                     <button
                       className={cn(
-                        "flex items-center gap-1 rounded-full px-3.5 py-2 text-sm font-medium outline-none transition-colors",
+                        "flex h-8 items-center gap-1 rounded-full px-3 text-xs font-medium outline-none transition-colors",
                         isGroupActive
                           ? "bg-[color:var(--primary)] text-[color:var(--primary-foreground)] shadow-sm"
                           : "text-[color:var(--text-secondary)] hover:bg-[color:var(--bg-surface-soft)] hover:text-[color:var(--text-primary)]"
@@ -407,10 +303,7 @@ export function AppLayout() {
                         return (
                           <DropdownMenuItem
                             key={item.to}
-                            onClick={() => {
-                              showTopNav()
-                              void navigate(item.to)
-                            }}
+                            onClick={() => void navigate(item.to)}
                             className={cn(
                               "flex cursor-pointer items-start gap-4 rounded-2xl p-3 text-left outline-none transition-colors",
                               isActive
@@ -473,20 +366,10 @@ export function AppLayout() {
 
             <button
               type="button"
-              aria-label={navPinned ? "Ocultar navegacao automaticamente" : "Manter navegacao visivel"}
-              title={navPinned ? "Ocultar automaticamente" : "Manter visivel"}
-              onClick={toggleNavPinned}
-              className="hidden size-9 items-center justify-center rounded-full border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] text-[color:var(--text-secondary)] outline-none transition-colors hover:bg-[color:var(--bg-muted)] hover:text-[color:var(--text-primary)] focus-visible:ring-2 focus-visible:ring-ring/40 lg:inline-flex"
-            >
-              {navPinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
-            </button>
-
-            <button
-              type="button"
               aria-label={themeLabel}
               title={themeLabel}
               onClick={toggleTheme}
-              className="inline-flex size-9 items-center justify-center rounded-full border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] text-[color:var(--text-secondary)] outline-none transition-colors hover:bg-[color:var(--bg-muted)] hover:text-[color:var(--text-primary)] focus-visible:ring-2 focus-visible:ring-ring/40"
+              className="inline-flex size-8 items-center justify-center rounded-full border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] text-[color:var(--text-secondary)] outline-none transition-colors hover:bg-[color:var(--bg-muted)] hover:text-[color:var(--text-primary)] focus-visible:ring-2 focus-visible:ring-ring/40"
             >
               {resolvedTheme === "dark" ? (
                 <Sun className="size-4" />
@@ -496,15 +379,15 @@ export function AppLayout() {
             </button>
 
             {/* User dropdown */}
-            <DropdownMenu onOpenChange={handleNavMenuChange}>
+            <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className="flex items-center gap-2 rounded-full border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] px-2.5 py-1.5 text-[color:var(--text-secondary)] outline-none transition-colors hover:bg-[color:var(--bg-surface-soft)] hover:text-[color:var(--text-primary)]">
+                <button className="flex h-9 items-center gap-2 rounded-full border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] px-2 text-[color:var(--text-secondary)] outline-none transition-colors hover:bg-[color:var(--bg-surface-soft)] hover:text-[color:var(--text-primary)]">
                   <UserAvatar name={profile.name} />
                   <div className="hidden min-w-0 text-left lg:block">
-                    <div className="max-w-32 truncate text-sm font-medium leading-tight text-[color:var(--text-primary)]">
+                    <div className="max-w-28 truncate text-xs font-medium leading-tight text-[color:var(--text-primary)]">
                       {profile.name}
                     </div>
-                    <div className="text-xs text-[color:var(--text-muted)]">{roleLabel[profile.role]}</div>
+                    <div className="text-[10px] leading-tight text-[color:var(--text-muted)]">{roleLabel[profile.role]}</div>
                   </div>
                   <ChevronDown className="hidden size-3 opacity-60 lg:block" />
                 </button>
@@ -658,7 +541,7 @@ export function AppLayout() {
       ) : null}
 
       {/* ── Content ──────────────────────────────────────────── */}
-      <main className="app-content" data-nav-collapsed={navHidden && !navPinned}>
+      <main className="app-content">
         <Outlet />
       </main>
     </div>

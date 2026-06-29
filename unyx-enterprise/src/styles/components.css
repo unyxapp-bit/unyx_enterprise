@@ -184,13 +184,7 @@
 }
 
 .app-content {
-  --app-top-nav-height: 4rem;
-}
-
-@media (min-width: 1024px) {
-  .app-content[data-nav-collapsed="true"] {
-    --app-top-nav-height: 0rem;
-  }
+  --app-top-nav-height: 3rem;
 }
 
 [data-theme="dark"] .app-content .bg-white,

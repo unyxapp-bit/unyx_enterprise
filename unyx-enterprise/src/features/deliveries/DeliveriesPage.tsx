@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import type { FormEvent } from "react"
+import type { DragEvent, FormEvent } from "react"
 import { useSearchParams } from "react-router-dom"
 import {
+  AlertTriangle,
   CheckCircle2,
   Clock3,
+  GripVertical,
   MapPin,
   PackageCheck,
   PackageOpen,
@@ -14,7 +16,9 @@ import {
   Search,
   Trash2,
   Truck,
+  XCircle,
 } from "lucide-react"
+import type { LucideIcon } from "lucide-react"
 
 import { useAuth } from "@/app/providers/auth-context"
 import { BentoGrid } from "@/components/bento/BentoGrid"
@@ -23,12 +27,6 @@ import { PageHeader } from "@/components/shared/PageHeader"
 import { StateBlock } from "@/components/shared/StateBlock"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
 import {
   Dialog,
   DialogContent,
@@ -48,6 +46,7 @@ import {
   useUpdateDeliveryOrder,
 } from "@/hooks/useUnyxData"
 import { formatCurrency, formatDateTimeBR } from "@/lib/format"
+import { cn } from "@/lib/utils"
 import { formatCep, lookupCep } from "@/services/viaCep"
 import { useAppStore } from "@/store/useAppStore"
 import type {
@@ -62,10 +61,10 @@ import type {
 } from "@/types/domain"
 
 const fieldClass =
-  "h-8 w-full rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50 disabled:cursor-not-allowed disabled:bg-slate-100"
+  "h-8 w-full rounded-lg border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] px-2.5 text-sm text-[color:var(--text-primary)] outline-none transition-colors placeholder:text-[color:var(--text-muted)] focus:border-ring focus:ring-3 focus:ring-ring/50 disabled:cursor-not-allowed disabled:bg-[color:var(--bg-muted)] disabled:text-[color:var(--text-muted)] disabled:opacity-70"
 
 const textareaClass =
-  "min-h-20 w-full rounded-lg border bg-white px-2.5 py-2 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+  "min-h-20 w-full rounded-lg border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] px-2.5 py-2 text-sm text-[color:var(--text-primary)] outline-none transition-colors placeholder:text-[color:var(--text-muted)] focus:border-ring focus:ring-3 focus:ring-ring/50 disabled:cursor-not-allowed disabled:bg-[color:var(--bg-muted)] disabled:text-[color:var(--text-muted)] disabled:opacity-70"
 
 const deliveryStatusLabel: Record<DeliveryStatus, string> = {
   pending: "Pendente",
@@ -84,7 +83,7 @@ const deliverySourceLabel: Record<DeliverySource, string> = {
 
 const paymentStatusLabel: Record<DeliveryPaymentStatus, string> = {
   pending: "Pagamento pendente",
-  paid: "Pago",
+  paid: "Recebido",
   collect_on_delivery: "Cobrar na entrega",
 }
 
@@ -109,6 +108,71 @@ const paymentOptions: DeliveryPaymentStatus[] = [
   "pending",
   "paid",
   "collect_on_delivery",
+]
+
+const deliveryColumns: Array<{
+  status: DeliveryStatus
+  title: string
+  empty: string
+  icon: LucideIcon
+  badgeClass: string
+}> = [
+  {
+    status: "pending",
+    title: "Pendente",
+    empty: "Entregas recebidas ou criadas manualmente entram aqui.",
+    icon: PackageOpen,
+    badgeClass:
+      "border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-500/30 dark:bg-slate-500/15 dark:text-slate-100",
+  },
+  {
+    status: "preparing",
+    title: "Em preparo",
+    empty: "Arraste para esta coluna quando o pedido estiver sendo separado.",
+    icon: Clock3,
+    badgeClass:
+      "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-100",
+  },
+  {
+    status: "ready_for_dispatch",
+    title: "Pronta para saída",
+    empty: "Pedidos prontos para sair com o entregador ficam aqui.",
+    icon: PackageCheck,
+    badgeClass:
+      "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-500/30 dark:bg-violet-500/15 dark:text-violet-100",
+  },
+  {
+    status: "out_for_delivery",
+    title: "Em rota",
+    empty: "Entregas em trânsito para o cliente aparecem aqui.",
+    icon: Truck,
+    badgeClass:
+      "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/15 dark:text-sky-100",
+  },
+  {
+    status: "delivered",
+    title: "Entregues",
+    empty: "Pedidos concluídos e baixados com sucesso.",
+    icon: CheckCircle2,
+    badgeClass:
+      "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-100",
+  },
+  {
+    status: "failed",
+    title: "Falhadas",
+    empty: "Falhas de entrega e retornos vão para esta coluna.",
+    icon: AlertTriangle,
+    badgeClass:
+      "border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/15 dark:text-red-100",
+  },
+  {
+    status: "cancelled",
+    title: "Canceladas",
+    empty: "Cancelamentos ficam reunidos nesta coluna.",
+    icon: XCircle,
+    badgeClass:
+      "border-zinc-200 bg-zinc-100 text-zinc-600 dark:border-zinc-500/30 dark:bg-zinc-500/15 dark:text-zinc-200",
+  },
 ]
 
 const manageRoles: UserRole[] = ["owner", "admin", "branch_manager", "supervisor", "operator"]
@@ -151,13 +215,20 @@ function canDelete(role: UserRole | undefined) {
 
 function statusBadgeClass(status: DeliveryStatus) {
   const classes: Record<DeliveryStatus, string> = {
-    pending: "border-slate-200 bg-slate-100 text-slate-700",
-    preparing: "border-blue-200 bg-blue-50 text-blue-700",
-    ready_for_dispatch: "border-violet-200 bg-violet-50 text-violet-700",
-    out_for_delivery: "border-amber-200 bg-amber-50 text-amber-700",
-    delivered: "border-emerald-200 bg-emerald-50 text-emerald-700",
-    failed: "border-red-200 bg-red-50 text-red-700",
-    cancelled: "border-zinc-200 bg-zinc-100 text-zinc-600",
+    pending:
+      "border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-500/30 dark:bg-slate-500/15 dark:text-slate-100",
+    preparing:
+      "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/15 dark:text-blue-100",
+    ready_for_dispatch:
+      "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-500/30 dark:bg-violet-500/15 dark:text-violet-100",
+    out_for_delivery:
+      "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-100",
+    delivered:
+      "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-100",
+    failed:
+      "border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/15 dark:text-red-100",
+    cancelled:
+      "border-zinc-200 bg-zinc-100 text-zinc-600 dark:border-zinc-500/30 dark:bg-zinc-500/15 dark:text-zinc-200",
   }
   return classes[status]
 }
@@ -288,6 +359,8 @@ export function DeliveriesPage() {
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<DeliveryStatus | "all">("all")
   const [sourceFilter, setSourceFilter] = useState<DeliverySource | "all">("all")
+  const [draggingDeliveryId, setDraggingDeliveryId] = useState<string | null>(null)
+  const [dragOverStatus, setDragOverStatus] = useState<DeliveryStatus | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<DeliveryOrder | null>(null)
   const [cepLoading, setCepLoading] = useState(false)
@@ -325,6 +398,29 @@ export function DeliveriesPage() {
       return matchesStatus && matchesSource && matchesFocus && matchesSearch
     })
   }, [deliveries.data, onlyOverdueDeliveries, search, sourceFilter, statusFilter])
+
+  const deliveriesByStatus = useMemo(() => {
+    return filteredDeliveries.reduce(
+      (acc, delivery) => {
+        acc[delivery.status].push(delivery)
+        return acc
+      },
+      {
+        pending: [],
+        preparing: [],
+        ready_for_dispatch: [],
+        out_for_delivery: [],
+        delivered: [],
+        failed: [],
+        cancelled: [],
+      } as Record<DeliveryStatus, DeliveryOrder[]>
+    )
+  }, [filteredDeliveries])
+
+  const visibleColumns = useMemo(() => {
+    if (statusFilter === "all") return deliveryColumns
+    return deliveryColumns.filter((column) => column.status === statusFilter)
+  }, [statusFilter])
 
   useEffect(() => {
     if (focus !== "overdue-deliveries" || lastAppliedFocusRef.current === focus) return
@@ -481,6 +577,49 @@ export function DeliveriesPage() {
     })
   }
 
+  async function setDeliveryStatus(delivery: DeliveryOrder, status: DeliveryStatus) {
+    if (delivery.status === status) return
+    await updateDelivery.mutateAsync({
+      deliveryId: delivery.id,
+      values: { status },
+    })
+  }
+
+  function handleDragStart(event: DragEvent<HTMLElement>, delivery: DeliveryOrder) {
+    if (!canManageDeliveries) return
+    setDraggingDeliveryId(delivery.id)
+    event.dataTransfer.effectAllowed = "move"
+    event.dataTransfer.setData("text/plain", delivery.id)
+  }
+
+  function handleDragEnd() {
+    setDraggingDeliveryId(null)
+    setDragOverStatus(null)
+  }
+
+  function handleDragLeave(event: DragEvent<HTMLElement>, status: DeliveryStatus) {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
+    setDragOverStatus((current) => (current === status ? null : current))
+  }
+
+  function handleDragOver(event: DragEvent<HTMLElement>, status: DeliveryStatus) {
+    if (!canManageDeliveries) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = "move"
+    setDragOverStatus(status)
+  }
+
+  function handleDrop(event: DragEvent<HTMLElement>, status: DeliveryStatus) {
+    if (!canManageDeliveries) return
+    event.preventDefault()
+    const deliveryId = event.dataTransfer.getData("text/plain") || draggingDeliveryId
+    const delivery = (deliveries.data ?? []).find((item) => item.id === deliveryId)
+    setDraggingDeliveryId(null)
+    setDragOverStatus(null)
+    if (!delivery) return
+    void setDeliveryStatus(delivery, status)
+  }
+
   return (
     <>
       <PageHeader
@@ -544,26 +683,35 @@ export function DeliveriesPage() {
               />
             </BentoGrid>
 
-            <Card id="entregas-lista" className="scroll-mt-20 border bg-white shadow-sm">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Route className="size-5" />
-                  {onlyOverdueDeliveries ? "Entregas atrasadas" : "Entregas"}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex flex-col gap-2 lg:flex-row">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <section
+              id="entregas-lista"
+              className="scroll-mt-20 overflow-hidden rounded-[1.25rem] border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] shadow-sm"
+            >
+              <div className="flex flex-col gap-3 border-b border-[color:var(--border-soft)] px-4 py-3 xl:flex-row xl:items-center xl:justify-between">
+                <div className="flex min-w-0 items-start gap-2">
+                  <Route className="mt-0.5 size-5 shrink-0 text-[color:var(--text-muted)]" />
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-[color:var(--text-primary)]">
+                      {onlyOverdueDeliveries ? "Entregas atrasadas" : "Entregas"}
+                    </div>
+                    <div className="text-xs text-[color:var(--text-muted)]">
+                      Arraste os cards entre as colunas para acompanhar cada status da entrega.
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="relative w-full min-w-[16rem] flex-1 xl:w-72 xl:flex-none">
+                    <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-[color:var(--text-muted)]" />
                     <Input
-                      className="pl-9"
+                      className="h-8 pl-9 text-xs"
                       placeholder="Buscar cliente, telefone, endereco ou entregador"
                       value={search}
                       onChange={(event) => setSearch(event.target.value)}
                     />
                   </div>
                   <select
-                    className={fieldClass}
+                    className={cn(fieldClass, "w-40 text-xs")}
                     value={statusFilter}
                     onChange={(event) =>
                       setStatusFilter(event.target.value as DeliveryStatus | "all")
@@ -577,7 +725,7 @@ export function DeliveriesPage() {
                     ))}
                   </select>
                   <select
-                    className={fieldClass}
+                    className={cn(fieldClass, "w-36 text-xs")}
                     value={sourceFilter}
                     onChange={(event) =>
                       setSourceFilter(event.target.value as DeliverySource | "all")
@@ -591,151 +739,230 @@ export function DeliveriesPage() {
                     ))}
                   </select>
                 </div>
+              </div>
 
+              <div className="p-3">
                 {filteredDeliveries.length === 0 ? (
                   <StateBlock
                     title="Nenhuma entrega encontrada"
                     description="Crie uma entrega manualmente ou marque entrega no fechamento da venda do PDV."
                   />
                 ) : (
-                  <div className="grid gap-3">
-                    {filteredDeliveries.map((delivery) => {
-                      const next = nextStatus(delivery.status)
+                  <div className="grid auto-cols-[minmax(18rem,18rem)] grid-flow-col gap-3 overflow-x-auto pb-2">
+                    {visibleColumns.map((column) => {
+                      const Icon = column.icon
+                      const columnDeliveries = deliveriesByStatus[column.status]
+
                       return (
-                        <div
-                          key={delivery.id}
-                          className="rounded-lg border bg-slate-50 p-4"
+                        <section
+                          key={column.status}
+                          className={cn(
+                            "flex min-h-[34rem] w-[18rem] flex-col overflow-hidden rounded-xl border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] shadow-sm transition",
+                            dragOverStatus === column.status &&
+                              "border-ring/70 bg-[color:var(--bg-surface)] shadow-md"
+                          )}
+                          onDragOver={(event) => handleDragOver(event, column.status)}
+                          onDragLeave={(event) => handleDragLeave(event, column.status)}
+                          onDrop={(event) => handleDrop(event, column.status)}
                         >
-                          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                            <div className="min-w-0 space-y-2">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span
-                                  className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${statusBadgeClass(delivery.status)}`}
-                                >
-                                  {deliveryStatusLabel[delivery.status]}
-                                </span>
-                                <Badge variant="outline">
-                                  {deliverySourceLabel[delivery.source]}
-                                </Badge>
-                                {delivery.priority === "urgent" ? (
-                                  <Badge variant="destructive">Urgente</Badge>
-                                ) : null}
-                                <Badge variant="secondary">
-                                  {paymentStatusLabel[delivery.payment_status]}
-                                </Badge>
-                              </div>
-
-                              <div>
-                                <div className="break-words text-base font-semibold">
-                                  {delivery.customer_name}
+                          <div className="flex items-center justify-between gap-2 border-b border-[color:var(--border-soft)] px-3 py-2.5">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <span
+                                className={cn(
+                                  "flex size-8 shrink-0 items-center justify-center rounded-lg border text-xs",
+                                  column.badgeClass
+                                )}
+                              >
+                                <Icon className="size-4" />
+                              </span>
+                              <div className="min-w-0">
+                                <div className="truncate text-sm font-semibold text-[color:var(--text-primary)]">
+                                  {column.title}
                                 </div>
-                                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                                  <span>{delivery.customer_phone ?? "Sem telefone"}</span>
-                                  <span>{delivery.branches?.name ?? "Filial"}</span>
-                                  {delivery.sale_id ? <span>Venda PDV vinculada</span> : null}
+                                <div className="text-[11px] text-[color:var(--text-muted)]">
+                                  {columnDeliveries.length} entrega(s)
                                 </div>
                               </div>
-
-                              <div className="flex items-start gap-2 text-sm text-slate-700">
-                                <MapPin className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                                <span className="break-words">
-                                  {delivery.address_line}
-                                  {delivery.address_number ? `, ${delivery.address_number}` : ""}
-                                  {delivery.complement ? `, ${delivery.complement}` : ""}
-                                  {delivery.neighborhood ? `, ${delivery.neighborhood}` : ""}
-                                  {delivery.city ? ` - ${delivery.city}` : ""}
-                                  {delivery.state ? `/${delivery.state}` : ""}
-                                  {delivery.postal_code ? ` - CEP ${formatCep(delivery.postal_code)}` : ""}
-                                  {delivery.reference ? ` (${delivery.reference})` : ""}
-                                </span>
-                              </div>
-
-                              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                                <span>
-                                  Pedido {formatCurrency(delivery.order_amount)}
-                                </span>
-                                <span>
-                                  Taxa {formatCurrency(delivery.delivery_fee)}
-                                </span>
-                                <span>
-                                  Total {formatCurrency(delivery.total_amount)}
-                                </span>
-                                <span>
-                                  Entregador:{" "}
-                                  {delivery.employees?.name ??
-                                    delivery.courier_name ??
-                                    "Nao definido"}
-                                </span>
-                                {delivery.estimated_delivery_at ? (
-                                  <span>
-                                    Previsto {formatDateTimeBR(delivery.estimated_delivery_at)}
-                                  </span>
-                                ) : null}
-                              </div>
-
-                              {delivery.items.length > 0 ? (
-                                <div className="flex flex-wrap gap-1.5">
-                                  {delivery.items.slice(0, 4).map((item, index) => (
-                                    <Badge key={`${item.name}-${index}`} variant="outline">
-                                      {item.quantity}x {item.name}
-                                    </Badge>
-                                  ))}
-                                  {delivery.items.length > 4 ? (
-                                    <Badge variant="outline">
-                                      +{delivery.items.length - 4} item(ns)
-                                    </Badge>
-                                  ) : null}
-                                </div>
-                              ) : null}
                             </div>
-
-                            <div className="flex flex-wrap gap-2 lg:justify-end">
-                              {next && canManageDeliveries ? (
-                                <Button
-                                  size="sm"
-                                  onClick={() => void advanceDelivery(delivery)}
-                                  disabled={updateDelivery.isPending}
-                                >
-                                  <CheckCircle2 className="size-4" />
-                                  {deliveryStatusLabel[next]}
-                                </Button>
-                              ) : null}
-                              {canManageDeliveries ? (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => openEditDialog(delivery)}
-                                >
-                                  <Pencil className="size-4" />
-                                  Editar
-                                </Button>
-                              ) : null}
-                              {canDeleteDeliveries ? (
-                                <Button
-                                  variant="destructive"
-                                  size="sm"
-                                  onClick={() => void handleDelete(delivery)}
-                                  disabled={deleteDelivery.isPending}
-                                >
-                                  <Trash2 className="size-4" />
-                                  Excluir
-                                </Button>
-                              ) : null}
-                            </div>
+                            <Badge variant="outline">{columnDeliveries.length}</Badge>
                           </div>
-                        </div>
+
+                          <div className="flex flex-1 flex-col gap-3 p-3">
+                            {columnDeliveries.length === 0 ? (
+                              <div className="flex min-h-40 flex-1 items-center justify-center rounded-xl border border-dashed border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] px-3 py-6 text-center text-xs text-[color:var(--text-muted)]">
+                                {column.empty}
+                              </div>
+                            ) : (
+                              columnDeliveries.map((delivery) => {
+                                const next = nextStatus(delivery.status)
+
+                                return (
+                                  <article
+                                    key={delivery.id}
+                                    draggable={canManageDeliveries}
+                                    onDragStart={(event) => handleDragStart(event, delivery)}
+                                    onDragEnd={handleDragEnd}
+                                    className={cn(
+                                      "cursor-grab rounded-xl border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] p-3 shadow-sm transition hover:border-[color:var(--border-strong)] active:cursor-grabbing",
+                                      draggingDeliveryId === delivery.id && "opacity-60"
+                                    )}
+                                  >
+                                    <div className="flex items-start gap-2">
+                                      {canManageDeliveries ? (
+                                        <GripVertical className="mt-1 size-4 shrink-0 text-[color:var(--text-muted)]" />
+                                      ) : null}
+                                      <div className="min-w-0 flex-1">
+                                        <div className="flex flex-wrap items-center gap-1.5">
+                                          <div className="truncate text-sm font-semibold text-[color:var(--text-primary)]">
+                                            {delivery.customer_name}
+                                          </div>
+                                          {delivery.priority === "urgent" ? (
+                                            <Badge variant="destructive">Urgente</Badge>
+                                          ) : null}
+                                        </div>
+                                        <div className="mt-1 flex flex-wrap gap-1.5">
+                                          <span
+                                            className={cn(
+                                              "rounded-full border px-2 py-0.5 text-[11px] font-semibold",
+                                              statusBadgeClass(delivery.status)
+                                            )}
+                                          >
+                                            {deliveryStatusLabel[delivery.status]}
+                                          </span>
+                                          <Badge variant="outline">
+                                            {deliverySourceLabel[delivery.source]}
+                                          </Badge>
+                                          <Badge variant="secondary">
+                                            {paymentStatusLabel[delivery.payment_status]}
+                                          </Badge>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[color:var(--text-muted)]">
+                                      <span>{delivery.customer_phone ?? "Sem telefone"}</span>
+                                      <span>{delivery.branches?.name ?? "Filial"}</span>
+                                      {delivery.sale_id ? <span>Venda PDV vinculada</span> : null}
+                                    </div>
+
+                                    <div className="mt-2 flex items-start gap-2 text-xs text-[color:var(--text-secondary)]">
+                                      <MapPin className="mt-0.5 size-4 shrink-0 text-[color:var(--text-muted)]" />
+                                      <span className="break-words">
+                                        {delivery.address_line}
+                                        {delivery.address_number ? `, ${delivery.address_number}` : ""}
+                                        {delivery.complement ? `, ${delivery.complement}` : ""}
+                                        {delivery.neighborhood ? `, ${delivery.neighborhood}` : ""}
+                                        {delivery.city ? ` - ${delivery.city}` : ""}
+                                        {delivery.state ? `/${delivery.state}` : ""}
+                                        {delivery.postal_code ? ` - CEP ${formatCep(delivery.postal_code)}` : ""}
+                                        {delivery.reference ? ` (${delivery.reference})` : ""}
+                                      </span>
+                                    </div>
+
+                                    <div className="mt-3 grid grid-cols-3 gap-2 rounded-lg border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] p-2 text-[11px]">
+                                      <div className="min-w-0">
+                                        <div className="text-[color:var(--text-muted)]">Pedido</div>
+                                        <div className="truncate font-medium text-[color:var(--text-primary)]">
+                                          {formatCurrency(delivery.order_amount)}
+                                        </div>
+                                      </div>
+                                      <div className="min-w-0">
+                                        <div className="text-[color:var(--text-muted)]">Taxa</div>
+                                        <div className="truncate font-medium text-[color:var(--text-primary)]">
+                                          {formatCurrency(delivery.delivery_fee)}
+                                        </div>
+                                      </div>
+                                      <div className="min-w-0">
+                                        <div className="text-[color:var(--text-muted)]">Total</div>
+                                        <div className="truncate font-medium text-[color:var(--text-primary)]">
+                                          {formatCurrency(delivery.total_amount)}
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[color:var(--text-muted)]">
+                                      <span>
+                                        Entregador:{" "}
+                                        {delivery.employees?.name ??
+                                          delivery.courier_name ??
+                                          "Nao definido"}
+                                      </span>
+                                      {delivery.estimated_delivery_at ? (
+                                        <span>
+                                          Previsto {formatDateTimeBR(delivery.estimated_delivery_at)}
+                                        </span>
+                                      ) : null}
+                                    </div>
+
+                                    {delivery.items.length > 0 ? (
+                                      <div className="mt-2 flex flex-wrap gap-1.5">
+                                        {delivery.items.slice(0, 3).map((item, index) => (
+                                          <Badge key={`${item.name}-${index}`} variant="outline">
+                                            {item.quantity}x {item.name}
+                                          </Badge>
+                                        ))}
+                                        {delivery.items.length > 3 ? (
+                                          <Badge variant="outline">
+                                            +{delivery.items.length - 3} item(ns)
+                                          </Badge>
+                                        ) : null}
+                                      </div>
+                                    ) : null}
+
+                                    <div className="mt-3 flex flex-wrap gap-1.5">
+                                      {next && canManageDeliveries ? (
+                                        <Button
+                                          size="sm"
+                                          className="h-7 gap-1 px-2 text-xs"
+                                          onClick={() => void advanceDelivery(delivery)}
+                                          disabled={updateDelivery.isPending}
+                                        >
+                                          <CheckCircle2 className="size-4" />
+                                          {deliveryStatusLabel[next]}
+                                        </Button>
+                                      ) : null}
+                                      {canManageDeliveries ? (
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          className="h-7 gap-1 px-2 text-xs"
+                                          onClick={() => openEditDialog(delivery)}
+                                        >
+                                          <Pencil className="size-4" />
+                                          Editar
+                                        </Button>
+                                      ) : null}
+                                      {canDeleteDeliveries ? (
+                                        <Button
+                                          variant="destructive"
+                                          size="sm"
+                                          className="h-7 gap-1 px-2 text-xs"
+                                          onClick={() => void handleDelete(delivery)}
+                                          disabled={deleteDelivery.isPending}
+                                        >
+                                          <Trash2 className="size-4" />
+                                          Excluir
+                                        </Button>
+                                      ) : null}
+                                    </div>
+                                  </article>
+                                )
+                              })
+                            )}
+                          </div>
+                        </section>
                       )
                     })}
                   </div>
                 )}
-              </CardContent>
-            </Card>
+              </div>
+            </section>
           </>
         )}
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+        <DialogContent className="max-h-[90vh] overflow-y-auto border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>{editing ? "Editar entrega" : "Nova entrega"}</DialogTitle>
             <DialogDescription>
@@ -1119,13 +1346,13 @@ export function DeliveriesPage() {
             </label>
 
             {formError ? (
-              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200">
                 {formError}
               </div>
             ) : null}
 
             {(createDelivery.error || updateDelivery.error) ? (
-              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200">
                 {createDelivery.error?.message ?? updateDelivery.error?.message}
               </div>
             ) : null}

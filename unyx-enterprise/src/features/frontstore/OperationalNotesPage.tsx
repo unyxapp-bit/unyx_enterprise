@@ -1,9 +1,11 @@
 import { useMemo, useState } from "react"
-import type { FormEvent } from "react"
+import type { DragEvent, FormEvent } from "react"
 import {
+  Archive,
   AlertTriangle,
   CheckCircle2,
   ClipboardEdit,
+  CircleDot,
   Clock3,
   Edit3,
   Plus,
@@ -15,7 +17,6 @@ import { PageHeader } from "@/components/shared/PageHeader"
 import { StateBlock } from "@/components/shared/StateBlock"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Dialog,
   DialogContent,
@@ -34,6 +35,7 @@ import {
   useUpdateOperationalNote,
 } from "@/hooks/useUnyxData"
 import { formatDateTimeBR } from "@/lib/format"
+import { cn } from "@/lib/utils"
 import { useAppStore } from "@/store/useAppStore"
 import type {
   OperationalNote,
@@ -61,6 +63,48 @@ const statusLabel: Record<OperationalNoteStatus, string> = {
   archived: "Arquivada",
 }
 
+const noteColumns: Array<{
+  status: OperationalNoteStatus
+  title: string
+  empty: string
+  icon: typeof CircleDot
+  badgeClass: string
+  iconClass: string
+}> = [
+  {
+    status: "open",
+    title: "Em aberto",
+    empty: "Arraste uma anotacao para abrir.",
+    icon: CircleDot,
+    badgeClass: "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-200",
+    iconClass: "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-200",
+  },
+  {
+    status: "in_review",
+    title: "Em analise",
+    empty: "Arraste uma anotacao para analise.",
+    icon: Clock3,
+    badgeClass: "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-200",
+    iconClass: "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-200",
+  },
+  {
+    status: "resolved",
+    title: "Resolvidas",
+    empty: "Arraste uma anotacao resolvida aqui.",
+    icon: CheckCircle2,
+    badgeClass: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200",
+    iconClass: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200",
+  },
+  {
+    status: "archived",
+    title: "Arquivadas",
+    empty: "Sem anotacoes arquivadas.",
+    icon: Archive,
+    badgeClass: "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-200",
+    iconClass: "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-200",
+  },
+]
+
 const emptyForm = {
   branch_id: "",
   sector_id: "",
@@ -78,13 +122,6 @@ function priorityVariant(priority: OperationalSupportPriority) {
   return "outline"
 }
 
-function statusVariant(status: OperationalNoteStatus) {
-  if (status === "resolved") return "default"
-  if (status === "archived") return "secondary"
-  if (status === "in_review") return "outline"
-  return "destructive"
-}
-
 function scopeLabel(note: OperationalNote) {
   const branch = note.branches?.name ?? "Toda empresa"
   return note.sectors?.name ? `${branch} - ${note.sectors.name}` : branch
@@ -98,42 +135,38 @@ export function OperationalNotesPage() {
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<OperationalNote | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<OperationalNote | null>(null)
+  const [draggingNoteId, setDraggingNoteId] = useState<string | null>(null)
+  const [dragOverStatus, setDragOverStatus] = useState<OperationalNoteStatus | null>(null)
+  const [renderTime] = useState(() => Date.now())
   const [form, setForm] = useState(emptyForm)
 
-  const notes = useOperationalNotes(statusFilter)
+  const notes = useOperationalNotes("all")
   const branches = useBranches()
   const sectors = useSectors(form.branch_id || selectedBranchId || null)
   const createNote = useCreateOperationalNote()
   const updateNote = useUpdateOperationalNote()
   const deleteNote = useDeleteOperationalNote()
 
-  const stats = useMemo(() => {
-    const rows = notes.data ?? []
-    return {
-      open: rows.filter((note) => note.status === "open").length,
-      review: rows.filter((note) => note.status === "in_review").length,
-      urgent: rows.filter((note) => note.priority === "urgent").length,
-      total: rows.length,
-      overdue: rows.filter(
-        (note) =>
-          note.due_at &&
-          note.status !== "resolved" &&
-          note.status !== "archived" &&
-          new Date(note.due_at).getTime() < Date.now()
-      ).length,
-    }
-  }, [notes.data])
-
   const filteredNotes = useMemo(() => {
     const query = searchText.trim().toLowerCase()
     return (notes.data ?? []).filter((note) => {
+      if (statusFilter !== "all" && note.status !== statusFilter) return false
       if (priorityFilter !== "all" && note.priority !== priorityFilter) return false
       if (!query) return true
       return [note.title, note.content, note.category, scopeLabel(note)]
         .filter(Boolean)
         .some((value) => value!.toLowerCase().includes(query))
     })
-  }, [notes.data, priorityFilter, searchText])
+  }, [notes.data, priorityFilter, searchText, statusFilter])
+
+  const visibleColumns = useMemo(() => {
+    const hasArchived = filteredNotes.some((note) => note.status === "archived")
+    return noteColumns.filter((column) => {
+      if (statusFilter !== "all") return column.status === statusFilter
+      if (column.status === "archived") return hasArchived
+      return true
+    })
+  }, [filteredNotes, statusFilter])
 
   function resetForm() {
     setForm(emptyForm)
@@ -184,11 +217,70 @@ export function OperationalNotesPage() {
     setOpen(false)
   }
 
-  async function resolveNote(note: OperationalNote) {
+  async function setNoteStatus(note: OperationalNote, status: OperationalNoteStatus) {
+    if (note.status === status) return
     await updateNote.mutateAsync({
       noteId: note.id,
-      values: { status: note.status === "resolved" ? "open" : "resolved" },
+      values: { status },
     })
+  }
+
+  function handleDragStart(event: DragEvent<HTMLDivElement>, note: OperationalNote) {
+    setDraggingNoteId(note.id)
+    event.dataTransfer.effectAllowed = "move"
+    event.dataTransfer.setData("text/plain", note.id)
+  }
+
+  function handleDragLeave(event: DragEvent<HTMLDivElement>, status: OperationalNoteStatus) {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
+    setDragOverStatus((current) => (current === status ? null : current))
+  }
+
+  function handleDragOver(event: DragEvent<HTMLDivElement>, status: OperationalNoteStatus) {
+    event.preventDefault()
+    event.dataTransfer.dropEffect = "move"
+    setDragOverStatus(status)
+  }
+
+  function handleDrop(event: DragEvent<HTMLDivElement>, status: OperationalNoteStatus) {
+    event.preventDefault()
+    const noteId = event.dataTransfer.getData("text/plain") || draggingNoteId
+    const note = (notes.data ?? []).find((item) => item.id === noteId)
+    setDraggingNoteId(null)
+    setDragOverStatus(null)
+    if (!note) return
+    void setNoteStatus(note, status)
+  }
+
+  function isOverdue(note: OperationalNote) {
+    return Boolean(
+      note.due_at &&
+        note.status !== "resolved" &&
+        note.status !== "archived" &&
+        new Date(note.due_at).getTime() < renderTime
+    )
+  }
+
+  function primaryStatusAction(note: OperationalNote) {
+    if (note.status === "open") {
+      return {
+        label: "Analisar",
+        status: "in_review" as OperationalNoteStatus,
+        icon: Clock3,
+      }
+    }
+    if (note.status === "in_review") {
+      return {
+        label: "Resolver",
+        status: "resolved" as OperationalNoteStatus,
+        icon: CheckCircle2,
+      }
+    }
+    return {
+      label: "Reabrir",
+      status: "open" as OperationalNoteStatus,
+      icon: CircleDot,
+    }
   }
 
   function removeNote(note: OperationalNote) {
@@ -205,7 +297,7 @@ export function OperationalNotesPage() {
         action={
           <div className="flex flex-wrap items-center gap-2">
             <select
-              className={fieldClass}
+              className={cn(fieldClass, "w-40 text-xs")}
               value={statusFilter}
               onChange={(event) =>
                 setStatusFilter(event.target.value as OperationalNoteStatus | "all")
@@ -219,7 +311,7 @@ export function OperationalNotesPage() {
               ))}
             </select>
             <select
-              className={fieldClass}
+              className={cn(fieldClass, "w-44 text-xs")}
               value={priorityFilter}
               onChange={(event) =>
                 setPriorityFilter(event.target.value as OperationalSupportPriority | "all")
@@ -233,7 +325,7 @@ export function OperationalNotesPage() {
               ))}
             </select>
             <Input
-              className="w-52"
+              className="h-8 w-52 text-xs"
               type="search"
               placeholder="Buscar anotacao..."
               value={searchText}
@@ -394,36 +486,7 @@ export function OperationalNotesPage() {
         }
       />
 
-      <div className="space-y-6 p-6">
-        <div className="grid gap-3 sm:grid-cols-4">
-          <Card className="border bg-[color:var(--bg-surface)] shadow-sm">
-            <CardContent className="p-4">
-              <div className="text-xs text-muted-foreground">Total</div>
-              <div className="text-2xl font-semibold">{stats.total}</div>
-            </CardContent>
-          </Card>
-          <Card className="border bg-[color:var(--bg-surface)] shadow-sm">
-            <CardContent className="p-4">
-              <div className="text-xs text-muted-foreground">Abertas</div>
-              <div className="text-2xl font-semibold">{stats.open}</div>
-            </CardContent>
-          </Card>
-          <Card className="border bg-[color:var(--bg-surface)] shadow-sm">
-            <CardContent className="p-4">
-              <div className="text-xs text-muted-foreground">Em analise</div>
-              <div className="text-2xl font-semibold">{stats.review}</div>
-            </CardContent>
-          </Card>
-          <Card className="border bg-[color:var(--bg-surface)] shadow-sm">
-            <CardContent className="p-4">
-              <div className="text-xs text-muted-foreground">Urgentes / vencidas</div>
-              <div className="text-2xl font-semibold">
-                {stats.urgent} / {stats.overdue}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
+      <div className="space-y-4 p-4 sm:p-5">
         {notes.isLoading ? (
           <StateBlock type="loading" title="Carregando anotacoes" />
         ) : notes.isError ? (
@@ -443,94 +506,173 @@ export function OperationalNotesPage() {
             description="Ajuste busca, status ou prioridade para ampliar a lista."
           />
         ) : (
-          <div className="grid gap-4 xl:grid-cols-2">
-            {filteredNotes.map((note) => {
-              const isOverdue =
-                note.due_at &&
-                note.status !== "resolved" &&
-                note.status !== "archived" &&
-                new Date(note.due_at).getTime() < Date.now()
+          <div
+            className={cn(
+              "grid gap-3",
+              visibleColumns.length === 1 && "grid-cols-1",
+              visibleColumns.length === 2 && "lg:grid-cols-2",
+              visibleColumns.length === 3 && "lg:grid-cols-3",
+              visibleColumns.length >= 4 && "lg:grid-cols-2 2xl:grid-cols-4"
+            )}
+          >
+            {visibleColumns.map((column) => {
+              const Icon = column.icon
+              const columnNotes = filteredNotes.filter(
+                (note) => note.status === column.status
+              )
               return (
-              <Card
-                key={note.id}
-                className={`border bg-[color:var(--bg-surface)] shadow-sm ${
-                  isOverdue ? "border-amber-200 bg-amber-50" : ""
-                }`}
-              >
-                <CardHeader>
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <CardTitle className="flex items-center gap-2 text-base">
-                        <StickyNote className="size-4 shrink-0" />
-                        <span className="break-words">{note.title}</span>
-                      </CardTitle>
-                      <div className="mt-1 text-xs text-muted-foreground">
-                        {scopeLabel(note)} - {formatDateTimeBR(note.created_at)}
+                <section
+                  key={column.status}
+                  className="overflow-hidden rounded-xl border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] shadow-sm"
+                >
+                  <div className="flex h-12 items-center justify-between gap-2 border-b border-[color:var(--border-soft)] px-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span
+                        className={cn(
+                          "flex size-7 shrink-0 items-center justify-center rounded-lg",
+                          column.iconClass
+                        )}
+                      >
+                        <Icon className="size-4" />
+                      </span>
+                      <span className="truncate text-sm font-semibold text-[color:var(--text-primary)]">
+                        {column.title}
+                      </span>
+                    </div>
+                    <span
+                      className={cn(
+                        "rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums",
+                        column.badgeClass
+                      )}
+                    >
+                      {columnNotes.length}
+                    </span>
+                  </div>
+
+                  <div
+                    className={cn(
+                      "min-h-[22rem] space-y-2 p-2.5 transition-colors",
+                      dragOverStatus === column.status &&
+                        "bg-[color:var(--bg-surface)]"
+                    )}
+                    onDragOver={(event) => handleDragOver(event, column.status)}
+                    onDragLeave={(event) => handleDragLeave(event, column.status)}
+                    onDrop={(event) => handleDrop(event, column.status)}
+                  >
+                    {columnNotes.length === 0 ? (
+                      <div className="flex min-h-28 flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-[color:var(--border-soft)] text-center text-xs text-[color:var(--text-muted)]">
+                        <StickyNote className="size-5 opacity-50" />
+                        <span>{column.empty}</span>
                       </div>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      <Badge variant={statusVariant(note.status)}>
-                        {statusLabel[note.status]}
-                      </Badge>
-                      <Badge variant={priorityVariant(note.priority)}>
-                        {priorityLabel[note.priority]}
-                      </Badge>
-                    </div>
+                    ) : (
+                      columnNotes.map((note) => {
+                        const overdue = isOverdue(note)
+                        const action = primaryStatusAction(note)
+                        const ActionIcon = action.icon
+                        return (
+                          <div
+                            key={note.id}
+                            draggable
+                            onDragStart={(event) => handleDragStart(event, note)}
+                            onDragEnd={() => {
+                              setDraggingNoteId(null)
+                              setDragOverStatus(null)
+                            }}
+                            className={cn(
+                              "cursor-grab rounded-lg border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] p-3 shadow-sm transition active:cursor-grabbing",
+                              "hover:border-[color:var(--border-strong)]",
+                              draggingNoteId === note.id && "opacity-40",
+                              overdue && "border-amber-300 bg-amber-50 dark:bg-amber-500/10"
+                            )}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex min-w-0 items-start gap-2">
+                                <span
+                                  className={cn(
+                                    "mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg",
+                                    column.iconClass
+                                  )}
+                                >
+                                  <StickyNote className="size-3.5" />
+                                </span>
+                                <div className="min-w-0">
+                                  <h3 className="break-words text-sm font-semibold leading-5 text-[color:var(--text-primary)]">
+                                    {note.title}
+                                  </h3>
+                                  <p className="mt-0.5 truncate text-[11px] text-[color:var(--text-muted)]">
+                                    {scopeLabel(note)} - {formatDateTimeBR(note.created_at)}
+                                  </p>
+                                </div>
+                              </div>
+                              <Badge variant={priorityVariant(note.priority)}>
+                                {priorityLabel[note.priority]}
+                              </Badge>
+                            </div>
+
+                            <p className="mt-3 max-h-20 overflow-hidden whitespace-pre-wrap rounded-lg border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] px-3 py-2 text-xs leading-5 text-[color:var(--text-secondary)]">
+                              {note.content}
+                            </p>
+
+                            <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[11px] text-[color:var(--text-muted)]">
+                              {note.category ? (
+                                <Badge variant="outline">{note.category}</Badge>
+                              ) : null}
+                              <span>{note.user_profiles?.name ?? "Usuario"}</span>
+                              {note.due_at ? (
+                                <span
+                                  className={cn(
+                                    "inline-flex items-center gap-1",
+                                    overdue && "font-medium text-amber-700 dark:text-amber-200"
+                                  )}
+                                >
+                                  <Clock3 className="size-3" />
+                                  Prazo {formatDateTimeBR(note.due_at)}
+                                </span>
+                              ) : null}
+                              {note.priority === "urgent" ? (
+                                <span className="inline-flex items-center gap-1 text-red-600 dark:text-red-300">
+                                  <AlertTriangle className="size-3" />
+                                  Atencao imediata
+                                </span>
+                              ) : null}
+                            </div>
+
+                            <div className="mt-3 flex flex-wrap gap-1.5">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                disabled={updateNote.isPending}
+                                onClick={() => void setNoteStatus(note, action.status)}
+                              >
+                                <ActionIcon className="size-3.5" />
+                                {action.label}
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => openEdit(note)}
+                              >
+                                <Edit3 className="size-3.5" />
+                                Editar
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="destructive"
+                                onClick={() => removeNote(note)}
+                              >
+                                <Trash2 className="size-3.5" />
+                                Excluir
+                              </Button>
+                            </div>
+                          </div>
+                        )
+                      })
+                    )}
                   </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <p className="whitespace-pre-wrap rounded-lg border bg-[color:var(--bg-surface-soft)] p-3 text-sm leading-6 text-[color:var(--text-secondary)]">
-                    {note.content}
-                  </p>
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                    {note.category ? (
-                      <Badge variant="outline">{note.category}</Badge>
-                    ) : null}
-                    <span>{note.user_profiles?.name ?? "Usuario"}</span>
-                    {note.due_at ? (
-                      <span className={`inline-flex items-center gap-1 ${isOverdue ? "font-medium text-[color:var(--text-secondary)]" : ""}`}>
-                        <Clock3 className="size-3.5" />
-                        Prazo {formatDateTimeBR(note.due_at)}
-                      </span>
-                    ) : null}
-                    {note.priority === "urgent" ? (
-                      <span className="inline-flex items-center gap-1 text-red-600">
-                        <AlertTriangle className="size-3.5" />
-                        Atencao imediata
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => void resolveNote(note)}
-                    >
-                      <CheckCircle2 className="size-4" />
-                      {note.status === "resolved" ? "Reabrir" : "Resolver"}
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => openEdit(note)}
-                    >
-                      <Edit3 className="size-4" />
-                      Editar
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="destructive"
-                      onClick={() => removeNote(note)}
-                    >
-                      <Trash2 className="size-4" />
-                      Excluir
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
+                </section>
               )
             })}
           </div>
