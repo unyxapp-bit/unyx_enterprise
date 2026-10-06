@@ -59,7 +59,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
-  createImagePdf,
   DEFAULT_DOCUMENT_SETTINGS,
   documentGeometry,
   logicalPxToPt,
@@ -720,6 +719,13 @@ type PosterSnapshot = {
   customElementsByTemplate: Record<string, PosterCustomElement[]>
   layerOrderByTemplate: Record<string, EditorElementId[]>
   documentSettings: PosterDocumentSettings
+  activeTemplateId?: string | null
+  uploadedTemplates?: PosterTemplate[]
+}
+
+type PosterWorkspaceSnapshot = PosterSnapshot & {
+  activeTemplateId: string | null
+  uploadedTemplates: Array<Omit<PosterTemplate, "dataUrl"> & { dataUrl: string }>
 }
 
 type SavedPosterVersion = {
@@ -781,21 +787,24 @@ async function rasterizeSvg(svgMarkup: string, width: number, height: number) {
 }
 
 export function PosterEditorPage() {
-  const { session } = useAuth()
+  const { session, profile } = useAuth()
   const storageScope = session?.user.id ?? "anonymous"
 
-  return <PosterEditorWorkspace key={storageScope} storageScope={storageScope} />
+  return <PosterEditorWorkspace key={storageScope} storageScope={storageScope} organizationId={profile?.organization_id ?? null} />
 }
 
-function PosterEditorWorkspace({ storageScope }: { storageScope: string }) {
+function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope: string; organizationId: string | null }) {
   const draftStorageKey = `${POSTER_DRAFT_STORAGE_KEY}:${storageScope}`
   const versionsStorageKey = `${POSTER_VERSIONS_STORAGE_KEY}:${storageScope}`
   const [draftSeed] = useState(() =>
     readStoredValue<PosterSnapshot>(draftStorageKey)
   )
-  const [templates, setTemplates] = useState<PosterTemplate[]>([])
+  const [templates, setTemplates] = useState<PosterTemplate[]>(() => draftSeed?.uploadedTemplates ?? [])
+  const [uploadedTemplates, setUploadedTemplates] = useState<PosterTemplate[]>(() => draftSeed?.uploadedTemplates ?? [])
   const [templatesLoading, setTemplatesLoading] = useState(true)
-  const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null)
+  const [cloudStatus, setCloudStatus] = useState<"loading" | "ready" | "error" | "local">(storageScope === "anonymous" || !organizationId ? "local" : "loading")
+  const [cloudMessage, setCloudMessage] = useState<string | null>(null)
+  const [activeTemplateId, setActiveTemplateId] = useState<string | null>(draftSeed?.activeTemplateId ?? null)
   const [fields, setFields] = useState<PosterFields>(
     draftSeed?.fields ?? { ...DEFAULT_FIELDS }
   )
@@ -926,16 +935,24 @@ function PosterEditorWorkspace({ storageScope }: { storageScope: string }) {
       }
     : null
 
-  const currentSnapshot = (): PosterSnapshot => ({
+  const currentSnapshot = useMemo<PosterSnapshot>(() => ({
     fields: { ...fields },
     stylesByTemplate: structuredClone(stylesByTemplate),
     customElementsByTemplate: structuredClone(customElementsByTemplate),
     layerOrderByTemplate: structuredClone(layerOrderByTemplate),
     documentSettings: { ...documentSettings },
-  })
+    activeTemplateId,
+    uploadedTemplates: structuredClone(uploadedTemplates),
+  }), [activeTemplateId, customElementsByTemplate, documentSettings, fields, layerOrderByTemplate, stylesByTemplate, uploadedTemplates])
+
+  const currentWorkspaceSnapshot = useMemo<PosterWorkspaceSnapshot>(() => ({
+    ...currentSnapshot,
+    activeTemplateId,
+    uploadedTemplates: uploadedTemplates.map(({ id, name, width, height, dataUrl }) => ({ id, name, width, height, dataUrl })),
+  }), [activeTemplateId, currentSnapshot, uploadedTemplates])
 
   const checkpoint = () => {
-    historyRef.current = [...historyRef.current.slice(-39), cloneSnapshot(currentSnapshot())]
+    historyRef.current = [...historyRef.current.slice(-39), cloneSnapshot(currentSnapshot)]
     futureRef.current = []
     setHistoryState({ undo: historyRef.current.length, redo: 0 })
   }
@@ -946,6 +963,12 @@ function PosterEditorWorkspace({ storageScope }: { storageScope: string }) {
     setCustomElementsByTemplate(structuredClone(snapshot.customElementsByTemplate ?? {}))
     setLayerOrderByTemplate(structuredClone(snapshot.layerOrderByTemplate))
     setDocumentSettings({ ...DEFAULT_DOCUMENT_SETTINGS, ...snapshot.documentSettings })
+    if (snapshot.uploadedTemplates) {
+      setUploadedTemplates(structuredClone(snapshot.uploadedTemplates))
+      const savedTemplates = snapshot.uploadedTemplates
+      setTemplates((current) => [...current, ...savedTemplates.filter((item) => !current.some((existing) => existing.id === item.id))])
+    }
+    if (snapshot.activeTemplateId) setActiveTemplateId(snapshot.activeTemplateId)
     transformRef.current = null
     setTransforming(false)
     setSmartGuides({})
@@ -954,7 +977,7 @@ function PosterEditorWorkspace({ storageScope }: { storageScope: string }) {
   const undo = () => {
     const previous = historyRef.current.at(-1)
     if (!previous) return
-    futureRef.current = [cloneSnapshot(currentSnapshot()), ...futureRef.current].slice(0, 40)
+    futureRef.current = [cloneSnapshot(currentSnapshot), ...futureRef.current].slice(0, 40)
     historyRef.current = historyRef.current.slice(0, -1)
     restoreSnapshot(previous)
     setHistoryState({ undo: historyRef.current.length, redo: futureRef.current.length })
@@ -963,7 +986,7 @@ function PosterEditorWorkspace({ storageScope }: { storageScope: string }) {
   const redo = () => {
     const next = futureRef.current[0]
     if (!next) return
-    historyRef.current = [...historyRef.current.slice(-39), cloneSnapshot(currentSnapshot())]
+    historyRef.current = [...historyRef.current.slice(-39), cloneSnapshot(currentSnapshot)]
     futureRef.current = futureRef.current.slice(1)
     restoreSnapshot(next)
     setHistoryState({ undo: historyRef.current.length, redo: futureRef.current.length })
@@ -1003,6 +1026,16 @@ function PosterEditorWorkspace({ storageScope }: { storageScope: string }) {
     }
 
     if (uploaded.length === 0) return
+
+    setUploadedTemplates((current) => {
+      const next = [...current]
+      for (const template of uploaded) {
+        const index = next.findIndex((item) => item.id === template.id)
+        if (index >= 0) next[index] = template
+        else next.push(template)
+      }
+      return next
+    })
 
     setTemplates((current) => {
       const next = [...current]
@@ -1376,16 +1409,16 @@ function PosterEditorWorkspace({ storageScope }: { storageScope: string }) {
     if (!markup) return
     setExporting("pdf")
     try {
-      const canvas = await rasterizeSvg(markup, outputSize.width, outputSize.height)
-      const pdf = createImagePdf({
-        jpegDataUrl: canvas.toDataURL("image/jpeg", 0.96),
-        imageWidth: outputSize.width,
-        imageHeight: outputSize.height,
-        pageWidthMm: geometry.totalWidthMm,
-        pageHeightMm: geometry.totalHeightMm,
-      })
-      downloadBlob(pdf, `${posterFileName()}.pdf`)
-      toast.success("PDF para impressao exportado.")
+      const [{ jsPDF }] = await Promise.all([import("jspdf"), import("svg2pdf.js")])
+      const parsed = new DOMParser().parseFromString(markup, "image/svg+xml")
+      const svg = parsed.documentElement
+      if (parsed.querySelector("parsererror") || svg.localName !== "svg") throw new Error("SVG do cartaz invalido.")
+      const widthPt = (geometry.totalWidthMm / 25.4) * 72
+      const heightPt = (geometry.totalHeightMm / 25.4) * 72
+      const pdf = new jsPDF({ orientation: widthPt > heightPt ? "landscape" : "portrait", unit: "pt", format: [widthPt, heightPt], compress: true })
+      await pdf.svg(svg, { x: 0, y: 0, width: widthPt, height: heightPt })
+      downloadBlob(pdf.output("blob"), `${posterFileName()}.pdf`)
+      toast.success("PDF vetorial para impressao exportado.")
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Falha ao exportar PDF.")
     } finally {
@@ -1416,7 +1449,7 @@ function PosterEditorWorkspace({ storageScope }: { storageScope: string }) {
     const version: SavedPosterVersion = {
       id: crypto.randomUUID(),
       createdAt: new Date().toISOString(),
-      snapshot: cloneSnapshot(currentSnapshot()),
+      snapshot: cloneSnapshot(currentSnapshot),
     }
     const next = [version, ...savedVersions].slice(0, 10)
     try {
@@ -1948,13 +1981,7 @@ function PosterEditorWorkspace({ storageScope }: { storageScope: string }) {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      const snapshot: PosterSnapshot = {
-        fields: { ...fields },
-        stylesByTemplate: structuredClone(stylesByTemplate),
-        customElementsByTemplate: structuredClone(customElementsByTemplate),
-        layerOrderByTemplate: structuredClone(layerOrderByTemplate),
-        documentSettings: { ...documentSettings },
-      }
+      const snapshot = currentWorkspaceSnapshot
       try {
         window.localStorage.setItem(draftStorageKey, JSON.stringify(snapshot))
         setLastSavedAt(new Date().toISOString())
@@ -1971,6 +1998,9 @@ function PosterEditorWorkspace({ storageScope }: { storageScope: string }) {
     fields,
     layerOrderByTemplate,
     stylesByTemplate,
+    activeTemplateId,
+    uploadedTemplates,
+    currentWorkspaceSnapshot,
   ])
 
   useEffect(() => {
@@ -1978,7 +2008,7 @@ function PosterEditorWorkspace({ storageScope }: { storageScope: string }) {
 
     void loadPublicTemplates()
       .then((loaded) => {
-        if (cancelled || loaded.length === 0) return
+        if (cancelled) return
 
         setTemplates((current) => {
           const next = [...current]
@@ -2025,6 +2055,61 @@ function PosterEditorWorkspace({ storageScope }: { storageScope: string }) {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    if (templatesLoading || cloudStatus !== "loading") return
+    if (!organizationId || storageScope === "anonymous") return
+    let cancelled = false
+    void (async () => {
+      try {
+        const { supabase } = await import("@/lib/supabase")
+        const { data, error } = await supabase
+          .from("poster_editor_workspaces" as never)
+          .select("workspace" as never)
+          .eq("auth_user_id" as never, storageScope)
+          .maybeSingle()
+        if (error) throw error
+        if (cancelled) return
+        const workspace = (data as unknown as { workspace?: PosterWorkspaceSnapshot } | null)?.workspace
+        if (workspace) {
+          const savedTemplates = Array.isArray(workspace.uploadedTemplates) ? workspace.uploadedTemplates : []
+          setUploadedTemplates(savedTemplates)
+          setTemplates((current) => [...current, ...savedTemplates.filter((item) => !current.some((existing) => existing.id === item.id))])
+          restoreSnapshot(workspace)
+          setActiveTemplateId(workspace.activeTemplateId ?? savedTemplates[0]?.id ?? null)
+        }
+        setCloudStatus("ready")
+      } catch (error) {
+        if (!cancelled) {
+          setCloudStatus("error")
+          setCloudMessage(error instanceof Error ? error.message : "Sincronizacao indisponivel")
+        }
+      }
+    })()
+    return () => { cancelled = true }
+  }, [cloudStatus, organizationId, storageScope, templatesLoading])
+
+  const cloudWriteQueue = useRef(Promise.resolve())
+  useEffect(() => {
+    if (cloudStatus !== "ready" || !organizationId || storageScope === "anonymous") return
+    const timer = window.setTimeout(() => {
+      const workspace = currentWorkspaceSnapshot
+      cloudWriteQueue.current = cloudWriteQueue.current.then(async () => {
+        const { supabase } = await import("@/lib/supabase")
+        const { error } = await supabase.from("poster_editor_workspaces" as never).upsert({
+          auth_user_id: storageScope,
+          organization_id: organizationId,
+          workspace,
+          updated_at: new Date().toISOString(),
+        } as never, { onConflict: "auth_user_id" })
+        if (error) throw error
+        setCloudMessage(null)
+      }).catch((error: unknown) => {
+        setCloudMessage(error instanceof Error ? error.message : "Falha de sincronizacao")
+      })
+    }, 1500)
+    return () => window.clearTimeout(timer)
+  }, [cloudStatus, currentWorkspaceSnapshot, organizationId, storageScope])
 
   return (
     <>
@@ -3973,9 +4058,9 @@ function PosterEditorWorkspace({ storageScope }: { storageScope: string }) {
                   <section className="rounded-lg border border-slate-800 bg-slate-900 p-3">
                     <div className="flex items-center justify-between gap-2">
                       <div>
-                        <p className="text-xs font-semibold text-slate-200">Rascunho local</p>
+                        <p className="text-xs font-semibold text-slate-200">{cloudStatus === "ready" ? "Sincronizacao na nuvem" : cloudStatus === "error" ? "Rascunho local" : "Rascunho"}</p>
                         <p className="text-[0.65rem] text-slate-500">
-                          {lastSavedAt
+                          {cloudMessage ? "Falha na nuvem; rascunho mantido neste dispositivo" : cloudStatus === "loading" ? "Carregando dados da nuvem" : cloudStatus === "ready" ? "Sincronizacao automatica ativa" : lastSavedAt
                             ? `Salvo as ${new Date(lastSavedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`
                             : "Preparando salvamento"}
                         </p>

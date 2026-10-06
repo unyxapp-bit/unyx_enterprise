@@ -5,6 +5,20 @@
   border-radius: var(--radius-xl);
 }
 
+/* The poster workspace uses a fixed dark canvas in both application themes. */
+.poster-surface .bg-primary {
+  background-color: #4f46e5;
+}
+
+.poster-surface .bg-primary.text-primary-foreground {
+  color: #ffffff !important;
+}
+
+.poster-surface .text-slate-500,
+.poster-surface .text-slate-600 {
+  color: var(--text-muted);
+}
+
 .app-card,
 .app-panel {
   background: var(--bg-surface);
