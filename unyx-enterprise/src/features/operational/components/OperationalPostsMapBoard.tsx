@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import {
   AlertTriangle,
   Coffee,
@@ -138,6 +138,13 @@ export function OperationalPostsMapBoard({
   isReleasePending = false,
 }: OperationalPostsMapBoardProps) {
   const [selectedCard, setSelectedCard] = useState<PostCardModel | null>(null)
+  const [nowMs, setNowMs] = useState(() => Date.now())
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 30_000)
+    return () => window.clearInterval(timer)
+  }, [])
+
   const allocationByPostId = useMemo(() => {
     const map = new Map<string, PostAllocation>()
     for (const allocation of allocations) {
@@ -181,8 +188,6 @@ export function OperationalPostsMapBoard({
         }),
     [activeCoffeeBreakByAllocationId, allocationByPostId, posts]
   )
-
-  const nowMs = Date.now()
 
   const selectedMinutes =
     selectedCard?.status === "paused"

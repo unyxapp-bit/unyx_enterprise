@@ -50,6 +50,7 @@ import type {
 import { toast } from "sonner"
 
 import { PageHeader } from "@/components/shared/PageHeader"
+import { useAuth } from "@/app/providers/auth-context"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -780,8 +781,17 @@ async function rasterizeSvg(svgMarkup: string, width: number, height: number) {
 }
 
 export function PosterEditorPage() {
+  const { session } = useAuth()
+  const storageScope = session?.user.id ?? "anonymous"
+
+  return <PosterEditorWorkspace key={storageScope} storageScope={storageScope} />
+}
+
+function PosterEditorWorkspace({ storageScope }: { storageScope: string }) {
+  const draftStorageKey = `${POSTER_DRAFT_STORAGE_KEY}:${storageScope}`
+  const versionsStorageKey = `${POSTER_VERSIONS_STORAGE_KEY}:${storageScope}`
   const [draftSeed] = useState(() =>
-    readStoredValue<PosterSnapshot>(POSTER_DRAFT_STORAGE_KEY)
+    readStoredValue<PosterSnapshot>(draftStorageKey)
   )
   const [templates, setTemplates] = useState<PosterTemplate[]>([])
   const [templatesLoading, setTemplatesLoading] = useState(true)
@@ -802,7 +812,7 @@ export function PosterEditorPage() {
     { ...DEFAULT_DOCUMENT_SETTINGS, ...draftSeed?.documentSettings }
   )
   const [savedVersions, setSavedVersions] = useState<SavedPosterVersion[]>(
-    () => readStoredValue<SavedPosterVersion[]>(POSTER_VERSIONS_STORAGE_KEY) ?? []
+    () => readStoredValue<SavedPosterVersion[]>(versionsStorageKey) ?? []
   )
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null)
   const [historyState, setHistoryState] = useState({ undo: 0, redo: 0 })
@@ -1409,9 +1419,13 @@ export function PosterEditorPage() {
       snapshot: cloneSnapshot(currentSnapshot()),
     }
     const next = [version, ...savedVersions].slice(0, 10)
-    setSavedVersions(next)
-    window.localStorage.setItem(POSTER_VERSIONS_STORAGE_KEY, JSON.stringify(next))
-    toast.success("Versao salva.")
+    try {
+      window.localStorage.setItem(versionsStorageKey, JSON.stringify(next))
+      setSavedVersions(next)
+      toast.success("Versao salva.")
+    } catch {
+      toast.error("Sem espaco no navegador para salvar a versao. Remova imagens grandes ou libere espaco.")
+    }
   }
 
   const restoreVersion = (version: SavedPosterVersion) => {
@@ -1942,7 +1956,7 @@ export function PosterEditorPage() {
         documentSettings: { ...documentSettings },
       }
       try {
-        window.localStorage.setItem(POSTER_DRAFT_STORAGE_KEY, JSON.stringify(snapshot))
+        window.localStorage.setItem(draftStorageKey, JSON.stringify(snapshot))
         setLastSavedAt(new Date().toISOString())
       } catch {
         toast.error("Nao foi possivel salvar o rascunho local.")
@@ -1950,7 +1964,14 @@ export function PosterEditorPage() {
     }, 700)
 
     return () => window.clearTimeout(timer)
-  }, [customElementsByTemplate, documentSettings, fields, layerOrderByTemplate, stylesByTemplate])
+  }, [
+    customElementsByTemplate,
+    documentSettings,
+    draftStorageKey,
+    fields,
+    layerOrderByTemplate,
+    stylesByTemplate,
+  ])
 
   useEffect(() => {
     let cancelled = false

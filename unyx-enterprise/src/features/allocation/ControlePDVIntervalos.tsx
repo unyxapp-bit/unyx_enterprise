@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import {
   Ban,
   CheckCircle2,
@@ -555,6 +555,61 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
   const today = localDateKey()
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
   const [now, setNow] = useState(() => new Date())
+  const [dayUiState, setDayUiState] = useState(() => ({
+    day: today,
+    overtimeScheduleIds: new Set<string>(),
+    hiddenScheduleIds: new Set<string>(),
+  }))
+  const autoEntryScheduleIdsByDay = useRef({
+    day: today,
+    ids: new Set<string>(),
+  })
+
+  const currentDayUiState =
+    dayUiState.day === today
+      ? dayUiState
+      : {
+          day: today,
+          overtimeScheduleIds: new Set<string>(),
+          hiddenScheduleIds: new Set<string>(),
+        }
+  const overtimeScheduleIds = currentDayUiState.overtimeScheduleIds
+  const hiddenScheduleIds = currentDayUiState.hiddenScheduleIds
+
+  const updateOvertimeScheduleIds = (
+    update: (current: Set<string>) => Set<string>
+  ) => {
+    setDayUiState((current) => {
+      const base =
+        current.day === today
+          ? current
+          : {
+              day: today,
+              overtimeScheduleIds: new Set<string>(),
+              hiddenScheduleIds: new Set<string>(),
+            }
+      return {
+        ...base,
+        overtimeScheduleIds: update(base.overtimeScheduleIds),
+      }
+    })
+  }
+
+  const updateHiddenScheduleIds = (
+    update: (current: Set<string>) => Set<string>
+  ) => {
+    setDayUiState((current) => {
+      const base =
+        current.day === today
+          ? current
+          : {
+              day: today,
+              overtimeScheduleIds: new Set<string>(),
+              hiddenScheduleIds: new Set<string>(),
+            }
+      return { ...base, hiddenScheduleIds: update(base.hiddenScheduleIds) }
+    })
+  }
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -587,25 +642,10 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
 
   const [selectedScheduleId, setSelectedScheduleId] = useState<string | null>(null)
   const [selectedPostId, setSelectedPostId] = useState<string>("")
-  const [overtimeScheduleIds, setOvertimeScheduleIds] = useState<Set<string>>(
-    () => new Set()
-  )
-  const [hiddenScheduleIds, setHiddenScheduleIds] = useState<Set<string>>(
-    () => new Set()
-  )
-  const [autoEntryScheduleIds, setAutoEntryScheduleIds] = useState<Set<string>>(
-    () => new Set()
-  )
   const [searchText, setSearchText] = useState("")
   const [statusFilter, setStatusFilter] = useState<
     "all" | "working" | "break" | "no_post" | "alert"
   >("all")
-
-  useEffect(() => {
-    setOvertimeScheduleIds(new Set())
-    setHiddenScheduleIds(new Set())
-    setAutoEntryScheduleIds(new Set())
-  }, [today])
 
   const activePosts = useMemo(
     () => (postsQuery.data ?? []).filter((post) => post.active),
@@ -705,6 +745,11 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
   useEffect(() => {
     if (schedulesQuery.isLoading || statusesQuery.isLoading) return
 
+    const autoEntryScheduleIds =
+      autoEntryScheduleIdsByDay.current.day === today
+        ? autoEntryScheduleIdsByDay.current.ids
+        : new Set<string>()
+
     const schedulesToConfirm = workingSchedules.filter((schedule) => {
       if (autoEntryScheduleIds.has(schedule.id)) return false
       if (NON_WORKING_SCHEDULE_STATUS_SET.has(schedule.status)) return false
@@ -718,13 +763,9 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
 
     if (schedulesToConfirm.length === 0) return
 
-    setAutoEntryScheduleIds((current) => {
-      const next = new Set(current)
-      for (const schedule of schedulesToConfirm) {
-        next.add(schedule.id)
-      }
-      return next
-    })
+    const nextAutoEntryIds = new Set(autoEntryScheduleIds)
+    for (const schedule of schedulesToConfirm) nextAutoEntryIds.add(schedule.id)
+    autoEntryScheduleIdsByDay.current = { day: today, ids: nextAutoEntryIds }
 
     void (async () => {
       for (const schedule of schedulesToConfirm) {
@@ -743,12 +784,12 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
       }
     })()
   }, [
-    autoEntryScheduleIds,
     nowMinutes,
     recordOperationalEvent,
     schedulesQuery.isLoading,
     statusByScheduleId,
     statusesQuery.isLoading,
+    today,
     workingSchedules,
   ])
 
@@ -970,7 +1011,7 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
   }
 
   function markOvertime(scheduleId: string) {
-    setOvertimeScheduleIds((current) => {
+    updateOvertimeScheduleIds((current) => {
       const next = new Set(current)
       next.add(scheduleId)
       return next
@@ -1010,12 +1051,12 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
       })
     }
 
-    setHiddenScheduleIds((current) => {
+    updateHiddenScheduleIds((current) => {
       const next = new Set(current)
       next.add(schedule.id)
       return next
     })
-    setOvertimeScheduleIds((current) => {
+    updateOvertimeScheduleIds((current) => {
       const next = new Set(current)
       next.delete(schedule.id)
       return next

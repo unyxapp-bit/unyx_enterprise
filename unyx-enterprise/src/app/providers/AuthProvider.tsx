@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react"
 import type { ReactNode } from "react"
@@ -19,12 +20,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [profileLoading, setProfileLoading] = useState(false)
   const [profileError, setProfileError] = useState<string | null>(null)
+  const profileRequestId = useRef(0)
 
   const loadProfileForSession = useCallback(async (nextSession: Session | null) => {
+    const requestId = ++profileRequestId.current
+
     if (!nextSession) {
       clearAccessMode()
       setProfile(null)
       setProfileError(null)
+      setProfileLoading(false)
       return
     }
 
@@ -32,8 +37,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfileError(null)
 
     try {
-      setProfile(await getCurrentProfile())
+      const nextProfile = await getCurrentProfile()
+      if (profileRequestId.current === requestId) setProfile(nextProfile)
     } catch (error) {
+      if (profileRequestId.current !== requestId) return
       setProfile(null)
       setProfileError(
         error instanceof Error
@@ -41,7 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           : "Nao foi possivel carregar o perfil."
       )
     } finally {
-      setProfileLoading(false)
+      if (profileRequestId.current === requestId) setProfileLoading(false)
     }
   }, [])
 
