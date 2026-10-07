@@ -5,6 +5,7 @@ const userId = "11111111-1111-4111-8111-111111111111"
 const organizationId = "22222222-2222-4222-8222-222222222222"
 const production = process.env.PLAYWRIGHT_PRODUCTION === "true"
 
+test.describe("authenticated poster editor", () => {
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(({ userId }) => {
     const now = Math.floor(Date.now() / 1000)
@@ -33,14 +34,6 @@ test.beforeEach(async ({ page }) => {
 
   await page.goto(`${production ? "/unyx_enterprise" : ""}/app/pos/posters`)
   await expect(page.getByRole("heading", { name: "Editor de cartazes" })).toBeVisible()
-})
-
-test("production bundle opens the poster editor without runtime errors", async ({ page }) => {
-  test.skip(!production, "Runs only against the deployed base path bundle.")
-  const runtimeErrors: string[] = []
-  page.on("pageerror", (error) => runtimeErrors.push(error.message))
-  await expect(page.getByRole("heading", { name: "Editor de cartazes" })).toBeVisible()
-  expect(runtimeErrors).toEqual([])
 })
 
 test("imports template, edits text, saves locally and in cloud, exports vector PDF", async ({ page }) => {
@@ -76,4 +69,14 @@ test("keeps editor text readable in light and dark application themes", async ({
     const results = await new AxeBuilder({ page }).withRules(["color-contrast"]).analyze()
     expect(results.violations, `Contrast violations in ${theme} theme`).toEqual([])
   }
+})
+})
+
+test("production bundle renders the public login page without runtime errors", async ({ page }) => {
+  test.skip(!production, "Runs only against the deployed base path bundle.")
+  const runtimeErrors: string[] = []
+  page.on("pageerror", (error) => runtimeErrors.push(error.message))
+  await page.goto("/unyx_enterprise/")
+  await expect(page.getByRole("heading", { name: "Centro de comando para a operação do dia." })).toBeVisible()
+  expect(runtimeErrors).toEqual([])
 })
