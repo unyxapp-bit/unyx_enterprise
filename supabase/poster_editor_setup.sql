@@ -1,4 +1,4 @@
--- Poster editor cloud workspace and private template assets.
+-- Poster editor cloud workspace.
 -- Run this script in the Supabase SQL Editor for the target project.
 
 create table if not exists public.poster_editor_workspaces (

@@ -63,6 +63,12 @@ jobs:
           VITE_SUPABASE_PROJECT_ID: ${{ secrets.VITE_SUPABASE_PROJECT_ID }}
         run: npm run build
 
+      - name: Production browser smoke test
+        working-directory: unyx-enterprise
+        env:
+          PLAYWRIGHT_PRODUCTION: "true"
+        run: npm run test:e2e -- --grep "production bundle"
+
       - name: Fix SPA routing
         run: cp unyx-enterprise/dist/index.html unyx-enterprise/dist/404.html
 

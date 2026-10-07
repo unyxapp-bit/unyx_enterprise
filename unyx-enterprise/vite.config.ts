@@ -9,6 +9,7 @@ export default defineConfig({
   build: {
     rolldownOptions: {
       output: {
+        strictExecutionOrder: true,
         codeSplitting: {
           groups: [
             {
