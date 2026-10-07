@@ -1,16 +1,20 @@
 type Row = Record<string, string | number | boolean | null | undefined>
 
-function escapeCsv(value: string | number | boolean | null | undefined): string {
+function escapeCsv(value: string | number | boolean | null | undefined, delimiter: string): string {
   if (value == null) return ""
   const str = String(value)
-  if (/[",\n\r]/.test(str)) return `"${str.replace(/"/g, '""')}"`
+  if (str.includes(delimiter) || /["\n\r]/.test(str)) return `"${str.replace(/"/g, '""')}"`
   return str
 }
 
-export function buildCsv(rows: Row[], headers: { key: string; label: string }[]): string {
-  const headerRow = headers.map((h) => escapeCsv(h.label)).join(",")
+export function buildCsv(
+  rows: Row[],
+  headers: { key: string; label: string }[],
+  delimiter = ","
+): string {
+  const headerRow = headers.map((h) => escapeCsv(h.label, delimiter)).join(delimiter)
   const dataRows = rows.map((row) =>
-    headers.map((h) => escapeCsv(row[h.key])).join(",")
+    headers.map((h) => escapeCsv(row[h.key], delimiter)).join(delimiter)
   )
   return [headerRow, ...dataRows].join("\r\n")
 }
