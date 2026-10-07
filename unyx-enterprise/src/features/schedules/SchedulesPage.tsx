@@ -420,7 +420,7 @@ const scheduleTemplateColumns = [
 ]
 
 function downloadScheduleTemplate() {
-  downloadCsv(buildCsv([], scheduleTemplateColumns), "modelo_importacao_escalas.csv")
+  downloadCsv(buildCsv([], scheduleTemplateColumns, ";"), "modelo_importacao_escalas.csv")
 }
 
 function SchedulesImportDialog({
