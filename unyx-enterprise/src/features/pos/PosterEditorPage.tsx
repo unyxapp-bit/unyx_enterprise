@@ -1001,6 +1001,41 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
     setTransforming(false)
   }
 
+  const deleteUploadedTemplate = (template: PosterTemplate) => {
+    if (!uploadedTemplates.some((item) => item.id === template.id)) return
+    if (!window.confirm(`Excluir o template importado "${template.name}"?`)) return
+
+    const remainingTemplates = templates.filter((item) => item.id !== template.id)
+    setUploadedTemplates((current) => current.filter((item) => item.id !== template.id))
+    setTemplates(remainingTemplates)
+    setStylesByTemplate((current) => {
+      const next = { ...current }
+      delete next[template.id]
+      return next
+    })
+    setLayerOrderByTemplate((current) => {
+      const next = { ...current }
+      delete next[template.id]
+      return next
+    })
+    setCustomElementsByTemplate((current) => {
+      const next = { ...current }
+      delete next[template.id]
+      return next
+    })
+
+    if (activeTemplateId === template.id) {
+      const nextTemplate = remainingTemplates[0]
+      if (nextTemplate) selectTemplate(nextTemplate.id)
+      else {
+        setActiveTemplateId(null)
+        setSelectedIds([])
+        setTransforming(false)
+      }
+    }
+    toast.success("Template importado excluido.")
+  }
+
   const zoomIn = () => {
     setZoomPercent((current) => (current === 0 ? 60 : Math.min(240, current + 10)))
   }
@@ -2207,27 +2242,39 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
               ) : null}
 
               {templates.map((template) => (
-                <button
-                  key={template.id}
-                  type="button"
-                  onClick={() => selectTemplate(template.id)}
-                  className={`w-full overflow-hidden rounded-lg border p-1 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary ${
-                    activeTemplateId === template.id
-                      ? "border-primary bg-slate-800"
-                      : "border-slate-800 bg-slate-900 hover:border-slate-600"
-                  }`}
-                >
-                  <span className="flex aspect-[3/4] items-center justify-center overflow-hidden rounded-md bg-slate-950 p-1">
-                    <img
-                      src={template.dataUrl}
-                      alt={template.name}
-                      className="h-full w-full object-contain"
-                    />
-                  </span>
-                  <span className="mt-1 block truncate px-1 text-[11px] text-slate-300">
-                    {template.name}
-                  </span>
-                </button>
+                <div key={template.id} className="relative min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => selectTemplate(template.id)}
+                    className={`w-full overflow-hidden rounded-lg border p-1 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary ${
+                      activeTemplateId === template.id
+                        ? "border-primary bg-slate-800"
+                        : "border-slate-800 bg-slate-900 hover:border-slate-600"
+                    }`}
+                  >
+                    <span className="flex aspect-[3/4] items-center justify-center overflow-hidden rounded-md bg-slate-950 p-1">
+                      <img
+                        src={template.dataUrl}
+                        alt={template.name}
+                        className="h-full w-full object-contain"
+                      />
+                    </span>
+                    <span className="mt-1 block truncate px-1 text-[11px] text-slate-300">
+                      {template.name}
+                    </span>
+                  </button>
+                  {uploadedTemplates.some((item) => item.id === template.id) ? (
+                    <button
+                      type="button"
+                      title={`Excluir template ${template.name}`}
+                      aria-label={`Excluir template ${template.name}`}
+                      onClick={() => deleteUploadedTemplate(template)}
+                      className="absolute right-1.5 top-1.5 inline-flex size-7 items-center justify-center rounded-md border border-red-400/40 bg-slate-950/90 text-red-300 shadow hover:bg-red-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  ) : null}
+                </div>
               ))}
             </div>
           </aside>
@@ -3012,6 +3059,12 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                     ))}
                   </div>
 
+                  {!activeTemplate ? (
+                    <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-xs text-amber-200">
+                      Selecione ou importe um template para habilitar os ajustes de estilo.
+                    </p>
+                  ) : null}
+
                   <section className="space-y-4 rounded-lg border border-slate-800 bg-slate-900 p-3.5">
                     <p className="truncate text-xs font-semibold text-slate-300">
                       {FIELD_META[selectedField].label}
@@ -3025,10 +3078,10 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                         onChange={(event) =>
                           updateStyle(selectedField, "fontFamily", event.target.value)
                         }
-                        className="mt-1 h-9 w-full rounded-md border border-slate-700 bg-slate-950 px-2 text-xs text-slate-200 outline-none focus:border-primary"
+                        className="mt-1 h-9 w-full rounded-md border border-slate-700 bg-slate-950 px-2 text-xs text-slate-100 outline-none focus:border-primary disabled:cursor-not-allowed disabled:text-slate-300 disabled:opacity-70 [color-scheme:dark]"
                       >
                         {FONT_OPTIONS.map((font) => (
-                          <option key={font} value={font}>{font}</option>
+                          <option key={font} value={font} className="bg-slate-900 text-slate-100" style={{ fontFamily: font }}>{font}</option>
                         ))}
                       </select>
                     </label>
@@ -3038,6 +3091,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                         type="button"
                         title="Negrito"
                         aria-label="Negrito"
+                        disabled={!canEditStyle}
                         onClick={() =>
                           updateStyle(
                             selectedField,
@@ -3045,7 +3099,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                             selectedStyle.fontWeight === "700" ? "400" : "700"
                           )
                         }
-                        className={`inline-flex h-8 items-center justify-center rounded-md ${selectedStyle.fontWeight !== "400" ? "bg-primary text-white" : "bg-slate-800 text-slate-300"}`}
+                        className={`inline-flex h-8 items-center justify-center rounded-md disabled:cursor-not-allowed disabled:opacity-40 ${selectedStyle.fontWeight !== "400" ? "bg-primary text-white" : "bg-slate-800 text-slate-300"}`}
                       >
                         <Bold className="size-4" />
                       </button>
@@ -3053,6 +3107,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                         type="button"
                         title="Italico"
                         aria-label="Italico"
+                        disabled={!canEditStyle}
                         onClick={() =>
                           updateStyle(
                             selectedField,
@@ -3060,7 +3115,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                             selectedStyle.fontStyle === "italic" ? "normal" : "italic"
                           )
                         }
-                        className={`inline-flex h-8 items-center justify-center rounded-md ${selectedStyle.fontStyle === "italic" ? "bg-primary text-white" : "bg-slate-800 text-slate-300"}`}
+                        className={`inline-flex h-8 items-center justify-center rounded-md disabled:cursor-not-allowed disabled:opacity-40 ${selectedStyle.fontStyle === "italic" ? "bg-primary text-white" : "bg-slate-800 text-slate-300"}`}
                       >
                         <Italic className="size-4" />
                       </button>
@@ -3076,8 +3131,9 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                           type="button"
                           title={label}
                           aria-label={label}
+                          disabled={!canEditStyle}
                           onClick={() => updateStyle(selectedField, "textAlign", alignment)}
-                          className={`inline-flex h-8 items-center justify-center rounded-md ${selectedStyle.textAlign === alignment ? "bg-primary text-white" : "bg-slate-800 text-slate-300"}`}
+                          className={`inline-flex h-8 items-center justify-center rounded-md disabled:cursor-not-allowed disabled:opacity-40 ${selectedStyle.textAlign === alignment ? "bg-primary text-white" : "bg-slate-800 text-slate-300"}`}
                         >
                           <Icon className="size-4" />
                         </button>
@@ -3114,10 +3170,11 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                           max="100"
                           step="1"
                           value={selectedStyle.maxWidth}
+                          disabled={!canEditStyle}
                           onChange={(event) =>
                             updateStyle(selectedField, "maxWidth", Number(event.target.value))
                           }
-                          className="mt-1 block w-full accent-primary"
+                          className="mt-1 block w-full accent-primary disabled:opacity-40"
                         />
                       </label>
                       <label className="block text-xs text-slate-400">
@@ -3129,10 +3186,11 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                           max="2"
                           step="0.1"
                           value={selectedStyle.lineHeight}
+                          disabled={!canEditStyle}
                           onChange={(event) =>
                             updateStyle(selectedField, "lineHeight", Number(event.target.value))
                           }
-                          className="mt-1 block w-full accent-primary"
+                          className="mt-1 block w-full accent-primary disabled:opacity-40"
                         />
                       </label>
                     </div>
@@ -3146,10 +3204,11 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                         max="16"
                         step="0.5"
                         value={selectedStyle.letterSpacing}
+                        disabled={!canEditStyle}
                         onChange={(event) =>
                           updateStyle(selectedField, "letterSpacing", Number(event.target.value))
                         }
-                        className="mt-1 block w-full accent-primary"
+                        className="mt-1 block w-full accent-primary disabled:opacity-40"
                       />
                     </label>
 
@@ -3196,8 +3255,9 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                             type="button"
                             title={color}
                             aria-label={`Usar cor ${color}`}
+                            disabled={!canEditStyle}
                             onClick={() => updateStyle(selectedField, "color", color)}
-                            className={`aspect-square rounded-md border ${selectedStyle.color === color ? "border-white ring-1 ring-white" : "border-slate-700"}`}
+                            className={`aspect-square rounded-md border disabled:cursor-not-allowed disabled:opacity-40 ${selectedStyle.color === color ? "border-white ring-1 ring-white" : "border-slate-700"}`}
                             style={{ backgroundColor: color }}
                           />
                         ))}
@@ -3285,10 +3345,11 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                             max="20"
                             step="1"
                             value={selectedStyle.shadowBlur}
+                            disabled={!canEditStyle}
                             onChange={(event) =>
                               updateStyle(selectedField, "shadowBlur", Number(event.target.value))
                             }
-                            className="mt-1 block w-full accent-primary"
+                            className="mt-1 block w-full accent-primary disabled:opacity-40"
                           />
                         </label>
                         <label className="text-xs text-slate-400">
@@ -3296,10 +3357,11 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                           <input
                             type="color"
                             value={selectedStyle.shadowColor}
+                            disabled={!canEditStyle}
                             onChange={(event) =>
                               updateStyle(selectedField, "shadowColor", event.target.value)
                             }
-                            className="mt-1 block h-8 w-full cursor-pointer rounded border border-slate-700 bg-slate-950"
+                            className="mt-1 block h-8 w-full cursor-pointer rounded border border-slate-700 bg-slate-950 disabled:cursor-not-allowed disabled:opacity-40"
                           />
                         </label>
                       </div>
@@ -3313,10 +3375,11 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                             max="20"
                             step="1"
                             value={selectedStyle.shadowX}
+                            disabled={!canEditStyle}
                             onChange={(event) =>
                               updateStyle(selectedField, "shadowX", Number(event.target.value))
                             }
-                            className="mt-1 block w-full accent-primary"
+                            className="mt-1 block w-full accent-primary disabled:opacity-40"
                           />
                         </label>
                         <label className="block text-xs text-slate-400">
@@ -3328,10 +3391,11 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                             max="20"
                             step="1"
                             value={selectedStyle.shadowY}
+                            disabled={!canEditStyle}
                             onChange={(event) =>
                               updateStyle(selectedField, "shadowY", Number(event.target.value))
                             }
-                            className="mt-1 block w-full accent-primary"
+                            className="mt-1 block w-full accent-primary disabled:opacity-40"
                           />
                         </label>
                       </div>
@@ -3369,20 +3433,22 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                     <div className="grid grid-cols-2 gap-2 border-t border-slate-800 pt-3">
                       <button
                         type="button"
+                        disabled={!canEditStyle}
                         onClick={() =>
                           updateStyle(selectedField, "visible", !selectedStyle.visible)
                         }
-                        className="flex h-9 items-center justify-center gap-2 rounded-md bg-slate-800 text-xs text-slate-200"
+                        className="flex h-9 items-center justify-center gap-2 rounded-md bg-slate-800 text-xs text-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         {selectedStyle.visible ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
                         {selectedStyle.visible ? "Visivel" : "Oculto"}
                       </button>
                       <button
                         type="button"
+                        disabled={!canEditStyle}
                         onClick={() =>
                           updateStyle(selectedField, "locked", !selectedStyle.locked)
                         }
-                        className="flex h-9 items-center justify-center gap-2 rounded-md bg-slate-800 text-xs text-slate-200"
+                        className="flex h-9 items-center justify-center gap-2 rounded-md bg-slate-800 text-xs text-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         {selectedStyle.locked ? <Lock className="size-4" /> : <Unlock className="size-4" />}
                         {selectedStyle.locked ? "Bloqueado" : "Livre"}
