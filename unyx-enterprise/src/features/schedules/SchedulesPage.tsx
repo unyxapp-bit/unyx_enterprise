@@ -406,6 +406,23 @@ type RawScheduleRow = {
   notesRaw: string
 }
 
+const scheduleTemplateColumns = [
+  { key: "filial", label: "filial" },
+  { key: "documento", label: "documento" },
+  { key: "colaborador", label: "colaborador" },
+  { key: "data", label: "data" },
+  { key: "entrada", label: "entrada" },
+  { key: "intervalo", label: "intervalo" },
+  { key: "retorno", label: "retorno" },
+  { key: "saida", label: "saida" },
+  { key: "status", label: "status" },
+  { key: "observacoes", label: "observacoes" },
+]
+
+function downloadScheduleTemplate() {
+  downloadCsv(buildCsv([], scheduleTemplateColumns), "modelo_importacao_escalas.csv")
+}
+
 function SchedulesImportDialog({
   branches,
   currentDate,
@@ -642,7 +659,15 @@ function SchedulesImportDialog({
                 Colunas aceitas: colaborador, cpf/documento, filial, data, entrada,
                 intervalo, retorno, saida, status e observacoes. Status aceita Folga,
                 Trabalhando e Banco de horas. Use .xlsx ou .csv.
+                <p className="mt-2">
+                  O colaborador deve existir na filial. Use a data DD/MM/AAAA e horarios HH:MM.
+                  Se deixar a filial vazia, sera usada a filial selecionada.
+                </p>
               </div>
+              <Button type="button" variant="outline" onClick={downloadScheduleTemplate}>
+                <Download className="size-4" />
+                Baixar modelo CSV editavel
+              </Button>
               <Input
                 type="file"
                 accept=".xlsx,.csv"
