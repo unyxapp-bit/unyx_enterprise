@@ -7,6 +7,7 @@ import {
   Pencil,
   Plus,
   Search,
+  Trash2,
   ToggleLeft,
   ToggleRight,
   X,
@@ -30,6 +31,7 @@ import {
   useBranches,
   useCreateBranch,
   useCreateSector,
+  useDeleteEmptyBranch,
   useSectors,
   useToggleBranchActive,
   useToggleSectorActive,
@@ -189,6 +191,57 @@ function BranchDeactivateDialog({ branch }: { branch: Branch }) {
             onClick={() => void handleConfirm()}
           >
             {toggleBranchActive.isPending ? "Desativando..." : "Confirmar desativacao"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function BranchDeleteDialog({ branch }: { branch: Branch }) {
+  const [open, setOpen] = useState(false)
+  const [confirmation, setConfirmation] = useState("")
+  const deleteBranch = useDeleteEmptyBranch()
+  const confirmed = confirmation.trim() === branch.name
+
+  async function handleDelete() {
+    if (!confirmed) return
+    await deleteBranch.mutateAsync(branch.id)
+    setConfirmation("")
+    setOpen(false)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => {
+      setOpen(next)
+      if (!next) setConfirmation("")
+    }}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" className="text-destructive hover:text-destructive">
+          <Trash2 className="size-4" />
+          Excluir
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Excluir filial vazia</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 text-sm">
+          <p>A exclusão permanente só é permitida quando não houver setores, colaboradores, escalas ou outros registros vinculados. O banco bloqueia a operação se encontrar qualquer histórico.</p>
+          <label className="block space-y-1">
+            <span>Digite <strong>{branch.name}</strong> para confirmar.</span>
+            <Input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} />
+          </label>
+          {deleteBranch.error ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {deleteBranch.error.message}
+            </div>
+          ) : null}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
+          <Button variant="destructive" disabled={!confirmed || deleteBranch.isPending} onClick={() => void handleDelete()}>
+            {deleteBranch.isPending ? "Excluindo..." : "Excluir filial"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -647,6 +700,7 @@ export function BranchesPage() {
                           Ativar
                         </Button>
                       )}
+                      <BranchDeleteDialog branch={branch} />
                     </div>
                   </div>
                 ))}

@@ -34,6 +34,7 @@ import {
   createTrainingItem,
   deactivateEmployees,
   deleteCustomer,
+  deleteEmptyBranch,
   deleteProduct,
   deleteProductCategory,
   deleteProductVariant,
@@ -1844,6 +1845,22 @@ export function useToggleBranchActive() {
     onError: (error) => {
       toast.error(error.message)
     },
+  })
+}
+
+export function useDeleteEmptyBranch() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (branchId: string) => deleteEmptyBranch(branchId),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["branches"] }),
+        queryClient.invalidateQueries({ queryKey: ["sectors"] }),
+      ])
+      toast.success("Filial excluída. Nenhum registro vinculado foi removido.")
+    },
+    onError: (error) => toast.error(error.message),
   })
 }
 

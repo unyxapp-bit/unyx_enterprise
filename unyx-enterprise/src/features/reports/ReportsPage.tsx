@@ -28,6 +28,7 @@ import { useReportEvents } from "@/hooks/useUnyxData"
 import { buildCsv, downloadCsv } from "@/lib/exportCsv"
 import { formatDateBR } from "@/lib/format"
 import { eventLabel } from "@/lib/status"
+import { ScheduleComplianceAudit } from "@/features/reports/ScheduleComplianceAudit"
 
 function getRelativeISODate(daysOffset: number) {
   const date = new Date()
@@ -510,6 +511,14 @@ export function ReportsPage() {
                 </CardContent>
               </Card>
             </div>
+
+            <ScheduleComplianceAudit
+              startDate={startDate}
+              endDate={endDate}
+              employeeFilter={employeeFilter}
+              branchFilter={branchFilter}
+              sectorFilter={sectorFilter}
+            />
           </>
         )}
       </div>

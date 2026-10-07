@@ -3855,6 +3855,11 @@ export async function toggleBranchActive(
   return data as Branch
 }
 
+export async function deleteEmptyBranch(branchId: string) {
+  const { error } = await supabase.rpc("delete_empty_branch", { p_branch_id: branchId })
+  raise(error)
+}
+
 export async function updateSector(
   sectorId: string,
   input: { name: string; description: string | null }
