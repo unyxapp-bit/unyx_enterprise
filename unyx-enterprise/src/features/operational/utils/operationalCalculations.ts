@@ -40,6 +40,13 @@ export function nowMinutes(): number {
   return now.getHours() * 60 + now.getMinutes()
 }
 
+/** "HH:MM" de um dia (yyyy-mm-dd) no fuso local -> ISO. */
+export function isoFromDayAndTime(dateKey: string, hhmm: string): string {
+  const [year, month, day] = dateKey.split("-").map(Number)
+  const [hours, minutes] = hhmm.split(":").map(Number)
+  return new Date(year, month - 1, day, hours, minutes).toISOString()
+}
+
 export function localDateKey(date = new Date()): string {
   const y = date.getFullYear()
   const m = String(date.getMonth() + 1).padStart(2, "0")

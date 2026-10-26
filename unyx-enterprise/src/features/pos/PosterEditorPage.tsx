@@ -33,6 +33,7 @@ import {
   Plus,
   Redo2,
   RotateCcw,
+  Wand2,
   Ruler,
   Save,
   Square,
@@ -92,6 +93,7 @@ import { postersFromRows, sheetTemplateCsv } from "@/features/pos/posterSheet"
 import { parseSpreadsheet } from "@/lib/spreadsheet"
 import { centsDisplay, centsRuns, linkedCentsStyle, reducedCentsSize } from "@/features/pos/posterPrice"
 import { measureTextWidth } from "@/features/pos/textMetrics"
+import { analyzeTemplateImage, type AutoLayoutPreset } from "@/features/pos/posterAutoLayout"
 
 const FIELD_KEYS = [
   "produto",
@@ -393,14 +395,51 @@ const TEMPLATE_STYLE_PRESETS: Record<string, StylePreset> = {
 const POSITION_MIN = -50
 const POSITION_MAX = 150
 
-function cloneStyles(templateId?: string): PosterStyles {
-  const preset = templateId ? TEMPLATE_STYLE_PRESETS[templateId] : undefined
+// Converte o layout detectado na imagem do template em um preset de estilos.
+function autoLayoutPreset(auto: AutoLayoutPreset): StylePreset {
+  const price = auto.preco_reais
+  return {
+    produto: { ...auto.produto, fontWeight: "900" },
+    descricao: { ...auto.descricao },
+    preco_reais: { ...price, fontWeight: "900" },
+    preco_centavos: { color: price.color, stroke: "none", strokeWidth: 0 },
+    unidade: {
+      fontSize: Math.min(60, Math.max(28, Math.round(price.fontSize * 0.12))),
+      color: price.color,
+      stroke: "none",
+      strokeWidth: 0,
+      fontWeight: "900",
+    },
+    validade: { ...auto.validade },
+    observacao: { ...auto.observacao },
+  }
+}
+
+function cloneStyles(templateId?: string, auto?: AutoLayoutPreset | null): PosterStyles {
+  const preset = auto
+    ? autoLayoutPreset(auto)
+    : templateId
+      ? TEMPLATE_STYLE_PRESETS[templateId]
+      : undefined
   const styles = FIELD_KEYS.reduce((next, key) => {
     next[key] = { ...DEFAULT_STYLES[key], ...preset?.[key] }
     return next
   }, {} as PosterStyles)
   // Centavos nascem a 50%, ao lado do "R$ inteiro"; depois podem ser movidos livremente.
   const geometry = documentGeometry(DEFAULT_DOCUMENT_SETTINGS)
+  if (auto) {
+    // Centraliza o grupo "inteiro + centavos" na pincelada, não só o inteiro.
+    const reais = styles.preco_reais
+    const centsFont = Math.max(8, reais.fontSize * 0.5)
+    const reaisWidth = Math.min(
+      measureTextWidth(DEFAULT_FIELDS.preco_reais, reais.fontSize, reais),
+      (reais.maxWidth / 100) * geometry.logicalWidth
+    )
+    const centsWidth = measureTextWidth(DEFAULT_FIELDS.preco_centavos, centsFont, reais)
+    const gap = reais.fontSize * 0.012
+    const shiftPct = ((reaisWidth + gap + centsWidth) / 2 - reaisWidth / 2) / geometry.logicalWidth * 100
+    styles.preco_reais = { ...reais, x: auto.priceCenterX - shiftPct }
+  }
   const placed = linkedCentsStyle(
     styles.preco_reais,
     DEFAULT_FIELDS.preco_reais,
@@ -409,6 +448,18 @@ function cloneStyles(templateId?: string): PosterStyles {
     true
   )
   styles.preco_centavos = { ...styles.preco_centavos, ...placed, color: styles.preco_centavos.color }
+  if (auto) {
+    // Unidade logo abaixo dos centavos.
+    const cents = styles.preco_centavos
+    const below = (cents.fontSize * 0.9 / geometry.logicalHeight) * 100
+    const centsHalfWidth =
+      measureTextWidth(DEFAULT_FIELDS.preco_centavos, cents.fontSize, cents) / 2
+    styles.unidade = {
+      ...styles.unidade,
+      x: cents.x + (centsHalfWidth / geometry.logicalWidth) * 100,
+      y: Math.min(98, styles.preco_centavos.y + below),
+    }
+  }
   return styles
 }
 
@@ -1265,6 +1316,17 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
 
     if (uploaded.length === 0) return
 
+    // Cada template importado já nasce com posições, tamanhos e cores lidos da própria imagem.
+    const geometry = documentGeometry(DEFAULT_DOCUMENT_SETTINGS)
+    const autoLayouts = new Map<string, AutoLayoutPreset | null>(
+      await Promise.all(
+        uploaded.map(async (template) => [
+          template.id,
+          await analyzeTemplateImage(template.dataUrl, geometry.logicalWidth, geometry.logicalHeight),
+        ] as const)
+      )
+    )
+
     setUploadedTemplates((current) => {
       const next = [...current]
       for (const template of uploaded) {
@@ -1290,7 +1352,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
     setStylesByTemplate((current) => {
       const next = { ...current }
       for (const template of uploaded) {
-        next[template.id] = next[template.id] ?? cloneStyles(template.id)
+        next[template.id] = next[template.id] ?? cloneStyles(template.id, autoLayouts.get(template.id))
       }
       return next
     })
@@ -1586,6 +1648,30 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
     transformRef.current = null
     setTransforming(false)
     toast.success("Estilos redefinidos.")
+  }
+
+  // Reposiciona e redimensiona os campos conforme a arte do template (cabeçalho, pincelada, rodapé).
+  const autoLayoutActiveTemplate = async () => {
+    if (!activeTemplate) return
+    const geometry = documentGeometry(DEFAULT_DOCUMENT_SETTINGS)
+    const auto = await analyzeTemplateImage(
+      activeTemplate.dataUrl,
+      geometry.logicalWidth,
+      geometry.logicalHeight
+    )
+    if (!auto) {
+      toast.error("Não foi possível ler a imagem deste template.")
+      return
+    }
+    checkpoint()
+    setStylesByTemplate((current) => ({
+      ...current,
+      [activeTemplate.id]: cloneStyles(activeTemplate.id, auto),
+    }))
+    setZoomPercent(0)
+    transformRef.current = null
+    setTransforming(false)
+    toast.success("Layout ajustado ao template.")
   }
 
   const posterFileName = () =>
@@ -2670,6 +2756,15 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
             <Button variant="outline" onClick={resetStyles} disabled={!activeTemplate}>
               <RotateCcw data-icon="inline-start" />
               Restaurar layout
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => void autoLayoutActiveTemplate()}
+              disabled={!activeTemplate}
+              title="Posiciona e dimensiona os textos e o preço conforme a arte do template"
+            >
+              <Wand2 data-icon="inline-start" />
+              Ajustar ao template
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

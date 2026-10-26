@@ -22,7 +22,6 @@ import {
 import { Input } from "@/components/ui/input"
 import { Select } from "@/components/ui/select"
 import {
-  useAdjustPostAllocationStart,
   useAllocatePost,
   useFinalizePostAllocation,
   useOperationalPosts,
@@ -42,6 +41,7 @@ import {
 } from "@/hooks/useUnyxData"
 import { scheduleStatusLabel, statusMeta } from "@/lib/status"
 import { cn } from "@/lib/utils"
+import { AllocationTimeActions } from "@/features/operational/components/AllocationTimeActions"
 import {
   formatDuration,
   localDateKey,
@@ -192,19 +192,6 @@ function isoFromDayAndTime(dateKey: string, hhmm: string) {
   const [hours, minutes] = hhmm.split(":").map(Number)
   return new Date(year, month - 1, day, hours, minutes).toISOString()
 }
-
-function hhmmFromIso(iso: string) {
-  const date = new Date(iso)
-  const pad = (value: number) => String(value).padStart(2, "0")
-  return `${pad(date.getHours())}:${pad(date.getMinutes())}`
-}
-
-const POST_EXIT_REASONS = [
-  { value: "Saída antecipada", label: "Saída antecipada do colaborador" },
-  { value: "Fim do turno", label: "Fim do turno" },
-  { value: "Troca de posto", label: "Troca de posto" },
-  { value: "Outro motivo", label: "Outro motivo" },
-]
 
 function formatTimeValue(value: string | null | undefined) {
   if (!value) return "--:--"
@@ -650,7 +637,6 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
   const settingsQuery = useOperationalSettings(selectedBranchId)
 
   const allocatePost = useAllocatePost()
-  const adjustAllocationStart = useAdjustPostAllocationStart()
   const finalizePostAllocation = useFinalizePostAllocation()
   const releaseEmployeeBreak = useReleaseEmployeeBreak()
   const returnEmployeeBreak = useReturnEmployeeBreak()
@@ -662,11 +648,6 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
 
   const [selectedScheduleId, setSelectedScheduleId] = useState<string | null>(null)
   const [selectedPostId, setSelectedPostId] = useState<string>("")
-  // Correções de horário feitas no modal do colaborador (sempre com confirmação).
-  const [timeEditMode, setTimeEditMode] = useState<"start" | "exit" | "break" | null>(null)
-  const [timeEditValue, setTimeEditValue] = useState("")
-  const [exitReason, setExitReason] = useState(POST_EXIT_REASONS[0].value)
-  const [breakTypeChoice, setBreakTypeChoice] = useState<OperationalBreakType>("intervalo")
   const [searchText, setSearchText] = useState("")
   const [statusFilter, setStatusFilter] = useState<
     "all" | "working" | "break" | "no_post" | "alert"
@@ -1025,72 +1006,6 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
   function closeScheduleControl() {
     setSelectedScheduleId(null)
     setSelectedPostId("")
-    setTimeEditMode(null)
-  }
-
-  function openTimeEdit(mode: "start" | "exit" | "break", initial: string) {
-    setTimeEditMode(mode)
-    setTimeEditValue(initial)
-  }
-
-  // Horário informado pelo fiscal: não pode ser futuro nem anterior ao limite dado.
-  function parsePastTime(hhmm: string, notBeforeIso?: string | null) {
-    if (!/^\d{2}:\d{2}$/.test(hhmm)) {
-      toast.error("Informe o horário no formato hh:mm.")
-      return null
-    }
-    const iso = isoFromDayAndTime(today, hhmm)
-    if (Date.parse(iso) > Date.now() + 60_000) {
-      toast.error("O horário não pode ser no futuro.")
-      return null
-    }
-    if (notBeforeIso && Date.parse(iso) < Date.parse(notBeforeIso)) {
-      toast.error(`O horário não pode ser antes de ${formatTimeBR(notBeforeIso)}.`)
-      return null
-    }
-    return iso
-  }
-
-  async function handleAdjustStart(allocation: PostAllocation) {
-    const iso = parsePastTime(timeEditValue)
-    if (!iso) return
-    await adjustAllocationStart.mutateAsync({
-      allocation_id: allocation.id,
-      branch_id: allocation.branch_id,
-      started_at: iso,
-      previous_started_at: allocation.started_at,
-    })
-    setTimeEditMode(null)
-  }
-
-  async function handleExitPost(allocation: PostAllocation) {
-    const iso = parsePastTime(timeEditValue, allocation.started_at)
-    if (!iso) return
-    const isNow = Date.now() - Date.parse(iso) < 90_000
-    await finalizePostAllocation.mutateAsync({
-      allocation_id: allocation.id,
-      ended_at: isNow ? null : iso,
-      notes: `${exitReason}. Saída do posto às ${timeEditValue}, registrada pelo controle PDV.`,
-    })
-    closeScheduleControl()
-  }
-
-  async function handleReleaseBreakAt(allocation: PostAllocation) {
-    const iso = parsePastTime(timeEditValue, allocation.started_at)
-    if (!iso) return
-    const isNow = Date.now() - Date.parse(iso) < 90_000
-    await releaseEmployeeBreak.mutateAsync({
-      allocation_id: allocation.id,
-      employee_id: allocation.employee_id,
-      post_id: allocation.post_id,
-      schedule_id: allocation.schedule_id,
-      break_type: breakTypeChoice,
-      started_at: isNow ? null : iso,
-      notes: isNow
-        ? `${breakTypeLabel[breakTypeChoice]} liberado pelo controle PDV`
-        : `${breakTypeLabel[breakTypeChoice]} com saída às ${timeEditValue}, registrada depois pelo controle PDV`,
-    })
-    setTimeEditMode(null)
   }
 
   function openScheduleControl(
@@ -2215,149 +2130,21 @@ Use apenas se ninguém atrasou nem faltou.`
                   </div>
                 </div>
                 {selectedAllocation ? (
-                  <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-[color:var(--bg-surface-soft)] px-3 py-2">
-                    <div className="text-sm text-muted-foreground">
-                      {selectedOperationalBreak
-                        ? "Posto pausado por café. Confirme o retorno antes de liberar ou mover."
-                        : "Para mover este operador, libere o posto atual primeiro."}
-                    </div>
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      disabled={
-                        finalizePostAllocation.isPending ||
-                        Boolean(selectedOperationalBreak)
-                      }
-                      onClick={() => openTimeEdit("exit", hhmmFromIso(new Date().toISOString()))}
-                    >
-                      {finalizePostAllocation.isPending ? "Liberando..." : "Liberar posto"}
-                    </Button>
+                  <div className="mt-3 rounded-2xl bg-[color:var(--bg-surface-soft)] px-3 py-2 text-sm text-muted-foreground">
+                    {selectedOperationalBreak
+                      ? "Posto pausado por café. Confirme o retorno antes de liberar ou mover."
+                      : "Para mover este operador, registre a saída do posto em \"Tempo no posto\"."}
                   </div>
                 ) : null}
               </div>
 
               {selectedAllocation ? (
-                <div className="space-y-3 rounded-2xl border border-[color:var(--border-soft)] p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                        Tempo no posto
-                      </div>
-                      <div className="text-sm text-[color:var(--text-primary)]">
-                        Desde {formatTimeBR(selectedAllocation.started_at)} ·{" "}
-                        {formatDuration(minutesSinceTimestamp(selectedAllocation.started_at, nowMs))}
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() =>
-                          openTimeEdit("start", hhmmFromIso(selectedAllocation.started_at))
-                        }
-                      >
-                        Ajustar horário de início
-                      </Button>
-                      {!selectedOperationalBreak ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() => openTimeEdit("break", hhmmFromIso(new Date().toISOString()))}
-                        >
-                          Liberar intervalo/café
-                        </Button>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  {timeEditMode ? (
-                    <div className="space-y-3 rounded-2xl bg-[color:var(--bg-surface-soft)] p-3">
-                      <div className="text-sm font-medium text-[color:var(--text-primary)]">
-                        {timeEditMode === "start"
-                          ? "Corrigir o horário em que entrou no posto"
-                          : timeEditMode === "exit"
-                            ? "Registrar a saída do posto"
-                            : "Registrar a saída para intervalo ou café"}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {timeEditMode === "start"
-                          ? "O tempo no posto começa na entrada da escala. Só altere se o horário real for diferente; a mudança fica na auditoria."
-                          : "Se o colaborador saiu antes de você registrar, informe o horário real. Deixe o horário atual para registrar agora."}
-                      </div>
-                      <div className="flex flex-wrap items-end gap-3">
-                        <label className="space-y-1 text-xs">
-                          <span className="font-medium">
-                            {timeEditMode === "start" ? "Entrou no posto às" : "Saiu às"}
-                          </span>
-                          <Input
-                            type="time"
-                            className="w-32"
-                            value={timeEditValue}
-                            onChange={(event) => setTimeEditValue(event.target.value)}
-                          />
-                        </label>
-                        {timeEditMode === "exit" ? (
-                          <label className="min-w-48 flex-1 space-y-1 text-xs">
-                            <span className="font-medium">Motivo</span>
-                            <Select
-                              value={exitReason}
-                              onValueChange={setExitReason}
-                              options={POST_EXIT_REASONS}
-                            />
-                          </label>
-                        ) : null}
-                        {timeEditMode === "break" ? (
-                          <label className="min-w-48 flex-1 space-y-1 text-xs">
-                            <span className="font-medium">Tipo</span>
-                            <Select
-                              value={breakTypeChoice}
-                              onValueChange={(value) =>
-                                setBreakTypeChoice(value as OperationalBreakType)
-                              }
-                              options={(Object.keys(breakTypeLabel) as OperationalBreakType[]).map(
-                                (type) => ({ value: type, label: breakTypeLabel[type] })
-                              )}
-                            />
-                          </label>
-                        ) : null}
-                        <div className="flex gap-2">
-                          <Button
-                            type="button"
-                            size="sm"
-                            disabled={
-                              adjustAllocationStart.isPending ||
-                              finalizePostAllocation.isPending ||
-                              releaseEmployeeBreak.isPending
-                            }
-                            onClick={() =>
-                              void (timeEditMode === "start"
-                                ? handleAdjustStart(selectedAllocation)
-                                : timeEditMode === "exit"
-                                  ? handleExitPost(selectedAllocation)
-                                  : handleReleaseBreakAt(selectedAllocation))
-                            }
-                          >
-                            {timeEditMode === "start"
-                              ? "Confirmar alteração"
-                              : timeEditMode === "exit"
-                                ? "Confirmar saída do posto"
-                                : "Confirmar liberação"}
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setTimeEditMode(null)}
-                          >
-                            Cancelar
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
+                <AllocationTimeActions
+                  allocation={selectedAllocation}
+                  hasActiveBreak={Boolean(selectedOperationalBreak)}
+                  nowMs={nowMs}
+                  onExited={closeScheduleControl}
+                />
               ) : null}
 
               <div className="rounded-2xl border border-dashed border-[color:var(--border-soft)] p-4 text-sm text-muted-foreground">

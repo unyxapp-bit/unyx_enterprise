@@ -13,7 +13,6 @@ import { Card, CardContent } from "@/components/ui/card"
 import {
   Dialog,
   DialogContent,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
@@ -21,7 +20,9 @@ import { StateBlock } from "@/components/shared/StateBlock"
 import { formatDateTimeBR } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import type { OperationalBreak, OperationalPost, PostAllocation } from "@/types/domain"
-import { formatDuration, postTypeLabel } from "../utils"
+import { formatDuration, postTypeLabel, timeToMinutes } from "../utils"
+import { AllocateEmployeeToPost } from "./AllocateEmployeeToPost"
+import { AllocationTimeActions } from "./AllocationTimeActions"
 
 type PostMapStatus = "occupied" | "paused" | "free" | "inactive"
 
@@ -110,6 +111,33 @@ function minutesSince(value: string | null | undefined, nowMs: number) {
   const startedAt = new Date(value).getTime()
   if (Number.isNaN(startedAt)) return 0
   return Math.max(0, Math.floor((nowMs - startedAt) / 60_000))
+}
+
+function trimTime(value: string | null | undefined) {
+  return value ? value.slice(0, 5) : "--:--"
+}
+
+/** Situação do intervalo previsto na escala, para o fiscal decidir se libera agora. */
+function scheduledBreakInfo(
+  schedule: PostAllocation["schedules"],
+  nowMs: number
+): { text: string; tone: "info" | "open" | "late" } | null {
+  const start = timeToMinutes(schedule?.break_start)
+  const end = timeToMinutes(schedule?.break_end)
+  if (start === null || end === null) return null
+  const now = new Date(nowMs)
+  const nowMin = now.getHours() * 60 + now.getMinutes()
+  const window = `${trimTime(schedule?.break_start)} – ${trimTime(schedule?.break_end)}`
+  if (nowMin < start) {
+    return { text: `Intervalo programado ${window} · faltam ${formatDuration(start - nowMin)}`, tone: "info" }
+  }
+  if (nowMin <= end) {
+    return { text: `Janela de intervalo aberta (${window}) · há ${formatDuration(nowMin - start)}`, tone: "open" }
+  }
+  return {
+    text: `Intervalo previsto ${window} já passou há ${formatDuration(nowMin - end)}. Confirme se foi feito.`,
+    tone: "late",
+  }
 }
 
 function releaseActionLabel(post: OperationalPost, pending: boolean) {
@@ -354,48 +382,61 @@ export function OperationalPostsMapBoard({
           if (!open) setSelectedCard(null)
         }}
       >
-        <DialogContent>
+        <DialogContent className="sm:max-w-xl">
           <DialogHeader>
-            <DialogTitle>Detalhes do posto</DialogTitle>
+            <DialogTitle>{selectedCard?.post.name ?? "Detalhes do posto"}</DialogTitle>
           </DialogHeader>
 
           {selectedCard ? (
             <div className="space-y-4">
-              <div className="rounded-2xl border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] p-4">
-                <div className="text-sm font-semibold text-[color:var(--text-primary)]">
-                  {selectedCard.post.name}
-                </div>
-                <div className="mt-1 text-sm text-muted-foreground">
-                  {postTypeLabel[selectedCard.post.type] ?? selectedCard.post.type}
-                  {" · "}
-                  {selectedCard.post.sectors?.name ?? "Sem setor"}
-                </div>
-                <div className="mt-1 text-sm text-muted-foreground">
-                  {selectedCard.post.branches?.name ?? "Filial"}
-                </div>
+              <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                <Badge
+                  variant="outline"
+                  className={cn("rounded-full", statusConfig[selectedCard.status].badgeClass)}
+                >
+                  {statusConfig[selectedCard.status].label}
+                </Badge>
+                <span>
+                  {[
+                    postTypeLabel[selectedCard.post.type] ?? selectedCard.post.type,
+                    selectedCard.post.sectors?.name &&
+                    selectedCard.post.sectors.name !==
+                      (postTypeLabel[selectedCard.post.type] ?? selectedCard.post.type)
+                      ? selectedCard.post.sectors.name
+                      : null,
+                    selectedCard.post.branches?.name ?? "Filial",
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </span>
               </div>
 
               {(selectedCard.status === "occupied" || selectedCard.status === "paused") &&
               selectedCard.allocation ? (
                 <div className="space-y-3">
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-2xl border border-[color:var(--border-soft)] p-4">
+                  <div className="grid grid-cols-2 gap-3 rounded-2xl border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] p-4">
+                    <div>
                       <div className="text-xs uppercase tracking-wide text-muted-foreground">
                         {selectedCard.status === "paused" ? "Pausado há" : "Em uso há"}
                       </div>
-                      <div className="mt-1 text-2xl font-semibold text-[color:var(--text-primary)]">
+                      <div className="mt-1 text-3xl font-semibold text-[color:var(--text-primary)]">
                         {formatDuration(selectedMinutes)}
                       </div>
                     </div>
-                    <div className="rounded-2xl border border-[color:var(--border-soft)] p-4">
+                    <div>
                       <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                        {selectedCard.status === "paused" ? "Previsao retorno" : "Desde"}
+                        {selectedCard.status === "paused" ? "Retorno previsto" : "No posto desde"}
                       </div>
-                      <div className="mt-1 text-sm font-medium text-[color:var(--text-primary)]">
+                      <div className="mt-1 text-lg font-semibold text-[color:var(--text-primary)]">
                         {selectedCard.status === "paused"
                           ? formatTimeBR(selectedCard.operationalBreak?.planned_end)
-                          : formatDateTimeBR(selectedCard.allocation.started_at)}
+                          : formatTimeBR(selectedCard.allocation.started_at)}
                       </div>
+                      {selectedCard.status === "occupied" ? (
+                        <div className="text-xs text-muted-foreground">
+                          {formatDateTimeBR(selectedCard.allocation.started_at)}
+                        </div>
+                      ) : null}
                     </div>
                   </div>
 
@@ -403,42 +444,66 @@ export function OperationalPostsMapBoard({
                     <div className="text-xs uppercase tracking-wide text-muted-foreground">
                       Colaborador
                     </div>
-                    <div className="mt-1 text-sm font-medium text-[color:var(--text-primary)]">
+                    <div className="mt-1 text-base font-semibold text-[color:var(--text-primary)]">
                       {selectedCard.allocation.employees?.name ?? "Colaborador"}
                     </div>
+                    <div className="mt-0.5 text-sm text-muted-foreground">
+                      {selectedCard.allocation.employees?.sectors?.name ?? "Sem setor"}
+                      {selectedCard.allocation.schedules?.start_time
+                        ? ` · Jornada ${trimTime(selectedCard.allocation.schedules.start_time)} → ${trimTime(selectedCard.allocation.schedules.end_time)}`
+                        : ""}
+                    </div>
+                    {(() => {
+                      const info = scheduledBreakInfo(selectedCard.allocation.schedules, nowMs)
+                      if (!info || selectedCard.status === "paused") return null
+                      return (
+                        <div
+                          className={cn(
+                            "mt-3 rounded-xl border px-3 py-2 text-sm",
+                            info.tone === "late"
+                              ? "border-red-200 bg-red-50 text-red-800 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
+                              : info.tone === "open"
+                                ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300"
+                                : "border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300"
+                          )}
+                        >
+                          {info.text}
+                        </div>
+                      )
+                    })()}
                   </div>
+
+                  {selectedCard.status === "occupied" ? (
+                    <AllocationTimeActions
+                      allocation={
+                        allocations.find((item) => item.id === selectedCard.allocation?.id) ??
+                        selectedCard.allocation
+                      }
+                      hasActiveBreak={false}
+                      nowMs={nowMs}
+                      exitLabel={selectedCard.post.type === "cashier" ? "Liberar caixa" : "Liberar posto"}
+                      onExited={() => setSelectedCard(null)}
+                    />
+                  ) : null}
                 </div>
               ) : selectedCard.status === "free" ? (
-                <div className="rounded-2xl border border-sky-200 dark:border-sky-500/30 bg-sky-50 dark:bg-sky-500/10 p-4 text-sm text-sky-800 dark:text-sky-300">
-                  Este posto está livre e pronto para receber uma nova alocação.
+                <div className="space-y-3">
+                  <div className="rounded-2xl border border-sky-200 dark:border-sky-500/30 bg-sky-50 dark:bg-sky-500/10 p-4 text-sm text-sky-800 dark:text-sky-300">
+                    Este posto está livre e pronto para receber uma nova alocação.
+                  </div>
+                  <AllocateEmployeeToPost
+                    post={selectedCard.post}
+                    allocations={allocations}
+                    operationalBreaks={operationalBreaks}
+                    nowMs={nowMs}
+                    onAllocated={() => setSelectedCard(null)}
+                  />
                 </div>
               ) : (
                 <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900/60 dark:text-zinc-300">
                   Este posto está inativo no momento.
                 </div>
               )}
-
-              {selectedCard.status === "occupied" &&
-              selectedCard.allocation &&
-              onReleaseAllocation ? (
-                <DialogFooter>
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    onClick={async () => {
-                      try {
-                        await onReleaseAllocation(selectedCard.allocation!)
-                        setSelectedCard(null)
-                      } catch {
-                        // The mutation hook already shows the error toast.
-                      }
-                    }}
-                    disabled={isReleasePending}
-                  >
-                    {releaseActionLabel(selectedCard.post, isReleasePending)}
-                  </Button>
-                </DialogFooter>
-              ) : null}
             </div>
           ) : null}
         </DialogContent>
