@@ -53,6 +53,21 @@ describe("detectLayoutRegions", () => {
     expect(regions.footerStart).toBe(100)
   })
 
+  it("prioriza a faixa colorida e ignora texto escuro sobre ela", () => {
+    const { pixels, width, height } = sheet([255, 255, 255], [
+      { top: 62, bottom: 84, left: 8, right: 92, rgb: [255, 210, 0] },
+      { top: 68, bottom: 80, left: 38, right: 62, rgb: [10, 10, 10] },
+    ])
+    const brush = detectLayoutRegions(pixels, width, height).brush
+
+    expect(brush).not.toBeNull()
+    expect(brush!.top).toBeGreaterThan(60)
+    expect(brush!.top).toBeLessThan(65)
+    expect(brush!.bottom).toBeGreaterThan(80)
+    expect(brush!.left).toBeLessThan(12)
+    expect(brush!.right).toBeGreaterThan(88)
+  })
+
   it("sem pincelada nem cabeçalho devolve regiões vazias", () => {
     const { pixels, width, height } = sheet([255, 255, 255], [])
     const regions = detectLayoutRegions(pixels, width, height)
@@ -85,6 +100,10 @@ describe("buildAutoLayout", () => {
     expect(layout.preco_reais.y).toBe(72)
     expect(layout.preco_reais.x).toBeLessThan(50)
     expect(layout.preco_reais.color).toBe("#111111")
+    expect(layout.currency).not.toBeNull()
+    expect(layout.currency!.x).toBeGreaterThan(8)
+    expect(layout.currency!.x).toBeLessThan(20)
+    expect(layout.currency!.fontSize).toBeGreaterThan(0)
     expect(layout.validade.y).toBeGreaterThan(82)
     expect(layout.observacao.y).toBeGreaterThan(layout.validade.y)
   })

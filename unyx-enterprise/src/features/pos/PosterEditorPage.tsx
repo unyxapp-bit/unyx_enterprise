@@ -1664,10 +1664,50 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
       return
     }
     checkpoint()
+    const existingCurrency = customElements.find(
+      (element) => element.name === "R$ automático do template"
+    )
+    const autoCurrency = auto.currency
+      ? createCustomElement("text", {
+          name: "R$ automático do template",
+          value: "R$",
+          ...auto.currency,
+          color: auto.preco_reais.color,
+          fontFamily: "Arial Black",
+          fontWeight: "900",
+          textAlign: "middle",
+          fill: "transparent",
+          stroke: "none",
+        })
+      : null
+    const currencyElement = autoCurrency
+      ? { ...autoCurrency, id: existingCurrency?.id ?? autoCurrency.id }
+      : null
     setStylesByTemplate((current) => ({
       ...current,
       [activeTemplate.id]: cloneStyles(activeTemplate.id, auto),
     }))
+    setCustomElementsByTemplate((current) => ({
+      ...current,
+      [activeTemplate.id]: [
+        ...(current[activeTemplate.id] ?? []).filter(
+          (element) => element.name !== "R$ automático do template"
+        ),
+        ...(currencyElement ? [currencyElement] : []),
+      ],
+    }))
+    setLayerOrderByTemplate((current) => {
+      const existingOrder = current[activeTemplate.id] ?? [...FIELD_KEYS]
+      const withoutGeneratedCurrency = existingOrder.filter(
+        (id) => id !== existingCurrency?.id
+      )
+      return {
+        ...current,
+        [activeTemplate.id]: currencyElement
+          ? [...withoutGeneratedCurrency, currencyElement.id]
+          : withoutGeneratedCurrency,
+      }
+    })
     setZoomPercent(0)
     transformRef.current = null
     setTransforming(false)

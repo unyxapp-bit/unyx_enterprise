@@ -28,6 +28,7 @@ export type AutoLayoutPreset = {
   preco_reais: AutoFieldStyle
   validade: AutoFieldStyle
   observacao: AutoFieldStyle
+  currency: { x: number; y: number; width: number; height: number; fontSize: number } | null
   /** Centro horizontal (%) do grupo de preço (inteiro + centavos). */
   priceCenterX: number
 }
@@ -71,20 +72,24 @@ export function detectLayoutRegions(
   }
 
   const rowFraction: number[] = []
-  const columnCount: number[] = new Array(width).fill(0)
   const contentMask: boolean[][] = []
+  const colorMask: boolean[][] = []
   for (let y = 0; y < height; y += 1) {
     let count = 0
     const row: boolean[] = []
+    const colorRow: boolean[] = []
     for (let x = 0; x < width; x += 1) {
       const content = isContent(x, y)
+      const [r, g, b] = at(x, y)
+      const colorful = Math.max(r, g, b) - Math.min(r, g, b) > 40 && Math.max(r, g, b) > 75
       row.push(content)
+      colorRow.push(colorful)
       if (content) {
         count += 1
-        columnCount[x] += 1
       }
     }
     contentMask.push(row)
+    colorMask.push(colorRow)
     rowFraction.push(count / width)
   }
 
@@ -119,6 +124,35 @@ export function detectLayoutRegions(
   // Pincelada: maior trecho de linhas com conteúdo entre cabeçalho e rodapé.
   const from = headerRows
   const to = height - footerRows
+  const coloredRows = colorMask.map((row) => row.filter(Boolean).length / width)
+  let coloredBest: { start: number; end: number; count: number } | null = null
+  let coloredStart = -1
+  let coloredCount = 0
+  let coloredGap = 0
+  for (let y = from; y <= to; y += 1) {
+    const filled = y < to && coloredRows[y] > 0.08
+    if (filled) {
+      if (coloredStart < 0) coloredStart = y
+      coloredCount += colorMask[y].filter(Boolean).length
+      coloredGap = 0
+    } else if (coloredStart >= 0) {
+      coloredGap += 1
+      if (coloredGap > 2 || y === to) {
+        const end = y - coloredGap
+        const candidate = { start: coloredStart, end, count: coloredCount }
+        if (
+          end - coloredStart >= height * 0.06 &&
+          (!coloredBest || candidate.count > coloredBest.count)
+        ) {
+          coloredBest = candidate
+        }
+        coloredStart = -1
+        coloredCount = 0
+        coloredGap = 0
+      }
+    }
+  }
+
   let best: { start: number; end: number } | null = null
   let runStart = -1
   let missing = 0
@@ -139,14 +173,17 @@ export function detectLayoutRegions(
   }
 
   let brush: LayoutRegions["brush"] = null
-  if (best && best.end - best.start >= height * 0.06) {
+  const brushRange = coloredBest ?? (
+    best && best.end - best.start >= height * 0.06 ? best : null
+  )
+  if (brushRange) {
     let left = width
     let right = 0
     let sumLum = 0
     let counted = 0
-    for (let y = best.start; y <= best.end; y += 1) {
+    for (let y = brushRange.start; y <= brushRange.end; y += 1) {
       for (let x = 0; x < width; x += 1) {
-        if (!contentMask[y][x]) continue
+        if (coloredBest ? !colorMask[y][x] : !contentMask[y][x]) continue
         if (x < left) left = x
         if (x > right) right = x
         const [r, g, b] = at(x, y)
@@ -156,8 +193,8 @@ export function detectLayoutRegions(
     }
     if (counted > 0 && right > left) {
       brush = {
-        top: (best.start / height) * 100,
-        bottom: ((best.end + 1) / height) * 100,
+        top: (brushRange.start / height) * 100,
+        bottom: ((brushRange.end + 1) / height) * 100,
         left: (left / width) * 100,
         right: ((right + 1) / width) * 100,
         luminance: sumLum / counted,
@@ -205,10 +242,22 @@ export function buildAutoLayout(
 
   const below = brush ? brush.bottom : brushCenterY + 12
   const belowSpace = footerStart - below
+  const currencyWidth = brush ? Math.min((brush.right - brush.left) * 0.2, 18) : 0
+  const currencyHeight = brush ? Math.min((brush.bottom - brush.top) * 0.32, 8) : 0
+  const currency = brush
+    ? {
+        x: round1(brush.left + (brush.right - brush.left) * 0.1),
+        y: round1(brush.top + (brush.bottom - brush.top) * 0.28),
+        width: round1(currencyWidth),
+        height: round1(currencyHeight),
+        fontSize: Math.round((currencyHeight / 100) * logicalHeight * 0.78),
+      }
+    : null
   void logicalWidth
 
   return {
     priceCenterX: round1(brushCenterX),
+    currency,
     produto: {
       x: 50,
       y: round1(zoneTop + zoneHeight * 0.32),
