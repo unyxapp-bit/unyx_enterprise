@@ -105,6 +105,31 @@ test("creates one queued poster per spreadsheet row", async ({ page }) => {
   await expect(page.getByPlaceholder("Ex: 99")).toHaveValue("49")
 })
 
+test("navigates the queue with previous and next arrows keeping edits", async ({ page }) => {
+  await page.getByRole("button", { name: /^Fila/ }).click()
+  const csv = ["Produto;Descrição;Preço;Unidade", "ARROZ;PACOTE 5KG;24,99;UNID", "FEIJAO;PACOTE 1KG;8,49;UNID", "MILHO;LATA;3,99;UNID"].join("\n")
+  await page.getByLabel("Arquivo da planilha de cartazes").setInputFiles({
+    name: "cartazes.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from(csv, "utf-8"),
+  })
+  await page.getByRole("button", { name: "Próximo cartaz da fila" }).click()
+  await expect(page.getByText("Cartaz 1 de 3 · ARROZ")).toBeVisible()
+  await page.getByPlaceholder("Nome do produto").fill("ARROZ INTEGRAL")
+  await page.getByRole("button", { name: "Próximo cartaz da fila" }).click()
+  await expect(page.getByText("Cartaz 2 de 3 · FEIJAO")).toBeVisible()
+  await page.getByRole("button", { name: "Cartaz anterior da fila" }).click()
+  await expect(page.getByText("Cartaz 1 de 3 · ARROZ INTEGRAL")).toBeVisible()
+  await page.getByRole("button", { name: "Cartaz anterior da fila" }).click()
+  await expect(page.getByText("Cartaz 3 de 3 · MILHO")).toBeVisible()
+
+  await page.getByRole("button", { name: /^Fila/ }).click()
+  page.once("dialog", (dialog) => void dialog.accept())
+  await page.getByRole("button", { name: /Limpar fila inteira \(3\)/ }).click()
+  await expect(page.getByRole("button", { name: /Limpar fila inteira/ })).toHaveCount(0)
+  await expect(page.getByRole("button", { name: "Próximo cartaz da fila" })).toHaveCount(0)
+})
+
 test("keeps editor text readable in light and dark application themes", async ({ page }) => {
   for (const theme of ["light", "dark"]) {
     await page.evaluate((value) => {

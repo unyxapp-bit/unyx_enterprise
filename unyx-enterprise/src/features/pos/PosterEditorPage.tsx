@@ -19,6 +19,8 @@ import {
   FileDown,
   FileImage,
   Grid3X3,
+  ChevronLeft,
+  ChevronRight,
   ImageDown,
   ImagePlus,
   Italic,
@@ -1978,6 +1980,25 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
     setTemplatesPanelOpen(false)
   }
 
+  // Navega pela fila (‹ ›): salva as alterações do cartaz aberto e carrega o vizinho.
+  const queuePosition = editingQueueId
+    ? queue.findIndex((item) => item.id === editingQueueId)
+    : -1
+  const goToQueueItem = (delta: -1 | 1) => {
+    if (queue.length === 0) return
+    let list = queue
+    if (editingQueueId && queuePosition >= 0) {
+      const updated = buildQueueItem(editingQueueId)
+      if (updated) {
+        list = queue.map((item) => (item.id === editingQueueId ? updated : item))
+        setQueue(list)
+      }
+    }
+    const base = queuePosition >= 0 ? queuePosition : delta === 1 ? -1 : list.length
+    const target = list[(base + delta + list.length) % list.length]
+    if (target) loadQueueItem(target)
+  }
+
   const removeQueueItem = (id: string) => {
     setQueue((current) => current.filter((item) => item.id !== id))
     if (editingQueueId === id) setEditingQueueId(null)
@@ -2975,15 +2996,42 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                   )}
                   Templates
                 </button>
+              {queue.length > 0 ? (
+                <button
+                  type="button"
+                  aria-label="Cartaz anterior da fila"
+                  title="Cartaz anterior da fila"
+                  className="inline-flex size-8 shrink-0 items-center justify-center rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800"
+                  onClick={() => goToQueueItem(-1)}
+                >
+                  <ChevronLeft className="size-4" />
+                </button>
+              ) : null}
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold">
-                  {activeTemplate?.name ?? "Preview"}
+                  {queue.length > 0
+                    ? `Cartaz ${queuePosition >= 0 ? queuePosition + 1 : "–"} de ${queue.length} · ${
+                        fields.produto || "sem nome"
+                      }`
+                    : (activeTemplate?.name ?? "Preview")}
                 </p>
-                <p className="text-xs text-slate-500">
+                <p className="truncate text-xs text-slate-500">
+                  {queue.length > 0 ? `${activeTemplate?.name ?? "Preview"} · ` : ""}
                   {PAPER_SIZES_MM[documentSettings.paper].label} {geometry.paperWidthMm} x{" "}
                   {geometry.paperHeightMm} mm + {documentSettings.bleedMm} mm
                 </p>
               </div>
+              {queue.length > 0 ? (
+                <button
+                  type="button"
+                  aria-label="Próximo cartaz da fila"
+                  title="Próximo cartaz da fila"
+                  className="inline-flex size-8 shrink-0 items-center justify-center rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800"
+                  onClick={() => goToQueueItem(1)}
+                >
+                  <ChevronRight className="size-4" />
+                </button>
+              ) : null}
               </div>
               <span className="hidden max-w-40 shrink-0 truncate rounded-md bg-slate-800 px-2 py-1 text-xs text-slate-300 sm:inline">
                 {selectedCustomElement?.name ?? FIELD_META[selectedField].label}
@@ -4427,12 +4475,22 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                     <button
                       type="button"
                       onClick={() => {
+                        const total = queue.length
+                        if (
+                          !window.confirm(
+                            `Remover todos os ${total} ${total === 1 ? "cartaz" : "cartazes"} da fila? Esta ação não pode ser desfeita.`
+                          )
+                        ) {
+                          return
+                        }
                         setQueue([])
                         setEditingQueueId(null)
+                        toast.success("Fila limpa.")
                       }}
-                      className="w-full text-center text-[0.65rem] text-slate-500 hover:text-slate-300"
+                      className="flex h-8 w-full items-center justify-center gap-2 rounded-md border border-red-500/40 text-xs font-medium text-red-300 hover:bg-red-500/10"
                     >
-                      Limpar fila
+                      <Trash2 className="size-4" />
+                      Limpar fila inteira ({queue.length})
                     </button>
                   ) : null}
                 </div>
