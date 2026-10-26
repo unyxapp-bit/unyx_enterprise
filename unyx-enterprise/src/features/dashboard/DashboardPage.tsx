@@ -2,6 +2,8 @@ import {
   AlertTriangle,
   Building2,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   ClipboardCheck,
   Clock,
   Coffee,
@@ -86,7 +88,7 @@ import type {
 const quickNoteTextareaClass =
   "min-h-16 w-full resize-none rounded-xl border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] px-3 py-2 text-sm text-[color:var(--text-primary)] outline-none transition-colors placeholder:text-[color:var(--text-muted)] focus:border-ring focus:ring-3 focus:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-70"
 
-const QUICK_NOTE_CATEGORY = "Lembrete rapido"
+const QUICK_NOTE_CATEGORY = "Lembrete rápido"
 
 const METRIC_TONES = {
   blue: {
@@ -289,7 +291,7 @@ function getMetricStatusFilter(key: DashboardMetricKey) {
 
 function getNextAction(row: DashboardRow) {
   if (row.current_status === "alerta_critico") {
-    return "Resolver alerta critico"
+    return "Resolver alerta crítico"
   }
   if (row.current_status === "aguardando_sangria") {
     return "Confirmar sangria"
@@ -298,13 +300,13 @@ function getNextAction(row: DashboardRow) {
     return "Concluir troca"
   }
   if (row.current_status === "deve_sair") {
-    return "Confirmar saida ou cobertura"
+    return "Confirmar saída ou cobertura"
   }
   if (row.current_status === "em_intervalo") {
     return "Monitorar retorno"
   }
   if (row.current_status === "pico") {
-    return "Reforcar cobertura"
+    return "Reforçar cobertura"
   }
   if (row.current_status === "apoio_operacional") {
     return "Reavaliar setor de apoio"
@@ -326,7 +328,7 @@ function getPendingGroup(status: OperationalStatus) {
     aguardando_sangria: "Sangria",
     em_intervalo: "Intervalo",
     troca_de_caixa: "Troca",
-    deve_sair: "Saida",
+    deve_sair: "Saída",
     pico: "Pico",
     apoio_operacional: "Apoio",
     fechamento: "Fechamento",
@@ -376,16 +378,16 @@ function getPostLabel(allocation?: PostAllocation) {
 
 function currentShiftLabel() {
   const hour = new Date().getHours()
-  if (hour < 11) return "Manha"
+  if (hour < 11) return "Manhã"
   if (hour < 17) return "Tarde"
   return "Noite"
 }
 
 function nextRestaurantPeak() {
   const hour = new Date().getHours()
-  if (hour < 11) return "Almoco"
+  if (hour < 11) return "Almoço"
   if (hour < 18) return "Jantar"
-  return "Proximo almoco"
+  return "Próximo almoço"
 }
 
 function getMetricIcon(key: DashboardMetricKey): ReactNode {
@@ -507,9 +509,9 @@ function buildMetric(key: DashboardMetricKey, data: MetricData) {
       detail: "Com status ativo",
     },
     critical: {
-      title: "Alertas criticos",
+      title: "Alertas críticos",
       value: critical,
-      detail: "Demandam acao imediata",
+      detail: "Demandam ação imediata",
       danger: critical > 0,
     },
     breaks: {
@@ -520,7 +522,7 @@ function buildMetric(key: DashboardMetricKey, data: MetricData) {
     delay: {
       title: "Atraso acumulado",
       value: minutesLabel(delayMinutes),
-      detail: "Somatorio do dia",
+      detail: "Somatório do dia",
       danger: delayMinutes > 0,
     },
     cashierCoverage: {
@@ -532,7 +534,7 @@ function buildMetric(key: DashboardMetricKey, data: MetricData) {
     activeSectors: {
       title: "Setores ativos",
       value: sectors.size,
-      detail: "Areas na operacao",
+      detail: "Áreas na operação",
     },
     sectorAlerts: {
       title: "Alertas por setor",
@@ -548,38 +550,38 @@ function buildMetric(key: DashboardMetricKey, data: MetricData) {
     absences: {
       title: "Faltas",
       value: absenceRows.length,
-      detail: "Ausencias identificadas",
+      detail: "Ausências identificadas",
       danger: absenceRows.length > 0,
     },
     currentShift: {
       title: "Turno atual",
       value: currentShiftLabel(),
-      detail: "Baseado no horario local",
+      detail: "Baseado no horário local",
     },
     minimumTeam: {
-      title: "Equipe minima",
+      title: "Equipe mínima",
       value: `${working}/${minimumTeamSize}`,
-      detail: working >= minimumTeamSize ? "Base minima coberta" : "Abaixo do minimo sugerido",
+      detail: working >= minimumTeamSize ? "Base mínima coberta" : "Abaixo do mínimo sugerido",
       danger: working < minimumTeamSize,
     },
     nextPeak: {
-      title: "Proximo pico",
+      title: "Próximo pico",
       value: nextRestaurantPeak(),
-      detail: "Referencia operacional",
+      detail: "Referência operacional",
     },
     criticalFunctions: {
-      title: "Funcoes criticas",
+      title: "Funções críticas",
       value: criticalFunctions,
-      detail: "Cozinha, salao, delivery ou caixa",
+      detail: "Cozinha, salão, delivery ou caixa",
       danger: criticalFunctions > 0,
     },
     responsiblePresence: {
-      title: "Responsavel presente",
-      value: responsibleRows.length === 0 ? "Nao definido" : responsiblePresent ? "Sim" : "Nao",
+      title: "Responsável presente",
+      value: responsibleRows.length === 0 ? "Não definido" : responsiblePresent ? "Sim" : "Não",
       detail:
         responsibleRows.length === 0
-          ? "Marque cargo/setor responsavel"
-          : "Farmaceutico ou tecnico",
+          ? "Marque cargo/setor responsável"
+          : "Farmacêutico ou técnico",
       danger: responsibleRows.length > 0 && !responsiblePresent,
     },
     serviceCoverage: {
@@ -588,9 +590,9 @@ function buildMetric(key: DashboardMetricKey, data: MetricData) {
       detail: "Pessoas atendendo agora",
     },
     occurrences: {
-      title: "Ocorrencias",
+      title: "Ocorrências",
       value: occurrencesCount,
-      detail: "Registros de ocorrencia do dia",
+      detail: "Registros de ocorrência do dia",
       danger: occurrencesCount > 0,
     },
   }
@@ -623,7 +625,7 @@ function buildQuickNoteTitle(content: string) {
     .find((line) => line.trim())
     ?.trim()
 
-  if (!firstLine) return "Lembrete rapido"
+  if (!firstLine) return "Lembrete rápido"
   return firstLine.length > 80 ? `${firstLine.slice(0, 77)}...` : firstLine
 }
 
@@ -647,6 +649,40 @@ function quickNoteScopeLabel(note: OperationalNote) {
   if (note.sectors?.name) return note.sectors.name
   if (note.branches?.name) return note.branches.name
   return "Toda empresa"
+}
+
+/** Relógio ao vivo (segundos) com dia da semana e data; só ele re-renderiza a cada segundo. */
+function LiveClock() {
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const timerId = window.setInterval(() => setNow(new Date()), 1000)
+    return () => window.clearInterval(timerId)
+  }, [])
+  const time = new Intl.DateTimeFormat("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(now)
+  const day = new Intl.DateTimeFormat("pt-BR", {
+    weekday: "long",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(now)
+  return (
+    <div
+      role="timer"
+      aria-label={`${day}, ${time}`}
+      className="flex items-center gap-2.5 rounded-full border border-slate-200 bg-slate-50 py-1.5 pr-4 pl-3 text-slate-700 dark:border-slate-700 dark:bg-slate-950/30 dark:text-slate-100"
+    >
+      <Clock className="size-4 text-amber-500 dark:text-amber-300" />
+      <span className="text-lg font-semibold tabular-nums leading-none">{time}</span>
+      <span className="hidden border-l border-slate-200 pl-2.5 text-xs leading-tight text-slate-500 capitalize sm:block dark:border-slate-700 dark:text-slate-400">
+        {day}
+      </span>
+    </div>
+  )
 }
 
 function DashboardQuickNotesPanel({ nowMs }: { nowMs: number }) {
@@ -748,15 +784,6 @@ function DashboardQuickNotesPanel({ nowMs }: { nowMs: number }) {
   }
 
   const mutationError = createNote.error || updateNote.error || deleteNote.error
-  const currentTimeLabel = useMemo(
-    () =>
-      new Intl.DateTimeFormat("pt-BR", {
-        hour: "2-digit",
-        minute: "2-digit",
-      }).format(new Date(nowMs)),
-    [nowMs]
-  )
-
   return (
     <>
       <Card className="border border-slate-200 bg-white/90 shadow-sm dark:border-slate-700 dark:bg-slate-900/40">
@@ -766,20 +793,15 @@ function DashboardQuickNotesPanel({ nowMs }: { nowMs: number }) {
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <StickyNote className="size-4 text-amber-500 dark:text-amber-300" />
-                  Notas rapidas
+                  Notas rápidas
                 </CardTitle>
-                <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-slate-700 dark:border-slate-700 dark:bg-slate-950/30 dark:text-slate-100">
-                  <Clock className="size-4 text-amber-500 dark:text-amber-300" />
-                  <span className="text-lg font-semibold tabular-nums leading-none">
-                    {currentTimeLabel}
-                  </span>
-                </div>
+                <LiveClock />
               </div>
 
               <form className="space-y-3" onSubmit={handleQuickNoteSubmit}>
                 <textarea
                   className={quickNoteTextareaClass}
-                  placeholder="Nota rapida ou lembrete..."
+                  placeholder="Nota rápida ou lembrete..."
                   value={form.content}
                   disabled={isSaving}
                   onChange={(event) =>
@@ -811,7 +833,7 @@ function DashboardQuickNotesPanel({ nowMs }: { nowMs: number }) {
                         type="button"
                         variant="outline"
                         size="icon"
-                        aria-label="Cancelar edicao"
+                        aria-label="Cancelar edição"
                         onClick={resetQuickNoteForm}
                       >
                         <X className="size-4" />
@@ -847,7 +869,7 @@ function DashboardQuickNotesPanel({ nowMs }: { nowMs: number }) {
                 </div>
               ) : visibleQuickNotes.length === 0 ? (
                 <div className="flex min-h-28 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-sm font-medium text-slate-500 dark:border-slate-700 dark:text-slate-300/70">
-                  Nenhum lembrete rapido
+                  Nenhum lembrete rápido
                 </div>
               ) : (
                 <div className="grid max-h-56 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
@@ -973,7 +995,7 @@ function DashboardQuickNotesPanel({ nowMs }: { nowMs: number }) {
             <div className="space-y-3">
               <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-300/70">
                 <Badge variant={isQuickNoteDone(viewingNote) ? "default" : "outline"}>
-                  {isQuickNoteDone(viewingNote) ? "Concluido" : "Aberto"}
+                  {isQuickNoteDone(viewingNote) ? "Concluído" : "Aberto"}
                 </Badge>
                 <span>{quickNoteScopeLabel(viewingNote)}</span>
                 <span>{formatDateTimeBR(viewingNote.created_at)}</span>
@@ -1043,7 +1065,17 @@ export function DashboardPage() {
   const [showAllPrimary, setShowAllPrimary] = useState(false)
   const [showAllSecondary, setShowAllSecondary] = useState(false)
   const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now())
-  const date = localDateKey(new Date(currentTimeMs))
+  // Data exibida no painel: por padrão hoje, mas pode ser trocada pelo seletor do cabeçalho.
+  const [selectedDate, setSelectedDate] = useState<string | null>(null)
+  const todayKey = localDateKey(new Date(currentTimeMs))
+  const date = selectedDate ?? todayKey
+  const isToday = date === todayKey
+  const shiftDate = (days: number) => {
+    const [year, month, day] = date.split("-").map(Number)
+    const next = new Date(year, month - 1, day + days)
+    const key = localDateKey(next)
+    setSelectedDate(key === todayKey ? null : key)
+  }
   const searchText = ""
   const sectorFilter = ""
   const dashboard = useDashboardRows(date)
@@ -1057,11 +1089,15 @@ export function DashboardPage() {
   const checklistRuns = useChecklistRuns(dateStartISO(date))
 
   useEffect(() => {
-    const timerId = window.setInterval(() => {
+    // Atualiza sempre na virada do minuto, para o relógio nunca ficar atrasado até 59s.
+    let timerId = 0
+    const tick = () => {
       setCurrentTimeMs(Date.now())
-    }, 60_000)
+      timerId = window.setTimeout(tick, 60_000 - (Date.now() % 60_000) + 50)
+    }
+    timerId = window.setTimeout(tick, 60_000 - (Date.now() % 60_000) + 50)
 
-    return () => window.clearInterval(timerId)
+    return () => window.clearTimeout(timerId)
   }, [])
 
   const mode = getOperationalMode(
@@ -1343,11 +1379,11 @@ export function DashboardPage() {
   if (dashboard.isError) {
     return (
       <>
-        <PageHeader title={modeConfig.title} />
+        <PageHeader large title={modeConfig.title} />
         <div className="p-6">
           <StateBlock
             type="error"
-            title="Nao foi possivel carregar o dashboard"
+            title="Não foi possível carregar o dashboard"
             description={dashboard.error.message}
           />
         </div>
@@ -1358,11 +1394,64 @@ export function DashboardPage() {
   return (
     <>
       <PageHeader
+        large
         title={modeConfig.title}
         description={modeConfig.mainFocus}
+        action={
+          <div className="flex items-center gap-1.5">
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              aria-label="Dia anterior"
+              title="Dia anterior"
+              onClick={() => shiftDate(-1)}
+            >
+              <ChevronLeft className="size-4" />
+            </Button>
+            <Input
+              type="date"
+              aria-label="Data do painel"
+              className="w-40"
+              value={date}
+              onChange={(event) => {
+                const value = event.target.value
+                if (!value) return
+                setSelectedDate(value === todayKey ? null : value)
+              }}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              aria-label="Próximo dia"
+              title="Próximo dia"
+              onClick={() => shiftDate(1)}
+            >
+              <ChevronRight className="size-4" />
+            </Button>
+            {isToday ? null : (
+              <Button type="button" variant="outline" onClick={() => setSelectedDate(null)}>
+                Hoje
+              </Button>
+            )}
+          </div>
+        }
       />
 
       <div className="space-y-5 p-6">
+        {isToday ? null : (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 py-2 text-sm text-sky-800 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200">
+            <span>
+              Mostrando as escalas de <strong>{formatDateBR(date)}</strong>. Os status ao vivo
+              (intervalos, saídas, alertas) valem para o dia de hoje.
+            </span>
+            <Button type="button" size="sm" variant="outline" onClick={() => setSelectedDate(null)}>
+              Voltar para hoje
+            </Button>
+          </div>
+        )}
+
         <MissingSchedulesPrompt
           date={date}
           currentScheduleCount={scheduledToday.length}
@@ -1504,12 +1593,12 @@ export function DashboardPage() {
 
                     <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-950/30 dark:text-slate-300/70">
                       <span className="flex flex-wrap gap-x-3 gap-y-1">
-                        <span>{pendingCount} em turno ainda nao alocados</span>
+                        <span>{pendingCount} em turno ainda não alocados</span>
                         {finishedCount > 0 ? (
-                          <span>{finishedCount} ja sairam</span>
+                          <span>{finishedCount} já saíram</span>
                         ) : null}
                       </span>
-                      {lastUpdated ? <span>atualizado as {lastUpdated}</span> : null}
+                      {lastUpdated ? <span>atualizado às {lastUpdated}</span> : null}
                     </div>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
@@ -1570,7 +1659,7 @@ export function DashboardPage() {
             <div className="text-sm text-slate-700 dark:text-slate-200">
               <span className="font-medium">Risco de cobertura:</span>{" "}
               {coverageRisk} de {coverageTotal} colaboradores ({coverageRiskPct}%)
-              estao em situacao que pode impactar a operacao.
+              estão em situação que pode impactar a operação.
             </div>
           </div>
         ) : null}
@@ -1595,7 +1684,7 @@ export function DashboardPage() {
               {primaryRows.length === 0 ? (
                 <StateBlock
                   title="Nenhuma prioridade alta"
-                  description="A operacao nao possui registros criticos no momento."
+                  description="A operação não possui registros críticos no momento."
                 />
               ) : (
                 <>
@@ -1623,7 +1712,7 @@ export function DashboardPage() {
                         </div>
                         <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
                           <div className="rounded-2xl bg-slate-50/70 px-2.5 py-2 dark:bg-slate-950/30">
-                            <p className="text-slate-500">Acao</p>
+                            <p className="text-slate-500">Ação</p>
                             <p className="mt-0.5 font-medium text-slate-900 dark:text-slate-100">
                               {getNextAction(row)}
                             </p>
@@ -1682,8 +1771,8 @@ export function DashboardPage() {
             <CardContent className="space-y-2">
               {secondaryRows.length === 0 ? (
                 <StateBlock
-                  title="Sem pendencias operacionais"
-                  description="Intervalos, saidas e etapas estao regularizadas."
+                  title="Sem pendências operacionais"
+                  description="Intervalos, saídas e etapas estão regularizadas."
                 />
               ) : (
                 <>
@@ -1727,7 +1816,7 @@ export function DashboardPage() {
                           </p>
                         </div>
                         <div className="rounded-2xl bg-slate-50/70 px-2.5 py-2 dark:bg-slate-950/30">
-                          <p className="text-slate-500">Proxima acao</p>
+                          <p className="text-slate-500">Próxima ação</p>
                           <p className="mt-0.5 font-medium text-slate-900 dark:text-slate-100">
                             {getNextAction(row)}
                           </p>

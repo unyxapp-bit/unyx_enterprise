@@ -26,6 +26,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Select } from "@/components/ui/select"
 import {
   useAllEmployees,
   useBranches,
@@ -39,9 +40,6 @@ import {
   useUpdateSector,
 } from "@/hooks/useUnyxData"
 import type { Branch, Sector } from "@/types/domain"
-
-const fieldClass =
-  "h-8 w-full rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
 
 function BranchEditDialog({ branch }: { branch: Branch }) {
   const [open, setOpen] = useState(false)
@@ -129,7 +127,7 @@ function BranchEditDialog({ branch }: { branch: Branch }) {
             />
           </label>
           {error ?? updateBranch.error ? (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            <div className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">
               {error ?? updateBranch.error?.message}
             </div>
           ) : null}
@@ -166,17 +164,17 @@ function BranchDeactivateDialog({ branch }: { branch: Branch }) {
           <DialogTitle>Desativar filial</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
-          <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3">
-            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600" />
-            <div className="text-sm text-amber-800">
+          <div className="flex items-start gap-3 rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 px-3 py-3">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-300" />
+            <div className="text-sm text-amber-800 dark:text-amber-300">
               Desativar <span className="font-medium">{branch.name}</span> impede novos registros operacionais para esta filial. Escalas e eventos existentes sao preservados, mas a filial nao aparecera nas selecoes ativas do sistema.
             </div>
           </div>
           <p className="text-sm text-muted-foreground">
-            Esta acao pode ser revertida a qualquer momento reativando a filial.
+            Esta ação pode ser revertida a qualquer momento reativando a filial.
           </p>
           {toggleBranchActive.error ? (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            <div className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">
               {toggleBranchActive.error.message}
             </div>
           ) : null}
@@ -190,7 +188,7 @@ function BranchDeactivateDialog({ branch }: { branch: Branch }) {
             disabled={toggleBranchActive.isPending}
             onClick={() => void handleConfirm()}
           >
-            {toggleBranchActive.isPending ? "Desativando..." : "Confirmar desativacao"}
+            {toggleBranchActive.isPending ? "Desativando..." : "Confirmar desativação"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -233,7 +231,7 @@ function BranchDeleteDialog({ branch }: { branch: Branch }) {
             <Input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} />
           </label>
           {deleteBranch.error ? (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            <div className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">
               {deleteBranch.error.message}
             </div>
           ) : null}
@@ -309,7 +307,7 @@ function SectorEditDialog({ sector }: { sector: Sector }) {
             />
           </label>
           {error ?? updateSector.error ? (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            <div className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">
               {error ?? updateSector.error?.message}
             </div>
           ) : null}
@@ -457,6 +455,7 @@ export function BranchesPage() {
   return (
     <>
       <PageHeader
+        large
         title="Filiais e Setores"
         description="Base organizacional da operação multi-tenant."
         action={
@@ -507,7 +506,7 @@ export function BranchesPage() {
                     />
                   </label>
                   {branchFormError ?? createBranch.error ? (
-                    <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    <div className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">
                       {branchFormError ?? createBranch.error?.message}
                     </div>
                   ) : null}
@@ -534,20 +533,15 @@ export function BranchesPage() {
                 <form className="space-y-4" onSubmit={handleCreateSector}>
                   <label className="space-y-1 text-sm">
                     <span className="font-medium">Filial</span>
-                    <select
-                      className={fieldClass}
+                    <Select
                       value={sectorForm.branch_id}
-                      onChange={(e) =>
-                        setSectorForm((c) => ({ ...c, branch_id: e.target.value }))
-                      }
-                    >
-                      <option value="">Selecione</option>
-                      {activeBranches.map((b) => (
-                        <option key={b.id} value={b.id}>
-                          {b.name}
-                        </option>
-                      ))}
-                    </select>
+                      onValueChange={(value) => setSectorForm((c) => ({ ...c, branch_id: value }))}
+                      placeholder="Selecione"
+                      options={[
+                        { value: "", label: "Selecione" },
+                        ...activeBranches.map((b) => ({ value: b.id, label: b.name })),
+                      ]}
+                    />
                   </label>
                   <label className="space-y-1 text-sm">
                     <span className="font-medium">Nome do setor</span>
@@ -568,7 +562,7 @@ export function BranchesPage() {
                     />
                   </label>
                   {sectorFormError ?? createSector.error ? (
-                    <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    <div className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">
                       {sectorFormError ?? createSector.error?.message}
                     </div>
                   ) : null}
@@ -585,36 +579,36 @@ export function BranchesPage() {
       />
 
       <div className="space-y-4 p-6">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-lg border bg-white p-4">
-            <div className="text-sm text-muted-foreground">Filiais ativas</div>
-            <div className="mt-2 text-2xl font-semibold">{activeBranches.length}</div>
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+          <div className="rounded-lg border bg-white dark:bg-[color:var(--bg-surface)] px-3 py-2">
+            <div className="text-xs text-muted-foreground">Filiais ativas</div>
+            <div className="text-xl font-semibold">{activeBranches.length}</div>
           </div>
-          <div className="rounded-lg border bg-white p-4">
-            <div className="text-sm text-muted-foreground">Setores ativos</div>
-            <div className="mt-2 text-2xl font-semibold">{activeSectorCount}</div>
+          <div className="rounded-lg border bg-white dark:bg-[color:var(--bg-surface)] px-3 py-2">
+            <div className="text-xs text-muted-foreground">Setores ativos</div>
+            <div className="text-xl font-semibold">{activeSectorCount}</div>
           </div>
-          <div className="rounded-lg border bg-white p-4">
-            <div className="text-sm text-muted-foreground">Colaboradores ativos</div>
-            <div className="mt-2 text-2xl font-semibold">{activeEmployeeCount}</div>
+          <div className="rounded-lg border bg-white dark:bg-[color:var(--bg-surface)] px-3 py-2">
+            <div className="text-xs text-muted-foreground">Colaboradores ativos</div>
+            <div className="text-xl font-semibold">{activeEmployeeCount}</div>
           </div>
           <div
-            className={`rounded-lg border p-4 ${
+            className={`rounded-lg border px-3 py-2 ${
               employeesWithoutSectorCount > 0
-                ? "border-amber-200 bg-amber-50"
-                : "bg-white"
+                ? "border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10"
+                : "bg-white dark:bg-[color:var(--bg-surface)]"
             }`}
           >
-            <div className="text-sm text-muted-foreground">Sem setor</div>
-            <div className="mt-2 text-2xl font-semibold">
+            <div className="text-xs text-muted-foreground">Sem setor</div>
+            <div className="text-xl font-semibold">
               {employeesWithoutSectorCount}
             </div>
           </div>
         </div>
 
         {inactiveBranches.length > 0 ? (
-          <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-            <AlertTriangle className="size-4 shrink-0 text-amber-600" />
+          <div className="flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-4 py-3 text-sm text-slate-700 dark:text-slate-300">
+            <AlertTriangle className="size-4 shrink-0 text-amber-600 dark:text-amber-300" />
             {inactiveBranches.length} filial(is) inativa(s) permanecem no historico.
           </div>
         ) : null}
@@ -638,8 +632,8 @@ export function BranchesPage() {
                     key={branch.id}
                     className={`cursor-pointer rounded-lg border p-4 transition-colors ${
                       selectedBranchFilter === branch.id
-                        ? "border-slate-400 bg-slate-50 ring-1 ring-slate-300"
-                        : "bg-white hover:bg-slate-50"
+                        ? "border-slate-400 dark:border-slate-500 bg-slate-50 dark:bg-slate-800/60 ring-1 ring-slate-300 dark:ring-slate-600"
+                        : "bg-white dark:bg-[color:var(--bg-surface)] hover:bg-slate-50 dark:hover:bg-slate-800"
                     }`}
                     onClick={() =>
                       setSelectedBranchFilter(
@@ -654,7 +648,7 @@ export function BranchesPage() {
                           <span
                             className={`rounded-full border px-2 py-0.5 text-xs font-medium ${
                               branch.active
-                                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                ? "border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
                                 : "border-zinc-200 bg-zinc-50 text-zinc-600"
                             }`}
                           >
@@ -674,7 +668,7 @@ export function BranchesPage() {
                         </div>
                       </div>
                       {selectedBranchFilter === branch.id ? (
-                        <span className="rounded-full border border-slate-300 bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 shrink-0">
+                        <span className="rounded-full border border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-600 dark:text-slate-300 shrink-0">
                           <Filter className="inline size-3 mr-1" />
                           Filtrado
                         </span>
@@ -716,7 +710,7 @@ export function BranchesPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-7 border-zinc-400/50 bg-white/40 text-zinc-900 hover:bg-white/70"
+                  className="h-7 border-zinc-400/50 bg-white/40 text-zinc-900 hover:bg-white/70 dark:border-zinc-600 dark:bg-zinc-900/40 dark:text-zinc-100 dark:hover:bg-zinc-800"
                   onClick={() => setSelectedBranchFilter(null)}
                 >
                   <X className="size-4" />
@@ -758,7 +752,7 @@ export function BranchesPage() {
                 ) : (
                   <div className="grid gap-3 md:grid-cols-2">
                     {filteredSectors.map((sector) => (
-                      <div key={sector.id} className="rounded-lg border bg-white p-4">
+                      <div key={sector.id} className="rounded-lg border bg-white dark:bg-[color:var(--bg-surface)] p-4">
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
                             <div className="font-medium">{sector.name}</div>
@@ -777,7 +771,7 @@ export function BranchesPage() {
                           <span
                             className={`shrink-0 rounded-full border px-2 py-0.5 text-xs font-medium ${
                               sector.active
-                                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                ? "border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
                                 : "border-zinc-200 bg-zinc-50 text-zinc-600"
                             }`}
                           >

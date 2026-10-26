@@ -1,4 +1,4 @@
-export type PaperPreset = "a5" | "a4" | "a3"
+export type PaperPreset = "a6" | "a5" | "a4" | "a3" | "a2" | "a1"
 export type PaperOrientation = "portrait" | "landscape"
 export type BackgroundFit = "cover" | "contain" | "stretch"
 
@@ -20,12 +20,17 @@ export type PosterDocumentSettings = {
   backgroundOffsetX: number
   backgroundOffsetY: number
   snapToGrid: boolean
+  // Centavos em 50% do tamanho de "R$ inteiro" (topo alinhado) ou do mesmo tamanho.
+  priceCentsReduced: boolean
 }
 
 export const PAPER_SIZES_MM: Record<PaperPreset, { width: number; height: number; label: string }> = {
-  a5: { width: 148, height: 210, label: "A5" },
-  a4: { width: 210, height: 297, label: "A4" },
+  a1: { width: 594, height: 841, label: "A1" },
+  a2: { width: 420, height: 594, label: "A2" },
   a3: { width: 297, height: 420, label: "A3" },
+  a4: { width: 210, height: 297, label: "A4" },
+  a5: { width: 148, height: 210, label: "A5" },
+  a6: { width: 105, height: 148, label: "A6" },
 }
 
 export const DEFAULT_DOCUMENT_SETTINGS: PosterDocumentSettings = {
@@ -46,6 +51,7 @@ export const DEFAULT_DOCUMENT_SETTINGS: PosterDocumentSettings = {
   backgroundOffsetX: 0,
   backgroundOffsetY: 0,
   snapToGrid: true,
+  priceCentsReduced: true,
 }
 
 export type PosterGeometry = {

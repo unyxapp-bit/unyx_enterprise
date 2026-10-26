@@ -19,7 +19,7 @@ export const coreModules = [
     name: "Unyx Ops",
     tagline: "Mostra o agora",
     description:
-      "Operacao em tempo real com dashboard vivo, operacao do dia, status e alertas.",
+      "Operação em tempo real com dashboard vivo, operação do dia, status e alertas.",
     planAccess: {
       starter: "Basico",
       growth: "Completo",
@@ -31,7 +31,7 @@ export const coreModules = [
     name: "Unyx Control",
     tagline: "Organiza a empresa",
     description:
-      "Estrutura, cadastros, filiais, setores, colaboradores, usuarios e regras.",
+      "Estrutura, cadastros, filiais, setores, colaboradores, usuários e regras.",
     planAccess: {
       starter: "Basico",
       growth: "Completo",
@@ -43,7 +43,7 @@ export const coreModules = [
     name: "Unyx Insight",
     tagline: "Explica o que aconteceu",
     description:
-      "Relatorios, faltas, atrasos, historico, auditoria e visao gerencial.",
+      "Relatórios, faltas, atrasos, histórico, auditoria e visão gerencial.",
     planAccess: {
       starter: "Indisponivel",
       growth: "Basico",
@@ -56,7 +56,7 @@ export const expansionModules = [
   {
     key: "unyx_comms",
     name: "Unyx Comms",
-    tagline: "Centraliza a comunicacao",
+    tagline: "Centraliza a comunicação",
     description:
       "Feed interno, avisos por filial ou setor, comunicados fixados e leitura confirmada.",
     planAccess: {
@@ -68,7 +68,7 @@ export const expansionModules = [
   {
     key: "unyx_game",
     name: "Unyx Game",
-    tagline: "Engaja a operacao",
+    tagline: "Engaja a operação",
     description:
       "Ranking por comportamento operacional, pontos, niveis e metas de engajamento.",
     planAccess: {
@@ -82,7 +82,7 @@ export const expansionModules = [
     name: "Unyx Deliveries",
     tagline: "Controla entregas",
     description:
-      "Entregas integradas ao PDV, pedidos manuais, rotas, status, taxas e historico operacional.",
+      "Entregas integradas ao PDV, pedidos manuais, rotas, status, taxas e histórico operacional.",
     planAccess: {
       starter: "Indisponivel",
       growth: "Opcional",
@@ -94,7 +94,7 @@ export const expansionModules = [
     name: "Unyx Checklists",
     tagline: "Padroniza procedimentos",
     description:
-      "Procedimentos operacionais, checklists executaveis, evidencias e historico de conclusao.",
+      "Procedimentos operacionais, checklists executáveis, evidências e histórico de conclusão.",
     planAccess: {
       starter: "Indisponivel",
       growth: "Opcional",

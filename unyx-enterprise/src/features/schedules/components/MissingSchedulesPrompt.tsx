@@ -85,36 +85,36 @@ export function MissingSchedulesPrompt({
   return (
     <div
       className={cn(
-        "rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950",
+        "rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100",
         className
       )}
     >
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div className="flex gap-3">
-          <AlertTriangle className="mt-0.5 size-5 shrink-0 text-amber-600" />
+          <AlertTriangle className="mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-400" />
           <div>
             <p className="font-semibold">
               {selectedBranch
-                ? `Nao ha escala cadastrada para ${formatDateBR(date)} em ${branchDisplayLabel(selectedBranch, branches.data ?? [])}`
-                : `Nao ha escala cadastrada para ${formatDateBR(date)}`}
+                ? `Não há escala cadastrada para ${formatDateBR(date)} em ${branchDisplayLabel(selectedBranch, branches.data ?? [])}`
+                : `Não há escala cadastrada para ${formatDateBR(date)}`}
             </p>
-            <p className="mt-1 text-amber-800">
-              Sem escala no escopo selecionado, Dashboard, Operacoes e IA ficam
-              sem base completa para calcular presenca, atrasos e cobertura.
+            <p className="mt-1 text-amber-800 dark:text-amber-200">
+              Sem escala no escopo selecionado, Dashboard, Operações e IA ficam
+              sem base completa para calcular presença, atrasos e cobertura.
             </p>
             {hasSchedulesInOtherBranches ? (
-              <p className="mt-2 text-xs text-amber-700">
+              <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
                 Encontrei {otherBranchSchedules.length} escala(s) hoje em outra(s)
                 filial(is): {otherBranchLabels.join(", ") || "filiais com outro cadastro"}.
               </p>
             ) : null}
             {sourceDate ? (
-              <p className="mt-2 text-xs text-amber-700">
-                Ultima escala encontrada: {formatDateBR(sourceDate)} com {sourceCount} registro(s).
+              <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
+                Última escala encontrada: {formatDateBR(sourceDate)} com {sourceCount} registro(s).
               </p>
             ) : (
-              <p className="mt-2 text-xs text-amber-700">
-                Nao encontrei uma escala anterior nos ultimos 30 dias para copiar automaticamente.
+              <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
+                Não encontrei uma escala anterior nos últimos 30 dias para copiar automaticamente.
               </p>
             )}
           </div>
@@ -129,10 +129,15 @@ export function MissingSchedulesPrompt({
               disabled={copySchedules.isPending}
             >
               <Copy className="size-4" />
-              {copySchedules.isPending ? "Copiando..." : "Copiar ultima escala"}
+              {copySchedules.isPending ? "Copiando..." : "Copiar última escala"}
             </Button>
           ) : null}
-          <Button asChild size="sm" variant="outline">
+          <Button
+            asChild
+            size="sm"
+            variant="outline"
+            className="border-amber-300 bg-white/70 text-amber-950 hover:bg-amber-100 dark:border-amber-500/40 dark:bg-transparent dark:text-amber-100 dark:hover:bg-amber-500/15"
+          >
             <Link to="/app/schedules">
               <CalendarPlus className="size-4" />
               Abrir escalas

@@ -12,6 +12,7 @@ import {
 } from "lucide-react"
 
 import { PageHeader } from "@/components/shared/PageHeader"
+import { Select } from "@/components/ui/select"
 import { SectionPanel } from "@/components/shared/SectionPanel"
 import { StateBlock } from "@/components/shared/StateBlock"
 import { Badge } from "@/components/ui/badge"
@@ -54,9 +55,6 @@ import { OperationalPostsMapBoard } from "@/features/operational/components"
 import { ControlePDVIntervalos } from "@/features/allocation/ControlePDVIntervalos"
 import { toast } from "sonner"
 
-const fieldClass =
-  "h-10 w-full rounded-full border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] px-3.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
-
 const m3ChipClass =
   "rounded-full border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] px-3 py-1 text-xs text-[color:var(--text-secondary)]"
 
@@ -66,12 +64,12 @@ const m3ButtonTonalClass =
 const postTypeLabel: Record<OperationalPostType, string> = {
   cashier: "Caixa",
   self_checkout: "Self-checkout",
-  counter: "Balcao",
+  counter: "Balcão",
   service_desk: "Atendimento",
   delivery: "Delivery",
   stock: "Estoque",
   kitchen: "Cozinha",
-  reception: "Recepcao",
+  reception: "Recepção",
   other: "Outro",
 }
 
@@ -95,15 +93,15 @@ const viewMeta: Record<
 > = {
   mapa: {
     title: "Mapa de caixas",
-    description: "Ocupacao dos caixas e postos operacionais.",
+    description: "Ocupação dos caixas e postos operacionais.",
   },
   controle: {
     title: "Controle PDV",
-    description: "Acompanhamento da escala real e alocacao dos operadores.",
+    description: "Acompanhamento da escala real e alocação dos operadores.",
   },
   liberacoes: {
-    title: "Liberacoes operacionais",
-    description: "Controle de cafes, intervalos, retornos e atrasos.",
+    title: "Liberações operacionais",
+    description: "Controle de cafés, intervalos, retornos e atrasos.",
   },
 }
 
@@ -248,7 +246,7 @@ export function AllocationPage() {
       }
       setPostOpen(false)
     } catch (error) {
-      setPostError(error instanceof Error ? error.message : "Nao foi possivel salvar.")
+      setPostError(error instanceof Error ? error.message : "Não foi possível salvar.")
     }
   }
 
@@ -266,7 +264,7 @@ export function AllocationPage() {
       window.setTimeout(() => window.location.reload(), 120)
     } catch (error) {
       setReleasePending(false)
-      toast.error(error instanceof Error ? error.message : "Nao foi possivel liberar.")
+      toast.error(error instanceof Error ? error.message : "Não foi possível liberar.")
       throw error
     }
   }
@@ -276,6 +274,7 @@ export function AllocationPage() {
   return (
     <>
       <PageHeader
+        large
         title={currentView.title}
         description={currentView.description}
       />
@@ -285,7 +284,7 @@ export function AllocationPage() {
           <StateBlock
             type="error"
             title="Erro ao carregar postos"
-            description={`${pageError.message}. Rode supabase/onboarding_first_access.sql no SQL Editor se o modulo ainda nao existir.`}
+            description={`${pageError.message}. Rode supabase/onboarding_first_access.sql no SQL Editor se o módulo ainda não existir.`}
           />
         ) : (
           <>
@@ -315,7 +314,7 @@ export function AllocationPage() {
                 onClick={() => setViewMode("liberacoes")}
               >
                 <Coffee className="size-4" />
-                Liberacoes
+                Liberações
               </Button>
             </div>
 
@@ -338,7 +337,7 @@ export function AllocationPage() {
 
                 <SectionPanel
                   id="funcoes-gestao"
-                  title="Funcoes de gestao"
+                  title="Funções de gestão"
                   variant="original"
                   defaultOpen={false}
                   headerClassName="rounded-[24px] bg-[color:var(--bg-muted)] px-4 text-[color:var(--text-primary)]"
@@ -374,45 +373,39 @@ export function AllocationPage() {
                   </div>
 
                   <div className="mb-4 flex flex-wrap items-center gap-2">
-                    <select
-                      className={fieldClass}
+                    <Select
+                      aria-label="Filtrar por status"
+                      className="w-40"
                       value={statusFilter}
-                      onChange={(event) =>
-                        setStatusFilter(event.target.value as PostStatusFilter)
-                      }
-                    >
-                      <option value="all">Todos status</option>
-                      <option value="active">Ativos</option>
-                      <option value="inactive">Inativos</option>
-                      <option value="without_sector">Sem setor</option>
-                    </select>
-                    <select
-                      className={fieldClass}
+                      onValueChange={(value) => setStatusFilter(value as PostStatusFilter)}
+                      options={[
+                        { value: "all", label: "Todos status" },
+                        { value: "active", label: "Ativos" },
+                        { value: "inactive", label: "Inativos" },
+                        { value: "without_sector", label: "Sem setor" },
+                      ]}
+                    />
+                    <Select
+                      aria-label="Filtrar por tipo"
+                      className="w-40"
                       value={typeFilter}
-                      onChange={(event) =>
-                        setTypeFilter(event.target.value as OperationalPostType | "all")
-                      }
-                    >
-                      <option value="all">Todos tipos</option>
-                      {sortedPostTypes.map((type) => (
-                        <option key={type} value={type}>
-                          {postTypeLabel[type]}
-                        </option>
-                      ))}
-                    </select>
+                      onValueChange={(value) => setTypeFilter(value as OperationalPostType | "all")}
+                      options={[
+                        { value: "all", label: "Todos tipos" },
+                        ...sortedPostTypes.map((type) => ({ value: type, label: postTypeLabel[type] })),
+                      ]}
+                    />
                     {sectorFilterOptions.length > 0 ? (
-                      <select
-                        className={fieldClass}
+                      <Select
+                        aria-label="Filtrar por setor"
+                        className="w-44"
                         value={sectorFilter}
-                        onChange={(event) => setSectorFilter(event.target.value)}
-                      >
-                        <option value="">Todos setores</option>
-                        {sectorFilterOptions.map((sector) => (
-                          <option key={sector} value={sector}>
-                            {sector}
-                          </option>
-                        ))}
-                      </select>
+                        onValueChange={setSectorFilter}
+                        options={[
+                          { value: "", label: "Todos setores" },
+                          ...sectorFilterOptions.map((sector) => ({ value: sector, label: sector })),
+                        ]}
+                      />
                     ) : null}
                     {(statusFilter !== "all" || typeFilter !== "all" || sectorFilter) ? (
                       <Button
@@ -434,7 +427,7 @@ export function AllocationPage() {
                   {allPosts.length === 0 ? (
                     <StateBlock
                       title="Nenhum posto cadastrado"
-                      description="Crie caixas, balcoes e pontos de atendimento para usar nas alocacoes do mapa de postos."
+                      description="Crie caixas, balcões e pontos de atendimento para usar nas alocações do mapa de postos."
                     />
                   ) : filteredPosts.length === 0 ? (
                     <StateBlock
@@ -549,94 +542,68 @@ export function AllocationPage() {
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="space-y-1 text-sm">
                 <span className="font-medium">Filial</span>
-                <select
-                  className={fieldClass}
+                <Select
+                  required
                   value={postForm.branch_id}
                   disabled={Boolean(editingPost)}
-                  onChange={(event) =>
-                    setPostForm((current) => ({
-                      ...current,
-                      branch_id: event.target.value,
-                      sector_id: "",
-                    }))
+                  onValueChange={(value) =>
+                    setPostForm((current) => ({ ...current, branch_id: value, sector_id: "" }))
                   }
-                  required
-                >
-                  <option value="">Selecione</option>
-                  {(branches.data ?? []).map((branch) => (
-                    <option key={branch.id} value={branch.id}>
-                      {branch.name}
-                    </option>
-                  ))}
-                </select>
+                  placeholder="Selecione"
+                  options={[
+                    { value: "", label: "Selecione" },
+                    ...(branches.data ?? []).map((branch) => ({ value: branch.id, label: branch.name })),
+                  ]}
+                />
               </label>
 
               <label className="space-y-1 text-sm">
                 <span className="font-medium">Setor</span>
-                <select
-                  className={fieldClass}
+                <Select
                   value={postForm.sector_id}
-                  onChange={(event) =>
-                    setPostForm((current) => ({
-                      ...current,
-                      sector_id: event.target.value,
-                    }))
+                  onValueChange={(value) =>
+                    setPostForm((current) => ({ ...current, sector_id: value }))
                   }
-                >
-                  <option value="">Sem setor</option>
-                  {sectorOptionsForBranch(
-                    sectors.data ?? [],
-                    postForm.branch_id
-                  ).map((sector) => (
-                    <option key={sector.id} value={sector.id}>
-                      {sector.name}
-                    </option>
-                  ))}
-                </select>
+                  options={[
+                    { value: "", label: "Sem setor" },
+                    ...sectorOptionsForBranch(sectors.data ?? [], postForm.branch_id).map((sector) => ({
+                      value: sector.id,
+                      label: sector.name,
+                    })),
+                  ]}
+                />
               </label>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="space-y-1 text-sm">
                 <span className="font-medium">Tipo</span>
-                <select
-                  className={fieldClass}
+                <Select
                   value={postForm.type}
-                  onChange={(event) =>
-                    setPostForm((current) => ({
-                      ...current,
-                      type: event.target.value as OperationalPostType,
-                    }))
+                  onValueChange={(value) =>
+                    setPostForm((current) => ({ ...current, type: value as OperationalPostType }))
                   }
-                >
-                  {sortedPostTypes.map((type) => (
-                    <option key={type} value={type}>
-                      {postTypeLabel[type]}
-                    </option>
-                  ))}
-                </select>
+                  options={sortedPostTypes.map((type) => ({ value: type, label: postTypeLabel[type] }))}
+                />
               </label>
 
               <label className="space-y-1 text-sm">
                 <span className="font-medium">Status</span>
-                <select
-                  className={fieldClass}
+                <Select
                   value={postForm.active ? "active" : "inactive"}
-                  onChange={(event) =>
-                    setPostForm((current) => ({
-                      ...current,
-                      active: event.target.value === "active",
-                    }))
+                  onValueChange={(value) =>
+                    setPostForm((current) => ({ ...current, active: value === "active" }))
                   }
-                >
-                  <option value="active">Ativo</option>
-                  <option value="inactive">Inativo</option>
-                </select>
+                  options={[
+                    { value: "active", label: "Ativo" },
+                    { value: "inactive", label: "Inativo" },
+                  ]}
+                />
               </label>
             </div>
 
             {postError ? (
-              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              <div className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">
                 {postError}
               </div>
             ) : null}

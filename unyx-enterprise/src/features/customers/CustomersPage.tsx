@@ -13,9 +13,6 @@ import {
   ShieldAlert,
   Trash2,
 } from "lucide-react"
-
-import { BentoGrid } from "@/components/bento/BentoGrid"
-import { MetricCard } from "@/components/bento/MetricCard"
 import { PageHeader } from "@/components/shared/PageHeader"
 import { StateBlock } from "@/components/shared/StateBlock"
 import { Badge } from "@/components/ui/badge"
@@ -29,6 +26,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Select } from "@/components/ui/select"
 import {
   useBranches,
   useCreateCustomer,
@@ -41,11 +39,8 @@ import { useAppStore } from "@/store/useAppStore"
 import type { Customer, CustomerStatus } from "@/types/domain"
 import type { CustomerInput } from "@/services/unyxApi"
 
-const fieldClass =
-  "h-8 w-full rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50 disabled:cursor-not-allowed disabled:bg-slate-100"
-
 const textareaClass =
-  "min-h-20 w-full rounded-lg border bg-white px-2.5 py-2 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+  "min-h-20 w-full rounded-lg border bg-white dark:bg-[color:var(--bg-surface)] px-2.5 py-2 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
 
 const statusLabel: Record<CustomerStatus, string> = {
   active: "Ativo",
@@ -235,7 +230,7 @@ export function CustomersPage() {
         state: address.uf || current.state,
       }))
     } catch (error) {
-      setFormError(error instanceof Error ? error.message : "Nao foi possivel buscar o CEP.")
+      setFormError(error instanceof Error ? error.message : "Não foi possível buscar o CEP.")
     } finally {
       setCepLoading(false)
     }
@@ -257,7 +252,7 @@ export function CustomersPage() {
       setDialogOpen(false)
       setEditing(null)
     } catch (error) {
-      setFormError(error instanceof Error ? error.message : "Nao foi possivel salvar o cliente.")
+      setFormError(error instanceof Error ? error.message : "Não foi possível salvar o cliente.")
     }
   }
 
@@ -272,8 +267,9 @@ export function CustomersPage() {
   return (
     <>
       <PageHeader
+        large
         title="Clientes"
-        description="Cadastro unico de clientes para PDV, entregas e historico comercial."
+        description="Cadastro único de clientes para PDV, entregas e histórico comercial."
         action={
           <div className="flex flex-wrap items-center gap-2">
             <Button
@@ -304,41 +300,45 @@ export function CustomersPage() {
           />
         ) : (
           <>
-            <BentoGrid className="xl:grid-cols-5">
-              <MetricCard
-                title="Clientes"
-                value={customerList.length}
-                detail="Cadastrados na base"
-                icon={<Contact className="size-5" />}
-              />
-              <MetricCard
-                title="Ativos"
-                value={activeCount}
-                detail="Liberados para atendimento"
-                icon={<Phone className="size-5" />}
-              />
-              <MetricCard
-                title="Com endereco"
-                value={withAddress}
-                detail="Prontos para entrega"
-                icon={<MapPin className="size-5" />}
-              />
-              <MetricCard
-                title="Bloqueados"
-                value={blockedCount}
-                detail="Requerem atencao"
-                icon={<ShieldAlert className="size-5" />}
-              />
-              <MetricCard
-                title="Sem contato"
-                value={withoutContact}
-                detail="Sem telefone ou email"
-                icon={<Ban className="size-5" />}
-                className={withoutContact > 0 ? "border-amber-200 bg-amber-50" : undefined}
-              />
-            </BentoGrid>
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+              {[
+                { title: "Clientes", value: customerList.length, detail: "Cadastrados na base", icon: <Contact />, tone: "" },
+                { title: "Ativos", value: activeCount, detail: "Liberados para atendimento", icon: <Phone />, tone: "" },
+                { title: "Com endereço", value: withAddress, detail: "Prontos para entrega", icon: <MapPin />, tone: "" },
+                {
+                  title: "Bloqueados",
+                  value: blockedCount,
+                  detail: "Requerem atenção",
+                  icon: <ShieldAlert />,
+                  tone: blockedCount > 0 ? "border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10" : "",
+                },
+                {
+                  title: "Sem contato",
+                  value: withoutContact,
+                  detail: "Sem telefone ou email",
+                  icon: <Ban />,
+                  tone: withoutContact > 0 ? "border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10" : "",
+                },
+              ].map((metric) => (
+                <div
+                  key={metric.title}
+                  title={metric.detail}
+                  className={`flex items-center gap-2 rounded-lg border bg-white dark:bg-[color:var(--bg-surface)] px-2.5 py-1.5 shadow-sm ${metric.tone}`}
+                >
+                  <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800 text-muted-foreground [&_svg]:size-3.5">
+                    {metric.icon}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="truncate text-[10px] font-medium leading-tight text-muted-foreground">
+                      {metric.title}
+                    </div>
+                    <div className="text-base font-semibold leading-tight">{metric.value}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
 
-            <Card className="border bg-white shadow-sm">
+            <Card className="border bg-white dark:bg-[color:var(--bg-surface)] shadow-sm">
               <CardHeader>
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <CardTitle>Base de clientes</CardTitle>
@@ -347,25 +347,21 @@ export function CustomersPage() {
                       <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                       <Input
                         className="w-full pl-9 sm:w-72"
-                        placeholder="Codigo, nome, telefone, CEP..."
+                        placeholder="Código, nome, telefone, CEP..."
                         value={search}
                         onChange={(event) => setSearch(event.target.value)}
                       />
                     </div>
-                    <select
-                      className={fieldClass}
+                    <Select
+                      aria-label="Filtrar por status"
+                      className="w-44"
                       value={statusFilter}
-                      onChange={(event) =>
-                        setStatusFilter(event.target.value as CustomerStatus | "all")
-                      }
-                    >
-                      <option value="all">Todos os status</option>
-                      {statusOptions.map((status) => (
-                        <option key={status} value={status}>
-                          {statusLabel[status]}
-                        </option>
-                      ))}
-                    </select>
+                      onValueChange={(value) => setStatusFilter(value as CustomerStatus | "all")}
+                      options={[
+                        { value: "all", label: "Todos os status" },
+                        ...statusOptions.map((status) => ({ value: status, label: statusLabel[status] })),
+                      ]}
+                    />
                     {filtersActive ? (
                       <Button
                         type="button"
@@ -399,10 +395,10 @@ export function CustomersPage() {
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b text-left text-muted-foreground">
-                          <th className="px-4 py-3 font-medium">Codigo</th>
+                          <th className="px-4 py-3 font-medium">Código</th>
                           <th className="px-4 py-3 font-medium">Cliente</th>
                           <th className="px-4 py-3 font-medium">Contato</th>
-                          <th className="px-4 py-3 font-medium">Endereco</th>
+                          <th className="px-4 py-3 font-medium">Endereço</th>
                           <th className="px-4 py-3 font-medium">Status</th>
                           <th className="px-4 py-3" />
                         </tr>
@@ -411,7 +407,7 @@ export function CustomersPage() {
                         {filteredCustomers.map((customer) => (
                           <tr
                             key={customer.id}
-                            className="border-b last:border-0 hover:bg-slate-50"
+                            className="border-b last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800"
                           >
                             <td className="px-4 py-3 font-semibold">
                               {customer.customer_code}
@@ -444,7 +440,7 @@ export function CustomersPage() {
                               {hasAddress(customer) ? (
                                 <div>
                                   <div>
-                                    {customer.address_line ?? "Endereco"}
+                                    {customer.address_line ?? "Endereço"}
                                     {customer.address_number ? `, ${customer.address_number}` : ""}
                                   </div>
                                   <div>
@@ -457,7 +453,7 @@ export function CustomersPage() {
                                   ) : null}
                                 </div>
                               ) : (
-                                "Sem endereco"
+                                "Sem endereço"
                               )}
                             </td>
                             <td className="px-4 py-3">
@@ -507,7 +503,7 @@ export function CustomersPage() {
           </DialogHeader>
           <form className="space-y-4" onSubmit={(event) => void handleSubmit(event)}>
             {editing ? (
-              <div className="rounded-lg border bg-slate-50 px-3 py-2 text-sm">
+              <div className="rounded-lg border bg-slate-50 dark:bg-slate-800/60 px-3 py-2 text-sm">
                 Codigo do cliente: <strong>{editing.customer_code}</strong>
               </div>
             ) : null}
@@ -523,37 +519,25 @@ export function CustomersPage() {
               </label>
               <label className="space-y-1 text-sm">
                 <span className="font-medium">Status</span>
-                <select
-                  className={fieldClass}
+                <Select
                   value={form.status}
-                  onChange={(event) =>
-                    setField("status", event.target.value as CustomerStatus)
-                  }
-                >
-                  {statusOptions.map((status) => (
-                    <option key={status} value={status}>
-                      {statusLabel[status]}
-                    </option>
-                  ))}
-                </select>
+                  onValueChange={(value) => setField("status", value as CustomerStatus)}
+                  options={statusOptions.map((status) => ({ value: status, label: statusLabel[status] }))}
+                />
               </label>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-3">
               <label className="space-y-1 text-sm">
                 <span className="font-medium">Filial</span>
-                <select
-                  className={fieldClass}
+                <Select
                   value={form.branch_id}
-                  onChange={(event) => setField("branch_id", event.target.value)}
-                >
-                  <option value="">Todas as filiais</option>
-                  {(branches.data ?? []).map((branch) => (
-                    <option key={branch.id} value={branch.id}>
-                      {branch.name}
-                    </option>
-                  ))}
-                </select>
+                  onValueChange={(value) => setField("branch_id", value)}
+                  options={[
+                    { value: "", label: "Todas as filiais" },
+                    ...(branches.data ?? []).map((branch) => ({ value: branch.id, label: branch.name })),
+                  ]}
+                />
               </label>
               <label className="space-y-1 text-sm">
                 <span className="font-medium">Documento</span>
@@ -599,7 +583,7 @@ export function CustomersPage() {
                 />
               </label>
               <label className="space-y-1 text-sm">
-                <span className="font-medium">Endereco</span>
+                <span className="font-medium">Endereço</span>
                 <Input
                   value={form.address_line}
                   onChange={(event) => setField("address_line", event.target.value)}
@@ -620,7 +604,7 @@ export function CustomersPage() {
 
             <div className="grid gap-3 sm:grid-cols-4">
               <label className="space-y-1 text-sm">
-                <span className="font-medium">Numero</span>
+                <span className="font-medium">Número</span>
                 <Input
                   value={form.address_number}
                   onChange={(event) => setField("address_number", event.target.value)}
@@ -659,7 +643,7 @@ export function CustomersPage() {
                 />
               </label>
               <label className="space-y-1 text-sm">
-                <span className="font-medium">Referencia</span>
+                <span className="font-medium">Referência</span>
                 <Input
                   value={form.reference}
                   onChange={(event) => setField("reference", event.target.value)}
@@ -677,7 +661,7 @@ export function CustomersPage() {
             </label>
 
             <label className="space-y-1 text-sm">
-              <span className="font-medium">Observacoes</span>
+              <span className="font-medium">Observações</span>
               <textarea
                 className={textareaClass}
                 value={form.notes}
@@ -686,13 +670,13 @@ export function CustomersPage() {
             </label>
 
             {formError ? (
-              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              <div className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">
                 {formError}
               </div>
             ) : null}
 
             {(createCustomer.error || updateCustomer.error) ? (
-              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              <div className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">
                 {createCustomer.error?.message ?? updateCustomer.error?.message}
               </div>
             ) : null}

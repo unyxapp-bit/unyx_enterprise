@@ -6,9 +6,12 @@ import {
   ArrowDownToLine,
   ArrowUpToLine,
   Barcode,
+  Brush,
   Bold,
   ChevronDown,
   ChevronUp,
+  ListOrdered,
+  Pencil,
   Download,
   Copy,
   Eye,
@@ -25,6 +28,8 @@ import {
   Maximize2,
   Move,
   Palette,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   Redo2,
   RotateCcw,
@@ -50,6 +55,7 @@ import type {
 import { toast } from "sonner"
 
 import { PageHeader } from "@/components/shared/PageHeader"
+import { Select } from "@/components/ui/select"
 import { useAuth } from "@/app/providers/auth-context"
 import { Button } from "@/components/ui/button"
 import {
@@ -68,6 +74,7 @@ import {
 } from "@/features/pos/posterEditorCore"
 import {
   barcodeDataUrl,
+  brushPath,
   createCustomElement,
   customElementSvg,
 } from "@/features/pos/posterEditorElements"
@@ -79,6 +86,12 @@ import type {
   PosterDocumentSettings,
   PosterGeometry,
 } from "@/features/pos/posterEditorCore"
+import { StyleGroup, StyleSlider } from "@/features/pos/StyleSlider"
+import { colorLabel, colorName } from "@/features/pos/colorNames"
+import { postersFromRows, sheetTemplateCsv } from "@/features/pos/posterSheet"
+import { parseSpreadsheet } from "@/lib/spreadsheet"
+import { centsDisplay, centsRuns, linkedCentsStyle, reducedCentsSize } from "@/features/pos/posterPrice"
+import { measureTextWidth } from "@/features/pos/textMetrics"
 
 const FIELD_KEYS = [
   "produto",
@@ -91,7 +104,7 @@ const FIELD_KEYS = [
 ] as const
 
 type PosterFieldKey = (typeof FIELD_KEYS)[number]
-type EditorTab = "fields" | "style" | "document" | "layers"
+type EditorTab = "fields" | "style" | "document" | "layers" | "queue"
 type FontWeight = "400" | "700" | "900"
 type FontStyle = "normal" | "italic"
 type TextAlign = "start" | "middle" | "end"
@@ -136,7 +149,8 @@ type ElementBounds = {
   locked: boolean
 }
 
-type ResizeCorner = "nw" | "ne" | "se" | "sw"
+// Cantos redimensionam proporcionalmente; "e"/"w" mudam só a largura (quebra de linha).
+type ResizeCorner = "nw" | "ne" | "se" | "sw" | "e" | "w"
 type TransformMode = "move" | "rotate" | ResizeCorner
 
 type TransformSession = {
@@ -186,18 +200,18 @@ const DEFAULT_FIELDS: PosterFields = {
   preco_reais: "24",
   preco_centavos: "99",
   unidade: "UNID",
-  validade: "OFERTA VALIDA ATE 25/05",
+  validade: "OFERTA VÁLIDA ATÉ 25/05",
   observacao: "ENQUANTO DURAREM OS ESTOQUES",
 }
 
 const FIELD_META: Record<PosterFieldKey, { label: string; hint: string }> = {
   produto: { label: "Produto", hint: "Nome do produto" },
-  descricao: { label: "Descricao", hint: "Ex: PACOTE 5KG" },
+  descricao: { label: "Descrição", hint: "Ex: PACOTE 5KG" },
   preco_reais: { label: "R$ inteiro", hint: "Ex: 24" },
   preco_centavos: { label: "Centavos", hint: "Ex: 99" },
   unidade: { label: "Unidade", hint: "Ex: UNID / KG" },
-  validade: { label: "Validade", hint: "Periodo da oferta" },
-  observacao: { label: "Observacao", hint: "Rodape" },
+  validade: { label: "Validade", hint: "Período da oferta" },
+  observacao: { label: "Observação", hint: "Rodapé" },
 }
 
 const FONT_OPTIONS = [
@@ -315,11 +329,87 @@ const DEFAULT_STYLES: PosterStyles = {
   },
 }
 
-function cloneStyles(): PosterStyles {
-  return FIELD_KEYS.reduce((styles, key) => {
-    styles[key] = { ...DEFAULT_STYLES[key] }
-    return styles
+// Layout inicial de cada template da biblioteca: cada arte tem o cabeçalho e a pincelada em
+// lugares diferentes, então cada um recebe posições, tamanhos e cores próprios.
+// Templates importados (e qualquer outro) usam DEFAULT_STYLES.
+const PRICE_ON_BRUSH = {
+  preco_reais: { fontSize: 330, color: "#D90429", stroke: "#FFFFFF", strokeWidth: 5 },
+  preco_centavos: { fontSize: 130, color: "#D90429", stroke: "#FFFFFF", strokeWidth: 4 },
+  unidade: { fontSize: 46, color: "#111111", stroke: "none", strokeWidth: 0, fontWeight: "900" as FontWeight },
+}
+
+const TEXT_ON_WHITE = {
+  produto: { fontSize: 84, color: "#111111", stroke: "none", strokeWidth: 0 },
+  descricao: { fontSize: 42, color: "#374151", stroke: "none", strokeWidth: 0 },
+  validade: { fontSize: 30, color: "#111111", stroke: "none", strokeWidth: 0 },
+  observacao: { fontSize: 20, color: "#6B7280" },
+}
+
+type StylePreset = Partial<Record<PosterFieldKey, Partial<PosterFieldStyle>>>
+
+function layoutPreset(
+  rows: { produto: number; descricao: number; validade: number; observacao: number },
+  price: { reaisX: number; reaisY: number; centsX: number; centsY: number; unitY: number },
+  observationColor?: string
+): StylePreset {
+  return {
+    produto: { ...TEXT_ON_WHITE.produto, x: 50, y: rows.produto },
+    descricao: { ...TEXT_ON_WHITE.descricao, x: 50, y: rows.descricao },
+    validade: { ...TEXT_ON_WHITE.validade, x: 50, y: rows.validade },
+    observacao: {
+      ...TEXT_ON_WHITE.observacao,
+      x: 50,
+      y: rows.observacao,
+      ...(observationColor ? { color: observationColor } : {}),
+    },
+    preco_reais: { ...PRICE_ON_BRUSH.preco_reais, x: price.reaisX, y: price.reaisY },
+    preco_centavos: { ...PRICE_ON_BRUSH.preco_centavos, x: price.centsX, y: price.centsY },
+    unidade: { ...PRICE_ON_BRUSH.unidade, x: price.centsX, y: price.unitY },
+  }
+}
+
+const TEMPLATE_STYLE_PRESETS: Record<string, StylePreset> = {
+  "public:aproveite-agora.png": layoutPreset(
+    { produto: 33, descricao: 40, validade: 49, observacao: 96.5 },
+    { reaisX: 38, reaisY: 77, centsX: 67, centsY: 70, unitY: 83 }
+  ),
+  "public:proximo-vencimento.png": layoutPreset(
+    { produto: 33, descricao: 40, validade: 48, observacao: 95.5 },
+    { reaisX: 38, reaisY: 74, centsX: 67, centsY: 68, unitY: 81 },
+    "#111111"
+  ),
+  "public:super-oferta.png": layoutPreset(
+    { produto: 28, descricao: 36, validade: 45, observacao: 86.5 },
+    { reaisX: 38, reaisY: 72, centsX: 67, centsY: 66, unitY: 79 }
+  ),
+  // Super Dia não tem pincelada: o preço fica direto sobre o fundo branco.
+  "public:super-dia.png": layoutPreset(
+    { produto: 37, descricao: 44, validade: 84, observacao: 94 },
+    { reaisX: 38, reaisY: 66, centsX: 67, centsY: 60, unitY: 73 }
+  ),
+}
+
+// Limites da posição (em % do cartaz): permite arrastar elementos para fora da folha.
+const POSITION_MIN = -50
+const POSITION_MAX = 150
+
+function cloneStyles(templateId?: string): PosterStyles {
+  const preset = templateId ? TEMPLATE_STYLE_PRESETS[templateId] : undefined
+  const styles = FIELD_KEYS.reduce((next, key) => {
+    next[key] = { ...DEFAULT_STYLES[key], ...preset?.[key] }
+    return next
   }, {} as PosterStyles)
+  // Centavos nascem a 50%, ao lado do "R$ inteiro"; depois podem ser movidos livremente.
+  const geometry = documentGeometry(DEFAULT_DOCUMENT_SETTINGS)
+  const placed = linkedCentsStyle(
+    styles.preco_reais,
+    DEFAULT_FIELDS.preco_reais,
+    geometry.logicalWidth,
+    geometry.logicalHeight,
+    true
+  )
+  styles.preco_centavos = { ...styles.preco_centavos, ...placed, color: styles.preco_centavos.color }
+  return styles
 }
 
 function normalizeStylesByTemplate(
@@ -349,11 +439,6 @@ function xmlEscape(value: string) {
     .replace(/"/g, "&quot;")
 }
 
-function estimatedTextWidth(value: string, fontSize: number, letterSpacing: number) {
-  const characterCount = Math.max(1, Array.from(value).length)
-  return characterCount * fontSize * 0.58 + Math.max(0, characterCount - 1) * letterSpacing
-}
-
 function textLayout(value: string, style: PosterFieldStyle, canvasWidth: number) {
   const anchorAvailableWidth =
     style.textAlign === "start"
@@ -368,7 +453,7 @@ function textLayout(value: string, style: PosterFieldStyle, canvasWidth: number)
   const words = value.replace(/\r/g, "").split(/(\s+|\n)/).filter(Boolean)
   const longestWordWidth = words.reduce(
     (maximum, word) =>
-      Math.max(maximum, estimatedTextWidth(word.trim(), style.fontSize, style.letterSpacing)),
+      Math.max(maximum, measureTextWidth(word.trim(), style.fontSize, style)),
     0
   )
   const scale = longestWordWidth > maximumWidth ? maximumWidth / longestWordWidth : 1
@@ -385,7 +470,7 @@ function textLayout(value: string, style: PosterFieldStyle, canvasWidth: number)
     const candidate = `${currentLine}${token}`.trim()
     if (
       currentLine &&
-      estimatedTextWidth(candidate, fontSize, style.letterSpacing) > maximumWidth
+      measureTextWidth(candidate, fontSize, style) > maximumWidth
     ) {
       lines.push(currentLine.trim())
       currentLine = token.trimStart()
@@ -401,7 +486,7 @@ function textLayout(value: string, style: PosterFieldStyle, canvasWidth: number)
     maximumWidth,
     lines.reduce(
       (maximum, line) =>
-        Math.max(maximum, estimatedTextWidth(line, fontSize, style.letterSpacing)),
+        Math.max(maximum, measureTextWidth(line, fontSize, style)),
       0
     )
   )
@@ -413,6 +498,29 @@ function textLayout(value: string, style: PosterFieldStyle, canvasWidth: number)
     width,
     height: Math.max(fontSize * 1.35, lineHeight * lines.length),
   }
+}
+
+// Maior tamanho de fonte (até o do estilo) em que o texto cabe em `maxLines` linhas.
+// Usado na importação em lote: nomes longos ("MANDIOCA DESCASCADA 1KG") encolhem em vez de
+// virar três linhas gigantes.
+function fitFontSize(value: string, style: PosterFieldStyle, canvasWidth: number, maxLines: number) {
+  let fontSize = style.fontSize
+  const minimum = style.fontSize * 0.45
+  while (fontSize > minimum) {
+    const layout = textLayout(value, { ...style, fontSize }, canvasWidth)
+    if (layout.lines.length <= maxLines && layout.fontSize >= fontSize - 0.01) return fontSize
+    fontSize = Math.round(fontSize * 0.94 * 10) / 10
+  }
+  return Math.max(minimum, fontSize)
+}
+
+// Em texto alinhado à esquerda/direita o âncora fica na borda do texto, não no centro:
+// a caixa de seleção precisa ser deslocada meia largura para acompanhar o texto desenhado.
+function anchorShiftPct(style: PosterFieldStyle, layoutWidth: number, canvasWidth: number) {
+  const half = (layoutWidth / canvasWidth) * 50
+  if (style.textAlign === "start") return half
+  if (style.textAlign === "end") return -half
+  return 0
 }
 
 function svgText(
@@ -435,14 +543,28 @@ function svgText(
         }" stroke-linejoin="round"`
       : ""
 
-  const tspans = layout.lines
-    .map(
-      (line, index) =>
-        `<tspan x="${x}" y="${firstLineY + index * layout.lineHeight}">${xmlEscape(
-          line
-        )}</tspan>`
-    )
-    .join("")
+  // Centavos: vírgula com metade do tamanho, apoiada na linha de base dos algarismos.
+  const runs =
+    field === "preco_centavos" && layout.lines.length === 1
+      ? centsRuns(layout.lines[0], style, layout.fontSize, x, firstLineY)
+      : null
+  const tspans = runs
+    ? runs
+        .map(
+          (run) =>
+            `<tspan x="${run.x}" y="${run.y}" text-anchor="start" font-size="${run.fontSize}">${xmlEscape(
+              run.text
+            )}</tspan>`
+        )
+        .join("")
+    : layout.lines
+        .map(
+          (line, index) =>
+            `<tspan x="${x}" y="${firstLineY + index * layout.lineHeight}">${xmlEscape(
+              line
+            )}</tspan>`
+        )
+        .join("")
   const shared = `text-anchor="${style.textAlign}" dominant-baseline="middle" font-family="${xmlEscape(
     style.fontFamily
   )}" font-size="${layout.fontSize}" font-weight="${style.fontWeight}" font-style="${
@@ -553,7 +675,7 @@ function readDimension(rawValue: string | null) {
 function readSvgSize(markup: string) {
   const document = new DOMParser().parseFromString(markup, "image/svg+xml")
   if (document.querySelector("parsererror")) {
-    throw new Error("SVG invalido.")
+    throw new Error("SVG inválido.")
   }
 
   const svg = document.documentElement
@@ -605,7 +727,7 @@ function readImageSize(dataUrl: string, fileName: string) {
     const image = new Image()
     image.onload = () => {
       if (!image.naturalWidth || !image.naturalHeight) {
-        reject(new Error(`Imagem ${fileName} sem dimensoes validas.`))
+        reject(new Error(`Imagem ${fileName} sem dimensões válidas.`))
         return
       }
       resolve({ width: image.naturalWidth, height: image.naturalHeight })
@@ -626,9 +748,9 @@ function uploadTemplateId(fileName: string) {
 async function templateFromFile(file: File): Promise<PosterTemplate> {
   const normalizedName = file.name.trim().toLocaleLowerCase()
   const isSvg = normalizedName.endsWith(".svg")
-  const isPng = normalizedName.endsWith(".png")
-  if (!isSvg && !isPng) {
-    throw new Error(`Formato de ${file.name} nao suportado.`)
+  const isRaster = /\.(png|jpe?g|webp)$/.test(normalizedName)
+  if (!isSvg && !isRaster) {
+    throw new Error(`Formato de ${file.name} não suportado. Use PNG, JPG, WebP ou SVG.`)
   }
 
   const dataUrl = await readFileDataUrl(file)
@@ -660,14 +782,14 @@ function readManifestItems(value: unknown): PosterTemplateManifestItem[] {
   return manifest.templates.filter(
     (template): template is PosterTemplateManifestItem =>
       typeof template?.file === "string" &&
-      /\.(svg|png)$/i.test(template.file.trim())
+      /\.(svg|png|jpe?g|webp)$/i.test(template.file.trim())
   )
 }
 
 async function templateFromManifest(item: PosterTemplateManifestItem): Promise<PosterTemplate> {
   const response = await fetch(publicTemplateUrl(item.file))
   if (!response.ok) {
-    throw new Error(`Template ${item.file} nao encontrado.`)
+    throw new Error(`Template ${item.file} não encontrado.`)
   }
 
   const blob = await response.blob()
@@ -723,9 +845,24 @@ type PosterSnapshot = {
   uploadedTemplates?: PosterTemplate[]
 }
 
+// Cartaz guardado na fila (uma página no PDF). Guarda o estado completo do cartaz.
+type PosterQueueItem = {
+  id: string
+  templateId: string
+  fields: PosterFields
+  styles: PosterStyles
+  customElements: PosterCustomElement[]
+  layerOrder: EditorElementId[]
+  priceCentsReduced: boolean
+  createdAt: string
+}
+
 type PosterWorkspaceSnapshot = PosterSnapshot & {
+  queue?: PosterQueueItem[]
   activeTemplateId: string | null
   uploadedTemplates: Array<Omit<PosterTemplate, "dataUrl"> & { dataUrl: string }>
+  quickColors?: string[]
+  versions?: SavedPosterVersion[]
 }
 
 type SavedPosterVersion = {
@@ -736,6 +873,8 @@ type SavedPosterVersion = {
 
 const POSTER_DRAFT_STORAGE_KEY = "unyx-poster-editor-draft-v2"
 const POSTER_VERSIONS_STORAGE_KEY = "unyx-poster-editor-versions-v2"
+const POSTER_QUICK_COLORS_STORAGE_KEY = "unyx-poster-editor-quick-colors-v1"
+const MAX_QUICK_COLORS = 24
 
 function readStoredValue<Value>(key: string): Value | null {
   try {
@@ -746,8 +885,32 @@ function readStoredValue<Value>(key: string): Value | null {
   }
 }
 
+// Arredonda para evitar valores como 78.95506290464955 vindos de redimensionamento/arraste.
+function roundTo(value: number, decimals = 1) {
+  const factor = 10 ** decimals
+  return Math.round(value * factor) / factor
+}
+
+// Estilos/textos exibidos a partir dos salvos: com "Centavos a 50%" ligado, o tamanho dos
+// centavos segue o R$ inteiro; os centavos aparecem com a vírgula na frente.
+function deriveStyles(base: PosterStyles, centsLinked: boolean): PosterStyles {
+  return centsLinked
+    ? {
+        ...base,
+        preco_centavos: { ...base.preco_centavos, ...reducedCentsSize(base.preco_reais) },
+      }
+    : base
+}
+
+function deriveFields(fields: PosterFields): PosterFields {
+  return { ...fields, preco_centavos: centsDisplay(fields.preco_centavos) }
+}
+
 function cloneSnapshot(snapshot: PosterSnapshot): PosterSnapshot {
-  return structuredClone(snapshot)
+  // Os templates importados (imagens em base64) nunca são alterados no lugar, só
+  // substituídos; compartilhar a referência evita copiar megabytes a cada ponto de histórico.
+  const { uploadedTemplates, ...rest } = snapshot
+  return { ...structuredClone(rest), uploadedTemplates }
 }
 
 function downloadBlob(blob: Blob, fileName: string) {
@@ -776,7 +939,7 @@ async function rasterizeSvg(svgMarkup: string, width: number, height: number) {
     canvas.width = width
     canvas.height = height
     const context = canvas.getContext("2d")
-    if (!context) throw new Error("Canvas indisponivel para exportacao.")
+    if (!context) throw new Error("Canvas indisponível para exportação.")
     context.fillStyle = "#ffffff"
     context.fillRect(0, 0, width, height)
     context.drawImage(image, 0, 0, width, height)
@@ -797,7 +960,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
   const draftStorageKey = `${POSTER_DRAFT_STORAGE_KEY}:${storageScope}`
   const versionsStorageKey = `${POSTER_VERSIONS_STORAGE_KEY}:${storageScope}`
   const [draftSeed] = useState(() =>
-    readStoredValue<PosterSnapshot>(draftStorageKey)
+    readStoredValue<PosterSnapshot & { queue?: PosterQueueItem[] }>(draftStorageKey)
   )
   const [templates, setTemplates] = useState<PosterTemplate[]>(() => draftSeed?.uploadedTemplates ?? [])
   const [uploadedTemplates, setUploadedTemplates] = useState<PosterTemplate[]>(() => draftSeed?.uploadedTemplates ?? [])
@@ -805,6 +968,8 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
   const [cloudStatus, setCloudStatus] = useState<"loading" | "ready" | "error" | "local">(storageScope === "anonymous" || !organizationId ? "local" : "loading")
   const [cloudMessage, setCloudMessage] = useState<string | null>(null)
   const [activeTemplateId, setActiveTemplateId] = useState<string | null>(draftSeed?.activeTemplateId ?? null)
+  // A lista de templates só ocupa espaço enquanto é usada: recolhe ao escolher um template.
+  const [templatesPanelOpen, setTemplatesPanelOpen] = useState(!draftSeed?.activeTemplateId)
   const [fields, setFields] = useState<PosterFields>(
     draftSeed?.fields ?? { ...DEFAULT_FIELDS }
   )
@@ -836,6 +1001,18 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
   const [spacePressed, setSpacePressed] = useState(false)
   const [isPanning, setIsPanning] = useState(false)
   const [tab, setTab] = useState<EditorTab>("fields")
+  const quickColorsStorageKey = `${POSTER_QUICK_COLORS_STORAGE_KEY}:${storageScope}`
+  const [quickColors, setQuickColors] = useState<string[]>(() => {
+    const stored = readStoredValue<string[]>(quickColorsStorageKey)
+    return Array.isArray(stored) && stored.every((color) => typeof color === "string")
+      ? stored
+      : [...BRAND_COLORS]
+  })
+  const [newQuickColor, setNewQuickColor] = useState("#F8B80A")
+  const [sheetTemplateId, setSheetTemplateId] = useState("")
+  const [importingSheet, setImportingSheet] = useState(false)
+  const [queue, setQueue] = useState<PosterQueueItem[]>(() => draftSeed?.queue ?? [])
+  const [editingQueueId, setEditingQueueId] = useState<string | null>(null)
   const [zoomPercent, setZoomPercent] = useState(0)
   const svgRef = useRef<SVGSVGElement | null>(null)
   const viewportRef = useRef<HTMLDivElement | null>(null)
@@ -852,8 +1029,17 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
   )
   const width = geometry.logicalWidth
   const height = geometry.logicalHeight
-  const styles =
+  const baseStyles =
     (activeTemplate ? stylesByTemplate[activeTemplate.id] : null) ?? DEFAULT_STYLES
+  // Com "Centavos a 50%" ligado, o tamanho dos centavos segue o "R$ inteiro" (metade);
+  // a posição e as demais propriedades continuam independentes.
+  const centsLinked = documentSettings.priceCentsReduced
+  const styles = useMemo<PosterStyles>(
+    () => deriveStyles(baseStyles, centsLinked),
+    [baseStyles, centsLinked]
+  )
+  // Texto exibido: os centavos aparecem com a vírgula na frente.
+  const displayFields = useMemo<PosterFields>(() => deriveFields(fields), [fields])
   const layerOrder =
     (activeTemplate ? layerOrderByTemplate[activeTemplate.id] : null) ?? [...FIELD_KEYS]
   const customElements = activeTemplate
@@ -865,16 +1051,13 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
   ) ?? null
   const selectedStyle = styles[selectedField]
   const canEditStyle = Boolean(activeTemplate)
-  const selectedTextLayout = textLayout(fields[selectedField], selectedStyle, width)
-  const selectedHorizontalMargin = Math.min(
-    49,
-    (selectedTextLayout.width / width) * 50 + 1
-  )
-  const selectedVerticalMargin = Math.min(
-    49,
-    (selectedTextLayout.height / height) * 50 + 1
-  )
   const outputSize = rasterDimensions(documentSettings)
+  // Faixa do tamanho da fonte proporcional à largura do papel (A4: 6 a 500 pt; A1 e A6 acompanham).
+  const pageWidthPt = (geometry.totalWidthMm / 25.4) * 72
+  const fontSizeRangePt = {
+    min: Math.max(2, Math.round(pageWidthPt * 0.0098)),
+    max: Math.round(pageWidthPt * 0.817),
+  }
   const backgroundAspectRatio =
     documentSettings.backgroundFit === "stretch"
       ? "none"
@@ -898,10 +1081,10 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
   const allElementBounds = layerOrder.flatMap((id): ElementBounds[] => {
     if (isPosterFieldKey(id)) {
       const style = styles[id]
-      const layout = textLayout(fields[id], style, width)
+      const layout = textLayout(displayFields[id], style, width)
       return [{
         id,
-        x: style.x,
+        x: style.x + anchorShiftPct(style, layout.width, width),
         y: style.y,
         width: Math.max(1, (layout.width / width) * 100),
         height: Math.max(1, (layout.height / height) * 100),
@@ -934,6 +1117,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
         bottom: Math.max(...selectedBounds.map((bounds) => bounds.y + bounds.height / 2)),
       }
     : null
+  const templatesPanelVisible = templatesPanelOpen || !activeTemplate
 
   const currentSnapshot = useMemo<PosterSnapshot>(() => ({
     fields: { ...fields },
@@ -942,19 +1126,38 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
     layerOrderByTemplate: structuredClone(layerOrderByTemplate),
     documentSettings: { ...documentSettings },
     activeTemplateId,
-    uploadedTemplates: structuredClone(uploadedTemplates),
+    uploadedTemplates,
   }), [activeTemplateId, customElementsByTemplate, documentSettings, fields, layerOrderByTemplate, stylesByTemplate, uploadedTemplates])
 
   const currentWorkspaceSnapshot = useMemo<PosterWorkspaceSnapshot>(() => ({
     ...currentSnapshot,
     activeTemplateId,
     uploadedTemplates: uploadedTemplates.map(({ id, name, width, height, dataUrl }) => ({ id, name, width, height, dataUrl })),
-  }), [activeTemplateId, currentSnapshot, uploadedTemplates])
+    queue,
+    quickColors,
+    versions: savedVersions,
+  }), [activeTemplateId, currentSnapshot, queue, quickColors, savedVersions, uploadedTemplates])
 
   const checkpoint = () => {
     historyRef.current = [...historyRef.current.slice(-39), cloneSnapshot(currentSnapshot)]
     futureRef.current = []
     setHistoryState({ undo: historyRef.current.length, redo: 0 })
+  }
+
+  // Sliders gravam um único ponto de histórico por arraste (ou por tecla), não um por
+  // movimento; assim "Desfazer" volta ao valor anterior ao arraste e o histórico não enche.
+  const sliderHistory = {
+    onPointerDown: () => checkpoint(),
+    onKeyDown: (event: ReactKeyboardEvent<HTMLInputElement>) => {
+      if (
+        !event.repeat &&
+        ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"].includes(
+          event.key
+        )
+      ) {
+        checkpoint()
+      }
+    },
   }
 
   const restoreSnapshot = (snapshot: PosterSnapshot) => {
@@ -964,7 +1167,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
     setLayerOrderByTemplate(structuredClone(snapshot.layerOrderByTemplate))
     setDocumentSettings({ ...DEFAULT_DOCUMENT_SETTINGS, ...snapshot.documentSettings })
     if (snapshot.uploadedTemplates) {
-      setUploadedTemplates(structuredClone(snapshot.uploadedTemplates))
+      setUploadedTemplates(snapshot.uploadedTemplates)
       const savedTemplates = snapshot.uploadedTemplates
       setTemplates((current) => [...current, ...savedTemplates.filter((item) => !current.some((existing) => existing.id === item.id))])
     }
@@ -1033,7 +1236,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
         setTransforming(false)
       }
     }
-    toast.success("Template importado excluido.")
+    toast.success("Template importado excluído.")
   }
 
   const zoomIn = () => {
@@ -1087,7 +1290,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
     setStylesByTemplate((current) => {
       const next = { ...current }
       for (const template of uploaded) {
-        next[template.id] = next[template.id] ?? cloneStyles()
+        next[template.id] = next[template.id] ?? cloneStyles(template.id)
       }
       return next
     })
@@ -1120,29 +1323,14 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
     if (recordHistory) checkpoint()
 
     setStylesByTemplate((current) => {
-      const templateStyles = current[activeTemplate.id] ?? cloneStyles()
+      const templateStyles = current[activeTemplate.id] ?? cloneStyles(activeTemplate.id)
       const nextFieldStyle = {
         ...templateStyles[field],
         [key]: value,
       }
-      const layout = textLayout(fields[field], nextFieldStyle, width)
-      const horizontalMargin = Math.min(
-        49,
-        (layout.width / width) * 50 + 1
-      )
-      const verticalMargin = Math.min(
-        49,
-        (layout.height / height) * 50 + 1
-      )
-
-      nextFieldStyle.x = Math.max(
-        horizontalMargin,
-        Math.min(100 - horizontalMargin, nextFieldStyle.x)
-      )
-      nextFieldStyle.y = Math.max(
-        verticalMargin,
-        Math.min(100 - verticalMargin, nextFieldStyle.y)
-      )
+      // A posição é livre: o texto pode ficar parcialmente (ou totalmente) fora da folha.
+      nextFieldStyle.x = Math.max(POSITION_MIN, Math.min(POSITION_MAX, nextFieldStyle.x))
+      nextFieldStyle.y = Math.max(POSITION_MIN, Math.min(POSITION_MAX, nextFieldStyle.y))
 
       return {
         ...current,
@@ -1208,10 +1396,15 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
       ...current,
       [activeTemplate.id]: [...(current[activeTemplate.id] ?? []), element],
     }))
-    setLayerOrderByTemplate((current) => ({
-      ...current,
-      [activeTemplate.id]: [...(current[activeTemplate.id] ?? FIELD_KEYS), element.id],
-    }))
+    // Pinceladas são fundo do preço: entram no fundo da pilha (sob os textos). O resto entra no topo.
+    const behindText = element.kind === "shape" && (element.shape === "brush" || element.shape === "brush2")
+    setLayerOrderByTemplate((current) => {
+      const order = current[activeTemplate.id] ?? [...FIELD_KEYS]
+      return {
+        ...current,
+        [activeTemplate.id]: behindText ? [element.id, ...order] : [...order, element.id],
+      }
+    })
     setSelectedIds([element.id])
     setTab("layers")
     return element
@@ -1222,7 +1415,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
     event.currentTarget.value = ""
     if (!file || !activeTemplate) return
     if (!file.type.startsWith("image/")) {
-      toast.error("Selecione uma imagem valida.")
+      toast.error("Selecione uma imagem válida.")
       return
     }
     try {
@@ -1262,7 +1455,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
     const bounds = allElementBounds.find((item) => item.id === field)
     return createCustomElement("text", {
       name: `${FIELD_META[field].label} - copia`,
-      value: fields[field],
+      value: displayFields[field],
       x: Math.min(96, fieldStyle.x + 2),
       y: Math.min(96, fieldStyle.y + 2),
       width: bounds?.width ?? 30,
@@ -1341,7 +1534,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
       ),
     }))
     setStylesByTemplate((current) => {
-      const templateStyles = current[activeTemplate.id] ?? cloneStyles()
+      const templateStyles = current[activeTemplate.id] ?? cloneStyles(activeTemplate.id)
       const next = structuredClone(templateStyles)
       selectedIds.filter(isPosterFieldKey).forEach((field) => {
         next[field].visible = false
@@ -1363,7 +1556,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
     if (targets.length === 0) return
     checkpoint()
     setStylesByTemplate((current) => {
-      const templateStyles = current[activeTemplate.id] ?? cloneStyles()
+      const templateStyles = current[activeTemplate.id] ?? cloneStyles(activeTemplate.id)
       const next = structuredClone(templateStyles)
       targets.forEach((field) => {
         const { x, y, rotation, opacity, visible, locked } = next[field]
@@ -1387,7 +1580,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
     checkpoint()
     setStylesByTemplate((current) => ({
       ...current,
-      [activeTemplate.id]: cloneStyles(),
+      [activeTemplate.id]: cloneStyles(activeTemplate.id),
     }))
     setZoomPercent(0)
     transformRef.current = null
@@ -1402,7 +1595,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
     if (!activeTemplate) return null
     return buildPosterSvg(
       activeTemplate.dataUrl,
-      fields,
+      displayFields,
       styles,
       customElements,
       layerOrder,
@@ -1447,13 +1640,241 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
       const [{ jsPDF }] = await Promise.all([import("jspdf"), import("svg2pdf.js")])
       const parsed = new DOMParser().parseFromString(markup, "image/svg+xml")
       const svg = parsed.documentElement
-      if (parsed.querySelector("parsererror") || svg.localName !== "svg") throw new Error("SVG do cartaz invalido.")
+      if (parsed.querySelector("parsererror") || svg.localName !== "svg") throw new Error("SVG do cartaz inválido.")
       const widthPt = (geometry.totalWidthMm / 25.4) * 72
       const heightPt = (geometry.totalHeightMm / 25.4) * 72
       const pdf = new jsPDF({ orientation: widthPt > heightPt ? "landscape" : "portrait", unit: "pt", format: [widthPt, heightPt], compress: true })
       await pdf.svg(svg, { x: 0, y: 0, width: widthPt, height: heightPt })
       downloadBlob(pdf.output("blob"), `${posterFileName()}.pdf`)
-      toast.success("PDF vetorial para impressao exportado.")
+      toast.success("PDF vetorial para impressão exportado.")
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao exportar PDF.")
+    } finally {
+      setExporting(null)
+    }
+  }
+
+  // ---- Fila de cartazes: vários cartazes, um único PDF (uma página por cartaz) ----
+  const buildQueueItem = (id: string = crypto.randomUUID()): PosterQueueItem | null => {
+    if (!activeTemplate) return null
+    return {
+      id,
+      templateId: activeTemplate.id,
+      fields: { ...fields },
+      styles: structuredClone(baseStyles),
+      customElements: structuredClone(customElements),
+      layerOrder: [...layerOrder],
+      priceCentsReduced: documentSettings.priceCentsReduced,
+      createdAt: new Date().toISOString(),
+    }
+  }
+
+  // Cores rápidas editáveis: salvas na nuvem (junto do espaço de trabalho) e em cache neste navegador.
+  const saveQuickColors = (next: string[]) => {
+    setQuickColors(next)
+    try {
+      window.localStorage.setItem(quickColorsStorageKey, JSON.stringify(next))
+    } catch {
+      toast.error("Não foi possível salvar as cores rápidas.")
+    }
+  }
+
+  const addQuickColor = (color: string) => {
+    const normalized = color.toUpperCase()
+    if (quickColors.some((item) => item.toUpperCase() === normalized)) {
+      toast.info(`${colorName(color)} já está nas cores rápidas.`)
+      return
+    }
+    if (quickColors.length >= MAX_QUICK_COLORS) {
+      toast.error(`O limite é de ${MAX_QUICK_COLORS} cores rápidas. Remova alguma antes de adicionar.`)
+      return
+    }
+    saveQuickColors([...quickColors, normalized])
+  }
+
+  // Importa uma planilha (.xlsx/.csv): cada linha vira um cartaz na fila, no template escolhido.
+  const importSheetToQueue = async (file: File) => {
+    const templateId = sheetTemplateId || activeTemplate?.id || templates[0]?.id
+    const template = templates.find((entry) => entry.id === templateId)
+    if (!template) {
+      toast.error("Escolha um template antes de importar a planilha.")
+      return
+    }
+    setImportingSheet(true)
+    try {
+      const rows = await parseSpreadsheet(file)
+      const { posters, skipped, truncated } = postersFromRows(rows)
+      if (posters.length === 0) {
+        throw new Error("Nenhuma linha com a coluna Produto preenchida foi encontrada.")
+      }
+
+      // Parte do estilo atual do template (o que você vê ao escolhê-lo) e dos elementos extras.
+      const baseTemplateStyles = stylesByTemplate[template.id] ?? cloneStyles(template.id)
+      const templateElements = customElementsByTemplate[template.id] ?? []
+      const templateLayers = layerOrderByTemplate[template.id] ?? [...FIELD_KEYS]
+      const reduced = documentSettings.priceCentsReduced
+
+      const items: PosterQueueItem[] = posters.map((poster) => {
+        const posterFields: PosterFields = {
+          ...DEFAULT_FIELDS,
+          produto: poster.produto,
+          descricao: poster.descricao,
+          preco_reais: poster.preco_reais,
+          preco_centavos: poster.preco_centavos,
+          unidade: poster.unidade,
+          validade: poster.validade,
+          observacao: poster.observacao,
+        }
+        const itemStyles = structuredClone(baseTemplateStyles)
+        // Nome e descrição longos encolhem para caber em até 2 linhas.
+        itemStyles.produto.fontSize = fitFontSize(posterFields.produto, itemStyles.produto, width, 2)
+        itemStyles.descricao.fontSize = fitFontSize(posterFields.descricao, itemStyles.descricao, width, 2)
+        // A largura do preço muda de cartaz para cartaz: reencaixa os centavos ao lado do valor.
+        const placed = linkedCentsStyle(itemStyles.preco_reais, posterFields.preco_reais, width, height, reduced)
+        itemStyles.preco_centavos = {
+          ...itemStyles.preco_centavos,
+          x: placed.x,
+          y: placed.y,
+          textAlign: placed.textAlign,
+          maxWidth: placed.maxWidth,
+          ...(reduced
+            ? {
+                fontSize: placed.fontSize,
+                letterSpacing: placed.letterSpacing,
+                strokeWidth: placed.strokeWidth,
+                shadowBlur: placed.shadowBlur,
+                shadowX: placed.shadowX,
+                shadowY: placed.shadowY,
+              }
+            : {}),
+        }
+        return {
+          id: crypto.randomUUID(),
+          templateId: template.id,
+          fields: posterFields,
+          styles: itemStyles,
+          customElements: structuredClone(templateElements),
+          layerOrder: [...templateLayers],
+          priceCentsReduced: reduced,
+          createdAt: new Date().toISOString(),
+        }
+      })
+
+      setQueue((current) => [...current, ...items])
+      const notes = [
+        skipped > 0 ? `${skipped} linha(s) sem Produto ignorada(s)` : "",
+        truncated ? "limite de 200 cartazes por planilha" : "",
+      ].filter(Boolean)
+      toast.success(
+        `${items.length} ${items.length === 1 ? "cartaz adicionado" : "cartazes adicionados"} à fila${
+          notes.length ? ` (${notes.join("; ")})` : ""
+        }.`
+      )
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao importar a planilha.")
+    } finally {
+      setImportingSheet(false)
+    }
+  }
+
+  const downloadSheetTemplate = () => {
+    downloadBlob(
+      new Blob([sheetTemplateCsv()], { type: "text/csv;charset=utf-8" }),
+      "modelo_cartazes.csv"
+    )
+  }
+
+  const addToQueue = () => {
+    if (editingQueueId) {
+      const updated = buildQueueItem(editingQueueId)
+      if (!updated) return
+      setQueue((current) => current.map((item) => (item.id === editingQueueId ? updated : item)))
+      setEditingQueueId(null)
+      toast.success("Cartaz da fila atualizado.")
+      return
+    }
+    const item = buildQueueItem()
+    if (!item) return
+    setQueue((current) => [...current, item])
+    toast.success(`Cartaz adicionado à fila (${queue.length + 1}).`)
+  }
+
+  const loadQueueItem = (item: PosterQueueItem) => {
+    if (!templates.some((template) => template.id === item.templateId)) {
+      toast.error("O template deste cartaz não existe mais.")
+      return
+    }
+    checkpoint()
+    setActiveTemplateId(item.templateId)
+    setFields({ ...item.fields })
+    setStylesByTemplate((current) => ({ ...current, [item.templateId]: structuredClone(item.styles) }))
+    setCustomElementsByTemplate((current) => ({
+      ...current,
+      [item.templateId]: structuredClone(item.customElements),
+    }))
+    setLayerOrderByTemplate((current) => ({ ...current, [item.templateId]: [...item.layerOrder] }))
+    setDocumentSettings((current) => ({ ...current, priceCentsReduced: item.priceCentsReduced }))
+    setSelectedIds([])
+    setEditingQueueId(item.id)
+    setTab("fields")
+    setTemplatesPanelOpen(false)
+  }
+
+  const removeQueueItem = (id: string) => {
+    setQueue((current) => current.filter((item) => item.id !== id))
+    if (editingQueueId === id) setEditingQueueId(null)
+  }
+
+  const duplicateQueueItem = (item: PosterQueueItem) => {
+    setQueue((current) => {
+      const index = current.findIndex((entry) => entry.id === item.id)
+      const copy = { ...structuredClone(item), id: crypto.randomUUID(), createdAt: new Date().toISOString() }
+      return [...current.slice(0, index + 1), copy, ...current.slice(index + 1)]
+    })
+  }
+
+  const moveQueueItem = (id: string, direction: -1 | 1) => {
+    setQueue((current) => {
+      const index = current.findIndex((item) => item.id === id)
+      const target = index + direction
+      if (index < 0 || target < 0 || target >= current.length) return current
+      const next = current.slice()
+      ;[next[index], next[target]] = [next[target], next[index]]
+      return next
+    })
+  }
+
+  const exportQueuePdf = async () => {
+    if (queue.length === 0) return
+    setExporting("pdf")
+    try {
+      const [{ jsPDF }] = await Promise.all([import("jspdf"), import("svg2pdf.js")])
+      const widthPt = (geometry.totalWidthMm / 25.4) * 72
+      const heightPt = (geometry.totalHeightMm / 25.4) * 72
+      const pdf = new jsPDF({ orientation: widthPt > heightPt ? "landscape" : "portrait", unit: "pt", format: [widthPt, heightPt], compress: true })
+      let pages = 0
+      for (const item of queue) {
+        const template = templates.find((entry) => entry.id === item.templateId)
+        if (!template) continue
+        const markup = buildPosterSvg(
+          template.dataUrl,
+          deriveFields(item.fields),
+          deriveStyles(item.styles, item.priceCentsReduced),
+          item.customElements,
+          item.layerOrder,
+          geometry,
+          documentSettings
+        )
+        const parsed = new DOMParser().parseFromString(markup, "image/svg+xml")
+        const svg = parsed.documentElement
+        if (parsed.querySelector("parsererror") || svg.localName !== "svg") throw new Error("SVG do cartaz inválido.")
+        if (pages > 0) pdf.addPage([widthPt, heightPt], widthPt > heightPt ? "landscape" : "portrait")
+        await pdf.svg(svg, { x: 0, y: 0, width: widthPt, height: heightPt })
+        pages += 1
+      }
+      if (pages === 0) throw new Error("Nenhum cartaz da fila tem template disponível.")
+      downloadBlob(pdf.output("blob"), `cartazes_${pages}_paginas.pdf`)
+      toast.success(`PDF com ${pages} ${pages === 1 ? "cartaz" : "cartazes"} exportado.`)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Falha ao exportar PDF.")
     } finally {
@@ -1463,9 +1884,10 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
 
   const updateDocument = <Key extends keyof PosterDocumentSettings>(
     key: Key,
-    value: PosterDocumentSettings[Key]
+    value: PosterDocumentSettings[Key],
+    recordHistory = true
   ) => {
-    checkpoint()
+    if (recordHistory) checkpoint()
     setDocumentSettings((current) => ({ ...current, [key]: value }))
   }
 
@@ -1484,22 +1906,23 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
     const version: SavedPosterVersion = {
       id: crypto.randomUUID(),
       createdAt: new Date().toISOString(),
-      snapshot: cloneSnapshot(currentSnapshot),
+      // Os templates importados já estão no espaço de trabalho; não se repetem em cada versão.
+      snapshot: { ...cloneSnapshot(currentSnapshot), uploadedTemplates: undefined } as unknown as PosterSnapshot,
     }
     const next = [version, ...savedVersions].slice(0, 10)
+    setSavedVersions(next)
     try {
       window.localStorage.setItem(versionsStorageKey, JSON.stringify(next))
-      setSavedVersions(next)
-      toast.success("Versao salva.")
     } catch {
-      toast.error("Sem espaco no navegador para salvar a versao. Remova imagens grandes ou libere espaco.")
+      // O cache local é opcional: a versão segue para a nuvem com o espaço de trabalho.
     }
+    toast.success("Versão salva.")
   }
 
   const restoreVersion = (version: SavedPosterVersion) => {
     checkpoint()
     restoreSnapshot(cloneSnapshot(version.snapshot))
-    toast.success("Versao restaurada.")
+    toast.success("Versão restaurada.")
   }
 
   const getSvgPoint = (clientX: number, clientY: number) => {
@@ -1521,7 +1944,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
   ) => {
     if (!activeTemplate) return
     setStylesByTemplate((current) => {
-      const templateStyles = current[activeTemplate.id] ?? cloneStyles()
+      const templateStyles = current[activeTemplate.id] ?? cloneStyles(activeTemplate.id)
       const next = structuredClone(templateStyles)
       Object.entries(updates).forEach(([id, patch]) => {
         if (!isPosterFieldKey(id)) return
@@ -1529,20 +1952,24 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
         const baseStyle = session?.fieldStyles[id]
         next[id] = {
           ...next[id],
-          ...(patch.x === undefined ? {} : { x: patch.x }),
-          ...(patch.y === undefined ? {} : { y: patch.y }),
-          ...(patch.rotation === undefined ? {} : { rotation: patch.rotation }),
-          ...(patch.opacity === undefined ? {} : { opacity: patch.opacity }),
+          ...(patch.y === undefined ? {} : { y: roundTo(patch.y, 2) }),
+          ...(patch.rotation === undefined ? {} : { rotation: roundTo(patch.rotation, 1) }),
+          ...(patch.opacity === undefined ? {} : { opacity: roundTo(patch.opacity, 2) }),
         }
         if (baseBounds && baseStyle && (patch.width !== undefined || patch.height !== undefined)) {
           const widthScale = (patch.width ?? baseBounds.width) / baseBounds.width
           const heightScale = (patch.height ?? baseBounds.height) / baseBounds.height
           const fontScale = Math.max(0.08, heightScale)
-          next[id].fontSize = Math.max(3, baseStyle.fontSize * fontScale)
-          next[id].maxWidth = Math.max(
-            5,
-            Math.min(180, baseStyle.maxWidth * (widthScale / fontScale))
+          next[id].fontSize = roundTo(Math.max(3, baseStyle.fontSize * fontScale), 1)
+          next[id].maxWidth = roundTo(
+            Math.max(5, Math.min(180, baseStyle.maxWidth * (widthScale / fontScale))),
+            1
           )
+        }
+        if (patch.x !== undefined) {
+          // patch.x é o centro da caixa; o estilo guarda o ponto de ancoragem do texto.
+          const layout = textLayout(displayFields[id], next[id], width)
+          next[id].x = roundTo(patch.x - anchorShiftPct(next[id], layout.width, width), 2)
         }
       })
       return { ...current, [activeTemplate.id]: next }
@@ -1576,6 +2003,61 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
     })
   }
 
+  // Liga/desliga "Centavos a 50%": reposiciona os centavos ao lado do "R$ inteiro".
+  const setCentsReduced = (reduced: boolean) => {
+    if (!activeTemplate) return
+    checkpoint()
+    setDocumentSettings((current) => ({ ...current, priceCentsReduced: reduced }))
+    setStylesByTemplate((current) => {
+      const templateStyles = current[activeTemplate.id] ?? cloneStyles(activeTemplate.id)
+      const placed = linkedCentsStyle(templateStyles.preco_reais, fields.preco_reais, width, height, reduced)
+      return {
+        ...current,
+        [activeTemplate.id]: {
+          ...templateStyles,
+          preco_centavos: {
+            ...templateStyles.preco_centavos,
+            x: placed.x,
+            y: placed.y,
+            fontSize: placed.fontSize,
+            letterSpacing: placed.letterSpacing,
+            strokeWidth: placed.strokeWidth,
+            shadowBlur: placed.shadowBlur,
+            shadowX: placed.shadowX,
+            shadowY: placed.shadowY,
+            textAlign: placed.textAlign,
+            maxWidth: placed.maxWidth,
+          },
+        },
+      }
+    })
+  }
+
+  // Mantém o tamanho atual dos centavos e solta do "R$ inteiro" (sem pular na tela).
+  const unlinkCentsSize = () => {
+    if (!activeTemplate) return
+    const current = styles.preco_centavos
+    setDocumentSettings((settings) => ({ ...settings, priceCentsReduced: false }))
+    setStylesByTemplate((all) => {
+      const templateStyles = all[activeTemplate.id] ?? cloneStyles(activeTemplate.id)
+      return {
+        ...all,
+        [activeTemplate.id]: {
+          ...templateStyles,
+          preco_centavos: {
+            ...templateStyles.preco_centavos,
+            fontSize: current.fontSize,
+            letterSpacing: current.letterSpacing,
+            strokeWidth: current.strokeWidth,
+            shadowBlur: current.shadowBlur,
+            shadowX: current.shadowX,
+            shadowY: current.shadowY,
+          },
+        },
+      }
+    })
+  }
+
   const startTransform = (
     event: ReactPointerEvent<SVGElement>,
     id: EditorElementId,
@@ -1598,6 +2080,10 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
     )
     if (Object.keys(initial).length === 0) return
     checkpoint()
+    // Redimensionar os centavos à mão desliga o "50%": o tamanho passa a ser independente.
+    if (id === "preco_centavos" && centsLinked && mode !== "move" && mode !== "rotate") {
+      unlinkCentsSize()
+    }
     event.preventDefault()
     event.stopPropagation()
     svgRef.current?.focus()
@@ -1704,8 +2190,8 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
         Object.values(session.initial).map((bounds) => [
           bounds.id,
           {
-            x: Math.max(bounds.width / 2, Math.min(100 - bounds.width / 2, bounds.x + deltaX)),
-            y: Math.max(bounds.height / 2, Math.min(100 - bounds.height / 2, bounds.y + deltaY)),
+            x: Math.max(POSITION_MIN, Math.min(POSITION_MAX, bounds.x + deltaX)),
+            y: Math.max(POSITION_MIN, Math.min(POSITION_MAX, bounds.y + deltaY)),
           },
         ])
       )
@@ -1928,11 +2414,11 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
     if (!primaryBounds || primaryBounds.locked) return
     const normalizedValue =
       key === "x"
-        ? Math.max(primaryBounds.width / 2, Math.min(100 - primaryBounds.width / 2, value))
+        ? Math.max(POSITION_MIN, Math.min(POSITION_MAX, value))
         : key === "y"
-          ? Math.max(primaryBounds.height / 2, Math.min(100 - primaryBounds.height / 2, value))
+          ? Math.max(POSITION_MIN, Math.min(POSITION_MAX, value))
           : key === "width" || key === "height"
-            ? Math.max(1, Math.min(100, value))
+            ? Math.max(1, Math.min(300, value))
             : key === "opacity"
               ? Math.max(0, Math.min(1, value))
               : Math.max(-180, Math.min(180, value))
@@ -2021,7 +2507,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
         window.localStorage.setItem(draftStorageKey, JSON.stringify(snapshot))
         setLastSavedAt(new Date().toISOString())
       } catch {
-        toast.error("Nao foi possivel salvar o rascunho local.")
+        toast.error("Não foi possível salvar o rascunho local.")
       }
     }, 700)
 
@@ -2057,7 +2543,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
         setStylesByTemplate((current) => {
           const next = { ...current }
           for (const template of loaded) {
-            next[template.id] = next[template.id] ?? cloneStyles()
+            next[template.id] = next[template.id] ?? cloneStyles(template.id)
           }
           return next
         })
@@ -2111,13 +2597,19 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
           setUploadedTemplates(savedTemplates)
           setTemplates((current) => [...current, ...savedTemplates.filter((item) => !current.some((existing) => existing.id === item.id))])
           restoreSnapshot(workspace)
+          if (Array.isArray(workspace.queue)) setQueue(workspace.queue)
+          // Cores rápidas e versões agora ficam na nuvem; se ainda não existem lá, vale o que há neste navegador.
+          if (Array.isArray(workspace.quickColors) && workspace.quickColors.every((c) => typeof c === "string")) {
+            setQuickColors(workspace.quickColors)
+          }
+          if (Array.isArray(workspace.versions)) setSavedVersions(workspace.versions)
           setActiveTemplateId(workspace.activeTemplateId ?? savedTemplates[0]?.id ?? null)
         }
         setCloudStatus("ready")
       } catch (error) {
         if (!cancelled) {
           setCloudStatus("error")
-          setCloudMessage(error instanceof Error ? error.message : "Sincronizacao indisponivel")
+          setCloudMessage(error instanceof Error ? error.message : "Sincronização indisponível")
         }
       }
     })()
@@ -2140,7 +2632,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
         if (error) throw error
         setCloudMessage(null)
       }).catch((error: unknown) => {
-        setCloudMessage(error instanceof Error ? error.message : "Falha de sincronizacao")
+        setCloudMessage(error instanceof Error ? error.message : "Falha de sincronização")
       })
     }, 1500)
     return () => window.clearTimeout(timer)
@@ -2152,7 +2644,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
         id="poster-template-upload"
         className="sr-only"
         type="file"
-        accept=".png,image/png,.svg,image/svg+xml"
+        accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp,.svg,image/svg+xml"
         multiple
         onChange={(event) => void handleUpload(event)}
       />
@@ -2164,8 +2656,9 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
         onChange={(event) => void handleElementImageUpload(event)}
       />
       <PageHeader
+        large
         title="Editor de cartazes"
-        description="Monte ofertas e avisos prontos para impressao."
+        description="Monte ofertas e avisos prontos para impressão."
         action={
           <>
             <Button asChild variant="outline">
@@ -2189,18 +2682,28 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                   Exportar
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <DropdownMenuContent
+                align="end"
+                className="[&_[role=menuitem]]:gap-2.5 [&_[role=menuitem]_svg]:size-4 [&_[role=menuitem]_svg]:shrink-0"
+              >
                 <DropdownMenuItem onSelect={() => void exportPng()}>
                   <ImageDown />
                   PNG em {documentSettings.dpi} DPI
                 </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => void exportPdf()}>
                   <FileDown />
-                  PDF para impressao
+                  PDF para impressão
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={queue.length === 0}
+                  onSelect={() => void exportQueuePdf()}
+                >
+                  <FileDown />
+                  PDF da fila ({queue.length})
                 </DropdownMenuItem>
                 <DropdownMenuItem onSelect={exportSvg}>
                   <Download />
-                  SVG editavel
+                  SVG editável
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -2208,8 +2711,9 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
         }
       />
 
-      <div className="p-3 md:p-4">
-        <div className="poster-editor-workspace poster-surface grid min-h-[42rem] overflow-hidden rounded-lg border bg-slate-950 text-slate-100 shadow-sm lg:min-h-[34rem] lg:grid-cols-[15rem_minmax(0,1fr)_22rem]">
+      <div className="p-1.5 md:p-2">
+        <div className={`poster-editor-workspace poster-surface grid min-h-[42rem] overflow-hidden rounded-lg border bg-slate-950 text-slate-100 shadow-sm lg:min-h-[34rem] ${templatesPanelVisible ? "lg:grid-cols-[15rem_minmax(0,1fr)_22rem]" : "lg:grid-cols-[minmax(0,1fr)_22rem]"}`}>
+          {templatesPanelVisible ? (
           <aside className="flex min-h-0 flex-col border-b border-slate-800 bg-slate-900/80 lg:border-b-0 lg:border-r">
             <div className="flex min-h-11 items-center justify-between border-b border-slate-800 px-3 py-2">
               <p className="text-xs font-semibold uppercase text-slate-400">Templates</p>
@@ -2245,7 +2749,10 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                 <div key={template.id} className="relative min-w-0">
                   <button
                     type="button"
-                    onClick={() => selectTemplate(template.id)}
+                    onClick={() => {
+                      selectTemplate(template.id)
+                      setTemplatesPanelOpen(false)
+                    }}
                     className={`w-full overflow-hidden rounded-lg border p-1 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary ${
                       activeTemplateId === template.id
                         ? "border-primary bg-slate-800"
@@ -2278,9 +2785,28 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
               ))}
             </div>
           </aside>
+          ) : null}
 
           <section className="flex min-h-[34rem] min-w-0 flex-col bg-slate-950 lg:min-h-0">
-            <div className="flex min-h-12 flex-wrap items-center justify-between gap-2 border-b border-slate-800 px-3 py-2">
+            <div className="flex flex-col gap-2 border-b border-slate-800 px-3 py-2">
+              <div className="flex items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-2">
+                <button
+                  type="button"
+                  className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-slate-700 px-2 text-xs font-medium text-slate-300 hover:bg-slate-800"
+                  onClick={() => setTemplatesPanelOpen((open) => !open)}
+                  aria-expanded={templatesPanelVisible}
+                  aria-label={templatesPanelVisible ? "Ocultar templates" : "Mostrar templates"}
+                  title={templatesPanelVisible ? "Ocultar templates" : "Mostrar templates"}
+                  disabled={!activeTemplate}
+                >
+                  {templatesPanelVisible ? (
+                    <PanelLeftClose className="size-4" />
+                  ) : (
+                    <PanelLeftOpen className="size-4" />
+                  )}
+                  Templates
+                </button>
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold">
                   {activeTemplate?.name ?? "Preview"}
@@ -2290,6 +2816,12 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                   {geometry.paperHeightMm} mm + {documentSettings.bleedMm} mm
                 </p>
               </div>
+              </div>
+              <span className="hidden max-w-40 shrink-0 truncate rounded-md bg-slate-800 px-2 py-1 text-xs text-slate-300 sm:inline">
+                {selectedCustomElement?.name ?? FIELD_META[selectedField].label}
+              </span>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-1">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -2307,7 +2839,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                     side="bottom"
                     sideOffset={8}
                     collisionPadding={16}
-                    className="z-[80] max-h-[calc(100dvh-8rem)] w-60 overflow-y-auto"
+                    className="z-[80] max-h-[calc(100dvh-8rem)] w-60 overflow-y-auto [&_[role=menuitem]]:gap-2.5 [&_[role=menuitem]_svg]:size-4 [&_[role=menuitem]_svg]:shrink-0"
                   >
                     <DropdownMenuItem onSelect={() => addCustomElement("text")}>
                       <Type /> Texto livre
@@ -2315,7 +2847,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                     <DropdownMenuItem
                       onSelect={() =>
                         addCustomElement("text", {
-                          name: "Cifrao R$",
+                          name: "Cifrão R$",
                           value: "R$",
                           width: 15,
                           height: 9,
@@ -2324,12 +2856,12 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                         })
                       }
                     >
-                      <span className="w-4 text-center font-bold">R$</span> Cifrao de preco
+                      <span className="w-4 shrink-0 text-center text-xs font-bold">R$</span> Cifrão de preço
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onSelect={() =>
                         addCustomElement("text", {
-                          name: "Virgula decimal",
+                          name: "Vírgula decimal",
                           value: ",",
                           width: 8,
                           height: 10,
@@ -2338,7 +2870,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                         })
                       }
                     >
-                      <span className="w-4 text-center text-lg font-black">,</span> Virgula decimal
+                      <span className="w-4 shrink-0 text-center text-lg font-black leading-none">,</span> Vírgula decimal
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onSelect={() => {
@@ -2349,23 +2881,53 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                       <ImagePlus /> Imagem ou logotipo
                     </DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => addCustomElement("shape")}>
-                      <Square /> Retangulo
+                      <Square /> Retângulo
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      onSelect={() => addCustomElement("shape", { name: "Circulo", shape: "ellipse" })}
+                      onSelect={() => addCustomElement("shape", { name: "Círculo", shape: "ellipse" })}
                     >
-                      <span className="size-4 rounded-full border-2" /> Circulo
+                      <span className="size-4 shrink-0 rounded-full border-2" /> Círculo
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onSelect={() => addCustomElement("shape", { name: "Estrela", shape: "star" })}
                     >
                       <Star /> Estrela
                     </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() =>
+                        addCustomElement("shape", {
+                          name: "Pincelada",
+                          shape: "brush",
+                          fill: "#FFD400",
+                          stroke: "none",
+                          strokeWidth: 0,
+                          width: 60,
+                          height: 23,
+                        })
+                      }
+                    >
+                      <Brush /> Pincelada
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() =>
+                        addCustomElement("shape", {
+                          name: "Pincelada 2",
+                          shape: "brush2",
+                          fill: "#FFD400",
+                          stroke: "none",
+                          strokeWidth: 0,
+                          width: 60,
+                          height: 24,
+                        })
+                      }
+                    >
+                      <Brush /> Pincelada 2
+                    </DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => addCustomElement("badge")}>
                       <Star /> Selo de oferta
                     </DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => addCustomElement("barcode")}>
-                      <Barcode /> Codigo de barras
+                      <Barcode /> Código de barras
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -2374,8 +2936,8 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                   className="inline-flex size-8 items-center justify-center rounded-md border border-slate-700 text-slate-400 hover:bg-slate-800 disabled:opacity-30"
                   onClick={duplicateSelected}
                   disabled={selectedIds.length === 0}
-                  aria-label="Duplicar selecao"
-                  title="Duplicar selecao"
+                  aria-label="Duplicar seleção"
+                  title="Duplicar seleção"
                 >
                   <Copy className="size-4" />
                 </button>
@@ -2384,8 +2946,8 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                   className="inline-flex size-8 items-center justify-center rounded-md border border-slate-700 text-slate-400 hover:bg-slate-800 disabled:opacity-30"
                   onClick={deleteSelected}
                   disabled={selectedIds.length === 0}
-                  aria-label="Excluir selecao"
-                  title="Excluir selecao"
+                  aria-label="Excluir seleção"
+                  title="Excluir seleção"
                 >
                   <Trash2 className="size-4" />
                 </button>
@@ -2409,10 +2971,8 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                 >
                   <Redo2 className="size-4" />
                 </button>
-                <span className="mx-1 h-5 w-px bg-slate-800" />
-                <span className="mr-2 hidden max-w-28 truncate text-xs text-slate-400 sm:inline">
-                  {selectedCustomElement?.name ?? FIELD_META[selectedField].label}
-                </span>
+              </div>
+              <div className="flex items-center gap-1">
                 <button
                   type="button"
                   className="inline-flex size-8 items-center justify-center rounded-md border border-slate-700 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-300"
@@ -2438,11 +2998,12 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                   type="button"
                   className="inline-flex size-8 items-center justify-center rounded-md border border-slate-700 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-300"
                   onClick={() => setZoomPercent(0)}
-                  aria-label="Ajustar cartaz a tela"
-                  title="Ajustar a tela"
+                  aria-label="Ajustar cartaz à tela"
+                  title="Ajustar à tela"
                 >
                   <Maximize2 className="size-4" />
                 </button>
+              </div>
               </div>
             </div>
 
@@ -2459,13 +3020,14 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
               <svg
                 ref={svgRef}
                 tabIndex={0}
-                aria-label="Area de edicao do cartaz"
+                aria-label="Área de edição do cartaz"
                 width={width}
                 height={height}
                 viewBox={`0 0 ${width} ${height}`}
                 className={`block h-auto shrink-0 select-none rounded-lg bg-slate-900 shadow-2xl outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                   zoomPercent === 0 ? "max-h-full w-auto max-w-full" : "max-w-none"
                 }`}
+                overflow="visible"
                 style={{
                   cursor: transforming ? "grabbing" : spacePressed ? "grab" : "default",
                   touchAction: "none",
@@ -2656,10 +3218,10 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                   {layerOrder.map((id) => {
                     if (isPosterFieldKey(id)) {
                       const style = styles[id]
-                      if (!style.visible || !fields[id]) return null
+                      if (!style.visible || !displayFields[id]) return null
                       const x = (style.x / 100) * width
                       const y = (style.y / 100) * height
-                      const layout = textLayout(fields[id], style, width)
+                      const layout = textLayout(displayFields[id], style, width)
                       const firstLineY = y - ((layout.lines.length - 1) * layout.lineHeight) / 2
                       const textProps = {
                         x,
@@ -2671,11 +3233,28 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                         fontStyle: style.fontStyle,
                         letterSpacing: style.letterSpacing,
                       }
-                      const renderLines = () => layout.lines.map((line, index) => (
-                        <tspan key={`${id}-${index}`} x={x} y={firstLineY + index * layout.lineHeight}>
-                          {line}
-                        </tspan>
-                      ))
+                      const runs =
+                        id === "preco_centavos" && layout.lines.length === 1
+                          ? centsRuns(layout.lines[0], style, layout.fontSize, x, firstLineY)
+                          : null
+                      const renderLines = () =>
+                        runs
+                          ? runs.map((run, index) => (
+                              <tspan
+                                key={`${id}-run-${index}`}
+                                x={run.x}
+                                y={run.y}
+                                textAnchor="start"
+                                fontSize={run.fontSize}
+                              >
+                                {run.text}
+                              </tspan>
+                            ))
+                          : layout.lines.map((line, index) => (
+                              <tspan key={`${id}-${index}`} x={x} y={firstLineY + index * layout.lineHeight}>
+                                {line}
+                              </tspan>
+                            ))
                       return (
                         <g
                           key={id}
@@ -2783,6 +3362,14 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                               stroke={element.stroke !== "none" ? element.stroke : undefined}
                               strokeWidth={element.strokeWidth}
                             />
+                          ) : element.shape === "brush" || element.shape === "brush2" ? (
+                            <path
+                              d={brushPath(elementWidth, elementHeight, element.shape)}
+                              transform={`translate(${left} ${top})`}
+                              fill={element.fill}
+                              stroke={element.stroke !== "none" ? element.stroke : undefined}
+                              strokeWidth={element.strokeWidth}
+                            />
                           ) : element.shape === "star" ? (
                             <polygon
                               points={starPoints}
@@ -2877,6 +3464,8 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                                 ["ne", boxWidth / 2 + 5, -boxHeight / 2 - 5],
                                 ["se", boxWidth / 2 + 5, boxHeight / 2 + 5],
                                 ["sw", -boxWidth / 2 - 5, boxHeight / 2 + 5],
+                                ["e", boxWidth / 2 + 5, 0],
+                                ["w", -boxWidth / 2 - 5, 0],
                               ] satisfies Array<[ResizeCorner, number, number]>
                             ).map(([corner, handleX, handleY]) => (
                               <rect
@@ -2955,13 +3544,14 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
           </section>
 
           <aside className="flex min-h-0 flex-col border-t border-slate-800 bg-slate-900/80 lg:border-l lg:border-t-0">
-            <div className="grid grid-cols-4 border-b border-slate-800">
+            <div className="grid grid-cols-5 border-b border-slate-800">
               {(
                 [
                   ["fields", "Texto", Type],
                   ["style", "Estilo", Palette],
-                  ["document", "Pagina", Ruler],
+                  ["document", "Página", Ruler],
                   ["layers", "Camadas", Layers3],
+                  ["queue", queue.length > 0 ? `Fila (${queue.length})` : "Fila", ListOrdered],
                 ] satisfies Array<[EditorTab, string, typeof Type]>
               ).map(([tabId, label, Icon]) => (
                 <button
@@ -3035,11 +3625,22 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                       maxLength={240}
                       className="h-9 w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 text-sm text-white outline-none placeholder:text-slate-600 focus:border-primary focus:ring-2 focus:ring-primary/30"
                     />
+                    {key === "preco_centavos" ? (
+                      <label className="mt-2 flex cursor-pointer items-center gap-2 text-xs text-slate-300">
+                        <input
+                          type="checkbox"
+                          checked={centsLinked}
+                          disabled={!canEditStyle}
+                          onChange={(event) => setCentsReduced(event.target.checked)}
+                        />
+                        Centavos a 50% do tamanho
+                      </label>
+                    ) : null}
                   </section>
                 ))
               ) : tab === "style" ? (
                 <>
-                  <div className="flex flex-wrap gap-1.5">
+                  <div className="sticky -top-2.5 z-10 -mx-2.5 -mt-2.5 flex flex-wrap gap-1.5 border-b border-slate-800 bg-slate-900 px-2.5 pb-2 pt-2.5">
                     {FIELD_KEYS.map((key) => (
                       <button
                         key={key}
@@ -3070,20 +3671,21 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                       {FIELD_META[selectedField].label}
                     </p>
 
+                    <StyleGroup title="Tipografia" defaultOpen={true}>
                     <label className="block text-xs text-slate-400">
-                      Familia tipografica
-                      <select
+                      Família tipográfica
+                      <Select
+                        tone="dark"
+                        className="mt-1 h-9 text-xs"
                         value={selectedStyle.fontFamily}
                         disabled={!canEditStyle}
-                        onChange={(event) =>
-                          updateStyle(selectedField, "fontFamily", event.target.value)
-                        }
-                        className="mt-1 h-9 w-full rounded-md border border-slate-700 bg-slate-950 px-2 text-xs text-slate-100 outline-none focus:border-primary disabled:cursor-not-allowed disabled:text-slate-300 disabled:opacity-70 [color-scheme:dark]"
-                      >
-                        {FONT_OPTIONS.map((font) => (
-                          <option key={font} value={font} className="bg-slate-900 text-slate-100" style={{ fontFamily: font }}>{font}</option>
-                        ))}
-                      </select>
+                        onValueChange={(value) => updateStyle(selectedField, "fontFamily", value)}
+                        options={FONT_OPTIONS.map((font) => ({
+                          value: font,
+                          label: font,
+                          style: { fontFamily: font },
+                        }))}
+                      />
                     </label>
 
                     <div className="grid grid-cols-5 gap-1">
@@ -3105,8 +3707,8 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                       </button>
                       <button
                         type="button"
-                        title="Italico"
-                        aria-label="Italico"
+                        title="Itálico"
+                        aria-label="Itálico"
                         disabled={!canEditStyle}
                         onClick={() =>
                           updateStyle(
@@ -3121,9 +3723,9 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                       </button>
                       {(
                         [
-                          ["start", AlignLeft, "Alinhar a esquerda"],
+                          ["start", AlignLeft, "Alinhar à esquerda"],
                           ["middle", AlignCenter, "Centralizar"],
-                          ["end", AlignRight, "Alinhar a direita"],
+                          ["end", AlignRight, "Alinhar à direita"],
                         ] satisfies Array<[TextAlign, typeof AlignLeft, string]>
                       ).map(([alignment, Icon, label]) => (
                         <button
@@ -3138,267 +3740,6 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                           <Icon className="size-4" />
                         </button>
                       ))}
-                    </div>
-
-                    <label className="block text-xs text-slate-400">
-                      Tamanho
-                      <span className="float-right text-white">{selectedFontPt} pt</span>
-                      <input
-                        type="range"
-                        min="6"
-                        max="500"
-                        value={selectedFontPt}
-                        disabled={!canEditStyle}
-                        onChange={(event) =>
-                          updateStyle(
-                            selectedField,
-                            "fontSize",
-                            ptToLogicalPx(Number(event.target.value), geometry)
-                          )
-                        }
-                        className="mt-1 block w-full accent-primary disabled:opacity-40"
-                      />
-                    </label>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <label className="block text-xs text-slate-400">
-                        Largura maxima
-                        <span className="float-right text-white">{selectedStyle.maxWidth}%</span>
-                        <input
-                          type="range"
-                          min="10"
-                          max="100"
-                          step="1"
-                          value={selectedStyle.maxWidth}
-                          disabled={!canEditStyle}
-                          onChange={(event) =>
-                            updateStyle(selectedField, "maxWidth", Number(event.target.value))
-                          }
-                          className="mt-1 block w-full accent-primary disabled:opacity-40"
-                        />
-                      </label>
-                      <label className="block text-xs text-slate-400">
-                        Entrelinha
-                        <span className="float-right text-white">{selectedStyle.lineHeight.toFixed(1)}</span>
-                        <input
-                          type="range"
-                          min="0.8"
-                          max="2"
-                          step="0.1"
-                          value={selectedStyle.lineHeight}
-                          disabled={!canEditStyle}
-                          onChange={(event) =>
-                            updateStyle(selectedField, "lineHeight", Number(event.target.value))
-                          }
-                          className="mt-1 block w-full accent-primary disabled:opacity-40"
-                        />
-                      </label>
-                    </div>
-
-                    <label className="block text-xs text-slate-400">
-                      Espacamento entre letras
-                      <span className="float-right text-white">{selectedStyle.letterSpacing}px</span>
-                      <input
-                        type="range"
-                        min="-4"
-                        max="16"
-                        step="0.5"
-                        value={selectedStyle.letterSpacing}
-                        disabled={!canEditStyle}
-                        onChange={(event) =>
-                          updateStyle(selectedField, "letterSpacing", Number(event.target.value))
-                        }
-                        className="mt-1 block w-full accent-primary disabled:opacity-40"
-                      />
-                    </label>
-
-                    <label className="block text-xs text-slate-400">
-                      Posicao X
-                      <span className="float-right text-white">{Math.round(selectedStyle.x)}%</span>
-                      <input
-                        type="range"
-                        min={selectedHorizontalMargin}
-                        max={100 - selectedHorizontalMargin}
-                        step="0.5"
-                        value={selectedStyle.x}
-                        disabled={!canEditStyle}
-                        onChange={(event) =>
-                          updateStyle(selectedField, "x", Number(event.target.value))
-                        }
-                        className="mt-1 block w-full accent-primary disabled:opacity-40"
-                      />
-                    </label>
-
-                    <label className="block text-xs text-slate-400">
-                      Posicao Y
-                      <span className="float-right text-white">{Math.round(selectedStyle.y)}%</span>
-                      <input
-                        type="range"
-                        min={selectedVerticalMargin}
-                        max={100 - selectedVerticalMargin}
-                        step="0.5"
-                        value={selectedStyle.y}
-                        disabled={!canEditStyle}
-                        onChange={(event) =>
-                          updateStyle(selectedField, "y", Number(event.target.value))
-                        }
-                        className="mt-1 block w-full accent-primary disabled:opacity-40"
-                      />
-                    </label>
-
-                    <div>
-                      <p className="mb-1.5 text-xs text-slate-400">Cores rapidas</p>
-                      <div className="grid grid-cols-8 gap-1.5">
-                        {BRAND_COLORS.map((color) => (
-                          <button
-                            key={color}
-                            type="button"
-                            title={color}
-                            aria-label={`Usar cor ${color}`}
-                            disabled={!canEditStyle}
-                            onClick={() => updateStyle(selectedField, "color", color)}
-                            className={`aspect-square rounded-md border disabled:cursor-not-allowed disabled:opacity-40 ${selectedStyle.color === color ? "border-white ring-1 ring-white" : "border-slate-700"}`}
-                            style={{ backgroundColor: color }}
-                          />
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2">
-                      <label className="text-xs text-slate-400">
-                        Texto
-                        <span className="mt-1 flex h-8 items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-950 px-1.5">
-                          <input
-                            type="color"
-                            value={selectedStyle.color}
-                            disabled={!canEditStyle}
-                            onChange={(event) =>
-                              updateStyle(selectedField, "color", event.target.value)
-                            }
-                            className="size-6 cursor-pointer border-0 bg-transparent disabled:opacity-40"
-                          />
-                          <span className="truncate text-[0.65rem] text-slate-300">
-                            {selectedStyle.color}
-                          </span>
-                        </span>
-                      </label>
-                      <label className="text-xs text-slate-400">
-                        Contorno
-                        <span className="mt-1 flex h-8 items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-950 px-1.5">
-                          <input
-                            type="color"
-                            value={
-                              selectedStyle.stroke === "none"
-                                ? "#000000"
-                                : selectedStyle.stroke
-                            }
-                            disabled={!canEditStyle}
-                            onChange={(event) =>
-                              updateStyle(selectedField, "stroke", event.target.value)
-                            }
-                            className="size-6 cursor-pointer border-0 bg-transparent disabled:opacity-40"
-                          />
-                          <span className="truncate text-[0.65rem] text-slate-300">
-                            {selectedStyle.stroke}
-                          </span>
-                        </span>
-                      </label>
-                    </div>
-
-                    <label className="block text-xs text-slate-400">
-                      Largura do contorno
-                      <span className="float-right text-white">
-                        {selectedStyle.strokeWidth}px
-                      </span>
-                      <input
-                        type="range"
-                        min="0"
-                        max="6"
-                        step="0.5"
-                        value={selectedStyle.strokeWidth}
-                        disabled={!canEditStyle}
-                        onChange={(event) => {
-                          const strokeWidth = Number(event.target.value)
-                          updateStyle(selectedField, "strokeWidth", strokeWidth)
-                          updateStyle(
-                            selectedField,
-                            "stroke",
-                            strokeWidth === 0
-                              ? "none"
-                              : selectedStyle.stroke === "none"
-                                ? "#000000"
-                                : selectedStyle.stroke
-                          )
-                        }}
-                        className="mt-1 block w-full accent-primary disabled:opacity-40"
-                      />
-                    </label>
-
-                    <div className="border-t border-slate-800 pt-3">
-                      <div className="grid grid-cols-[1fr_5rem] gap-2">
-                        <label className="block text-xs text-slate-400">
-                          Desfoque da sombra
-                          <span className="float-right text-white">{selectedStyle.shadowBlur}px</span>
-                          <input
-                            type="range"
-                            min="0"
-                            max="20"
-                            step="1"
-                            value={selectedStyle.shadowBlur}
-                            disabled={!canEditStyle}
-                            onChange={(event) =>
-                              updateStyle(selectedField, "shadowBlur", Number(event.target.value))
-                            }
-                            className="mt-1 block w-full accent-primary disabled:opacity-40"
-                          />
-                        </label>
-                        <label className="text-xs text-slate-400">
-                          Cor
-                          <input
-                            type="color"
-                            value={selectedStyle.shadowColor}
-                            disabled={!canEditStyle}
-                            onChange={(event) =>
-                              updateStyle(selectedField, "shadowColor", event.target.value)
-                            }
-                            className="mt-1 block h-8 w-full cursor-pointer rounded border border-slate-700 bg-slate-950 disabled:cursor-not-allowed disabled:opacity-40"
-                          />
-                        </label>
-                      </div>
-                      <div className="mt-2 grid grid-cols-2 gap-3">
-                        <label className="block text-xs text-slate-400">
-                          Sombra X
-                          <span className="float-right text-white">{selectedStyle.shadowX}px</span>
-                          <input
-                            type="range"
-                            min="-20"
-                            max="20"
-                            step="1"
-                            value={selectedStyle.shadowX}
-                            disabled={!canEditStyle}
-                            onChange={(event) =>
-                              updateStyle(selectedField, "shadowX", Number(event.target.value))
-                            }
-                            className="mt-1 block w-full accent-primary disabled:opacity-40"
-                          />
-                        </label>
-                        <label className="block text-xs text-slate-400">
-                          Sombra Y
-                          <span className="float-right text-white">{selectedStyle.shadowY}px</span>
-                          <input
-                            type="range"
-                            min="-20"
-                            max="20"
-                            step="1"
-                            value={selectedStyle.shadowY}
-                            disabled={!canEditStyle}
-                            onChange={(event) =>
-                              updateStyle(selectedField, "shadowY", Number(event.target.value))
-                            }
-                            className="mt-1 block w-full accent-primary disabled:opacity-40"
-                          />
-                        </label>
-                      </div>
                     </div>
 
                     <div>
@@ -3430,6 +3771,288 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                       </div>
                     </div>
 
+                    <StyleSlider
+                      label="Tamanho"
+                      unit="pt"
+                      min={fontSizeRangePt.min}
+                      max={fontSizeRangePt.max}
+                      value={selectedFontPt}
+                      defaultValue={Math.round(logicalPxToPt(DEFAULT_STYLES[selectedField].fontSize, geometry))}
+                      disabled={!canEditStyle || (selectedField === "preco_centavos" && centsLinked)}
+                      history={sliderHistory}
+                      onChange={(value, record) =>
+                        updateStyle(selectedField, "fontSize", ptToLogicalPx(value, geometry), record)
+                      }
+                    />
+                    {selectedField === "preco_centavos" && centsLinked ? (
+                      <p className="-mt-2 text-[0.65rem] text-slate-500">
+                        O tamanho dos centavos segue o R$ inteiro (50%). Desmarque a opção na aba
+                        Texto para ajustar sozinho.
+                      </p>
+                    ) : null}
+
+                    </StyleGroup>
+                    <StyleGroup title="Espaçamento" defaultOpen={true}>
+                    <StyleSlider
+                      label="Largura máxima"
+                      unit="%"
+                      min={10}
+                      max={100}
+                      value={selectedStyle.maxWidth}
+                      defaultValue={DEFAULT_STYLES[selectedField].maxWidth}
+                      disabled={!canEditStyle}
+                      history={sliderHistory}
+                      onChange={(value, record) => updateStyle(selectedField, "maxWidth", value, record)}
+                    />
+
+                    <StyleSlider
+                      label="Entrelinha"
+                      min={0.8}
+                      max={2}
+                      step={0.1}
+                      decimals={1}
+                      value={selectedStyle.lineHeight}
+                      defaultValue={DEFAULT_STYLES[selectedField].lineHeight}
+                      disabled={!canEditStyle}
+                      history={sliderHistory}
+                      onChange={(value, record) => updateStyle(selectedField, "lineHeight", value, record)}
+                    />
+
+                    <StyleSlider
+                      label="Espaçamento entre letras"
+                      unit="px"
+                      min={-4}
+                      max={16}
+                      step={0.5}
+                      decimals={1}
+                      value={selectedStyle.letterSpacing}
+                      defaultValue={DEFAULT_STYLES[selectedField].letterSpacing}
+                      disabled={!canEditStyle}
+                      history={sliderHistory}
+                      onChange={(value, record) => updateStyle(selectedField, "letterSpacing", value, record)}
+                    />
+
+                    </StyleGroup>
+                    <StyleGroup title="Posição" defaultOpen={true}>
+                    <StyleSlider
+                      label="Posição X"
+                      unit="%"
+                      min={POSITION_MIN}
+                      max={POSITION_MAX}
+                      step={0.5}
+                      decimals={1}
+                      value={selectedStyle.x}
+                      defaultValue={DEFAULT_STYLES[selectedField].x}
+                      disabled={!canEditStyle}
+                      history={sliderHistory}
+                      onChange={(value, record) => updateStyle(selectedField, "x", value, record)}
+                    />
+
+                    <StyleSlider
+                      label="Posição Y"
+                      unit="%"
+                      min={POSITION_MIN}
+                      max={POSITION_MAX}
+                      step={0.5}
+                      decimals={1}
+                      value={selectedStyle.y}
+                      defaultValue={DEFAULT_STYLES[selectedField].y}
+                      disabled={!canEditStyle}
+                      history={sliderHistory}
+                      onChange={(value, record) => updateStyle(selectedField, "y", value, record)}
+                    />
+
+                    </StyleGroup>
+                    <StyleGroup title="Cores e contorno" defaultOpen={false}>
+                    <div>
+                      <p className="mb-1.5 text-xs text-slate-400">Cores rápidas</p>
+                      <div className="grid grid-cols-8 gap-1.5">
+                        {quickColors.map((color) => (
+                          <div key={color} className="group relative">
+                            <button
+                              type="button"
+                              title={colorLabel(color)}
+                              aria-label={`Usar cor ${colorLabel(color)}`}
+                              disabled={!canEditStyle}
+                              onClick={() => updateStyle(selectedField, "color", color)}
+                              className={`aspect-square w-full rounded-md border disabled:cursor-not-allowed disabled:opacity-40 ${selectedStyle.color === color ? "border-white ring-1 ring-white" : "border-slate-700"}`}
+                              style={{ backgroundColor: color }}
+                            />
+                            <button
+                              type="button"
+                              title={`Remover ${colorName(color)}`}
+                              aria-label={`Remover cor ${colorLabel(color)} das cores rápidas`}
+                              onClick={() => saveQuickColors(quickColors.filter((item) => item !== color))}
+                              className="absolute -right-1 -top-1 hidden size-4 items-center justify-center rounded-full bg-slate-950 text-[10px] leading-none text-white ring-1 ring-slate-500 group-focus-within:flex group-hover:flex"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-2 flex items-center gap-1.5">
+                        <input
+                          type="color"
+                          aria-label="Escolher cor para adicionar"
+                          title={colorLabel(newQuickColor)}
+                          value={newQuickColor}
+                          onChange={(event) => setNewQuickColor(event.target.value)}
+                          className="h-7 w-9 cursor-pointer rounded border border-slate-700 bg-slate-950"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => addQuickColor(newQuickColor)}
+                          className="inline-flex h-7 flex-1 items-center justify-center gap-1 rounded-md border border-slate-700 px-2 text-[0.7rem] text-slate-300 hover:bg-slate-800"
+                        >
+                          <Plus className="size-3" />
+                          Adicionar {colorName(newQuickColor)}
+                        </button>
+                        <button
+                          type="button"
+                          title="Usar a cor atual do texto"
+                          onClick={() => addQuickColor(selectedStyle.color)}
+                          disabled={!canEditStyle}
+                          className="inline-flex h-7 items-center justify-center rounded-md border border-slate-700 px-2 text-[0.7rem] text-slate-300 hover:bg-slate-800 disabled:opacity-40"
+                        >
+                          Cor atual
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => saveQuickColors([...BRAND_COLORS])}
+                        className="mt-1.5 text-[0.65rem] text-slate-500 hover:text-slate-300"
+                      >
+                        Restaurar cores originais
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className="text-xs text-slate-400">
+                        Texto
+                        <span className="mt-1 flex h-8 items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-950 px-1.5">
+                          <input
+                            type="color"
+                            value={selectedStyle.color}
+                            disabled={!canEditStyle}
+                            onChange={(event) =>
+                              updateStyle(selectedField, "color", event.target.value)
+                            }
+                            className="size-6 cursor-pointer border-0 bg-transparent disabled:opacity-40"
+                          />
+                          <span
+                            className="truncate text-[0.65rem] text-slate-300"
+                            title={colorLabel(selectedStyle.color)}
+                          >
+                            {colorName(selectedStyle.color)}
+                          </span>
+                        </span>
+                      </label>
+                      <label className="text-xs text-slate-400">
+                        Contorno
+                        <span className="mt-1 flex h-8 items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-950 px-1.5">
+                          <input
+                            type="color"
+                            value={
+                              selectedStyle.stroke === "none"
+                                ? "#000000"
+                                : selectedStyle.stroke
+                            }
+                            disabled={!canEditStyle}
+                            onChange={(event) =>
+                              updateStyle(selectedField, "stroke", event.target.value)
+                            }
+                            className="size-6 cursor-pointer border-0 bg-transparent disabled:opacity-40"
+                          />
+                          <span
+                            className="truncate text-[0.65rem] text-slate-300"
+                            title={colorLabel(selectedStyle.stroke)}
+                          >
+                            {colorName(selectedStyle.stroke)}
+                          </span>
+                        </span>
+                      </label>
+                    </div>
+
+                    <StyleSlider
+                      label="Largura do contorno"
+                      unit="px"
+                      min={0}
+                      max={6}
+                      step={0.5}
+                      decimals={1}
+                      value={selectedStyle.strokeWidth}
+                      defaultValue={DEFAULT_STYLES[selectedField].strokeWidth}
+                      disabled={!canEditStyle}
+                      history={sliderHistory}
+                      onChange={(value, record) => {
+                        updateStyle(selectedField, "strokeWidth", value, record)
+                        updateStyle(
+                          selectedField,
+                          "stroke",
+                          value === 0 ? "none" : selectedStyle.stroke === "none" ? "#000000" : selectedStyle.stroke,
+                          false
+                        )
+                      }}
+                    />
+
+                    </StyleGroup>
+                    <StyleGroup title="Sombra" defaultOpen={false}>
+                    <div>
+                      <div className="grid grid-cols-[1fr_5rem] gap-2">
+                        <StyleSlider
+                          label="Desfoque da sombra"
+                          unit="px"
+                          min={0}
+                          max={20}
+                          value={selectedStyle.shadowBlur}
+                          defaultValue={DEFAULT_STYLES[selectedField].shadowBlur}
+                          disabled={!canEditStyle}
+                          history={sliderHistory}
+                          onChange={(value, record) => updateStyle(selectedField, "shadowBlur", value, record)}
+                        />
+                        <label className="text-xs text-slate-400">
+                          Cor
+                          <input
+                            type="color"
+                            value={selectedStyle.shadowColor}
+                            disabled={!canEditStyle}
+                            onChange={(event) =>
+                              updateStyle(selectedField, "shadowColor", event.target.value)
+                            }
+                            className="mt-1 block h-8 w-full cursor-pointer rounded border border-slate-700 bg-slate-950 disabled:cursor-not-allowed disabled:opacity-40"
+                          />
+                        <span className="mt-0.5 block truncate text-[0.6rem] text-slate-500">
+                            {colorName(selectedStyle.shadowColor)}
+                          </span>
+                        </label>
+                      </div>
+                      <div className="mt-2 grid grid-cols-2 gap-3">
+                        <StyleSlider
+                          label="Sombra X"
+                          unit="px"
+                          min={-20}
+                          max={20}
+                          value={selectedStyle.shadowX}
+                          defaultValue={DEFAULT_STYLES[selectedField].shadowX}
+                          disabled={!canEditStyle}
+                          history={sliderHistory}
+                          onChange={(value, record) => updateStyle(selectedField, "shadowX", value, record)}
+                        />
+                        <StyleSlider
+                          label="Sombra Y"
+                          unit="px"
+                          min={-20}
+                          max={20}
+                          value={selectedStyle.shadowY}
+                          defaultValue={DEFAULT_STYLES[selectedField].shadowY}
+                          disabled={!canEditStyle}
+                          history={sliderHistory}
+                          onChange={(value, record) => updateStyle(selectedField, "shadowY", value, record)}
+                        />
+                      </div>
+                    </div>
+
+                    </StyleGroup>
                     <div className="grid grid-cols-2 gap-2 border-t border-slate-800 pt-3">
                       <button
                         type="button"
@@ -3437,10 +4060,10 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                         onClick={() =>
                           updateStyle(selectedField, "visible", !selectedStyle.visible)
                         }
-                        className="flex h-9 items-center justify-center gap-2 rounded-md bg-slate-800 text-xs text-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
+                        className="flex h-9 items-center justify-center gap-2 rounded-md bg-slate-800 text-xs text-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         {selectedStyle.visible ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
-                        {selectedStyle.visible ? "Visivel" : "Oculto"}
+                        {selectedStyle.visible ? "Visível" : "Oculto"}
                       </button>
                       <button
                         type="button"
@@ -3448,7 +4071,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                         onClick={() =>
                           updateStyle(selectedField, "locked", !selectedStyle.locked)
                         }
-                        className="flex h-9 items-center justify-center gap-2 rounded-md bg-slate-800 text-xs text-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
+                        className="flex h-9 items-center justify-center gap-2 rounded-md bg-slate-800 text-xs text-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         {selectedStyle.locked ? <Lock className="size-4" /> : <Unlock className="size-4" />}
                         {selectedStyle.locked ? "Bloqueado" : "Livre"}
@@ -3456,36 +4079,221 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                     </div>
                   </section>
                 </>
+              ) : tab === "queue" ? (
+                <div className="space-y-3">
+                  <section className="space-y-2 rounded-lg border border-slate-800 bg-slate-900 p-3">
+                    <p className="text-xs font-semibold text-slate-100">Fila de cartazes</p>
+                    <p className="text-[0.65rem] leading-4 text-slate-400">
+                      Monte vários cartazes e gere um único PDF, com um cartaz por página.
+                    </p>
+                    <button
+                      type="button"
+                      disabled={!activeTemplate}
+                      onClick={addToQueue}
+                      className="flex h-9 w-full items-center justify-center gap-2 rounded-md bg-primary text-xs font-medium text-primary-foreground disabled:opacity-40"
+                    >
+                      <Plus className="size-4" />
+                      {editingQueueId ? "Salvar alterações na fila" : "Adicionar cartaz atual à fila"}
+                    </button>
+                    {editingQueueId ? (
+                      <button
+                        type="button"
+                        onClick={() => setEditingQueueId(null)}
+                        className="flex h-8 w-full items-center justify-center rounded-md border border-slate-700 text-xs text-slate-300 hover:bg-slate-800"
+                      >
+                        Cancelar edição (voltar a adicionar novo)
+                      </button>
+                    ) : null}
+                  </section>
+
+                  <section className="space-y-2 rounded-lg border border-slate-800 bg-slate-900 p-3">
+                    <p className="text-xs font-semibold text-slate-100">Importar planilha</p>
+                    <p className="text-[0.65rem] leading-4 text-slate-400">
+                      Cada linha vira um cartaz na fila, com o mesmo template. Colunas: Produto,
+                      Descrição, Preço, Unidade, Validade e Observação. Depois você edita cada um.
+                    </p>
+                    <div>
+                      <span className="text-[0.65rem] text-slate-400">Template dos cartazes</span>
+                      <Select
+                        tone="dark"
+                        className="mt-1 h-8 text-xs"
+                        aria-label="Template dos cartazes da planilha"
+                        value={sheetTemplateId || activeTemplate?.id || templates[0]?.id || ""}
+                        onValueChange={setSheetTemplateId}
+                        placeholder="Escolha o template"
+                        options={templates.map((template) => ({ value: template.id, label: template.name }))}
+                      />
+                    </div>
+                    <label
+                      className={`flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-md border border-slate-700 text-xs font-medium text-slate-100 hover:bg-slate-800 ${
+                        importingSheet || templates.length === 0 ? "pointer-events-none opacity-40" : ""
+                      }`}
+                    >
+                      {importingSheet ? <LoaderCircle className="size-4 animate-spin" /> : <Upload className="size-4" />}
+                      Importar planilha (.xlsx ou .csv)
+                      <input
+                        type="file"
+                        accept=".xlsx,.csv"
+                        className="sr-only"
+                        aria-label="Arquivo da planilha de cartazes"
+                        onChange={(event) => {
+                          const file = event.target.files?.[0]
+                          event.target.value = ""
+                          if (file) void importSheetToQueue(file)
+                        }}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={downloadSheetTemplate}
+                      className="text-[0.65rem] text-slate-500 underline hover:text-slate-300"
+                    >
+                      Baixar planilha modelo
+                    </button>
+                  </section>
+
+                  {queue.length === 0 ? (
+                    <p className="rounded-lg border border-dashed border-slate-700 px-3 py-6 text-center text-xs text-slate-400">
+                      Nenhum cartaz na fila. Monte um cartaz e clique em adicionar.
+                    </p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {queue.map((item, index) => {
+                        const template = templates.find((entry) => entry.id === item.templateId)
+                        const price = item.fields.preco_reais
+                          ? `R$ ${item.fields.preco_reais}${item.fields.preco_centavos ? `,${item.fields.preco_centavos}` : ""}`
+                          : ""
+                        return (
+                          <div
+                            key={item.id}
+                            className={`rounded-md border p-2 ${
+                              editingQueueId === item.id
+                                ? "border-primary bg-primary/10"
+                                : "border-slate-800 bg-slate-900"
+                            }`}
+                          >
+                            <div className="flex items-start gap-2">
+                              <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-slate-800 text-[10px] font-semibold text-slate-300">
+                                {index + 1}
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-xs font-semibold text-slate-100">
+                                  {item.fields.produto || "Sem nome"}
+                                </p>
+                                <p className="truncate text-[0.65rem] text-slate-400">
+                                  {template?.name ?? "Template removido"}
+                                  {price ? ` · ${price}` : ""}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="mt-1.5 flex items-center justify-end gap-1">
+                              <button
+                                type="button"
+                                title="Editar este cartaz"
+                                aria-label={`Editar cartaz ${index + 1}`}
+                                disabled={!template}
+                                onClick={() => loadQueueItem(item)}
+                                className="inline-flex size-7 items-center justify-center rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-30"
+                              >
+                                <Pencil className="size-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                title="Duplicar"
+                                aria-label={`Duplicar cartaz ${index + 1}`}
+                                onClick={() => duplicateQueueItem(item)}
+                                className="inline-flex size-7 items-center justify-center rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800"
+                              >
+                                <Copy className="size-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                title="Mover para cima"
+                                aria-label={`Mover cartaz ${index + 1} para cima`}
+                                disabled={index === 0}
+                                onClick={() => moveQueueItem(item.id, -1)}
+                                className="inline-flex size-7 items-center justify-center rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-30"
+                              >
+                                <ChevronUp className="size-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                title="Mover para baixo"
+                                aria-label={`Mover cartaz ${index + 1} para baixo`}
+                                disabled={index === queue.length - 1}
+                                onClick={() => moveQueueItem(item.id, 1)}
+                                className="inline-flex size-7 items-center justify-center rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-30"
+                              >
+                                <ChevronDown className="size-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                title="Remover da fila"
+                                aria-label={`Remover cartaz ${index + 1} da fila`}
+                                onClick={() => removeQueueItem(item.id)}
+                                className="inline-flex size-7 items-center justify-center rounded-md border border-red-400/40 text-red-300 hover:bg-red-950/40"
+                              >
+                                <Trash2 className="size-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    disabled={queue.length === 0 || exporting !== null}
+                    onClick={() => void exportQueuePdf()}
+                    className="flex h-9 w-full items-center justify-center gap-2 rounded-md border border-primary text-xs font-medium text-white hover:bg-primary/20 disabled:opacity-40"
+                  >
+                    {exporting === "pdf" ? (
+                      <LoaderCircle className="size-4 animate-spin" />
+                    ) : (
+                      <FileDown className="size-4" />
+                    )}
+                    Exportar PDF da fila ({queue.length} {queue.length === 1 ? "página" : "páginas"})
+                  </button>
+                  {queue.length > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQueue([])
+                        setEditingQueueId(null)
+                      }}
+                      className="w-full text-center text-[0.65rem] text-slate-500 hover:text-slate-300"
+                    >
+                      Limpar fila
+                    </button>
+                  ) : null}
+                </div>
               ) : tab === "document" ? (
                 <>
                   <section className="space-y-4 rounded-lg border border-slate-800 bg-slate-900 p-3.5">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-slate-200">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-slate-100">
                       <Ruler className="size-4 text-primary" />
-                      Documento de impressao
+                      Documento de impressão
                     </div>
 
                     <label className="block text-xs text-slate-400">
                       Formato
-                      <select
+                      <Select
+                        tone="dark"
+                        className="mt-1 h-9 text-xs"
                         value={documentSettings.paper}
-                        onChange={(event) =>
-                          updateDocument(
-                            "paper",
-                            event.target.value as PosterDocumentSettings["paper"]
-                          )
+                        onValueChange={(value) =>
+                          updateDocument("paper", value as PosterDocumentSettings["paper"])
                         }
-                        className="mt-1 h-9 w-full rounded-md border border-slate-700 bg-slate-950 px-2 text-xs text-slate-200 outline-none focus:border-primary"
-                      >
-                        {Object.entries(PAPER_SIZES_MM).map(([value, paper]) => (
-                          <option key={value} value={value}>
-                            {paper.label} - {paper.width} x {paper.height} mm
-                          </option>
-                        ))}
-                      </select>
+                        options={Object.entries(PAPER_SIZES_MM).map(([value, paper]) => ({
+                          value,
+                          label: `${paper.label} - ${paper.width} x ${paper.height} mm`,
+                        }))}
+                      />
                     </label>
 
                     <div>
-                      <p className="mb-1.5 text-xs text-slate-400">Orientacao</p>
+                      <p className="mb-1.5 text-xs text-slate-400">Orientação</p>
                       <div className="grid grid-cols-2 gap-1.5">
                         {(
                           [
@@ -3543,7 +4351,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                     </div>
 
                     <div>
-                      <p className="mb-1.5 text-xs text-slate-400">Resolucao</p>
+                      <p className="mb-1.5 text-xs text-slate-400">Resolução</p>
                       <div className="grid grid-cols-2 gap-1.5">
                         {([150, 300] as const).map((dpi) => (
                           <button
@@ -3560,26 +4368,28 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
 
                     <label className="block text-xs text-slate-400">
                       Ajuste do fundo
-                      <select
+                      <Select
+                        tone="dark"
+                        className="mt-1 h-9 text-xs"
                         value={documentSettings.backgroundFit}
-                        onChange={(event) =>
+                        onValueChange={(value) =>
                           updateDocument(
                             "backgroundFit",
-                            event.target.value as PosterDocumentSettings["backgroundFit"]
+                            value as PosterDocumentSettings["backgroundFit"]
                           )
                         }
-                        className="mt-1 h-9 w-full rounded-md border border-slate-700 bg-slate-950 px-2 text-xs text-slate-200 outline-none focus:border-primary"
-                      >
-                        <option value="cover">Preencher e recortar</option>
-                        <option value="contain">Exibir imagem inteira</option>
-                        <option value="stretch">Esticar ate as bordas</option>
-                      </select>
+                        options={[
+                          { value: "cover", label: "Preencher e recortar" },
+                          { value: "contain", label: "Exibir imagem inteira" },
+                          { value: "stretch", label: "Esticar até as bordas" },
+                        ]}
+                      />
                     </label>
 
                     <div className="border-t border-slate-800 pt-3">
-                      <p className="mb-3 flex items-center gap-2 text-xs font-semibold text-slate-200">
+                      <p className="mb-3 flex items-center gap-2 text-xs font-semibold text-slate-100">
                         <ImagePlus className="size-4 text-primary" />
-                        Edicao do fundo
+                        Edição do fundo
                       </p>
                       <div className="space-y-3">
                         {(
@@ -3588,8 +4398,8 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                             ["backgroundBrightness", "Brilho", 0.4, 1.8, 0.05],
                             ["backgroundContrast", "Contraste", 0.4, 1.8, 0.05],
                             ["backgroundScale", "Escala", 0.5, 2, 0.05],
-                            ["backgroundOffsetX", "Posicao X", -50, 50, 1],
-                            ["backgroundOffsetY", "Posicao Y", -50, 50, 1],
+                            ["backgroundOffsetX", "Posição X", -50, 50, 1],
+                            ["backgroundOffsetY", "Posição Y", -50, 50, 1],
                           ] satisfies Array<[
                             keyof PosterDocumentSettings,
                             string,
@@ -3598,30 +4408,25 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                             number,
                           ]>
                         ).map(([key, label, min, max, step]) => (
-                          <label key={key} className="block text-xs text-slate-400">
-                            {label}
-                            <span className="float-right text-slate-200">
-                              {Number(documentSettings[key]).toFixed(step < 1 ? 2 : 0)}
-                            </span>
-                            <input
-                              type="range"
-                              min={min}
-                              max={max}
-                              step={step}
-                              value={Number(documentSettings[key])}
-                              onChange={(event) =>
-                                updateDocument(key, Number(event.target.value) as never)
-                              }
-                              className="mt-1 block w-full accent-primary"
-                            />
-                          </label>
+                          <StyleSlider
+                            key={key}
+                            label={label}
+                            min={min}
+                            max={max}
+                            step={step}
+                            decimals={step < 1 ? 2 : 0}
+                            value={Number(documentSettings[key])}
+                            defaultValue={Number(DEFAULT_DOCUMENT_SETTINGS[key])}
+                            history={sliderHistory}
+                            onChange={(value, record) => updateDocument(key, value as never, record)}
+                          />
                         ))}
                       </div>
                     </div>
                   </section>
 
                   <section className="rounded-lg border border-slate-800 bg-slate-900 p-3.5">
-                    <p className="mb-3 flex items-center gap-2 text-xs font-semibold text-slate-200">
+                    <p className="mb-3 flex items-center gap-2 text-xs font-semibold text-slate-100">
                       <Grid3X3 className="size-4 text-primary" />
                       Guias do editor
                     </p>
@@ -3630,9 +4435,9 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                         [
                           ["showGuides", "Corte e margem segura"],
                           ["showGrid", "Grade de 5 mm"],
-                          ["showRulers", "Reguas em milimetros"],
+                          ["showRulers", "Réguas em milímetros"],
                           ["snapToGrid", "Encaixar na grade"],
-                          ["includeCropMarks", "Marcas de corte na exportacao"],
+                          ["includeCropMarks", "Marcas de corte na exportação"],
                         ] satisfies Array<[keyof PosterDocumentSettings, string]>
                       ).map(([key, label]) => (
                         <label
@@ -3663,8 +4468,8 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                         <FileImage className="mt-0.5 size-4 shrink-0 text-emerald-400" />
                       )}
                       <div className="min-w-0 text-xs">
-                        <p className="font-semibold text-slate-200">
-                          {lowResolution ? "Imagem abaixo da resolucao ideal" : "Resolucao adequada"}
+                        <p className="font-semibold text-slate-100">
+                          {lowResolution ? "Imagem abaixo da resolução ideal" : "Resolução adequada"}
                         </p>
                         <p className="mt-1 text-slate-400">
                           Saida: {outputSize.width} x {outputSize.height} px
@@ -3684,8 +4489,8 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                     <section className="space-y-3 rounded-lg border border-slate-800 bg-slate-900 p-3">
                       <div className="flex items-center justify-between gap-2">
                         <div>
-                          <p className="text-xs font-semibold text-slate-200">
-                            Transformacao
+                          <p className="text-xs font-semibold text-slate-100">
+                            Transformação
                           </p>
                           <p className="text-[0.65rem] text-slate-500">
                             {selectedBounds.length} selecionado(s)
@@ -3697,11 +4502,11 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                       <div className="grid grid-cols-2 gap-2">
                         {(
                           [
-                            ["x", "Posicao X", primaryBounds.x, 0, 100, 0.1],
-                            ["y", "Posicao Y", primaryBounds.y, 0, 100, 0.1],
-                            ["width", "Largura", primaryBounds.width, 1, 100, 0.1],
-                            ["height", "Altura", primaryBounds.height, 1, 100, 0.1],
-                            ["rotation", "Rotacao", primaryBounds.rotation, -180, 180, 1],
+                            ["x", "Posição X", primaryBounds.x, POSITION_MIN, POSITION_MAX, 0.1],
+                            ["y", "Posição Y", primaryBounds.y, POSITION_MIN, POSITION_MAX, 0.1],
+                            ["width", "Largura", primaryBounds.width, 1, 300, 0.1],
+                            ["height", "Altura", primaryBounds.height, 1, 300, 0.1],
+                            ["rotation", "Rotação", primaryBounds.rotation, -180, 180, 1],
                             ["opacity", "Opacidade", primaryBounds.opacity, 0, 1, 0.05],
                           ] satisfies Array<[
                             "x" | "y" | "width" | "height" | "rotation" | "opacity",
@@ -3734,9 +4539,9 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                         <div className="grid grid-cols-6 gap-1">
                           {(
                             [
-                              ["left", AlignLeft, "Alinhar a esquerda"],
+                              ["left", AlignLeft, "Alinhar à esquerda"],
                               ["center-x", AlignCenter, "Centralizar horizontalmente"],
-                              ["right", AlignRight, "Alinhar a direita"],
+                              ["right", AlignRight, "Alinhar à direita"],
                               ["top", ArrowUpToLine, "Alinhar ao topo"],
                               ["center-y", Move, "Centralizar verticalmente"],
                               ["bottom", ArrowDownToLine, "Alinhar abaixo"],
@@ -3850,7 +4655,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                   {selectedCustomElement ? (
                     <section className="space-y-3 rounded-lg border border-slate-800 bg-slate-900 p-3">
                       <div className="flex items-center justify-between gap-2">
-                        <p className="text-xs font-semibold text-slate-200">Propriedades</p>
+                        <p className="text-xs font-semibold text-slate-100">Propriedades</p>
                         {selectedCustomElement.kind === "barcode" ? (
                           <Barcode className="size-4 text-primary" />
                         ) : selectedCustomElement.kind === "image" ? (
@@ -3874,7 +4679,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
 
                       {selectedCustomElement.kind !== "image" && selectedCustomElement.kind !== "shape" ? (
                         <label className="block text-[0.65rem] text-slate-400">
-                          {selectedCustomElement.kind === "barcode" ? "Codigo" : "Texto"}
+                          {selectedCustomElement.kind === "barcode" ? "Código" : "Texto"}
                           <textarea
                             value={selectedCustomElement.value}
                             maxLength={240}
@@ -3891,34 +4696,35 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                         <>
                           <label className="block text-[0.65rem] text-slate-400">
                             Fonte
-                            <select
+                            <Select
+                              tone="dark"
+                              className="mt-1 h-8 text-xs"
                               value={selectedCustomElement.fontFamily}
-                              onChange={(event) =>
-                                updateCustomElement(selectedCustomElement.id, { fontFamily: event.target.value })
+                              onValueChange={(value) =>
+                                updateCustomElement(selectedCustomElement.id, { fontFamily: value })
                               }
-                              className="mt-1 h-8 w-full rounded-md border border-slate-700 bg-slate-950 px-2 text-xs text-white"
-                            >
-                              {FONT_OPTIONS.map((font) => <option key={font}>{font}</option>)}
-                            </select>
-                          </label>
-                          <label className="block text-[0.65rem] text-slate-400">
-                            Tamanho
-                            <span className="float-right text-slate-200">
-                              {Math.round(logicalPxToPt(selectedCustomElement.fontSize, geometry))} pt
-                            </span>
-                            <input
-                              type="range"
-                              min="6"
-                              max="500"
-                              value={Math.round(logicalPxToPt(selectedCustomElement.fontSize, geometry))}
-                              onChange={(event) =>
-                                updateCustomElement(selectedCustomElement.id, {
-                                  fontSize: ptToLogicalPx(Number(event.target.value), geometry),
-                                })
-                              }
-                              className="mt-1 block w-full accent-primary"
+                              options={FONT_OPTIONS.map((font) => ({
+                                value: font,
+                                label: font,
+                                style: { fontFamily: font },
+                              }))}
                             />
                           </label>
+                          <StyleSlider
+                            label="Tamanho"
+                            unit="pt"
+                            min={fontSizeRangePt.min}
+                            max={fontSizeRangePt.max}
+                            value={Math.round(logicalPxToPt(selectedCustomElement.fontSize, geometry))}
+                            history={sliderHistory}
+                            onChange={(value, record) =>
+                              updateCustomElement(
+                                selectedCustomElement.id,
+                                { fontSize: ptToLogicalPx(value, geometry) },
+                                record
+                              )
+                            }
+                          />
                           <div className="grid grid-cols-5 gap-1">
                             <button
                               type="button"
@@ -3964,19 +4770,23 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                       {selectedCustomElement.kind === "shape" ? (
                         <label className="block text-[0.65rem] text-slate-400">
                           Forma
-                          <select
+                          <Select
+                            tone="dark"
+                            className="mt-1 h-8 text-xs"
                             value={selectedCustomElement.shape}
-                            onChange={(event) =>
+                            onValueChange={(value) =>
                               updateCustomElement(selectedCustomElement.id, {
-                                shape: event.target.value as PosterCustomElement["shape"],
+                                shape: value as PosterCustomElement["shape"],
                               })
                             }
-                            className="mt-1 h-8 w-full rounded-md border border-slate-700 bg-slate-950 px-2 text-xs text-white"
-                          >
-                            <option value="rectangle">Retangulo</option>
-                            <option value="ellipse">Circulo / elipse</option>
-                            <option value="star">Estrela</option>
-                          </select>
+                            options={[
+                              { value: "rectangle", label: "Retângulo" },
+                              { value: "ellipse", label: "Círculo / elipse" },
+                              { value: "star", label: "Estrela" },
+                              { value: "brush", label: "Pincelada" },
+                              { value: "brush2", label: "Pincelada 2" },
+                            ]}
+                          />
                         </label>
                       ) : null}
 
@@ -3992,6 +4802,9 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                               }
                               className="mt-1 h-8 w-full rounded border border-slate-700 bg-slate-950"
                             />
+                            <span className="mt-0.5 block truncate text-[0.6rem] text-slate-500">
+                              {colorName(selectedCustomElement.color)}
+                            </span>
                           </label>
                           <label className="text-[0.65rem] text-slate-400">
                             Fundo
@@ -4003,6 +4816,9 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                               }
                               className="mt-1 h-8 w-full rounded border border-slate-700 bg-slate-950"
                             />
+                            <span className="mt-0.5 block truncate text-[0.6rem] text-slate-500">
+                              {colorName(selectedCustomElement.fill)}
+                            </span>
                           </label>
                           <label className="text-[0.65rem] text-slate-400">
                             Borda
@@ -4017,6 +4833,9 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                               }
                               className="mt-1 h-8 w-full rounded border border-slate-700 bg-slate-950"
                             />
+                            <span className="mt-0.5 block truncate text-[0.6rem] text-slate-500">
+                              {colorName(selectedCustomElement.stroke)}
+                            </span>
                           </label>
                         </div>
                       ) : null}
@@ -4038,7 +4857,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                   <section className="rounded-lg border border-slate-800 bg-slate-900 p-3">
                     <div className="mb-3 flex items-center justify-between gap-2">
                       <div>
-                        <p className="text-xs font-semibold text-slate-200">Camadas</p>
+                        <p className="text-xs font-semibold text-slate-100">Camadas</p>
                         <p className="text-[0.65rem] text-slate-500">Topo primeiro</p>
                       </div>
                       <Layers3 className="size-4 text-primary" />
@@ -4065,7 +4884,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                                   event.shiftKey || event.metaKey || event.ctrlKey
                                 )
                               }
-                              className="truncate px-1 text-left text-xs font-medium text-slate-200"
+                              className="truncate px-1 text-left text-xs font-medium text-slate-100"
                             >
                               {name}
                             </button>
@@ -4124,9 +4943,9 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                   <section className="rounded-lg border border-slate-800 bg-slate-900 p-3">
                     <div className="flex items-center justify-between gap-2">
                       <div>
-                        <p className="text-xs font-semibold text-slate-200">{cloudStatus === "ready" ? "Sincronizacao na nuvem" : cloudStatus === "error" ? "Rascunho local" : "Rascunho"}</p>
+                        <p className="text-xs font-semibold text-slate-100">{cloudStatus === "ready" ? "Sincronização na nuvem" : cloudStatus === "error" ? "Rascunho local" : "Rascunho"}</p>
                         <p className="text-[0.65rem] text-slate-500">
-                          {cloudMessage ? "Falha na nuvem; rascunho mantido neste dispositivo" : cloudStatus === "loading" ? "Carregando dados da nuvem" : cloudStatus === "ready" ? "Sincronizacao automatica ativa" : lastSavedAt
+                          {cloudMessage ? "Falha na nuvem; rascunho mantido neste dispositivo" : cloudStatus === "loading" ? "Carregando dados da nuvem" : cloudStatus === "ready" ? "Sincronização automática ativa" : lastSavedAt
                             ? `Salvo as ${new Date(lastSavedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`
                             : "Preparando salvamento"}
                         </p>
@@ -4142,13 +4961,13 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                       disabled={!activeTemplate}
                     >
                       <Save data-icon="inline-start" />
-                      Salvar versao
+                      Salvar versão
                     </Button>
                   </section>
 
                   {savedVersions.length > 0 ? (
                     <section className="rounded-lg border border-slate-800 bg-slate-900 p-3">
-                      <p className="mb-2 text-xs font-semibold text-slate-200">Versoes salvas</p>
+                      <p className="mb-2 text-xs font-semibold text-slate-100">Versões salvas</p>
                       <div className="space-y-1.5">
                         {savedVersions.map((version) => (
                           <button

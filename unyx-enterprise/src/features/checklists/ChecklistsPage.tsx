@@ -11,7 +11,6 @@ import {
   FileSpreadsheet,
   History,
   ImagePlus,
-  ListChecks,
   MoreVertical,
   Plus,
   PencilLine,
@@ -45,6 +44,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Select } from "@/components/ui/select"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -90,7 +90,7 @@ const textareaClass =
   "min-h-20 w-full rounded-lg border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] px-2.5 py-2 text-sm text-[color:var(--text-primary)] outline-none transition-colors placeholder:text-[color:var(--text-muted)] focus:border-ring focus:ring-3 focus:ring-ring/50 disabled:cursor-not-allowed disabled:bg-[color:var(--bg-muted)] disabled:text-[color:var(--text-muted)] disabled:opacity-70"
 
 const frequencyLabel: Record<ChecklistProcedureFrequency, string> = {
-  daily: "Diario",
+  daily: "Diário",
   weekly: "Semanal",
   monthly: "Mensal",
   on_demand: "Sob demanda",
@@ -108,7 +108,7 @@ const checklistViews = [
   ["checklists", "Checklists"],
   ["procedures", "Procedimentos"],
   ["pending", "Pendentes"],
-  ["history", "Historico"],
+  ["history", "Histórico"],
 ] as const
 
 type ChecklistView = (typeof checklistViews)[number][0]
@@ -199,14 +199,14 @@ function buildImportProcedureInput(
   defaultBranchId: string | null,
   defaultKind: ChecklistToolKind
 ): { input?: ChecklistProcedureInput; error?: string } {
-  const title = cellToText(getCell(row, ["titulo", "title", "nome"]))
+  const title = cellToText(getCell(row, ["título", "title", "nome"]))
   if (!title) {
-    return { error: "titulo obrigatorio." }
+    return { error: "título obrigatório." }
   }
 
   const rawItems = cellToText(getCell(row, ["itens", "items", "checklist_items"]))
   const instructions = cellToText(
-    getCell(row, ["instrucoes", "instructions", "passo_a_passo", "passos"])
+    getCell(row, ["instruções", "instructions", "passo_a_passo", "passos"])
   )
   const checklistItems = splitImportItems(rawItems)
   const kindRaw = normalizeImportValue(
@@ -222,10 +222,10 @@ function buildImportProcedureInput(
         : inferredKind
 
   if (kind === "checklist" && checklistItems.length === 0) {
-    return { error: "itens do checklist obrigatorios." }
+    return { error: "itens do checklist obrigatórios." }
   }
   if (kind === "procedure" && !instructions) {
-    return { error: "passo a passo do procedimento obrigatorio." }
+    return { error: "passo a passo do procedimento obrigatório." }
   }
 
   const estimatedMinutes = parseImportMinutes(
@@ -233,11 +233,11 @@ function buildImportProcedureInput(
   )
   const dueTime = cellToTime(getCell(row, ["prazo", "hora", "due_time"])) || null
   const frequency = parseImportFrequency(
-    getCell(row, ["frequencia", "frequence", "frequency"]),
+    getCell(row, ["frequência", "frequence", "frequency"]),
     kind === "procedure" ? "on_demand" : "daily"
   )
   const category = cellToText(getCell(row, ["categoria", "grupo", "tag"])) || null
-  const ownerRole = cellToText(getCell(row, ["responsavel", "responsavel_padrao", "owner_role"]))
+  const ownerRole = cellToText(getCell(row, ["responsável", "responsavel_padrao", "owner_role"]))
   const approvalRole = cellToText(getCell(row, ["aprovador", "approval_role"]))
 
   return {
@@ -251,10 +251,10 @@ function buildImportProcedureInput(
       owner_role: ownerRole || null,
       due_time: dueTime,
       evidence_required: parseImportBoolean(
-        getCell(row, ["evidencia", "exige_evidencia", "evidence_required"])
+        getCell(row, ["evidência", "exige_evidencia", "evidence_required"])
       ),
       requires_approval: parseImportBoolean(
-        getCell(row, ["aprovacao", "exige_aprovacao", "requires_approval"])
+        getCell(row, ["aprovação", "exige_aprovacao", "requires_approval"])
       ),
       approval_role: approvalRole || null,
       instructions: instructions || null,
@@ -322,8 +322,8 @@ function dueDateForProcedure(procedure: ChecklistProcedure, dateKey = localDateK
 function procedureStatus(procedure: ChecklistProcedure, isCompletedToday: boolean) {
   if (isCompletedToday) {
     return {
-      label: "Concluido",
-      className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+      label: "Concluído",
+      className: "border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
       priority: 4,
     }
   }
@@ -331,7 +331,7 @@ function procedureStatus(procedure: ChecklistProcedure, isCompletedToday: boolea
   if (procedure.frequency === "on_demand") {
     return {
       label: "Sob demanda",
-      className: "border-slate-200 bg-slate-50 text-slate-600",
+      className: "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300",
       priority: 3,
     }
   }
@@ -342,14 +342,14 @@ function procedureStatus(procedure: ChecklistProcedure, isCompletedToday: boolea
     if (delta < 0) {
       return {
         label: "Atrasado",
-        className: "border-red-200 bg-red-50 text-red-700",
+        className: "border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300",
         priority: 0,
       }
     }
     if (delta <= 60 * 60 * 1000) {
       return {
-        label: "Proximo",
-        className: "border-amber-200 bg-amber-50 text-amber-700",
+        label: "Próximo",
+        className: "border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300",
         priority: 1,
       }
     }
@@ -357,23 +357,23 @@ function procedureStatus(procedure: ChecklistProcedure, isCompletedToday: boolea
 
   return {
     label: "Pendente",
-    className: "border-sky-200 bg-sky-50 text-sky-700",
+    className: "border-sky-200 dark:border-sky-500/30 bg-sky-50 dark:bg-sky-500/10 text-sky-700 dark:text-sky-300",
     priority: 2,
   }
 }
 
 function approvalClassName(status: ChecklistApprovalStatus) {
-  if (status === "approved") return "border-emerald-200 bg-emerald-50 text-emerald-700"
-  if (status === "rejected") return "border-red-200 bg-red-50 text-red-700"
-  if (status === "pending") return "border-amber-200 bg-amber-50 text-amber-700"
-  return "border-slate-200 bg-slate-50 text-slate-600"
+  if (status === "approved") return "border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+  if (status === "rejected") return "border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300"
+  if (status === "pending") return "border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300"
+  return "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300"
 }
 
 function approvalLabel(status: ChecklistApprovalStatus) {
   if (status === "approved") return "Aprovado"
   if (status === "rejected") return "Reprovado"
-  if (status === "pending") return "Aguardando aprovacao"
-  return "Sem aprovacao"
+  if (status === "pending") return "Aguardando aprovação"
+  return "Sem aprovação"
 }
 
 function CompactMetric({
@@ -382,36 +382,51 @@ function CompactMetric({
   title,
   value,
   tone = "slate",
+  active = false,
+  onClick,
 }: {
   detail: string
   icon: ReactNode
   title: string
   value: number
   tone?: "slate" | "emerald" | "amber" | "red" | "sky"
+  active?: boolean
+  onClick?: () => void
 }) {
-  return (
-    <div
-      className={cn(
-        "rounded-xl border bg-[color:var(--bg-surface)] px-3 py-2.5 shadow-sm",
-        tone === "emerald" && "border-emerald-200 bg-emerald-50/40",
-        tone === "amber" && "border-amber-200 bg-amber-50/40",
-        tone === "red" && "border-red-200 bg-red-50/40",
-        tone === "sky" && "border-sky-200 bg-sky-50/40",
-        tone === "slate" && "border-[color:var(--border-soft)]"
-      )}
-    >
-      <div className="flex items-center justify-between gap-2">
-        <div className="min-w-0">
-          <p className="truncate text-[11px] font-medium text-muted-foreground">
-            {title}
-          </p>
-          <p className="mt-1 text-xl font-semibold leading-none text-[color:var(--text-primary)]">
-            {value}
-          </p>
-        </div>
-        <div className="shrink-0 text-muted-foreground [&_svg]:size-4">{icon}</div>
-      </div>
-      <p className="mt-1 truncate text-[11px] text-muted-foreground">{detail}</p>
+  const className = cn(
+    "flex w-full items-center gap-2 rounded-lg border bg-[color:var(--bg-surface)] px-2.5 py-1.5 text-left shadow-sm transition-colors",
+    tone === "emerald" && "border-emerald-200 dark:border-emerald-500/30 bg-emerald-50/40 dark:bg-emerald-500/10",
+    tone === "amber" && "border-amber-200 dark:border-amber-500/30 bg-amber-50/40 dark:bg-amber-500/10",
+    tone === "red" && "border-red-200 dark:border-red-500/30 bg-red-50/40 dark:bg-red-500/10",
+    tone === "sky" && "border-sky-200 dark:border-sky-500/30 bg-sky-50/40 dark:bg-sky-500/10",
+    tone === "slate" && "border-[color:var(--border-soft)]",
+    onClick && "cursor-pointer hover:border-primary/50 focus-visible:outline-2 focus-visible:outline-primary",
+    active && "ring-2 ring-primary"
+  )
+  const content = (
+    <>
+      <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-[color:var(--bg-surface-soft)] text-muted-foreground [&_svg]:size-3.5">
+        {icon}
+      </span>
+      <span className="min-w-0">
+        <span className="block truncate text-[10px] font-medium leading-tight text-muted-foreground">
+          {title}
+        </span>
+        <span className="block text-base font-semibold leading-tight text-[color:var(--text-primary)]">
+          {value}
+        </span>
+      </span>
+    </>
+  )
+
+  // A descrição ("Execuções registradas" etc.) fica na dica ao passar o mouse.
+  return onClick ? (
+    <button type="button" className={className} onClick={onClick} aria-pressed={active} title={detail}>
+      {content}
+    </button>
+  ) : (
+    <div className={className} title={detail}>
+      {content}
     </div>
   )
 }
@@ -468,7 +483,7 @@ function ChecklistCard({
     !procedure.checklist_items.every((item) => itemEvidence[item]?.trim())
 
   return (
-    <Card className="border border-[color:var(--border-soft)] bg-white shadow-sm" size="sm">
+    <Card className="border border-[color:var(--border-soft)] bg-white dark:bg-[color:var(--bg-surface)] shadow-sm" size="sm">
       <CardHeader className="gap-2 px-3 pb-0">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
@@ -481,7 +496,7 @@ function ChecklistCard({
               {procedure.estimated_minutes ? (
                 <span>{procedure.estimated_minutes} min</span>
               ) : null}
-              {procedure.due_time ? <span>ate {formatTime(procedure.due_time)}</span> : null}
+              {procedure.due_time ? <span>até {formatTime(procedure.due_time)}</span> : null}
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
@@ -510,13 +525,13 @@ function ChecklistCard({
             </Badge>
           ) : null}
           {procedure.evidence_required ? (
-            <Badge variant="outline" className="rounded-full border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] text-sky-700">
-              Evidencia
+            <Badge variant="outline" className="rounded-full border-sky-200 dark:border-sky-500/30 bg-sky-50 dark:bg-sky-500/10 px-2 py-0.5 text-[10px] text-sky-700 dark:text-sky-300">
+              Evidência
             </Badge>
           ) : null}
           {procedure.requires_approval ? (
-            <Badge variant="outline" className="rounded-full border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] text-amber-700">
-              Aprovacao
+            <Badge variant="outline" className="rounded-full border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-700 dark:text-amber-300">
+              Aprovação
             </Badge>
           ) : null}
         </div>
@@ -524,7 +539,7 @@ function ChecklistCard({
 
       <CardContent className="space-y-3 px-3">
         {procedure.instructions ? (
-          <p className="line-clamp-3 rounded-lg border bg-slate-50 px-2.5 py-2 text-xs leading-5 text-slate-700">
+          <p className="line-clamp-3 rounded-lg border bg-slate-50 dark:bg-slate-800/60 px-2.5 py-2 text-xs leading-5 text-slate-700 dark:text-slate-300">
             {procedure.instructions}
           </p>
         ) : null}
@@ -536,7 +551,7 @@ function ChecklistCard({
             </span>
             <span className="text-muted-foreground">{progress}%</span>
           </div>
-          <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+          <div className="h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
             <div
               className="h-full rounded-full bg-[color:var(--color-primary,#4f46e5)] transition-all"
               style={{ width: `${progress}%` }}
@@ -563,7 +578,7 @@ function ChecklistCard({
                 key={item}
                 className={cn(
                   "rounded-lg border px-2.5 py-2 text-sm transition-colors",
-                  checked ? "border-emerald-200 bg-emerald-50" : "bg-white"
+                  checked ? "border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10" : "bg-white dark:bg-transparent"
                 )}
               >
                 <label className="flex items-start gap-2">
@@ -573,7 +588,7 @@ function ChecklistCard({
                     checked={checked}
                     onChange={() => onToggleItem(item)}
                   />
-                  <span className={cn("min-w-0 flex-1 text-xs leading-5", checked ? "text-emerald-900" : "text-slate-700")}>
+                  <span className={cn("min-w-0 flex-1 text-xs leading-5", checked ? "text-emerald-900 dark:text-emerald-200" : "text-slate-700 dark:text-slate-300")}>
                     {item}
                   </span>
                 </label>
@@ -582,13 +597,13 @@ function ChecklistCard({
                     <Input
                       value={itemEvidence[item] ?? ""}
                       onChange={(event) => onItemEvidenceChange(item, event.target.value)}
-                      placeholder="Evidencia ou link"
+                      placeholder="Evidência ou link"
                       className="h-8 text-xs"
                     />
                     <Input
                       value={itemOccurrence[item] ?? ""}
                       onChange={(event) => onItemOccurrenceChange(item, event.target.value)}
-                      placeholder="Ocorrencia do item"
+                      placeholder="Ocorrência do item"
                       className="h-8 text-xs"
                     />
                   </div>
@@ -602,20 +617,20 @@ function ChecklistCard({
           <Input
             value={evidenceNotes}
             onChange={(event) => onEvidenceChange(event.target.value)}
-            placeholder="Evidencia geral, foto ou link"
+            placeholder="Evidência geral, foto ou link"
             className="h-8 text-xs"
           />
           <textarea
-            className="min-h-14 w-full rounded-lg border bg-white px-2.5 py-2 text-xs outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+            className="min-h-14 w-full rounded-lg border bg-white dark:bg-[color:var(--bg-surface)] px-2.5 py-2 text-xs outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
             value={notes}
             onChange={(event) => onNotesChange(event.target.value)}
-            placeholder="Observacao da execucao"
+            placeholder="Observação da execução"
           />
         </div>
 
         {evidenceMissing ? (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-700">
-            Informe uma evidencia geral ou uma evidencia em todos os itens.
+          <div className="rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 px-2.5 py-2 text-xs text-amber-700 dark:text-amber-300">
+            Informe uma evidência geral ou uma evidência em todos os itens.
           </div>
         ) : null}
 
@@ -625,7 +640,7 @@ function ChecklistCard({
           disabled={!complete || isPending || isCompletedToday || evidenceMissing}
         >
           <ClipboardCheck className="size-4" />
-          {isPending ? "Finalizando..." : isCompletedToday ? "Concluido hoje" : "Finalizar checklist"}
+          {isPending ? "Finalizando..." : isCompletedToday ? "Concluído hoje" : "Finalizar checklist"}
         </Button>
       </CardContent>
     </Card>
@@ -646,7 +661,7 @@ function ProcedureDocumentCard({
   const steps = procedureSteps(procedure.instructions ?? "")
 
   return (
-    <Card className="border border-[color:var(--border-soft)] bg-white shadow-sm" size="sm">
+    <Card className="border border-[color:var(--border-soft)] bg-white dark:bg-[color:var(--bg-surface)] shadow-sm" size="sm">
       <CardHeader className="gap-2 px-3 pb-0">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
@@ -665,7 +680,7 @@ function ProcedureDocumentCard({
           <div className="flex shrink-0 items-center gap-1.5">
             <Badge
               variant="outline"
-              className="rounded-full border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] text-sky-700"
+              className="rounded-full border-sky-200 dark:border-sky-500/30 bg-sky-50 dark:bg-sky-500/10 px-2 py-0.5 text-[10px] text-sky-700 dark:text-sky-300"
             >
               Procedimento
             </Badge>
@@ -684,8 +699,8 @@ function ProcedureDocumentCard({
       <CardContent className="px-3">
         <div className="space-y-2">
           {steps.map((step, index) => (
-            <div key={`${procedure.id}-${index}`} className="flex items-start gap-2 text-xs leading-5 text-slate-700">
-              <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-semibold text-slate-600">
+            <div key={`${procedure.id}-${index}`} className="flex items-start gap-2 text-xs leading-5 text-slate-700 dark:text-slate-300">
+              <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800 text-[10px] font-semibold text-slate-600 dark:text-slate-300">
                 {index + 1}
               </span>
               <p className="min-w-0 whitespace-pre-wrap break-words">{step}</p>
@@ -714,7 +729,7 @@ function HistoryList({
     return (
       <StateBlock
         className="min-h-40"
-        title="Sem execucoes"
+        title="Sem execuções"
         description="Os checklists finalizados aparecem aqui."
       />
     )
@@ -730,7 +745,7 @@ function HistoryList({
             new Date(run.due_at as string).getTime()
 
         return (
-          <div key={run.id} className="rounded-xl border border-[color:var(--border-soft)] bg-white p-3 shadow-sm">
+          <div key={run.id} className="rounded-xl border border-[color:var(--border-soft)] bg-white dark:bg-[color:var(--bg-surface)] p-3 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div className="min-w-0">
                 <div className="truncate text-sm font-semibold text-[color:var(--text-primary)]">
@@ -739,7 +754,7 @@ function HistoryList({
                 <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
                   <Building2 className="size-3.5" />
                   <span>{run.branches?.name ?? "Empresa"}</span>
-                  <span>{run.user_profiles?.name ?? "Usuario"}</span>
+                  <span>{run.user_profiles?.name ?? "Usuário"}</span>
                   <span>{formatDateTimeBR(run.completed_at ?? run.created_at)}</span>
                 </div>
               </div>
@@ -748,13 +763,13 @@ function HistoryList({
                   {run.checked_items.length} itens
                 </Badge>
                 {completedLate ? (
-                  <Badge variant="outline" className="rounded-full border-red-200 bg-red-50 px-2 py-0.5 text-[10px] text-red-700">
+                  <Badge variant="outline" className="rounded-full border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-2 py-0.5 text-[10px] text-red-700 dark:text-red-300">
                     Atrasado
                   </Badge>
                 ) : null}
                 {hasOccurrence ? (
-                  <Badge variant="outline" className="rounded-full border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] text-amber-700">
-                    Ocorrencia
+                  <Badge variant="outline" className="rounded-full border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-700 dark:text-amber-300">
+                    Ocorrência
                   </Badge>
                 ) : null}
                 <Badge
@@ -767,30 +782,30 @@ function HistoryList({
             </div>
 
             {run.evidence_notes ? (
-              <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-sky-50 px-2.5 py-2 text-xs leading-5 text-sky-800">
+              <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-sky-50 dark:bg-sky-500/10 px-2.5 py-2 text-xs leading-5 text-sky-800 dark:text-sky-300">
                 <ImagePlus className="mt-0.5 size-3.5 shrink-0" />
                 <span>{run.evidence_notes}</span>
               </p>
             ) : null}
 
             {run.occurrence_notes ? (
-              <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-amber-50 px-2.5 py-2 text-xs leading-5 text-amber-800">
+              <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-amber-50 dark:bg-amber-500/10 px-2.5 py-2 text-xs leading-5 text-amber-800 dark:text-amber-300">
                 <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
                 <span className="whitespace-pre-wrap">{run.occurrence_notes}</span>
               </p>
             ) : null}
 
             {run.notes ? (
-              <p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-slate-600">
+              <p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-slate-600 dark:text-slate-300">
                 {run.notes}
               </p>
             ) : null}
 
             {run.approved_profile?.name || run.rejected_reason ? (
-              <div className="mt-2 rounded-lg bg-slate-50 px-2.5 py-2 text-xs text-muted-foreground">
-                {run.approved_profile?.name ? `Responsavel: ${run.approved_profile.name}` : null}
+              <div className="mt-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 px-2.5 py-2 text-xs text-muted-foreground">
+                {run.approved_profile?.name ? `Responsável: ${run.approved_profile.name}` : null}
                 {run.rejected_reason ? (
-                  <span className="block text-red-700">{run.rejected_reason}</span>
+                  <span className="block text-red-700 dark:text-red-300">{run.rejected_reason}</span>
                 ) : null}
               </div>
             ) : null}
@@ -844,7 +859,7 @@ function ProcedureActionsMenu({
           className="text-muted-foreground hover:text-[color:var(--text-primary)]"
         >
           <MoreVertical className="size-4" />
-          <span className="sr-only">Abrir acoes</span>
+          <span className="sr-only">Abrir ações</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
@@ -853,7 +868,7 @@ function ProcedureActionsMenu({
           Editar
         </DropdownMenuItem>
         <DropdownMenuItem
-          className="text-red-700 focus:text-red-700"
+          className="text-red-700 dark:text-red-300 focus:text-red-700"
           onSelect={onDelete}
         >
           <Trash2 className="mr-2 size-3.5" />
@@ -888,7 +903,7 @@ function ChecklistDeleteDialog({
         <DialogHeader>
           <DialogTitle>Excluir procedimento</DialogTitle>
           <DialogDescription>
-            Essa acao desativa o item sem apagar o historico das execucoes.
+            Essa ação desativa o item sem apagar o histórico das execuções.
           </DialogDescription>
         </DialogHeader>
 
@@ -973,13 +988,13 @@ function ChecklistImportDialog({
       setRows(nextRows)
       setErrors(nextErrors)
     } catch (error) {
-      setErrors([error instanceof Error ? error.message : "Nao foi possivel ler a planilha."])
+      setErrors([error instanceof Error ? error.message : "Não foi possível ler a planilha."])
     }
   }
 
   async function handleImport() {
     if (!profile) {
-      setErrors(["Nao foi possivel identificar o usuario logado."])
+      setErrors(["Não foi possível identificar o usuário logado."])
       return
     }
 
@@ -1058,7 +1073,7 @@ function ChecklistImportDialog({
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-xl border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] p-3">
               <div className="flex items-center gap-2 text-sm font-semibold text-[color:var(--text-primary)]">
-                <ClipboardList className="size-4 text-sky-600" />
+                <ClipboardList className="size-4 text-sky-600 dark:text-sky-300" />
                 Checklist
               </div>
               <p className="mt-1 text-sm leading-5 text-[color:var(--text-secondary)]">
@@ -1068,11 +1083,11 @@ function ChecklistImportDialog({
             </div>
             <div className="rounded-xl border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] p-3">
               <div className="flex items-center gap-2 text-sm font-semibold text-[color:var(--text-primary)]">
-                <BookOpenText className="size-4 text-violet-600" />
+                <BookOpenText className="size-4 text-violet-600 dark:text-violet-300" />
                 Procedimento
               </div>
               <p className="mt-1 text-sm leading-5 text-[color:var(--text-secondary)]">
-                Passo a passo detalhado. Use a coluna <span className="font-medium">instrucoes</span>{" "}
+                Passo a passo detalhado. Use a coluna <span className="font-medium">instruções</span>{" "}
                 para descrever a execução.
               </p>
             </div>
@@ -1084,7 +1099,7 @@ function ChecklistImportDialog({
           </div>
 
           <div className="rounded-xl border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] p-3 text-sm text-[color:var(--text-secondary)]">
-            Colunas aceitas: <span className="font-medium">tipo, titulo, categoria, frequencia, minutos, responsavel, prazo, aprovador, evidencia, aprovacao, itens, instrucoes</span>.
+            Colunas aceitas: <span className="font-medium">tipo, título, categoria, frequência, minutos, responsável, prazo, aprovador, evidência, aprovação, itens, instruções</span>.
           </div>
 
           <Input
@@ -1100,7 +1115,7 @@ function ChecklistImportDialog({
           ) : null}
 
           {errors.length > 0 ? (
-            <div className="max-h-40 overflow-auto rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-[color:var(--text-secondary)]">
+            <div className="max-h-40 overflow-auto rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 p-3 text-sm text-[color:var(--text-secondary)]">
               {errors.slice(0, 12).map((error) => (
                 <div key={error}>{error}</div>
               ))}
@@ -1137,6 +1152,12 @@ export function ChecklistsPage() {
   const approveRun = useApproveChecklistRun()
   const [open, setOpen] = useState(false)
   const [view, setView] = useState<ChecklistView>("checklists")
+  // Filtro aplicado ao clicar num cartão de métrica (Atrasados / Aprovação).
+  const [metricFilter, setMetricFilter] = useState<"overdue" | "approval" | null>(null)
+  const selectView = (next: ChecklistView, filter: "overdue" | "approval" | null = null) => {
+    setView(next)
+    setMetricFilter(filter)
+  }
   const [editingProcedure, setEditingProcedure] = useState<ChecklistProcedure | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ChecklistProcedure | null>(null)
   const [checkedByProcedure, setCheckedByProcedure] = useState<Record<string, string[]>>({})
@@ -1194,6 +1215,7 @@ export function ChecklistsPage() {
       completedToday: completedTodayRuns.length,
       dailyPending: dailyPendingRows.length,
       overdue: overdueRows.length,
+      dailyTotal: dailyProcedures.length,
       approvalPending,
     }
   }, [checklistHistory, completedTodayIds, completedTodayRuns.length, procedures.data])
@@ -1211,7 +1233,10 @@ export function ChecklistsPage() {
       view === "pending"
         ? rows.filter(
             (procedure) =>
-              procedure.frequency === "daily" && !completedTodayIds.has(procedure.id)
+              procedure.frequency === "daily" &&
+              !completedTodayIds.has(procedure.id) &&
+              (metricFilter !== "overdue" ||
+                procedureStatus(procedure, false).label === "Atrasado")
           )
         : rows
 
@@ -1223,7 +1248,7 @@ export function ChecklistsPage() {
       }
       return left.title.localeCompare(right.title)
     })
-  }, [completedTodayIds, procedures.data, view])
+  }, [completedTodayIds, metricFilter, procedures.data, view])
 
   const displayedProcedureDocuments = useMemo(
     () =>
@@ -1412,6 +1437,7 @@ export function ChecklistsPage() {
   return (
     <>
       <PageHeader
+        large
         title="Checklists e Procedimentos"
         description="Checklist mostra o que conferir. Procedimento mostra como executar."
         action={
@@ -1452,7 +1478,7 @@ export function ChecklistsPage() {
                     </DialogTitle>
                     <DialogDescription>
                       {editingProcedure
-                        ? "Ajuste os dados e salve a nova versao direto no app."
+                        ? "Ajuste os dados e salve a nova versão direto no app."
                         : form.kind === "checklist"
                           ? "Crie uma lista objetiva com os itens que devem ser conferidos."
                           : "Documente o passo a passo detalhado de como a atividade deve ser executada."}
@@ -1486,57 +1512,50 @@ export function ChecklistsPage() {
                     <div className="grid gap-3 sm:grid-cols-2">
                       <label className="space-y-1 text-sm">
                         <span className="font-medium">Filial</span>
-                        <select
-                          className={fieldClass}
+                        <Select
                           disabled={!isOrgAdmin}
                           value={effectiveFormBranchId}
-                          onChange={(event) =>
-                            setForm((current) => ({
-                              ...current,
-                              branch_id: event.target.value,
-                              sector_id: "",
-                            }))
+                          onValueChange={(value) =>
+                            setForm((current) => ({ ...current, branch_id: value, sector_id: "" }))
                           }
-                        >
-                          {isOrgAdmin ? <option value="">Toda a empresa</option> : null}
-                          {!isOrgAdmin && profile?.branch_id && !(branches.data ?? []).some((branch) => branch.id === profile.branch_id) ? (
-                            <option value={profile.branch_id}>Minha filial</option>
-                          ) : null}
-                          {!isOrgAdmin && !profile?.branch_id ? (
-                            <option value="">Sem filial vinculada</option>
-                          ) : null}
-                          {(branches.data ?? []).map((branch) => (
-                            <option key={branch.id} value={branch.id}>
-                              {branch.name}
-                            </option>
-                          ))}
-                        </select>
+                          options={[
+                            ...(isOrgAdmin ? [{ value: "", label: "Toda a empresa" }] : []),
+                            ...(!isOrgAdmin &&
+                            profile?.branch_id &&
+                            !(branches.data ?? []).some((branch) => branch.id === profile.branch_id)
+                              ? [{ value: profile.branch_id, label: "Minha filial" }]
+                              : []),
+                            ...(!isOrgAdmin && !profile?.branch_id
+                              ? [{ value: "", label: "Sem filial vinculada" }]
+                              : []),
+                            ...(branches.data ?? []).map((branch) => ({
+                              value: branch.id,
+                              label: branch.name,
+                            })),
+                          ]}
+                        />
                       </label>
                       <label className="space-y-1 text-sm">
                         <span className="font-medium">Setor</span>
-                        <select
-                          className={fieldClass}
+                        <Select
                           disabled={!effectiveFormBranchId}
                           value={form.sector_id}
-                          onChange={(event) =>
-                            setForm((current) => ({
-                              ...current,
-                              sector_id: event.target.value,
-                            }))
+                          onValueChange={(value) =>
+                            setForm((current) => ({ ...current, sector_id: value }))
                           }
-                        >
-                          <option value="">Todos os setores</option>
-                          {(sectors.data ?? []).map((sector) => (
-                            <option key={sector.id} value={sector.id}>
-                              {sector.name}
-                            </option>
-                          ))}
-                        </select>
+                          options={[
+                            { value: "", label: "Todos os setores" },
+                            ...(sectors.data ?? []).map((sector) => ({
+                              value: sector.id,
+                              label: sector.name,
+                            })),
+                          ]}
+                        />
                       </label>
                     </div>
 
                     <label className="space-y-1 text-sm">
-                      <span className="font-medium">Titulo</span>
+                      <span className="font-medium">Título</span>
                       <Input
                         className={fieldClass}
                         required
@@ -1573,23 +1592,20 @@ export function ChecklistsPage() {
                       {form.kind === "checklist" ? (
                         <>
                           <label className="space-y-1 text-sm">
-                            <span className="font-medium">Frequencia</span>
-                            <select
-                              className={fieldClass}
+                            <span className="font-medium">Frequência</span>
+                            <Select
                               value={form.frequency}
-                              onChange={(event) =>
+                              onValueChange={(value) =>
                                 setForm((current) => ({
                                   ...current,
-                                  frequency: event.target.value as ChecklistProcedureFrequency,
+                                  frequency: value as ChecklistProcedureFrequency,
                                 }))
                               }
-                            >
-                              {frequencyOptions.map((frequency) => (
-                                <option key={frequency} value={frequency}>
-                                  {frequencyLabel[frequency]}
-                                </option>
-                              ))}
-                            </select>
+                              options={frequencyOptions.map((frequency) => ({
+                                value: frequency,
+                                label: frequencyLabel[frequency],
+                              }))}
+                            />
                           </label>
                           <label className="space-y-1 text-sm">
                             <span className="font-medium">Prazo</span>
@@ -1631,7 +1647,7 @@ export function ChecklistsPage() {
                       )}
                     >
                       <label className="space-y-1 text-sm">
-                        <span className="font-medium">Responsavel padrao</span>
+                        <span className="font-medium">Responsável padrao</span>
                         <Input
                           className={fieldClass}
                           value={form.owner_role}
@@ -1673,7 +1689,7 @@ export function ChecklistsPage() {
                                   }))
                                 }
                               />
-                              Exigir evidencia
+                              Exigir evidência
                             </label>
                             <label className="flex items-center gap-2">
                               <input
@@ -1686,7 +1702,7 @@ export function ChecklistsPage() {
                                   }))
                                 }
                               />
-                              Exigir aprovacao
+                              Exigir aprovação
                             </label>
                           </div>
                         </>
@@ -1728,7 +1744,7 @@ export function ChecklistsPage() {
                     )}
 
                   {createProcedure.error || updateProcedure.error ? (
-                    <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    <div className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">
                       {(createProcedure.error ?? updateProcedure.error)?.message}
                     </div>
                   ) : null}
@@ -1740,7 +1756,7 @@ export function ChecklistsPage() {
                           ? "Salvando..."
                           : "Criando..."
                         : editingProcedure
-                          ? "Salvar alteracoes"
+                          ? "Salvar alterações"
                           : form.kind === "checklist"
                             ? "Criar checklist"
                             : "Criar procedimento"}
@@ -1766,71 +1782,29 @@ export function ChecklistsPage() {
         ) : runsToday.isError ? (
           <StateBlock
             type="error"
-            title="Erro ao carregar execucoes"
+            title="Erro ao carregar execuções"
             description={runsToday.error.message}
           />
         ) : (
           <>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Card className="border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] shadow-sm">
-                <CardContent className="flex items-start gap-3 p-4">
-                  <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-sky-50 text-sky-600">
-                    <ClipboardList className="size-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-[color:var(--text-primary)]">
-                      Checklist
-                    </p>
-                    <p className="mt-1 text-sm leading-5 text-[color:var(--text-secondary)]">
-                      Lista objetiva do que conferir. Cada item vira uma verificacao direta.
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-              <Card className="border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] shadow-sm">
-                <CardContent className="flex items-start gap-3 p-4">
-                  <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-violet-50 text-violet-600">
-                    <BookOpenText className="size-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-[color:var(--text-primary)]">
-                      Procedimento
-                    </p>
-                    <p className="mt-1 text-sm leading-5 text-[color:var(--text-secondary)]">
-                      Passo a passo detalhado para orientar como a tarefa deve ser executada.
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
               <CompactMetric
-                title="Checklists"
-                value={stats.activeChecklists}
-                detail="Ativos no escopo"
-                icon={<ListChecks />}
-                tone="sky"
-              />
-              <CompactMetric
-                title="Procedimentos"
-                value={stats.procedureDocuments}
-                detail="Passos documentados"
-                icon={<BookOpenText />}
-              />
-              <CompactMetric
-                title="Concluidos hoje"
+                title="Concluídos hoje"
                 value={stats.completedToday}
-                detail="Execucoes registradas"
+                detail="Execuções registradas"
                 icon={<CheckCircle2 />}
-                tone="emerald"
+                tone={stats.completedToday > 0 ? "emerald" : "slate"}
+                active={view === "history" && !metricFilter}
+                onClick={() => selectView("history")}
               />
               <CompactMetric
                 title="Pendentes"
                 value={stats.dailyPending}
-                detail="Rotinas diarias"
+                detail="Rotinas diárias"
                 icon={<Clock3 />}
-                tone="amber"
+                tone={stats.dailyPending > 0 ? "amber" : "slate"}
+                active={view === "pending" && !metricFilter}
+                onClick={() => selectView("pending")}
               />
               <CompactMetric
                 title="Atrasados"
@@ -1838,15 +1812,46 @@ export function ChecklistsPage() {
                 detail="Passaram do prazo"
                 icon={<AlertTriangle />}
                 tone={stats.overdue > 0 ? "red" : "slate"}
+                active={metricFilter === "overdue"}
+                onClick={() => selectView("pending", "overdue")}
               />
               <CompactMetric
-                title="Aprovacao"
+                title="Aprovação"
                 value={stats.approvalPending}
-                detail="Aguardando lideranca"
+                detail="Aguardando liderança"
                 icon={<ShieldCheck />}
                 tone={stats.approvalPending > 0 ? "amber" : "slate"}
+                active={metricFilter === "approval"}
+                onClick={() => selectView("history", "approval")}
               />
             </div>
+
+            {stats.dailyTotal > 0 ? (
+              <div className="flex items-center gap-3 rounded-xl border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] px-3 py-2">
+                <p className="shrink-0 text-xs text-[color:var(--text-secondary)]">
+                  Rotinas de hoje:{" "}
+                  <span className="font-semibold text-[color:var(--text-primary)]">
+                    {stats.dailyTotal - stats.dailyPending} de {stats.dailyTotal}
+                  </span>{" "}
+                  concluídas
+                </p>
+                <div
+                  className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={stats.dailyTotal}
+                  aria-valuenow={stats.dailyTotal - stats.dailyPending}
+                  aria-label="Rotinas diárias concluídas hoje"
+                >
+                  <div
+                    className="h-full rounded-full bg-emerald-500"
+                    style={{
+                      width: `${Math.round(((stats.dailyTotal - stats.dailyPending) / stats.dailyTotal) * 100)}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            ) : null}
 
             <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] px-3 py-2 shadow-sm">
               {checklistViews.map(([key, label]) => (
@@ -1856,7 +1861,7 @@ export function ChecklistsPage() {
                   size="sm"
                   variant={view === key ? "default" : "outline"}
                   className="h-8 rounded-full px-3 text-xs"
-                  onClick={() => setView(key)}
+                  onClick={() => selectView(key)}
                 >
                   {label}
                   <span className="ml-1 rounded-full bg-white/20 px-1.5 text-[10px]">
@@ -1866,19 +1871,37 @@ export function ChecklistsPage() {
               ))}
             </div>
 
+            {metricFilter ? (
+              <div className="flex items-center justify-between gap-2 rounded-xl border border-primary/30 bg-primary/5 px-3 py-2 text-xs text-[color:var(--text-secondary)]">
+                <span>
+                  Mostrando só{" "}
+                  <strong className="text-[color:var(--text-primary)]">
+                    {metricFilter === "overdue" ? "checklists atrasados" : "execuções aguardando aprovação"}
+                  </strong>
+                </span>
+                <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setMetricFilter(null)}>
+                  Limpar filtro
+                </Button>
+              </div>
+            ) : null}
+
             {view === "history" ? (
-              <Card className="border border-[color:var(--border-soft)] bg-white shadow-sm">
+              <Card className="border border-[color:var(--border-soft)] bg-white dark:bg-[color:var(--bg-surface)] shadow-sm">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-base">
                     <History className="size-4" />
-                    Historico de execucoes
+                    Histórico de execuções
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <HistoryList
                     canApprove={canCreate}
                     isApproving={approveRun.isPending}
-                    runs={checklistHistory}
+                    runs={
+                      metricFilter === "approval"
+                        ? checklistHistory.filter((run) => run.approval_status === "pending")
+                        : checklistHistory
+                    }
                     onApprove={(run) =>
                       void approveRun.mutateAsync({
                         run_id: run.id,
@@ -1925,7 +1948,7 @@ export function ChecklistsPage() {
                   ) : displayedChecklists.length === 0 ? (
                     <StateBlock
                       title="Nenhum checklist pendente"
-                      description="As rotinas diarias do recorte atual ja foram concluidas."
+                      description="As rotinas diárias do recorte atual já foram concluídas."
                     />
                   ) : (
                     <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
@@ -1972,11 +1995,11 @@ export function ChecklistsPage() {
                 </div>
 
                 {view === "checklists" && checklistHistory.length > 0 ? (
-                  <Card className="border border-[color:var(--border-soft)] bg-white shadow-sm">
+                  <Card className="border border-[color:var(--border-soft)] bg-white dark:bg-[color:var(--bg-surface)] shadow-sm">
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2 text-base">
                         <History className="size-4" />
-                        Historico recente
+                        Histórico recente
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
@@ -2004,15 +2027,15 @@ export function ChecklistsPage() {
             )}
 
             {completeRun.error ? (
-              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              <div className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">
                 {completeRun.error.message}
               </div>
             ) : null}
 
             {!canCreate ? (
-              <div className="flex items-center gap-2 rounded-lg border bg-slate-50 px-3 py-2 text-sm text-muted-foreground">
+              <div className="flex items-center gap-2 rounded-lg border bg-slate-50 dark:bg-slate-800/60 px-3 py-2 text-sm text-muted-foreground">
                 <Timer className="size-4" />
-                A execucao esta liberada para o time. O cadastro e a aprovacao ficam com lideranca e administradores.
+                A execução esta liberada para o time. O cadastro e a aprovação ficam com liderança e administradores.
               </div>
             ) : null}
 

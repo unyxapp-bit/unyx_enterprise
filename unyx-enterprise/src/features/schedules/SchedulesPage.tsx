@@ -24,6 +24,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Select } from "@/components/ui/select"
 import {
   useBranches,
   useCopySchedules,
@@ -56,12 +57,6 @@ import type {
   ScheduleStatus,
   ScheduleWithRelations,
 } from "@/types/domain"
-
-const fieldClass =
-  "h-8 w-full rounded-lg border bg-[color:var(--bg-surface)] px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
-
-const filterClass =
-  "h-8 rounded-lg border bg-[color:var(--bg-surface)] px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
 
 interface ScheduleFormState {
   branch_id: string
@@ -192,14 +187,14 @@ function ScheduleEditDialog({ schedule }: { schedule: ScheduleWithRelations }) {
           Editar
         </Button>
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>
             Editar escala — {schedule.employees?.name ?? "Colaborador"}
           </DialogTitle>
         </DialogHeader>
         <form className="space-y-4" onSubmit={handleSubmit}>
-          <div className="grid gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {(["start_time", "break_start", "break_end", "end_time"] as const).map(
               (field) => (
                 <label className="space-y-1 text-sm" key={field}>
@@ -221,21 +216,13 @@ function ScheduleEditDialog({ schedule }: { schedule: ScheduleWithRelations }) {
 
           <label className="space-y-1 text-sm">
             <span className="font-medium">Status</span>
-            <select
-              className={fieldClass}
+            <Select
               value={form.status}
-              onChange={(e) =>
-                setForm((current) =>
-                  nextFormForStatus(current, e.target.value as ScheduleStatus)
-                )
+              onValueChange={(value) =>
+                setForm((current) => nextFormForStatus(current, value as ScheduleStatus))
               }
-            >
-              {Object.entries(scheduleStatusLabel).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
+              options={Object.entries(scheduleStatusLabel).map(([value, label]) => ({ value, label }))}
+            />
           </label>
 
           <label className="space-y-1 text-sm">
@@ -247,7 +234,7 @@ function ScheduleEditDialog({ schedule }: { schedule: ScheduleWithRelations }) {
           </label>
 
           {updateSchedule.error ? (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-[color:var(--text-secondary)]">
+            <div className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-[color:var(--text-secondary)]">
               {updateSchedule.error.message}
             </div>
           ) : null}
@@ -343,7 +330,7 @@ function CopyDayDialog({
           Copiar dia
         </Button>
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Copiar escalas de outro dia</DialogTitle>
         </DialogHeader>
@@ -354,20 +341,16 @@ function CopyDayDialog({
           </p>
           <label className="space-y-1 text-sm">
             <span className="font-medium">Escopo</span>
-            <select
-              className={fieldClass}
+            <Select
               value={branchId}
-              onChange={(event) => setBranchId(event.target.value)}
-            >
-              <option value="">Todas as filiais</option>
-              {branches
-                .filter((branch) => branch.active)
-                .map((branch) => (
-                  <option key={branch.id} value={branch.id}>
-                    {branch.name}
-                  </option>
-                ))}
-            </select>
+              onValueChange={setBranchId}
+              options={[
+                { value: "", label: "Todas as filiais" },
+                ...branches
+                  .filter((branch) => branch.active)
+                  .map((branch) => ({ value: branch.id, label: branch.name })),
+              ]}
+            />
           </label>
           <label className="space-y-1 text-sm">
             <span className="font-medium">Data de origem</span>
@@ -378,7 +361,7 @@ function CopyDayDialog({
             />
           </label>
           {copySchedules.error ? (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-[color:var(--text-secondary)]">
+            <div className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-[color:var(--text-secondary)]">
               {copySchedules.error.message}
             </div>
           ) : null}
@@ -633,7 +616,7 @@ function SchedulesImportDialog({
           Importar
         </Button>
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>Importar escalas</DialogTitle>
         </DialogHeader>
@@ -701,14 +684,14 @@ function SchedulesImportDialog({
           )}
 
           {dateRange ? (
-          <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-[color:var(--text-secondary)]">
+          <div className="rounded-lg border border-blue-200 dark:border-blue-500/30 bg-blue-50 dark:bg-blue-500/10 p-3 text-sm text-[color:var(--text-secondary)]">
             Periodo detectado: <strong>{formatDateBR(dateRange.min)}</strong> a{" "}
             <strong>{formatDateBR(dateRange.max)}</strong>. Confirme que as datas
             estao corretas antes de importar.
           </div>
         ) : null}
         {errors.length > 0 ? (
-            <div className="max-h-40 overflow-auto rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-[color:var(--text-secondary)]">
+            <div className="max-h-40 overflow-auto rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 p-3 text-sm text-[color:var(--text-secondary)]">
               {errors.slice(0, 12).map((error) => (
                 <div key={error}>{error}</div>
               ))}
@@ -1098,14 +1081,120 @@ export function SchedulesPage() {
   return (
     <>
       <PageHeader
+        large
         title="Escalas"
         description={
           viewMode === "range"
             ? `Período: ${rangeLabel}`
-            : undefined
+            : "Escalas dos colaboradores por dia e por período."
         }
         action={
           <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" size="sm" onClick={handleExport} disabled={filteredSchedules.length === 0}>
+              <Download className="mr-1.5 size-4" />
+              Exportar CSV
+            </Button>
+            <SchedulesImportDialog
+              branches={branches.data ?? []}
+              currentDate={today}
+              employees={allEmployees.data ?? []}
+              selectedBranchId={selectedBranchId}
+            />
+            <CopyDayDialog
+              branches={branches.data ?? []}
+              currentDate={today}
+              selectedBranchId={selectedBranchId}
+            />
+
+            {/* Nova escala */}
+            <Dialog open={open} onOpenChange={setOpen}>
+              <DialogTrigger asChild>
+                <Button>
+                  <CalendarPlus className="size-4" />
+                  Nova escala
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+                <DialogHeader><DialogTitle>Cadastrar escala</DialogTitle></DialogHeader>
+                <form className="space-y-4" onSubmit={handleSubmit}>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="space-y-1 text-sm">
+                      <span className="font-medium">Filial</span>
+                      <Select
+                        value={form.branch_id}
+                        onValueChange={(value) =>
+                          setForm((c) => ({ ...c, branch_id: value, employee_id: "" }))
+                        }
+                        placeholder="Selecione"
+                        options={[
+                          { value: "", label: "Selecione" },
+                          ...activeBranches.map((b) => ({ value: b.id, label: b.name })),
+                        ]}
+                      />
+                    </label>
+                    <label className="space-y-1 text-sm">
+                      <span className="font-medium">Colaborador</span>
+                      <Select
+                        value={form.employee_id}
+                        onValueChange={(value) => setForm((c) => ({ ...c, employee_id: value }))}
+                        placeholder="Selecione"
+                        options={[
+                          { value: "", label: "Selecione" },
+                          ...activeEmployees.map((e) => ({ value: e.id, label: e.name })),
+                        ]}
+                      />
+                    </label>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="space-y-1 text-sm">
+                      <span className="font-medium">Data</span>
+                      <Input type="date" value={form.work_date}
+                        onChange={(e) => setForm((c) => ({ ...c, work_date: e.target.value }))} />
+                    </label>
+                    <label className="space-y-1 text-sm">
+                      <span className="font-medium">Status</span>
+                      <Select
+                        value={form.status}
+                        onValueChange={(value) => setForm((c) => nextFormForStatus(c, value as ScheduleStatus))}
+                        options={Object.entries(scheduleStatusLabel).map(([value, label]) => ({ value, label }))}
+                      />
+                    </label>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    {(["start_time", "break_start", "break_end", "end_time"] as const).map((field) => (
+                      <label className="space-y-1 text-sm" key={field}>
+                        <span className="font-medium">
+                          {{ start_time: "Entrada", break_start: "Intervalo", break_end: "Retorno", end_time: "Saída" }[field]}
+                        </span>
+                        <Input type="time" disabled={scheduleClearsTimes(form.status)} value={form[field]}
+                          onChange={(e) => setForm((c) => ({ ...c, [field]: e.target.value }))} />
+                      </label>
+                    ))}
+                  </div>
+                  <label className="space-y-1 text-sm">
+                    <span className="font-medium">Observações</span>
+                    <Input value={form.notes} onChange={(e) => setForm((c) => ({ ...c, notes: e.target.value }))} />
+                  </label>
+                  {formError || createSchedule.error ? (
+                    <div className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-[color:var(--text-secondary)]">
+                      {formError ?? createSchedule.error?.message}
+                    </div>
+                  ) : null}
+                  <DialogFooter>
+                    <Button type="submit" disabled={createSchedule.isPending}>
+                      {createSchedule.isPending ? "Salvando..." : "Salvar"}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
+          </div>
+        }
+      />
+
+      <div className="space-y-4 p-6">
+        {/* Visão, período e filtro de setor */}
+        <div className="flex flex-wrap items-center gap-2">
             {/* View toggle */}
             <div className="flex overflow-hidden rounded-lg border">
               <button
@@ -1150,104 +1239,19 @@ export function SchedulesPage() {
             ) : null}
 
             {sectorOptions.length > 0 ? (
-              <select className={filterClass} value={sectorFilter} onChange={(e) => setSectorFilter(e.target.value)}>
-                <option value="">Todos os setores</option>
-                {sectorOptions.map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
+              <Select
+                aria-label="Filtrar por setor"
+                className="w-44"
+                value={sectorFilter}
+                onValueChange={setSectorFilter}
+                options={[
+                  { value: "", label: "Todos os setores" },
+                  ...sectorOptions.map((sector) => ({ value: sector, label: sector })),
+                ]}
+              />
             ) : null}
+        </div>
 
-            <Button variant="outline" size="sm" onClick={handleExport} disabled={filteredSchedules.length === 0}>
-              <Download className="mr-1.5 size-4" />
-              Exportar CSV
-            </Button>
-            <SchedulesImportDialog
-              branches={branches.data ?? []}
-              currentDate={today}
-              employees={allEmployees.data ?? []}
-              selectedBranchId={selectedBranchId}
-            />
-            <CopyDayDialog
-              branches={branches.data ?? []}
-              currentDate={today}
-              selectedBranchId={selectedBranchId}
-            />
-
-            {/* Nova escala */}
-            <Dialog open={open} onOpenChange={setOpen}>
-              <DialogTrigger asChild>
-                <Button>
-                  <CalendarPlus className="size-4" />
-                  Nova escala
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader><DialogTitle>Cadastrar escala</DialogTitle></DialogHeader>
-                <form className="space-y-4" onSubmit={handleSubmit}>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <label className="space-y-1 text-sm">
-                      <span className="font-medium">Filial</span>
-                      <select className={fieldClass} value={form.branch_id}
-                        onChange={(e) => setForm((c) => ({ ...c, branch_id: e.target.value, employee_id: "" }))}>
-                        <option value="">Selecione</option>
-                        {activeBranches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-                      </select>
-                    </label>
-                    <label className="space-y-1 text-sm">
-                      <span className="font-medium">Colaborador</span>
-                      <select className={fieldClass} value={form.employee_id}
-                        onChange={(e) => setForm((c) => ({ ...c, employee_id: e.target.value }))}>
-                        <option value="">Selecione</option>
-                        {activeEmployees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
-                      </select>
-                    </label>
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <label className="space-y-1 text-sm">
-                      <span className="font-medium">Data</span>
-                      <Input type="date" value={form.work_date}
-                        onChange={(e) => setForm((c) => ({ ...c, work_date: e.target.value }))} />
-                    </label>
-                    <label className="space-y-1 text-sm">
-                      <span className="font-medium">Status</span>
-                      <select className={fieldClass} value={form.status}
-                        onChange={(e) => setForm((c) => nextFormForStatus(c, e.target.value as ScheduleStatus))}>
-                        {Object.entries(scheduleStatusLabel).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                      </select>
-                    </label>
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-4">
-                    {(["start_time", "break_start", "break_end", "end_time"] as const).map((field) => (
-                      <label className="space-y-1 text-sm" key={field}>
-                        <span className="font-medium">
-                          {{ start_time: "Entrada", break_start: "Intervalo", break_end: "Retorno", end_time: "Saída" }[field]}
-                        </span>
-                        <Input type="time" disabled={scheduleClearsTimes(form.status)} value={form[field]}
-                          onChange={(e) => setForm((c) => ({ ...c, [field]: e.target.value }))} />
-                      </label>
-                    ))}
-                  </div>
-                  <label className="space-y-1 text-sm">
-                    <span className="font-medium">Observações</span>
-                    <Input value={form.notes} onChange={(e) => setForm((c) => ({ ...c, notes: e.target.value }))} />
-                  </label>
-                  {formError || createSchedule.error ? (
-                    <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-[color:var(--text-secondary)]">
-                      {formError ?? createSchedule.error?.message}
-                    </div>
-                  ) : null}
-                  <DialogFooter>
-                    <Button type="submit" disabled={createSchedule.isPending}>
-                      {createSchedule.isPending ? "Salvando..." : "Salvar"}
-                    </Button>
-                  </DialogFooter>
-                </form>
-              </DialogContent>
-            </Dialog>
-          </div>
-        }
-      />
-
-      <div className="space-y-4 p-6">
         {/* Barra de seleção */}
         {selectedCount > 0 ? (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-[color:var(--bg-surface-soft)] px-3 py-2 text-sm">
@@ -1280,7 +1284,7 @@ export function SchedulesPage() {
         ) : null}
 
         {conflictCount > 0 ? (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-[color:var(--text-secondary)]">
+          <div className="rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 px-4 py-3 text-sm text-[color:var(--text-secondary)]">
             {conflictCount} colaborador(es) com mais de uma escala no mesmo dia neste recorte.
           </div>
         ) : null}

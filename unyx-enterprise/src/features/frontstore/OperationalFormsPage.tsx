@@ -13,6 +13,7 @@ import {
   Eye,
   FileText,
   Plus,
+  Printer,
   Save,
   Search,
   Send,
@@ -35,8 +36,10 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Combobox, Select } from "@/components/ui/select"
 import {
   useBranches,
+  useEmployees,
   useCreateOperationalForm,
   useDeleteOperationalForm,
   useOperationalFormResponses,
@@ -45,17 +48,29 @@ import {
   useSubmitOperationalFormResponse,
   useUpdateOperationalForm,
 } from "@/hooks/useUnyxData"
+import {
+  buildFormHtml,
+  buildResponseHtml,
+  buildResponsesHtml,
+  printHtml,
+  type PrintableResponse,
+} from "./formPrint"
+import { summarizeByCollaborator } from "./formSummary"
 import { localDateKey } from "@/features/operational/utils"
 import { formatDateTimeBR } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { useAppStore } from "@/store/useAppStore"
-import type { OperationalForm } from "@/types/domain"
-
-const fieldClass =
-  "h-8 w-full rounded-lg border bg-[color:var(--bg-surface)] px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
-
-const textareaClass =
-  "min-h-28 w-full rounded-lg border bg-[color:var(--bg-surface)] px-2.5 py-2 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+import type { OperationalForm, OperationalFormResponse } from "@/types/domain"
+import {
+  RATING_VALUES,
+  formTemplates,
+  type FormTemplate,
+  parseQuestion,
+  questionKindLabels,
+  serializeQuestion,
+  type ParsedQuestion,
+  type QuestionKind,
+} from "./formQuestions"
 
 const emptyForm = {
   branch_id: "",
@@ -63,7 +78,40 @@ const emptyForm = {
   title: "",
   description: "",
   category: "",
-  questions: "",
+}
+
+type QuestionDraft = {
+  id: string
+  label: string
+  kind: QuestionKind
+  options: string
+  required: boolean
+}
+
+let questionDraftSeq = 0
+
+function toQuestionDraft(raw: string): QuestionDraft {
+  const parsed = parseQuestion(raw)
+  return {
+    id: `q${++questionDraftSeq}`,
+    label: parsed.label,
+    kind: parsed.kind,
+    options: parsed.options.join(", "),
+    required: parsed.required,
+  }
+}
+
+function optionList(value: string) {
+  return value.split(",").map((option) => option.trim()).filter(Boolean)
+}
+
+function serializeDraft(draft: QuestionDraft) {
+  return serializeQuestion({
+    label: draft.label,
+    kind: draft.kind,
+    options: optionList(draft.options),
+    required: draft.required,
+  })
 }
 
 const formViews = [
@@ -102,16 +150,19 @@ function loadFormDraft(formId: string): FormDraft | null {
   }
 }
 
-function splitQuestions(value: string) {
-  return value
-    .split("\n")
-    .map((item) => item.trim())
-    .filter(Boolean)
-}
-
 function scopeLabel(form: OperationalForm) {
   const branch = form.branches?.name ?? "Toda empresa"
   return form.sectors?.name ? `${branch} - ${form.sectors.name}` : branch
+}
+
+function printableForm(item: OperationalForm) {
+  return {
+    title: item.title,
+    description: item.description,
+    category: item.category,
+    scope: scopeLabel(item),
+    questions: item.questions,
+  }
 }
 
 function normalizeText(value: string | null | undefined) {
@@ -277,10 +328,12 @@ function normalizeAnswer(kind: QuestionFieldKind, value: string) {
   return value
 }
 
-function isValidAnswer(question: string, value: string | undefined) {
+function isValidAnswer(question: ParsedQuestion, value: string | undefined) {
   const answer = value?.trim() ?? ""
-  if (!answer) return false
-  const kind = questionFieldKind(question)
+  if (!answer) return !question.required
+  if (question.kind === "choice") return question.options.includes(answer)
+  if (question.kind === "rating") return RATING_VALUES.includes(answer)
+  const kind = questionFieldKind(question.label)
   if (kind === "cpf") return /^\d{3}\.\d{3}\.\d{3}-\d{2}$/.test(answer)
   if (kind === "phone") return /^\(\d{2}\) \d{4,5}-\d{4}$/.test(answer)
   if (kind === "email") return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(answer)
@@ -292,9 +345,11 @@ export function OperationalFormsPage() {
   const forms = useOperationalForms()
   const responses = useOperationalFormResponses()
   const branches = useBranches()
+  const employees = useEmployees()
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<OperationalForm | null>(null)
   const [form, setForm] = useState(emptyForm)
+  const [questionDrafts, setQuestionDrafts] = useState<QuestionDraft[]>([])
   const [selectedFormId, setSelectedFormId] = useState("")
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [responseNotes, setResponseNotes] = useState("")
@@ -307,6 +362,7 @@ export function OperationalFormsPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const [currentStep, setCurrentStep] = useState(0)
   const [stepError, setStepError] = useState("")
+  const [builderError, setBuilderError] = useState("")
   const [draftNotice, setDraftNotice] = useState("")
   const [draftFormIds, setDraftFormIds] = useState<Set<string>>(storedDraftFormIds)
 
@@ -379,6 +435,15 @@ export function OperationalFormsPage() {
     paginatedForms[0] ??
     null
 
+  const collaboratorSummary = useMemo(
+    () =>
+      summarizeByCollaborator(
+        responses.data ?? [],
+        new Map((forms.data ?? []).map((item) => [item.id, item.questions]))
+      ),
+    [forms.data, responses.data]
+  )
+
   const stats = useMemo(() => {
     const formRows = forms.data ?? []
     const responseRows = responses.data ?? []
@@ -392,15 +457,12 @@ export function OperationalFormsPage() {
     }
   }, [draftFormIds.size, forms.data, responses.data])
 
-  const questionSplitIndex = selectedForm
-    ? Math.max(1, Math.ceil(selectedForm.questions.length / 2))
-    : 0
-  const questionSteps = selectedForm
-    ? [
-        selectedForm.questions.slice(0, questionSplitIndex),
-        selectedForm.questions.slice(questionSplitIndex),
-      ]
-    : [[], []]
+  const parsedQuestions = (selectedForm?.questions ?? []).map(parseQuestion)
+  const questionSplitIndex = Math.max(1, Math.ceil(parsedQuestions.length / 2))
+  const questionSteps = [
+    parsedQuestions.slice(0, questionSplitIndex),
+    parsedQuestions.slice(questionSplitIndex),
+  ]
 
   function selectOperationalForm(item: OperationalForm) {
     const draft = loadFormDraft(item.id)
@@ -433,7 +495,7 @@ export function OperationalFormsPage() {
   function advanceStep() {
     const requiredQuestions = questionSteps[currentStep] ?? []
     const hasInvalidAnswer = requiredQuestions.some(
-      (question) => !isValidAnswer(question, answers[question])
+      (question) => !isValidAnswer(question, answers[question.label])
     )
     if (hasInvalidAnswer) {
       setStepError("Preencha corretamente os campos desta etapa antes de continuar.")
@@ -458,7 +520,36 @@ export function OperationalFormsPage() {
 
   function resetForm() {
     setForm(emptyForm)
+    setQuestionDrafts([])
+    setBuilderError("")
     setEditing(null)
+  }
+
+  function updateQuestionDraft(id: string, values: Partial<QuestionDraft>) {
+    setQuestionDrafts((current) =>
+      current.map((draft) => (draft.id === id ? { ...draft, ...values } : draft))
+    )
+  }
+
+  function moveQuestionDraft(id: string, direction: -1 | 1) {
+    setQuestionDrafts((current) => {
+      const index = current.findIndex((draft) => draft.id === id)
+      const target = index + direction
+      if (index === -1 || target < 0 || target >= current.length) return current
+      const next = current.slice()
+      ;[next[index], next[target]] = [next[target], next[index]]
+      return next
+    })
+  }
+
+  function applyTemplate(template: FormTemplate) {
+    setForm((current) => ({
+      ...current,
+      title: current.title || template.title,
+      category: template.category,
+      description: template.description,
+    }))
+    setQuestionDrafts(template.questions.map(toQuestionDraft))
   }
 
   function openCreate() {
@@ -475,20 +566,42 @@ export function OperationalFormsPage() {
       title: item.title,
       description: item.description ?? "",
       category: item.category ?? "",
-      questions: item.questions.join("\n"),
     })
+    setQuestionDrafts(item.questions.map(toQuestionDraft))
     setOpen(true)
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    const labels = questionDrafts.map((draft) => draft.label.trim()).filter(Boolean)
+    if (!labels.length) {
+      setBuilderError("Adicione ao menos uma pergunta.")
+      return
+    }
+    if (new Set(labels).size !== labels.length) {
+      setBuilderError("Há perguntas repetidas. Cada pergunta precisa de um texto diferente.")
+      return
+    }
+    const invalidChoice = questionDrafts.find(
+      (draft) =>
+        draft.kind === "choice" &&
+        draft.label.trim() &&
+        optionList(draft.options).length < 2
+    )
+    if (invalidChoice) {
+      setBuilderError(`"${invalidChoice.label}": informe ao menos duas opções separadas por vírgula.`)
+      return
+    }
+    setBuilderError("")
     const payload = {
       branch_id: form.branch_id || null,
       sector_id: form.sector_id || null,
       title: form.title,
       description: form.description || null,
       category: form.category || null,
-      questions: splitQuestions(form.questions),
+      questions: questionDrafts
+        .filter((draft) => draft.label.trim())
+        .map(serializeDraft),
     }
 
     if (editing) {
@@ -523,6 +636,23 @@ export function OperationalFormsPage() {
     resetResponse()
   }
 
+  function printableResponse(response: OperationalFormResponse): PrintableResponse {
+    return {
+      formTitle: response.operational_forms?.title ?? "Formulário",
+      scope: response.branches?.name ?? "Empresa",
+      author: response.user_profiles?.name ?? "Usuário",
+      submittedAt: formatDateTimeBR(response.submitted_at),
+      answers: response.answers,
+      notes: response.notes,
+      questions: forms.data?.find((item) => item.id === response.form_id)?.questions ?? null,
+    }
+  }
+
+  function printAllResponses() {
+    const rows = (responses.data ?? []).map(printableResponse)
+    printHtml(buildResponsesHtml("Respostas dos formulários", rows, collaboratorSummary))
+  }
+
   function removeForm(item: OperationalForm) {
     setDeleteTarget(item)
   }
@@ -542,8 +672,9 @@ export function OperationalFormsPage() {
   return (
     <>
       <PageHeader
-        title="Formularios"
-        description="Colete informacoes, auditorias e registros de forma simples e eficiente."
+        large
+        title="Formulários"
+        description="Colete informações, auditorias e registros de forma simples e eficiente."
         action={
           <Dialog open={open} onOpenChange={(nextOpen) => {
             setOpen(nextOpen)
@@ -552,60 +683,54 @@ export function OperationalFormsPage() {
             <DialogTrigger asChild>
               <Button onClick={openCreate}>
                 <Plus className="size-4" />
-                Novo formulario
+                Novo formulário
               </Button>
             </DialogTrigger>
             <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
               <DialogHeader>
                 <DialogTitle>
-                  {editing ? "Editar formulario" : "Novo formulario"}
+                  {editing ? "Editar formulário" : "Novo formulário"}
                 </DialogTitle>
               </DialogHeader>
               <form className="space-y-4" onSubmit={handleSubmit}>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="space-y-1 text-sm">
                     <span className="font-medium">Filial</span>
-                    <select
-                      className={fieldClass}
+                    <Select
                       value={form.branch_id}
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          branch_id: event.target.value,
-                          sector_id: "",
-                        }))
+                      onValueChange={(value) =>
+                        setForm((current) => ({ ...current, branch_id: value, sector_id: "" }))
                       }
-                    >
-                      <option value="">Toda empresa</option>
-                      {(branches.data ?? []).map((branch) => (
-                        <option key={branch.id} value={branch.id}>
-                          {branch.name}
-                        </option>
-                      ))}
-                    </select>
+                      options={[
+                        { value: "", label: "Toda empresa" },
+                        ...(branches.data ?? []).map((branch) => ({
+                          value: branch.id,
+                          label: branch.name,
+                        })),
+                      ]}
+                    />
                   </label>
                   <label className="space-y-1 text-sm">
                     <span className="font-medium">Setor</span>
-                    <select
-                      className={fieldClass}
+                    <Select
                       disabled={!form.branch_id}
                       value={form.sector_id}
-                      onChange={(event) =>
-                        setForm((current) => ({ ...current, sector_id: event.target.value }))
+                      onValueChange={(value) =>
+                        setForm((current) => ({ ...current, sector_id: value }))
                       }
-                    >
-                      <option value="">Todos setores</option>
-                      {(sectors.data ?? []).map((sector) => (
-                        <option key={sector.id} value={sector.id}>
-                          {sector.name}
-                        </option>
-                      ))}
-                    </select>
+                      options={[
+                        { value: "", label: "Todos setores" },
+                        ...(sectors.data ?? []).map((sector) => ({
+                          value: sector.id,
+                          label: sector.name,
+                        })),
+                      ]}
+                    />
                   </label>
                 </div>
 
                 <label className="space-y-1 text-sm">
-                  <span className="font-medium">Titulo</span>
+                  <span className="font-medium">Título</span>
                   <Input
                     required
                     value={form.title}
@@ -618,23 +743,17 @@ export function OperationalFormsPage() {
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="space-y-1 text-sm">
                     <span className="font-medium">Categoria</span>
-                    <Input
-                      list="operational-form-categories"
+                    <Combobox
                       value={form.category}
                       placeholder="Atendimento, Fiscal, Operacional ou RH"
-                      onChange={(event) =>
-                        setForm((current) => ({ ...current, category: event.target.value }))
+                      suggestions={["Atendimento", "Fiscal", "Operacional", "RH"]}
+                      onValueChange={(value) =>
+                        setForm((current) => ({ ...current, category: value }))
                       }
                     />
-                    <datalist id="operational-form-categories">
-                      <option value="Atendimento" />
-                      <option value="Fiscal" />
-                      <option value="Operacional" />
-                      <option value="RH" />
-                    </datalist>
                   </label>
                   <label className="space-y-1 text-sm">
-                    <span className="font-medium">Descricao</span>
+                    <span className="font-medium">Descrição</span>
                     <Input
                       value={form.description}
                       onChange={(event) =>
@@ -644,22 +763,142 @@ export function OperationalFormsPage() {
                   </label>
                 </div>
 
-                <label className="space-y-1 text-sm">
-                  <span className="font-medium">Perguntas</span>
-                  <textarea
-                    required
-                    className={textareaClass}
-                    placeholder="Uma pergunta por linha"
-                    value={form.questions}
-                    onChange={(event) =>
-                      setForm((current) => ({ ...current, questions: event.target.value }))
-                    }
-                  />
-                </label>
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-sm font-medium">Perguntas</span>
+                    <div className="flex flex-wrap gap-2">
+                      {formTemplates.map((template) => (
+                        <Button
+                          key={template.key}
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => applyTemplate(template)}
+                        >
+                          <ClipboardList className="size-3.5" />
+                          Modelo: {template.name}
+                        </Button>
+                      ))}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          setQuestionDrafts((current) => [...current, toQuestionDraft("")])
+                        }
+                      >
+                        <Plus className="size-3.5" />
+                        Pergunta
+                      </Button>
+                    </div>
+                  </div>
+
+                  {questionDrafts.length === 0 ? (
+                    <p className="rounded-lg border border-dashed px-3 py-4 text-center text-sm text-[color:var(--text-muted)]">
+                      Nenhuma pergunta. Adicione uma ou comece por um modelo.
+                    </p>
+                  ) : null}
+
+                  <div className="max-h-[42vh] space-y-2 overflow-y-auto pr-1">
+                    {questionDrafts.map((draft, index) => (
+                      <div
+                        key={draft.id}
+                        className="space-y-2 rounded-lg border bg-[color:var(--bg-surface-soft)] p-2"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-[color:var(--bg-surface)] text-[10px] font-semibold ring-1 ring-slate-200">
+                            {index + 1}
+                          </span>
+                          <Input
+                            aria-label={`Pergunta ${index + 1}`}
+                            placeholder="Texto da pergunta"
+                            value={draft.label}
+                            onChange={(event) =>
+                              updateQuestionDraft(draft.id, { label: event.target.value })
+                            }
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label="Subir pergunta"
+                            disabled={index === 0}
+                            onClick={() => moveQuestionDraft(draft.id, -1)}
+                          >
+                            <ChevronDown className="size-4 rotate-180" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label="Descer pergunta"
+                            disabled={index === questionDrafts.length - 1}
+                            onClick={() => moveQuestionDraft(draft.id, 1)}
+                          >
+                            <ChevronDown className="size-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label="Remover pergunta"
+                            onClick={() =>
+                              setQuestionDrafts((current) =>
+                                current.filter((item) => item.id !== draft.id)
+                              )
+                            }
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 pl-7">
+                          <Select
+                            aria-label="Tipo de resposta"
+                            className="w-44"
+                            value={draft.kind}
+                            onValueChange={(value) =>
+                              updateQuestionDraft(draft.id, { kind: value as QuestionKind })
+                            }
+                            options={Object.entries(questionKindLabels).map(([value, label]) => ({
+                              value,
+                              label,
+                            }))}
+                          />
+                          {draft.kind === "choice" ? (
+                            <Input
+                              aria-label="Opções"
+                              className="min-w-48 flex-1"
+                              placeholder="Opções separadas por vírgula"
+                              value={draft.options}
+                              onChange={(event) =>
+                                updateQuestionDraft(draft.id, { options: event.target.value })
+                              }
+                            />
+                          ) : null}
+                          <label className="flex items-center gap-1.5 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={draft.required}
+                              onChange={(event) =>
+                                updateQuestionDraft(draft.id, { required: event.target.checked })
+                              }
+                            />
+                            Obrigatória
+                          </label>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {builderError ? (
+                    <p className="text-sm text-destructive" role="alert">
+                      {builderError}
+                    </p>
+                  ) : null}
+                </div>
 
                 <DialogFooter>
                   <Button type="submit" disabled={isSaving}>
-                    {isSaving ? "Salvando..." : "Salvar formulario"}
+                    {isSaving ? "Salvando..." : "Salvar formulário"}
                   </Button>
                 </DialogFooter>
               </form>
@@ -669,58 +908,56 @@ export function OperationalFormsPage() {
       />
 
       <div className="space-y-4 p-4 sm:p-6">
-        <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
           {[
             {
-              label: "Formularios ativos",
+              label: "Formulários ativos",
               value: stats.activeForms,
-              detail: "Disponiveis no escopo",
-              icon: <FileText className="size-4" />,
+              detail: "Disponíveis no escopo",
+              icon: <FileText className="size-3.5" />,
               tone: "bg-violet-50 text-violet-600",
             },
             {
               label: "Respostas hoje",
               value: stats.responsesToday,
               detail: "Enviadas no dia atual",
-              icon: <CheckCircle2 className="size-4" />,
+              icon: <CheckCircle2 className="size-3.5" />,
               tone: "bg-emerald-50 text-emerald-600",
             },
             {
               label: "Pendentes",
               value: stats.pending,
               detail: "Rascunhos neste dispositivo",
-              icon: <Clock3 className="size-4" />,
+              icon: <Clock3 className="size-3.5" />,
               tone: "bg-amber-50 text-amber-600",
             },
             {
-              label: "Ultima atividade",
+              label: "Última atividade",
               value: activityTime(stats.lastActivity),
               detail: activityDate(stats.lastActivity),
-              icon: <Users className="size-4" />,
+              icon: <Users className="size-3.5" />,
               tone: "bg-sky-50 text-sky-600",
             },
           ].map((metric) => (
             <div
               key={metric.label}
-              className="flex min-h-20 items-center gap-3 rounded-lg border bg-[color:var(--bg-surface)] px-3 py-3 shadow-sm"
+              title={metric.detail}
+              className="flex items-center gap-2 rounded-lg border bg-[color:var(--bg-surface)] px-2.5 py-1.5 shadow-sm"
             >
-              <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-full", metric.tone)}>
+              <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-full", metric.tone)}>
                 {metric.icon}
               </span>
               <div className="min-w-0">
-                <div className="truncate text-[11px] font-medium text-muted-foreground">
+                <div className="truncate text-[10px] font-medium leading-tight text-muted-foreground">
                   {metric.label}
                 </div>
-                <div className="mt-0.5 text-xl font-semibold leading-none">{metric.value}</div>
-                <div className="mt-1 truncate text-[10px] text-muted-foreground">
-                  {metric.detail}
-                </div>
+                <div className="text-base font-semibold leading-tight">{metric.value}</div>
               </div>
             </div>
           ))}
         </div>
 
-        <div className="flex w-fit max-w-full gap-1 overflow-x-auto rounded-lg border bg-[color:var(--bg-surface)] p-1 shadow-sm">
+        <div className="mx-auto flex w-fit max-w-full gap-1 overflow-x-auto rounded-lg border bg-[color:var(--bg-surface)] p-1 shadow-sm">
           {formViews.map(([key, label]) => {
             const count =
               key === "responses"
@@ -753,11 +990,11 @@ export function OperationalFormsPage() {
         </div>
 
         {forms.isLoading || responses.isLoading ? (
-          <StateBlock type="loading" title="Carregando formularios" />
+          <StateBlock type="loading" title="Carregando formulários" />
         ) : forms.isError ? (
           <StateBlock
             type="error"
-            title="Erro ao carregar formularios"
+            title="Erro ao carregar formulários"
             description={forms.error.message}
           />
         ) : responses.isError ? (
@@ -776,8 +1013,8 @@ export function OperationalFormsPage() {
                     <Input
                       className="pl-8"
                       value={searchText}
-                      placeholder="Buscar formulario..."
-                      aria-label="Buscar formulario"
+                      placeholder="Buscar formulário..."
+                      aria-label="Buscar formulário"
                       onChange={(event) => {
                         setSearchText(event.target.value)
                         setCurrentPage(1)
@@ -787,20 +1024,21 @@ export function OperationalFormsPage() {
                   </label>
                   <label className="relative">
                     <ArrowUpDown className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                    <select
-                      className={cn(fieldClass, "pl-8")}
+                    <Select
+                      className="pl-8"
                       value={sortBy}
-                      aria-label="Ordenar formularios"
-                      onChange={(event) => {
-                        setSortBy(event.target.value as FormSort)
+                      aria-label="Ordenar formulários"
+                      onValueChange={(value) => {
+                        setSortBy(value as FormSort)
                         setCurrentPage(1)
                         resetResponse()
                       }}
-                    >
-                      <option value="name">A-Z</option>
-                      <option value="responses">Mais usados</option>
-                      <option value="recent">Recentes</option>
-                    </select>
+                      options={[
+                        { value: "name", label: "A-Z" },
+                        { value: "responses", label: "Mais usados" },
+                        { value: "recent", label: "Recentes" },
+                      ]}
+                    />
                   </label>
                 </div>
                 <div className="flex gap-1.5 overflow-x-auto pb-0.5">
@@ -833,7 +1071,7 @@ export function OperationalFormsPage() {
               {filteredForms.length === 0 ? (
                 <StateBlock
                   className="min-h-52"
-                  title={stats.activeForms === 0 ? "Nenhum formulario" : "Nenhum resultado"}
+                  title={stats.activeForms === 0 ? "Nenhum formulário" : "Nenhum resultado"}
                   description={
                     stats.activeForms === 0
                       ? "Cadastre o primeiro modelo para iniciar."
@@ -889,7 +1127,7 @@ export function OperationalFormsPage() {
               <div className="flex items-center justify-between gap-2 border-t px-3 py-2 text-[10px] text-muted-foreground">
                 <span>
                   {filteredForms.length === 0
-                    ? "Nenhum formulario"
+                    ? "Nenhum formulário"
                     : `${(visiblePage - 1) * FORMS_PER_PAGE + 1}-${Math.min(
                         visiblePage * FORMS_PER_PAGE,
                         filteredForms.length
@@ -902,7 +1140,7 @@ export function OperationalFormsPage() {
                     variant="outline"
                     className="size-7"
                     disabled={visiblePage <= 1}
-                    aria-label="Pagina anterior"
+                    aria-label="Página anterior"
                     onClick={() => {
                       setCurrentPage((page) => Math.max(1, page - 1))
                       setSelectedFormId("")
@@ -920,7 +1158,7 @@ export function OperationalFormsPage() {
                     variant="outline"
                     className="size-7"
                     disabled={visiblePage >= totalPages}
-                    aria-label="Proxima pagina"
+                    aria-label="Próxima página"
                     onClick={() => {
                       setCurrentPage((page) => Math.min(totalPages, page + 1))
                       setSelectedFormId("")
@@ -935,7 +1173,7 @@ export function OperationalFormsPage() {
 
             <section className="min-w-0 overflow-hidden rounded-lg border bg-[color:var(--bg-surface)] shadow-sm">
               {!selectedForm ? (
-                <StateBlock className="min-h-96" title="Selecione um formulario" />
+                <StateBlock className="min-h-96" title="Selecione um formulário" />
               ) : (
                 <>
                   <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
@@ -972,7 +1210,17 @@ export function OperationalFormsPage() {
                         type="button"
                         size="icon-sm"
                         variant="outline"
-                        aria-label="Editar formulario"
+                        onClick={() => printHtml(buildFormHtml(printableForm(selectedForm)))}
+                        aria-label="Imprimir formulário"
+                        title="Imprimir formulário em branco"
+                      >
+                        <Printer className="size-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        size="icon-sm"
+                        variant="outline"
+                        aria-label="Editar formulário"
                         onClick={() => openEdit(selectedForm)}
                       >
                         <Edit3 className="size-4" />
@@ -982,7 +1230,7 @@ export function OperationalFormsPage() {
 
                   <div className="border-b bg-[color:var(--bg-surface-soft)]/60 px-4 py-4">
                     <div className="mx-auto grid max-w-2xl grid-cols-[auto_1fr_auto_1fr_auto] items-start gap-2">
-                      {["Dados iniciais", "Complemento", "Confirmacao"].map((label, index) => (
+                      {["Dados iniciais", "Complemento", "Confirmação"].map((label, index) => (
                         <div key={label} className="contents">
                           <div className="flex min-w-20 flex-col items-center text-center">
                             <span
@@ -1028,68 +1276,123 @@ export function OperationalFormsPage() {
                       {currentStep < 2 ? (
                         <div className="grid gap-x-4 gap-y-3 md:grid-cols-2">
                           {(questionSteps[currentStep] ?? []).map((question) => {
-                            const kind = questionFieldKind(question)
-                            const isLongAnswer = kind === "long_text"
+                            const kind = questionFieldKind(question.label)
+                            const answer = answers[question.label] ?? ""
+                            const setAnswer = (value: string) =>
+                              setAnswers((current) => ({ ...current, [question.label]: value }))
+                            const isLongAnswer =
+                              question.kind === "long_text" ||
+                              (question.kind === "auto" && kind === "long_text")
+                            const isChoice = question.kind === "choice" || question.kind === "rating"
+                            const isEmployee = question.kind === "employee"
                             const inputType =
-                              kind === "email" || kind === "date" || kind === "time"
-                                ? kind
-                                : "text"
+                              question.kind === "time" || question.kind === "date"
+                                ? question.kind
+                                : question.kind === "text"
+                                  ? "text"
+                                  : kind === "email" || kind === "date" || kind === "time"
+                                    ? kind
+                                    : "text"
+                            const masked = question.kind === "auto" ? kind : "text"
+                            const choices =
+                              question.kind === "rating" ? RATING_VALUES : question.options
                             return (
-                              <label
-                                key={question}
+                              <div
+                                key={question.label}
                                 className={cn(
                                   "space-y-1 text-sm",
-                                  isLongAnswer && "md:col-span-2"
+                                  (isLongAnswer || isChoice) && "md:col-span-2"
                                 )}
                               >
-                                <span className="text-xs font-medium">{question}</span>
-                                {isLongAnswer ? (
-                                  <textarea
-                                    required
-                                    className="min-h-20 w-full rounded-lg border bg-[color:var(--bg-surface)] px-2.5 py-2 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
-                                    value={answers[question] ?? ""}
-                                    onChange={(event) =>
-                                      setAnswers((current) => ({
-                                        ...current,
-                                        [question]: event.target.value,
-                                      }))
+                                <span className="text-xs font-medium">
+                                  {question.label}
+                                  {question.required ? null : (
+                                    <span className="ml-1 font-normal text-muted-foreground">
+                                      (opcional)
+                                    </span>
+                                  )}
+                                </span>
+                                {isChoice ? (
+                                  <div
+                                    role="radiogroup"
+                                    aria-label={question.label}
+                                    className="flex flex-wrap gap-1.5"
+                                  >
+                                    {choices.map((choice) => (
+                                      <button
+                                        key={choice}
+                                        type="button"
+                                        role="radio"
+                                        aria-checked={answer === choice}
+                                        className={cn(
+                                          "h-8 rounded-lg border px-3 text-sm transition-colors",
+                                          answer === choice
+                                            ? "border-primary bg-primary text-primary-foreground"
+                                            : "bg-[color:var(--bg-surface)] hover:bg-[color:var(--bg-surface-soft)]"
+                                        )}
+                                        onClick={() => setAnswer(answer === choice ? "" : choice)}
+                                      >
+                                        {choice}
+                                      </button>
+                                    ))}
+                                  </div>
+                                ) : isEmployee ? (
+                                  <Select
+                                    required={question.required}
+                                    aria-label={question.label}
+                                    value={answer}
+                                    onValueChange={setAnswer}
+                                    placeholder={
+                                      employees.isLoading ? "Carregando..." : "Selecione o colaborador"
                                     }
+                                    options={(employees.data ?? [])
+                                      .filter((employee) => employee.active)
+                                      .map((employee) => ({
+                                        value: employee.name,
+                                        label: employee.role
+                                          ? `${employee.name} - ${employee.role}`
+                                          : employee.name,
+                                      }))}
+                                  />
+                                ) : isLongAnswer ? (
+                                  <textarea
+                                    required={question.required}
+                                    className="min-h-20 w-full rounded-lg border bg-[color:var(--bg-surface)] px-2.5 py-2 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+                                    value={answer}
+                                    onChange={(event) => setAnswer(event.target.value)}
                                   />
                                 ) : (
                                   <Input
-                                    required
+                                    required={question.required}
                                     type={inputType}
-                                    inputMode={kind === "cpf" || kind === "phone" ? "numeric" : undefined}
-                                    maxLength={kind === "cpf" ? 14 : kind === "phone" ? 15 : undefined}
+                                    inputMode={masked === "cpf" || masked === "phone" ? "numeric" : undefined}
+                                    maxLength={masked === "cpf" ? 14 : masked === "phone" ? 15 : undefined}
                                     pattern={
-                                      kind === "cpf"
+                                      masked === "cpf"
                                         ? "[0-9]{3}\\.[0-9]{3}\\.[0-9]{3}-[0-9]{2}"
-                                        : kind === "phone"
+                                        : masked === "phone"
                                           ? "\\([0-9]{2}\\) [0-9]{4,5}-[0-9]{4}"
                                           : undefined
                                     }
                                     autoComplete={
-                                      kind === "email"
+                                      masked === "email"
                                         ? "email"
-                                        : kind === "phone"
+                                        : masked === "phone"
                                           ? "tel"
                                           : undefined
                                     }
-                                    value={answers[question] ?? ""}
+                                    value={answer}
                                     onChange={(event) =>
-                                      setAnswers((current) => ({
-                                        ...current,
-                                        [question]: normalizeAnswer(kind, event.target.value),
-                                      }))
+                                      setAnswer(normalizeAnswer(masked, event.target.value))
                                     }
                                   />
                                 )}
-                              </label>
+                              </div>
                             )
                           })}
                           {currentStep === 1 ? (
                             <label className="space-y-1 text-sm md:col-span-2">
-                              <span className="text-xs font-medium">Observacao geral</span>
+                              <span className="text-xs font-medium">Observação geral</span>
                               <textarea
                                 className="min-h-20 w-full rounded-lg border bg-[color:var(--bg-surface)] px-2.5 py-2 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
                                 value={responseNotes}
@@ -1101,13 +1404,13 @@ export function OperationalFormsPage() {
                       ) : (
                         <div className="space-y-4">
                           <div className="grid gap-3 md:grid-cols-2">
-                            {selectedForm.questions.map((question) => (
-                              <div key={question} className="rounded-lg border bg-[color:var(--bg-surface-soft)] px-3 py-2">
+                            {parsedQuestions.map((question) => (
+                              <div key={question.label} className="rounded-lg border bg-[color:var(--bg-surface-soft)] px-3 py-2">
                                 <div className="text-[11px] font-medium text-muted-foreground">
-                                  {question}
+                                  {question.label}
                                 </div>
                                 <div className="mt-1 break-words text-sm">
-                                  {answers[question] || "Nao informado"}
+                                  {answers[question.label] || "Não informado"}
                                 </div>
                               </div>
                             ))}
@@ -1115,7 +1418,7 @@ export function OperationalFormsPage() {
                           {responseNotes ? (
                             <div className="rounded-lg border bg-[color:var(--bg-surface-soft)] px-3 py-2">
                               <div className="text-[11px] font-medium text-muted-foreground">
-                                Observacao geral
+                                Observação geral
                               </div>
                               <p className="mt-1 whitespace-pre-wrap text-sm">{responseNotes}</p>
                             </div>
@@ -1152,7 +1455,7 @@ export function OperationalFormsPage() {
                         ) : null}
                         {currentStep < 2 ? (
                           <Button type="button" size="sm" onClick={advanceStep}>
-                            Proximo
+                            Próximo
                             <ChevronRight className="size-4" />
                           </Button>
                         ) : (
@@ -1175,7 +1478,7 @@ export function OperationalFormsPage() {
                 title={stats.activeForms === 0 ? "Nenhum modelo cadastrado" : "Nenhum resultado"}
                 description={
                   stats.activeForms === 0
-                    ? "Crie um formulario para disponibiliza-lo ao time."
+                    ? "Crie um formulário para disponibilizá-lo ao time."
                     : "Revise a busca ou o filtro selecionado."
                 }
               />
@@ -1219,8 +1522,18 @@ export function OperationalFormsPage() {
                         type="button"
                         size="icon-sm"
                         variant="outline"
+                        onClick={() => printHtml(buildFormHtml(printableForm(item)))}
+                        aria-label="Imprimir formulário"
+                        title="Imprimir formulário em branco"
+                      >
+                        <Printer className="size-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        size="icon-sm"
+                        variant="outline"
                         onClick={() => openEdit(item)}
-                        aria-label="Editar formulario"
+                        aria-label="Editar formulário"
                       >
                         <Edit3 className="size-4" />
                       </Button>
@@ -1229,7 +1542,7 @@ export function OperationalFormsPage() {
                         size="icon-sm"
                         variant="destructive"
                         onClick={() => removeForm(item)}
-                        aria-label="Excluir formulario"
+                        aria-label="Excluir formulário"
                       >
                         <Trash2 className="size-4" />
                       </Button>
@@ -1242,12 +1555,21 @@ export function OperationalFormsPage() {
                           </p>
                         ) : null}
                         <div className="grid gap-2 md:grid-cols-2">
-                          {item.questions.map((question, index) => (
-                            <div key={question} className="flex items-start gap-2 text-sm">
+                          {item.questions.map(parseQuestion).map((question, index) => (
+                            <div key={question.raw} className="flex items-start gap-2 text-sm">
                               <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-[color:var(--bg-surface)] text-[10px] font-semibold text-[color:var(--text-muted)] ring-1 ring-slate-200">
                                 {index + 1}
                               </span>
-                              <span className="min-w-0 break-words">{question}</span>
+                              <span className="min-w-0 break-words">
+                                {question.label}
+                                {question.kind === "choice" ? (
+                                  <span className="ml-1 text-xs text-muted-foreground">
+                                    ({question.options.join(" / ")})
+                                  </span>
+                                ) : question.kind === "rating" ? (
+                                  <span className="ml-1 text-xs text-muted-foreground">(nota 1-5)</span>
+                                ) : null}
+                              </span>
                             </div>
                           ))}
                         </div>
@@ -1260,6 +1582,62 @@ export function OperationalFormsPage() {
           </div>
         ) : (
           <div className="space-y-2">
+            {(responses.data ?? []).length > 0 ? (
+              <div className="flex justify-end">
+                <Button type="button" size="sm" variant="outline" onClick={printAllResponses}>
+                  <Printer className="size-3.5" />
+                  Imprimir respostas
+                </Button>
+              </div>
+            ) : null}
+            {collaboratorSummary.length > 0 ? (
+              <div className="overflow-x-auto rounded-lg border bg-[color:var(--bg-surface)] shadow-sm">
+                <div className="border-b px-3 py-2 text-sm font-semibold">
+                  Resumo por colaborador
+                </div>
+                <table className="w-full text-left text-sm">
+                  <thead className="text-xs text-muted-foreground">
+                    <tr>
+                      <th className="px-3 py-1.5 font-medium">Colaborador</th>
+                      <th className="px-3 py-1.5 font-medium">Avaliações</th>
+                      <th className="px-3 py-1.5 font-medium">No horário</th>
+                      <th className="px-3 py-1.5 font-medium">Atrasos</th>
+                      <th className="px-3 py-1.5 font-medium">Faltas</th>
+                      <th className="px-3 py-1.5 font-medium">Conformidade</th>
+                      <th className="px-3 py-1.5 font-medium">Nota média</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {collaboratorSummary.map((row) => {
+                      const checks = row.conforming + row.nonConforming
+                      return (
+                        <tr key={row.name} className="border-t">
+                          <td className="px-3 py-1.5 font-medium">{row.name}</td>
+                          <td className="px-3 py-1.5">{row.evaluations}</td>
+                          <td className="px-3 py-1.5">{row.onTime}</td>
+                          <td className={cn("px-3 py-1.5", row.late > 0 && "text-amber-600")}>
+                            {row.late}
+                          </td>
+                          <td className={cn("px-3 py-1.5", row.absent > 0 && "text-destructive")}>
+                            {row.absent}
+                          </td>
+                          <td className="px-3 py-1.5">
+                            {checks
+                              ? `${Math.round((row.conforming / checks) * 100)}% (${row.nonConforming} não conf.)`
+                              : "-"}
+                          </td>
+                          <td className="px-3 py-1.5">
+                            {row.ratingCount
+                              ? (row.ratingSum / row.ratingCount).toFixed(1)
+                              : "-"}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
             {(responses.data ?? []).length === 0 ? (
               <StateBlock title="Sem respostas registradas" />
             ) : (
@@ -1269,10 +1647,10 @@ export function OperationalFormsPage() {
                     <ChevronDown className="size-4 shrink-0 -rotate-90 transition-transform group-open:rotate-0" />
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-semibold">
-                        {response.operational_forms?.title ?? "Formulario"}
+                        {response.operational_forms?.title ?? "Formulário"}
                       </div>
                       <div className="mt-0.5 text-xs text-muted-foreground">
-                        {response.branches?.name ?? "Empresa"} - {response.user_profiles?.name ?? "Usuario"}
+                        {response.branches?.name ?? "Empresa"} - {response.user_profiles?.name ?? "Usuário"}
                       </div>
                     </div>
                     <div className="hidden text-right text-xs text-muted-foreground sm:block">
@@ -1298,11 +1676,22 @@ export function OperationalFormsPage() {
                     {response.notes ? (
                       <div className="mt-3 border-t pt-3">
                         <div className="text-xs font-medium text-muted-foreground">
-                          Observacao geral
+                          Observação geral
                         </div>
                         <p className="mt-0.5 whitespace-pre-wrap text-sm">{response.notes}</p>
                       </div>
                     ) : null}
+                    <div className="mt-3 flex justify-end border-t pt-3">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => printHtml(buildResponseHtml(printableResponse(response)))}
+                      >
+                        <Printer className="size-3.5" />
+                        Imprimir resposta
+                      </Button>
+                    </div>
                   </div>
                 </details>
               ))
@@ -1323,7 +1712,7 @@ export function OperationalFormsPage() {
       }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Excluir formulario</DialogTitle>
+            <DialogTitle>Excluir formulário</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
             Deseja excluir permanentemente "{deleteTarget?.title}"?

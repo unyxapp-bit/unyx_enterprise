@@ -26,6 +26,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Select } from "@/components/ui/select"
 import {
   useBranches,
   useCreateOperationalNote,
@@ -43,9 +44,6 @@ import type {
   OperationalSupportPriority,
 } from "@/types/domain"
 
-const fieldClass =
-  "h-8 w-full rounded-lg border bg-[color:var(--bg-surface)] px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
-
 const textareaClass =
   "min-h-28 w-full rounded-lg border bg-[color:var(--bg-surface)] px-2.5 py-2 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
 
@@ -58,7 +56,7 @@ const priorityLabel: Record<OperationalSupportPriority, string> = {
 
 const statusLabel: Record<OperationalNoteStatus, string> = {
   open: "Aberta",
-  in_review: "Em analise",
+  in_review: "Em análise",
   resolved: "Resolvida",
   archived: "Arquivada",
 }
@@ -74,15 +72,15 @@ const noteColumns: Array<{
   {
     status: "open",
     title: "Em aberto",
-    empty: "Arraste uma anotacao para abrir.",
+    empty: "Arraste uma anotação para abrir.",
     icon: CircleDot,
     badgeClass: "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-200",
     iconClass: "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-200",
   },
   {
     status: "in_review",
-    title: "Em analise",
-    empty: "Arraste uma anotacao para analise.",
+    title: "Em análise",
+    empty: "Arraste uma anotação para análise.",
     icon: Clock3,
     badgeClass: "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-200",
     iconClass: "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-200",
@@ -90,7 +88,7 @@ const noteColumns: Array<{
   {
     status: "resolved",
     title: "Resolvidas",
-    empty: "Arraste uma anotacao resolvida aqui.",
+    empty: "Arraste uma anotação resolvida aqui.",
     icon: CheckCircle2,
     badgeClass: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200",
     iconClass: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200",
@@ -98,7 +96,7 @@ const noteColumns: Array<{
   {
     status: "archived",
     title: "Arquivadas",
-    empty: "Sem anotacoes arquivadas.",
+    empty: "Sem anotações arquivadas.",
     icon: Archive,
     badgeClass: "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-200",
     iconClass: "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-200",
@@ -292,45 +290,11 @@ export function OperationalNotesPage() {
   return (
     <>
       <PageHeader
-        title="Anotacoes"
-        description="Pendencias, ocorrencias e lembretes operacionais para fiscais de frente de loja."
+        large
+        title="Anotações"
+        description="Pendências, ocorrências e lembretes operacionais para fiscais de frente de loja."
         action={
           <div className="flex flex-wrap items-center gap-2">
-            <select
-              className={cn(fieldClass, "w-40 text-xs")}
-              value={statusFilter}
-              onChange={(event) =>
-                setStatusFilter(event.target.value as OperationalNoteStatus | "all")
-              }
-            >
-              <option value="all">Todos status</option>
-              {(Object.keys(statusLabel) as OperationalNoteStatus[]).map((status) => (
-                <option key={status} value={status}>
-                  {statusLabel[status]}
-                </option>
-              ))}
-            </select>
-            <select
-              className={cn(fieldClass, "w-44 text-xs")}
-              value={priorityFilter}
-              onChange={(event) =>
-                setPriorityFilter(event.target.value as OperationalSupportPriority | "all")
-              }
-            >
-              <option value="all">Todas prioridades</option>
-              {(Object.keys(priorityLabel) as OperationalSupportPriority[]).map((priority) => (
-                <option key={priority} value={priority}>
-                  {priorityLabel[priority]}
-                </option>
-              ))}
-            </select>
-            <Input
-              className="h-8 w-52 text-xs"
-              type="search"
-              placeholder="Buscar anotacao..."
-              value={searchText}
-              onChange={(event) => setSearchText(event.target.value)}
-            />
             <Dialog open={open} onOpenChange={(nextOpen) => {
               setOpen(nextOpen)
               if (!nextOpen) resetForm()
@@ -338,60 +302,54 @@ export function OperationalNotesPage() {
               <DialogTrigger asChild>
                 <Button onClick={openCreate}>
                   <Plus className="size-4" />
-                  Nova anotacao
+                  Nova anotação
                 </Button>
               </DialogTrigger>
               <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
                 <DialogHeader>
                   <DialogTitle>
-                    {editing ? "Editar anotacao" : "Nova anotacao"}
+                    {editing ? "Editar anotação" : "Nova anotação"}
                   </DialogTitle>
                 </DialogHeader>
                 <form className="space-y-4" onSubmit={handleSubmit}>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <label className="space-y-1 text-sm">
                       <span className="font-medium">Filial</span>
-                      <select
-                        className={fieldClass}
+                      <Select
                         value={form.branch_id}
-                        onChange={(event) =>
-                          setForm((current) => ({
-                            ...current,
-                            branch_id: event.target.value,
-                            sector_id: "",
-                          }))
+                        onValueChange={(value) =>
+                          setForm((current) => ({ ...current, branch_id: value, sector_id: "" }))
                         }
-                      >
-                        <option value="">Toda empresa</option>
-                        {(branches.data ?? []).map((branch) => (
-                          <option key={branch.id} value={branch.id}>
-                            {branch.name}
-                          </option>
-                        ))}
-                      </select>
+                        options={[
+                          { value: "", label: "Toda empresa" },
+                          ...(branches.data ?? []).map((branch) => ({
+                            value: branch.id,
+                            label: branch.name,
+                          })),
+                        ]}
+                      />
                     </label>
                     <label className="space-y-1 text-sm">
                       <span className="font-medium">Setor</span>
-                      <select
-                        className={fieldClass}
+                      <Select
                         disabled={!form.branch_id}
                         value={form.sector_id}
-                        onChange={(event) =>
-                          setForm((current) => ({ ...current, sector_id: event.target.value }))
+                        onValueChange={(value) =>
+                          setForm((current) => ({ ...current, sector_id: value }))
                         }
-                      >
-                        <option value="">Todos setores</option>
-                        {(sectors.data ?? []).map((sector) => (
-                          <option key={sector.id} value={sector.id}>
-                            {sector.name}
-                          </option>
-                        ))}
-                      </select>
+                        options={[
+                          { value: "", label: "Todos setores" },
+                          ...(sectors.data ?? []).map((sector) => ({
+                            value: sector.id,
+                            label: sector.name,
+                          })),
+                        ]}
+                      />
                     </label>
                   </div>
 
                   <label className="space-y-1 text-sm">
-                    <span className="font-medium">Titulo</span>
+                    <span className="font-medium">Título</span>
                     <Input
                       required
                       value={form.title}
@@ -402,7 +360,7 @@ export function OperationalNotesPage() {
                   </label>
 
                   <label className="space-y-1 text-sm">
-                    <span className="font-medium">Conteudo</span>
+                    <span className="font-medium">Conteúdo</span>
                     <textarea
                       required
                       className={textareaClass}
@@ -426,41 +384,33 @@ export function OperationalNotesPage() {
                     </label>
                     <label className="space-y-1 text-sm">
                       <span className="font-medium">Prioridade</span>
-                      <select
-                        className={fieldClass}
+                      <Select
                         value={form.priority}
-                        onChange={(event) =>
+                        onValueChange={(value) =>
                           setForm((current) => ({
                             ...current,
-                            priority: event.target.value as OperationalSupportPriority,
+                            priority: value as OperationalSupportPriority,
                           }))
                         }
-                      >
-                        {(Object.keys(priorityLabel) as OperationalSupportPriority[]).map((priority) => (
-                          <option key={priority} value={priority}>
-                            {priorityLabel[priority]}
-                          </option>
-                        ))}
-                      </select>
+                        options={(Object.keys(priorityLabel) as OperationalSupportPriority[]).map(
+                          (priority) => ({ value: priority, label: priorityLabel[priority] })
+                        )}
+                      />
                     </label>
                     <label className="space-y-1 text-sm">
                       <span className="font-medium">Status</span>
-                      <select
-                        className={fieldClass}
+                      <Select
                         value={form.status}
-                        onChange={(event) =>
+                        onValueChange={(value) =>
                           setForm((current) => ({
                             ...current,
-                            status: event.target.value as OperationalNoteStatus,
+                            status: value as OperationalNoteStatus,
                           }))
                         }
-                      >
-                        {(Object.keys(statusLabel) as OperationalNoteStatus[]).map((status) => (
-                          <option key={status} value={status}>
-                            {statusLabel[status]}
-                          </option>
-                        ))}
-                      </select>
+                        options={(Object.keys(statusLabel) as OperationalNoteStatus[]).map(
+                          (status) => ({ value: status, label: statusLabel[status] })
+                        )}
+                      />
                     </label>
                     <label className="space-y-1 text-sm">
                       <span className="font-medium">Prazo</span>
@@ -476,7 +426,7 @@ export function OperationalNotesPage() {
 
                   <DialogFooter>
                     <Button type="submit" disabled={isPending}>
-                      {isPending ? "Salvando..." : "Salvar anotacao"}
+                      {isPending ? "Salvando..." : "Salvar anotação"}
                     </Button>
                   </DialogFooter>
                 </form>
@@ -487,22 +437,60 @@ export function OperationalNotesPage() {
       />
 
       <div className="space-y-4 p-4 sm:p-5">
+        <div className="flex flex-wrap items-center gap-2">
+          <Select
+            aria-label="Filtrar por status"
+            className="w-44"
+            value={statusFilter}
+            onValueChange={(value) => setStatusFilter(value as OperationalNoteStatus | "all")}
+            options={[
+              { value: "all", label: "Todos os status" },
+              ...(Object.keys(statusLabel) as OperationalNoteStatus[]).map((status) => ({
+                value: status,
+                label: statusLabel[status],
+              })),
+            ]}
+          />
+          <Select
+            aria-label="Filtrar por prioridade"
+            className="w-48"
+            value={priorityFilter}
+            onValueChange={(value) =>
+              setPriorityFilter(value as OperationalSupportPriority | "all")
+            }
+            options={[
+              { value: "all", label: "Todas as prioridades" },
+              ...(Object.keys(priorityLabel) as OperationalSupportPriority[]).map((priority) => ({
+                value: priority,
+                label: priorityLabel[priority],
+              })),
+            ]}
+          />
+          <Input
+            className="h-8 w-full text-sm sm:w-64"
+            type="search"
+            placeholder="Buscar anotação..."
+            aria-label="Buscar anotação"
+            value={searchText}
+            onChange={(event) => setSearchText(event.target.value)}
+          />
+        </div>
         {notes.isLoading ? (
-          <StateBlock type="loading" title="Carregando anotacoes" />
+          <StateBlock type="loading" title="Carregando anotações" />
         ) : notes.isError ? (
           <StateBlock
             type="error"
-            title="Erro ao carregar anotacoes"
+            title="Erro ao carregar anotações"
             description={notes.error.message}
           />
         ) : (notes.data ?? []).length === 0 ? (
           <StateBlock
-            title="Nenhuma anotacao"
-            description="Registre pendencias, ocorrencias e orientacoes para a frente de loja."
+            title="Nenhuma anotação"
+            description="Registre pendências, ocorrências e orientações para a frente de loja."
           />
         ) : filteredNotes.length === 0 ? (
           <StateBlock
-            title="Nenhuma anotacao neste filtro"
+            title="Nenhuma anotação neste filtro"
             description="Ajuste busca, status ou prioridade para ampliar a lista."
           />
         ) : (
@@ -617,7 +605,7 @@ export function OperationalNotesPage() {
                               {note.category ? (
                                 <Badge variant="outline">{note.category}</Badge>
                               ) : null}
-                              <span>{note.user_profiles?.name ?? "Usuario"}</span>
+                              <span>{note.user_profiles?.name ?? "Usuário"}</span>
                               {note.due_at ? (
                                 <span
                                   className={cn(
@@ -632,7 +620,7 @@ export function OperationalNotesPage() {
                               {note.priority === "urgent" ? (
                                 <span className="inline-flex items-center gap-1 text-red-600 dark:text-red-300">
                                   <AlertTriangle className="size-3" />
-                                  Atencao imediata
+                                  Atenção imediata
                                 </span>
                               ) : null}
                             </div>
@@ -691,7 +679,7 @@ export function OperationalNotesPage() {
       }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Excluir anotacao</DialogTitle>
+            <DialogTitle>Excluir anotação</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
             Deseja excluir permanentemente "{deleteTarget?.title}"?

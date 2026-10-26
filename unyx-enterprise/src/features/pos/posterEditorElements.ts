@@ -1,7 +1,9 @@
 import JsBarcode from "jsbarcode"
 
+import { BRUSH_SHAPES, type BrushShape } from "./brushShapes"
+
 export type CustomElementKind = "text" | "image" | "shape" | "badge" | "barcode"
-export type CustomShape = "rectangle" | "ellipse" | "star"
+export type CustomShape = "rectangle" | "ellipse" | "star" | "brush" | "brush2"
 
 export type PosterCustomElement = {
   id: string
@@ -148,6 +150,18 @@ export function barcodeDataUrl(value: string, color: string, background: string)
   return dataUrl
 }
 
+// Pincelada vetorial: contorno real extraído dos templates, escalado para a caixa do elemento.
+export function brushPath(width: number, height: number, shape: BrushShape = "brush") {
+  const values = BRUSH_SHAPES[shape]
+  const points: string[] = []
+  for (let index = 0; index < values.length; index += 2) {
+    points.push(
+      `${((values[index] / 1000) * width).toFixed(2)},${((values[index + 1] / 1000) * height).toFixed(2)}`
+    )
+  }
+  return `M ${points.join(" L ")} Z`
+}
+
 function starPath(width: number, height: number) {
   const centerX = width / 2
   const centerY = height / 2
@@ -193,6 +207,8 @@ export function customElementSvg(
   } else if (element.kind === "shape") {
     if (element.shape === "ellipse") {
       content = `<ellipse cx="0" cy="0" rx="${width / 2}" ry="${height / 2}" fill="${xmlEscape(element.fill)}" ${stroke}/>`
+    } else if (element.shape === "brush" || element.shape === "brush2") {
+      content = `<path d="${brushPath(width, height, element.shape)}" transform="translate(${left} ${top})" fill="${xmlEscape(element.fill)}" ${stroke}/>`
     } else if (element.shape === "star") {
       content = `<path d="${starPath(width, height)}" transform="translate(${left} ${top})" fill="${xmlEscape(element.fill)}" ${stroke}/>`
     } else {

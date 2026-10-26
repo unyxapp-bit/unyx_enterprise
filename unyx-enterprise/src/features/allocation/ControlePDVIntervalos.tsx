@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
+import { toast } from "sonner"
 import {
   Ban,
   CheckCircle2,
@@ -19,7 +20,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Select } from "@/components/ui/select"
 import {
+  useAdjustPostAllocationStart,
   useAllocatePost,
   useFinalizePostAllocation,
   useOperationalPosts,
@@ -94,8 +97,8 @@ interface ControlePDVIntervalosProps {
 }
 
 const breakTypeLabel: Record<OperationalBreakType, string> = {
-  cafe_manha: "Cafe manha",
-  cafe_tarde: "Cafe tarde",
+  cafe_manha: "Café manhã",
+  cafe_tarde: "Café tarde",
   intervalo: "Intervalo",
 }
 
@@ -182,6 +185,26 @@ function isNowInsideTimeWindow(
 
   return currentMinutes >= startMin && currentMinutes <= endMin
 }
+
+/** "HH:MM" de um dia (yyyy-mm-dd) no fuso local -> ISO. */
+function isoFromDayAndTime(dateKey: string, hhmm: string) {
+  const [year, month, day] = dateKey.split("-").map(Number)
+  const [hours, minutes] = hhmm.split(":").map(Number)
+  return new Date(year, month - 1, day, hours, minutes).toISOString()
+}
+
+function hhmmFromIso(iso: string) {
+  const date = new Date(iso)
+  const pad = (value: number) => String(value).padStart(2, "0")
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+const POST_EXIT_REASONS = [
+  { value: "Saída antecipada", label: "Saída antecipada do colaborador" },
+  { value: "Fim do turno", label: "Fim do turno" },
+  { value: "Troca de posto", label: "Troca de posto" },
+  { value: "Outro motivo", label: "Outro motivo" },
+]
 
 function formatTimeValue(value: string | null | undefined) {
   if (!value) return "--:--"
@@ -293,16 +316,16 @@ function breakTypeSummary(types: OperationalBreakType[]) {
   const hasCoffee = types.some((type) => type === "cafe_manha" || type === "cafe_tarde")
   const hasInterval = types.includes("intervalo")
 
-  if (hasCoffee && hasInterval) return "Cafe + intervalo"
-  if (hasCoffee) return "Cafe"
+  if (hasCoffee && hasInterval) return "Café + intervalo"
+  if (hasCoffee) return "Café"
   return "Intervalo"
 }
 
 function intervalNoticeClassName(tone: "info" | "success" | "warning" | "critical") {
-  if (tone === "critical") return "border-red-200 bg-red-50 text-red-800"
-  if (tone === "warning") return "border-amber-200 bg-amber-50 text-amber-800"
-  if (tone === "success") return "border-emerald-200 bg-emerald-50 text-emerald-800"
-  return "border-sky-200 bg-sky-50 text-sky-800"
+  if (tone === "critical") return "border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 text-red-800 dark:text-red-300"
+  if (tone === "warning") return "border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 text-amber-800 dark:text-amber-300"
+  if (tone === "success") return "border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-300"
+  return "border-sky-200 dark:border-sky-500/30 bg-sky-50 dark:bg-sky-500/10 text-sky-800 dark:text-sky-300"
 }
 
 function intervalNoticeState(
@@ -416,7 +439,7 @@ function intervalNoticeState(
     detail:
       progress.minutesSinceStart > 0
         ? `Janela aberta ha ${formatDuration(progress.minutesSinceStart)}.`
-        : "Horario de intervalo chegou.",
+        : "Horário de intervalo chegou.",
     action: "release" as const,
   }
 }
@@ -440,11 +463,11 @@ function isBreakFromDay(item: OperationalBreak, dateKey: string) {
 }
 
 function breakStatusClassName(status: OperationalBreakStatus) {
-  if (status === "atrasado") return "border-red-200 bg-red-50 text-red-700"
-  if (status === "liberado") return "border-amber-200 bg-amber-50 text-amber-700"
-  if (status === "retornou") return "border-emerald-200 bg-emerald-50 text-emerald-700"
+  if (status === "atrasado") return "border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300"
+  if (status === "liberado") return "border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300"
+  if (status === "retornou") return "border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
   if (status === "cancelado") return "border-zinc-200 bg-zinc-50 text-zinc-600"
-  return "border-sky-200 bg-sky-50 text-sky-700"
+  return "border-sky-200 dark:border-sky-500/30 bg-sky-50 dark:bg-sky-500/10 text-sky-700 dark:text-sky-300"
 }
 
 function badgeTone(
@@ -456,7 +479,7 @@ function badgeTone(
   if (operationalBreak?.status === "atrasado") {
     return {
       label: "Atrasado",
-      className: "border-red-200 bg-red-50 text-red-700",
+      className: "border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300",
     }
   }
 
@@ -465,15 +488,15 @@ function badgeTone(
       label:
         operationalBreak.break_type === "intervalo"
           ? "Em intervalo"
-          : "Em cafe",
-      className: "border-amber-200 bg-amber-50 text-amber-700",
+          : "Em café",
+      className: "border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300",
     }
   }
 
   if (status?.current_status === "alerta_critico") {
     return {
       label: statusMeta.alerta_critico.label,
-      className: "border-red-200 bg-red-50 text-red-700",
+      className: "border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300",
     }
   }
 
@@ -494,19 +517,19 @@ function badgeTone(
   if (schedule.status === "on_break") {
     return isCoffeeMarker(schedule.notes)
       ? {
-          label: "Cafe",
-          className: "border-amber-200 bg-amber-50 text-amber-700",
+          label: "Café",
+          className: "border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300",
         }
       : {
           label: "Almoco",
-          className: "border-amber-200 bg-amber-50 text-amber-700",
+          className: "border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300",
         }
   }
 
   if (allocation) {
     return {
       label: "Em posto",
-      className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+      className: "border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
     }
   }
 
@@ -530,11 +553,11 @@ function currentStatusText(
   operationalBreak?: OperationalBreak | null
 ) {
   if (operationalBreak && ACTIVE_BREAK_STATUS_SET.has(operationalBreak.status)) {
-    return `${breakTypeLabel[operationalBreak.break_type]} liberado ate ${formatTimeBR(operationalBreak.planned_end)}.`
+    return `${breakTypeLabel[operationalBreak.break_type]} liberado até ${formatTimeBR(operationalBreak.planned_end)}.`
   }
   if (status?.status_reason) return status.status_reason
   if (schedule.status === "on_break" && isCoffeeMarker(schedule.notes)) {
-    return "Pausa de cafe em andamento."
+    return "Pausa de café em andamento."
   }
   if (schedule.status === "on_break") {
     return "Intervalo em andamento."
@@ -560,10 +583,6 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
     overtimeScheduleIds: new Set<string>(),
     hiddenScheduleIds: new Set<string>(),
   }))
-  const autoEntryScheduleIdsByDay = useRef({
-    day: today,
-    ids: new Set<string>(),
-  })
 
   const currentDayUiState =
     dayUiState.day === today
@@ -631,6 +650,7 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
   const settingsQuery = useOperationalSettings(selectedBranchId)
 
   const allocatePost = useAllocatePost()
+  const adjustAllocationStart = useAdjustPostAllocationStart()
   const finalizePostAllocation = useFinalizePostAllocation()
   const releaseEmployeeBreak = useReleaseEmployeeBreak()
   const returnEmployeeBreak = useReturnEmployeeBreak()
@@ -642,6 +662,11 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
 
   const [selectedScheduleId, setSelectedScheduleId] = useState<string | null>(null)
   const [selectedPostId, setSelectedPostId] = useState<string>("")
+  // Correções de horário feitas no modal do colaborador (sempre com confirmação).
+  const [timeEditMode, setTimeEditMode] = useState<"start" | "exit" | "break" | null>(null)
+  const [timeEditValue, setTimeEditValue] = useState("")
+  const [exitReason, setExitReason] = useState(POST_EXIT_REASONS[0].value)
+  const [breakTypeChoice, setBreakTypeChoice] = useState<OperationalBreakType>("intervalo")
   const [searchText, setSearchText] = useState("")
   const [statusFilter, setStatusFilter] = useState<
     "all" | "working" | "break" | "no_post" | "alert"
@@ -730,6 +755,21 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
     [schedulesQuery.data]
   )
 
+  // Escalados cujo horário de entrada já passou e ainda sem chegada registrada.
+  const pendingArrivalSchedules = useMemo(
+    () =>
+      workingSchedules.filter((schedule) => {
+        if (NON_WORKING_SCHEDULE_STATUS_SET.has(schedule.status)) return false
+        if (!hasStartTimeArrived(schedule.start_time, nowMinutes)) return false
+        if (["working", "on_break", "returned"].includes(schedule.status)) return false
+        if (allocationByScheduleId.has(schedule.id)) return false
+        if (activeBreakByScheduleId.has(schedule.id)) return false
+        const current = statusByScheduleId.get(schedule.id)?.current_status
+        return !current || current === "aguardando_evento" || current === "alerta_critico"
+      }),
+    [activeBreakByScheduleId, allocationByScheduleId, nowMinutes, statusByScheduleId, workingSchedules]
+  )
+
   const intervalDurationSummary = useMemo(
     () =>
       durationSummary(
@@ -741,57 +781,6 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
       ),
     [workingSchedules]
   )
-
-  useEffect(() => {
-    if (schedulesQuery.isLoading || statusesQuery.isLoading) return
-
-    const autoEntryScheduleIds =
-      autoEntryScheduleIdsByDay.current.day === today
-        ? autoEntryScheduleIdsByDay.current.ids
-        : new Set<string>()
-
-    const schedulesToConfirm = workingSchedules.filter((schedule) => {
-      if (autoEntryScheduleIds.has(schedule.id)) return false
-      if (NON_WORKING_SCHEDULE_STATUS_SET.has(schedule.status)) return false
-      if (!hasStartTimeArrived(schedule.start_time, nowMinutes)) return false
-
-      const currentStatus = statusByScheduleId.get(schedule.id)?.current_status
-      if (currentStatus && currentStatus !== "aguardando_evento") return false
-
-      return !["working", "on_break", "returned"].includes(schedule.status)
-    })
-
-    if (schedulesToConfirm.length === 0) return
-
-    const nextAutoEntryIds = new Set(autoEntryScheduleIds)
-    for (const schedule of schedulesToConfirm) nextAutoEntryIds.add(schedule.id)
-    autoEntryScheduleIdsByDay.current = { day: today, ids: nextAutoEntryIds }
-
-    void (async () => {
-      for (const schedule of schedulesToConfirm) {
-        try {
-          await recordOperationalEvent.mutateAsync({
-            branch_id: schedule.branch_id,
-            employee_id: schedule.employee_id,
-            schedule_id: schedule.id,
-            event_type: "entrada_confirmada",
-            notes: "Entrada confirmada automaticamente pelo controle PDV.",
-            silent: true,
-          })
-        } catch {
-          // A mutation hook already shows the error toast when a real failure happens.
-        }
-      }
-    })()
-  }, [
-    nowMinutes,
-    recordOperationalEvent,
-    schedulesQuery.isLoading,
-    statusByScheduleId,
-    statusesQuery.isLoading,
-    today,
-    workingSchedules,
-  ])
 
   const visibleSchedules = useMemo(() => {
     const normalizedSearch = searchText.trim().toLowerCase()
@@ -901,6 +890,40 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
     (selectedSchedule ? activeBreakByScheduleId.get(selectedSchedule.id) : null) ??
     null
 
+  const selectedHasEntry = selectedSchedule
+    ? Boolean(selectedAllocation) ||
+      selectedSchedule.status === "working" ||
+      selectedSchedule.status === "on_break" ||
+      selectedSchedule.status === "returned" ||
+      Boolean(selectedStatus && WORK_STARTED_STATUS_SET.has(selectedStatus.current_status))
+    : false
+  const selectedUnavailable = selectedSchedule
+    ? NON_WORKING_SCHEDULE_STATUS_SET.has(selectedSchedule.status) ||
+      selectedStatus?.current_status === "finalizado" ||
+      selectedStatus?.current_status === "folga"
+    : true
+  const selectedAwaitingArrival =
+    Boolean(selectedSchedule) &&
+    !selectedHasEntry &&
+    !selectedAllocation &&
+    !selectedOperationalBreak &&
+    !selectedUnavailable
+  const selectedWorkingWithoutPost =
+    Boolean(selectedSchedule) &&
+    selectedHasEntry &&
+    !selectedAllocation &&
+    !selectedOperationalBreak &&
+    !selectedUnavailable
+  const selectedArrivalStarted = selectedSchedule
+    ? hasStartTimeArrived(selectedSchedule.start_time, nowMinutes)
+    : false
+  const selectedArrivalLateMinutes =
+    selectedSchedule && selectedArrivalStarted
+      ? minutesSinceTimeValue(selectedSchedule.start_time, nowMinutes)
+      : 0
+  const selectedArrivalIsLate =
+    selectedArrivalLateMinutes > (settingsQuery.data?.late_tolerance_minutes ?? 5)
+
   const releaseCandidates = useMemo(() => {
     const coffeeWindowOpen =
       settingsQuery.data?.coffee_break_enabled === true &&
@@ -984,22 +1007,90 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
 
   async function handleAllocatePost(schedule: ScheduleWithRelations) {
     if (!selectedPostId) return
+    // O tempo no posto conta desde a entrada da escala (e só muda com confirmação depois).
+    const scheduledStart =
+      schedule.start_time && hasStartTimeArrived(schedule.start_time, nowMinutes)
+        ? isoFromDayAndTime(today, formatTimeValue(schedule.start_time))
+        : null
     await allocatePost.mutateAsync({
       post_id: selectedPostId,
       employee_id: schedule.employee_id,
       schedule_id: schedule.id,
-      notes: "Alocacao realizada pelo controle PDV",
+      notes: "Alocação realizada pelo controle PDV",
+      started_at: scheduledStart,
     })
-    setSelectedScheduleId(null)
-    setSelectedPostId("")
+    closeScheduleControl()
   }
 
-  async function handleReleasePost(allocation: PostAllocation) {
+  function closeScheduleControl() {
+    setSelectedScheduleId(null)
+    setSelectedPostId("")
+    setTimeEditMode(null)
+  }
+
+  function openTimeEdit(mode: "start" | "exit" | "break", initial: string) {
+    setTimeEditMode(mode)
+    setTimeEditValue(initial)
+  }
+
+  // Horário informado pelo fiscal: não pode ser futuro nem anterior ao limite dado.
+  function parsePastTime(hhmm: string, notBeforeIso?: string | null) {
+    if (!/^\d{2}:\d{2}$/.test(hhmm)) {
+      toast.error("Informe o horário no formato hh:mm.")
+      return null
+    }
+    const iso = isoFromDayAndTime(today, hhmm)
+    if (Date.parse(iso) > Date.now() + 60_000) {
+      toast.error("O horário não pode ser no futuro.")
+      return null
+    }
+    if (notBeforeIso && Date.parse(iso) < Date.parse(notBeforeIso)) {
+      toast.error(`O horário não pode ser antes de ${formatTimeBR(notBeforeIso)}.`)
+      return null
+    }
+    return iso
+  }
+
+  async function handleAdjustStart(allocation: PostAllocation) {
+    const iso = parsePastTime(timeEditValue)
+    if (!iso) return
+    await adjustAllocationStart.mutateAsync({
+      allocation_id: allocation.id,
+      branch_id: allocation.branch_id,
+      started_at: iso,
+      previous_started_at: allocation.started_at,
+    })
+    setTimeEditMode(null)
+  }
+
+  async function handleExitPost(allocation: PostAllocation) {
+    const iso = parsePastTime(timeEditValue, allocation.started_at)
+    if (!iso) return
+    const isNow = Date.now() - Date.parse(iso) < 90_000
     await finalizePostAllocation.mutateAsync({
       allocation_id: allocation.id,
-      notes: "Liberado pelo controle PDV",
+      ended_at: isNow ? null : iso,
+      notes: `${exitReason}. Saída do posto às ${timeEditValue}, registrada pelo controle PDV.`,
     })
-    setSelectedScheduleId(null)
+    closeScheduleControl()
+  }
+
+  async function handleReleaseBreakAt(allocation: PostAllocation) {
+    const iso = parsePastTime(timeEditValue, allocation.started_at)
+    if (!iso) return
+    const isNow = Date.now() - Date.parse(iso) < 90_000
+    await releaseEmployeeBreak.mutateAsync({
+      allocation_id: allocation.id,
+      employee_id: allocation.employee_id,
+      post_id: allocation.post_id,
+      schedule_id: allocation.schedule_id,
+      break_type: breakTypeChoice,
+      started_at: isNow ? null : iso,
+      notes: isNow
+        ? `${breakTypeLabel[breakTypeChoice]} liberado pelo controle PDV`
+        : `${breakTypeLabel[breakTypeChoice]} com saída às ${timeEditValue}, registrada depois pelo controle PDV`,
+    })
+    setTimeEditMode(null)
   }
 
   function openScheduleControl(
@@ -1028,7 +1119,7 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
     if (operationalBreak && ACTIVE_BREAK_STATUS_SET.has(operationalBreak.status)) {
       await returnEmployeeBreak.mutateAsync({
         break_id: operationalBreak.id,
-        notes: "Retorno confirmado automaticamente na saida pelo controle PDV",
+        notes: "Retorno confirmado automaticamente na saída pelo controle PDV",
       })
     }
 
@@ -1040,14 +1131,14 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
       delay_minutes: overtimeMinutes,
       notes:
         overtimeMinutes > 0
-          ? `Saida confirmada pelo controle PDV. Hora extra: ${formatDuration(overtimeMinutes)}.`
-          : "Saida confirmada pelo controle PDV.",
+          ? `Saída confirmada pelo controle PDV. Hora extra: ${formatDuration(overtimeMinutes)}.`
+          : "Saída confirmada pelo controle PDV.",
     })
 
     if (allocation) {
       await finalizePostAllocation.mutateAsync({
         allocation_id: allocation.id,
-        notes: "Posto liberado automaticamente na saida pelo controle PDV",
+        notes: "Posto liberado automaticamente na saída pelo controle PDV",
       })
     }
 
@@ -1098,6 +1189,73 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
         schedule.break_start
       )} - ${formatTimeValue(schedule.break_end)}) confirmado pelo controle PDV.`,
     })
+  }
+
+  // A chegada é marcada por quem controla o PDV: grava o horário real e, se passou da
+  // tolerância de atraso, registra quantos minutos o colaborador atrasou.
+  async function handleMarkArrived(schedule: ScheduleWithRelations) {
+    const startMin = timeToMinutes(schedule.start_time)
+    const lateMinutes =
+      startMin !== null && nowMinutes > startMin ? nowMinutes - startMin : 0
+    const tolerance = settingsQuery.data?.late_tolerance_minutes ?? 5
+    const arrivedAt = new Intl.DateTimeFormat("pt-BR", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(new Date())
+    const isLate = lateMinutes > tolerance
+
+    await recordOperationalEvent.mutateAsync({
+      branch_id: schedule.branch_id,
+      employee_id: schedule.employee_id,
+      schedule_id: schedule.id,
+      event_type: "entrada_confirmada",
+      delay_minutes: isLate ? lateMinutes : 0,
+      notes: isLate
+        ? `Chegou às ${arrivedAt}, ${formatDuration(lateMinutes)} após o horário (${formatTimeValue(schedule.start_time)}).`
+        : `Chegou às ${arrivedAt}, no horário.`,
+    })
+  }
+
+  // Para quem assume o turno depois do horário de entrada dos colegas: confirma de uma vez
+  // que todos os pendentes chegaram no horário (sem atraso), registrando que foi em lote.
+  async function handleConfirmAllOnTime() {
+    const targets = pendingArrivalSchedules
+    if (targets.length === 0) return
+    const confirmed = window.confirm(
+      `Confirmar que ${targets.length} colaborador(es) chegaram no horário da escala?
+
+Use apenas se ninguém atrasou nem faltou.`
+    )
+    if (!confirmed) return
+
+    const confirmedAt = new Intl.DateTimeFormat("pt-BR", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(new Date())
+    let done = 0
+    for (const schedule of targets) {
+      try {
+        await recordOperationalEvent.mutateAsync({
+          branch_id: schedule.branch_id,
+          employee_id: schedule.employee_id,
+          schedule_id: schedule.id,
+          event_type: "entrada_confirmada",
+          delay_minutes: 0,
+          notes: `Chegou no horário (${formatTimeValue(schedule.start_time)}). Confirmado em lote às ${confirmedAt} pelo controle PDV.`,
+          silent: true,
+        })
+        done += 1
+      } catch {
+        // segue para os demais; o total confirmado é mostrado ao final
+      }
+    }
+    if (done === targets.length) {
+      toast.success(`${done} chegada(s) confirmada(s) no horário.`)
+    } else {
+      toast.error(`${done} de ${targets.length} confirmadas. Tente novamente para as demais.`)
+    }
   }
 
   async function handleMarkAbsent(schedule: ScheduleWithRelations) {
@@ -1200,6 +1358,16 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
             >
               Limpar
             </Button>
+            {pendingArrivalSchedules.length > 0 ? (
+              <Button
+                size="sm"
+                className="h-8 rounded-full px-3 text-xs"
+                disabled={recordOperationalEvent.isPending}
+                onClick={() => void handleConfirmAllOnTime()}
+              >
+                Todos chegaram no horário ({pendingArrivalSchedules.length})
+              </Button>
+            ) : null}
           </div>
 
           <div className="grid gap-2.5 lg:grid-cols-3">
@@ -1233,6 +1401,19 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
                 !NON_WORKING_SCHEDULE_STATUS_SET.has(schedule.status) &&
                 status?.current_status !== "finalizado" &&
                 status?.current_status !== "folga"
+              const awaitingArrival =
+                !hasOperationalEntry &&
+                !allocation &&
+                !operationalBreak &&
+                !NON_WORKING_SCHEDULE_STATUS_SET.has(schedule.status) &&
+                status?.current_status !== "finalizado" &&
+                status?.current_status !== "folga"
+              const startArrived = hasStartTimeArrived(schedule.start_time, nowMinutes)
+              const arrivalLateMinutes = startArrived
+                ? minutesSinceTimeValue(schedule.start_time, nowMinutes)
+                : 0
+              const arrivalIsLate =
+                arrivalLateMinutes > (settingsQuery.data?.late_tolerance_minutes ?? 5)
               const intervalNotice = intervalNoticeState(
                 schedule,
                 operationalBreak,
@@ -1248,7 +1429,7 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
                   tabIndex={0}
                   className={cn(
                     "rounded-xl border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] p-3 text-left shadow-sm transition hover:border-[color:var(--border-strong)] hover:shadow-md",
-                    hasReachedEnd && "border-amber-200 bg-amber-50/30"
+                    hasReachedEnd && "border-amber-200 dark:border-amber-500/30 bg-amber-50/30 dark:bg-amber-500/10"
                   )}
                   onClick={() => openScheduleControl(schedule, allocation)}
                   onKeyDown={(event) => {
@@ -1311,27 +1492,54 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
                     {currentStatusText(schedule, status, allocation, operationalBreak)}
                   </p>
 
-                  {canMarkAbsent ? (
-                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
-                      <div>
-                        <div className="font-semibold">Ausencia</div>
+                  {awaitingArrival ? (
+                    <div
+                      className={cn(
+                        "mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 text-xs",
+                        startArrived && arrivalIsLate
+                          ? "border-red-200 bg-red-50 text-red-800 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
+                          : "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
+                      )}
+                    >
+                      <div className="min-w-0">
+                        <div className="font-semibold">Aguardando chegada</div>
                         <div className="mt-0.5">
-                          Marque falta se este colaborador nao compareceu.
+                          {!startArrived
+                            ? `Entrada às ${formatTimeValue(schedule.start_time)}.`
+                            : arrivalLateMinutes === 0
+                              ? "Horário de entrada agora."
+                              : `${formatDuration(arrivalLateMinutes)} após o horário de entrada.`}
                         </div>
                       </div>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="destructive"
-                        className="h-8 rounded-full"
-                        disabled={recordOperationalEvent.isPending}
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          void handleMarkAbsent(schedule)
-                        }}
-                      >
-                        {recordOperationalEvent.isPending ? "Marcando..." : "Faltou"}
-                      </Button>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-8 rounded-full"
+                          disabled={recordOperationalEvent.isPending}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            void handleMarkArrived(schedule)
+                          }}
+                        >
+                          {recordOperationalEvent.isPending ? "Marcando..." : "Chegou"}
+                        </Button>
+                        {canMarkAbsent ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="destructive"
+                            className="h-8 rounded-full"
+                            disabled={recordOperationalEvent.isPending}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              void handleMarkAbsent(schedule)
+                            }}
+                          >
+                            Faltou
+                          </Button>
+                        ) : null}
+                      </div>
                     </div>
                   ) : null}
 
@@ -1410,8 +1618,8 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
                       className={cn(
                         "mt-3 rounded-xl border px-3 py-2 text-xs",
                         isOvertime
-                          ? "border-red-200 bg-red-50 text-red-800"
-                          : "border-amber-200 bg-amber-50 text-amber-800"
+                          ? "border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 text-red-800 dark:text-red-300"
+                          : "border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 text-amber-800 dark:text-amber-300"
                       )}
                     >
                       {isOvertime ? (
@@ -1497,44 +1705,44 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
       ) : (
         <SectionPanel
           id="liberacoes-pdv"
-          title="Liberacoes operacionais"
+          title="Liberações operacionais"
           variant="original"
           defaultOpen
           headerClassName="rounded-[24px] bg-[color:var(--bg-muted)] px-4 text-[color:var(--text-primary)]"
           contentClassName="rounded-[28px] bg-[color:var(--bg-surface)] p-4"
         >
           <div className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-5">
               {[
                 {
-                  label: "Cafe",
+                  label: "Café",
                   value: `${breakSettingsQuery.data?.coffee_duration_minutes ?? 10} min`,
                 },
                 {
-                  label: "Intervalo escala",
+                  label: "Intervalo da escala",
                   value: intervalDurationSummary,
                 },
                 {
-                  label: "Intervalo entre cafes",
+                  label: "Intervalo entre cafés",
                   value: `${breakSettingsQuery.data?.coffee_interval_minutes ?? 10} min`,
                 },
                 {
-                  label: "Cobertura minima",
+                  label: "Cobertura mínima",
                   value: breakSettingsQuery.data?.minimum_active_operators ?? 4,
                 },
                 {
-                  label: "Tolerancia atraso",
+                  label: "Tolerância de atraso",
                   value: `${breakSettingsQuery.data?.delay_tolerance_minutes ?? 5} min`,
                 },
               ].map((item) => (
                 <div
                   key={item.label}
-                  className="rounded-2xl border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] px-4 py-3"
+                  className="rounded-lg border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] px-2.5 py-1.5"
                 >
-                  <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  <div className="truncate text-[10px] uppercase tracking-wide text-muted-foreground">
                     {item.label}
                   </div>
-                  <div className="mt-1 text-lg font-semibold text-[color:var(--text-primary)]">
+                  <div className="truncate text-sm font-semibold leading-snug text-[color:var(--text-primary)]">
                     {item.value}
                   </div>
                 </div>
@@ -1543,11 +1751,11 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
 
             <div className="overflow-hidden rounded-2xl border border-[color:var(--border-soft)]">
               <div className="hidden grid-cols-[150px_140px_minmax(220px,1fr)_130px_minmax(260px,1.2fr)] gap-3 bg-[color:var(--bg-muted)] px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground xl:grid">
-                <div>Horario</div>
+                <div>Horário</div>
                 <div>Tipo</div>
                 <div>Colaborador</div>
                 <div>Status</div>
-                <div>Acoes</div>
+                <div>Ações</div>
               </div>
 
               <div className="divide-y divide-[color:var(--border-soft)]">
@@ -1565,7 +1773,7 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
                     >
                       <div>
                         <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground xl:hidden">
-                          Horario
+                          Horário
                         </div>
                         <div className="text-sm font-medium text-[color:var(--text-primary)]">
                           {formatTimeBR(item.planned_start)} - {formatTimeBR(item.planned_end)}
@@ -1573,7 +1781,7 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
                         <div
                           className={cn(
                             "mt-0.5 text-xs",
-                            timerState.isOverdue ? "text-red-600" : "text-muted-foreground"
+                            timerState.isOverdue ? "text-red-600 dark:text-red-300" : "text-muted-foreground"
                           )}
                         >
                           {timerState.label}
@@ -1586,7 +1794,7 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
                         </div>
                         <Badge
                           variant="outline"
-                          className="rounded-full border-amber-200 bg-amber-50 px-2 py-0.5 text-xs text-amber-700"
+                          className="rounded-full border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-300"
                         >
                           {breakTypeLabel[item.break_type]}
                         </Badge>
@@ -1622,8 +1830,8 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
                           className={cn(
                             "mt-1 inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium",
                             timerState.isOverdue
-                              ? "border-red-200 bg-red-50 text-red-700"
-                              : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                              ? "border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300"
+                              : "border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
                           )}
                         >
                           <Clock3 className="mr-1 size-3" />
@@ -1694,7 +1902,7 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
                   const windowLabels = [
                     coffeeWindowOpen
                       ? timeWindowLabel(
-                          "Cafe",
+                          "Café",
                           settingsQuery.data?.coffee_window_start,
                           settingsQuery.data?.coffee_window_end
                         )
@@ -1711,7 +1919,7 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
                     >
                       <div>
                         <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground xl:hidden">
-                          Horario
+                          Horário
                         </div>
                         <div className="text-sm font-medium text-[color:var(--text-primary)]">
                           {windowLabels[0] ?? "Janela atual"}
@@ -1732,7 +1940,7 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
                         </div>
                         <Badge
                           variant="outline"
-                          className="rounded-full border-sky-200 bg-sky-50 px-2 py-0.5 text-xs text-sky-700"
+                          className="rounded-full border-sky-200 dark:border-sky-500/30 bg-sky-50 dark:bg-sky-500/10 px-2 py-0.5 text-xs text-sky-700 dark:text-sky-300"
                         >
                           {breakTypeSummary(availableBreakTypes)}
                         </Badge>
@@ -1757,7 +1965,7 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
                         </div>
                         <Badge
                           variant="outline"
-                          className="rounded-full border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700"
+                          className="rounded-full border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-700 dark:text-emerald-300"
                         >
                           Na janela
                         </Badge>
@@ -1785,8 +1993,8 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
                 {activeBreaks.length === 0 && releaseCandidates.length === 0 ? (
                   <div className="px-4 py-8">
                     <StateBlock
-                      title="Nenhuma liberacao para exibir"
-                      description="Colaboradores aparecem aqui durante a janela de intervalo ou enquanto ja estiverem liberados."
+                      title="Nenhuma liberação para exibir"
+                      description="Colaboradores aparecem aqui durante a janela de intervalo ou enquanto já estiverem liberados."
                     />
                   </div>
                 ) : null}
@@ -1799,13 +2007,10 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
       <Dialog
         open={Boolean(selectedSchedule)}
         onOpenChange={(open) => {
-          if (!open) {
-            setSelectedScheduleId(null)
-            setSelectedPostId("")
-          }
+          if (!open) closeScheduleControl()
         }}
       >
-        <DialogContent className="sm:max-w-2xl">
+        <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>Controle do colaborador</DialogTitle>
           </DialogHeader>
@@ -1845,35 +2050,84 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
                 </div>
 
                 <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                  <div className="rounded-2xl bg-white px-3 py-2">
+                  <div className="rounded-2xl bg-white px-3 py-2 dark:bg-slate-800/70">
                     <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
                       Entrada
                     </div>
-                    <div className="mt-1 text-sm font-medium">
-                      {selectedSchedule.start_time ?? "--:--"}
+                    <div className="mt-1 text-sm font-medium text-[color:var(--text-primary)]">
+                      {formatTimeValue(selectedSchedule.start_time)}
                     </div>
                   </div>
-                  <div className="rounded-2xl bg-white px-3 py-2">
+                  <div className="rounded-2xl bg-white px-3 py-2 dark:bg-slate-800/70">
                     <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
                       Intervalo
                     </div>
-                    <div className="mt-1 text-sm font-medium">
-                      {selectedSchedule.break_start ?? "--:--"} / {selectedSchedule.break_end ?? "--:--"}
+                    <div className="mt-1 text-sm font-medium text-[color:var(--text-primary)]">
+                      {selectedSchedule.break_start && selectedSchedule.break_end
+                        ? `${formatTimeValue(selectedSchedule.break_start)} – ${formatTimeValue(selectedSchedule.break_end)}`
+                        : "Sem intervalo"}
                     </div>
                   </div>
-                  <div className="rounded-2xl bg-white px-3 py-2">
+                  <div className="rounded-2xl bg-white px-3 py-2 dark:bg-slate-800/70">
                     <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                      Saida
+                      Saída
                     </div>
-                    <div className="mt-1 text-sm font-medium">
-                      {selectedSchedule.end_time ?? "--:--"}
+                    <div className="mt-1 text-sm font-medium text-[color:var(--text-primary)]">
+                      {formatTimeValue(selectedSchedule.end_time)}
                     </div>
                   </div>
                 </div>
               </div>
 
+              {selectedAwaitingArrival ? (
+                <div
+                  className={cn(
+                    "flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-4",
+                    selectedArrivalStarted && selectedArrivalIsLate
+                      ? "border-red-200 bg-red-50 text-red-800 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
+                      : "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
+                  )}
+                >
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold">Aguardando chegada</div>
+                    <div className="mt-0.5 text-sm">
+                      {!selectedArrivalStarted
+                        ? `Entrada às ${formatTimeValue(selectedSchedule.start_time)}.`
+                        : selectedArrivalLateMinutes === 0
+                          ? "Horário de entrada agora."
+                          : `${formatDuration(selectedArrivalLateMinutes)} após o horário de entrada.`}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      disabled={recordOperationalEvent.isPending}
+                      onClick={() => void handleMarkArrived(selectedSchedule)}
+                    >
+                      {recordOperationalEvent.isPending ? "Marcando..." : "Chegou"}
+                    </Button>
+                    {selectedArrivalStarted ? (
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        disabled={recordOperationalEvent.isPending}
+                        onClick={() => void handleMarkAbsent(selectedSchedule)}
+                      >
+                        Faltou
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+
               <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl border border-[color:var(--border-soft)] p-4">
+                <div
+                  className={cn(
+                    "rounded-2xl border border-[color:var(--border-soft)] p-4",
+                    selectedWorkingWithoutPost &&
+                      "border-amber-200 bg-amber-50 dark:border-amber-500/30 dark:bg-amber-500/10"
+                  )}
+                >
                   <div className="text-xs uppercase tracking-wide text-muted-foreground">
                     Posto atual
                   </div>
@@ -1882,10 +2136,14 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
                   </div>
                   <div className="mt-1 text-sm text-muted-foreground">
                     {selectedAllocation
-                      ? `Alocado ha ${formatDuration(
+                      ? `Alocado há ${formatDuration(
                           minutesSinceTimestamp(selectedAllocation.started_at, nowMs)
                         )}`
-                      : "Nenhuma alocacao em andamento."}
+                      : selectedWorkingWithoutPost
+                        ? `Trabalhando sem posto há ${formatDuration(
+                            minutesSinceTimeValue(selectedSchedule.start_time, nowMinutes)
+                          )}.`
+                        : "Nenhuma alocação em andamento."}
                   </div>
                 </div>
                 <div className="rounded-2xl border border-[color:var(--border-soft)] p-4">
@@ -1921,24 +2179,26 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
                     </div>
                   </div>
                   <div className="flex min-w-0 flex-1 gap-2 sm:max-w-md">
-                    <select
-                      className="h-10 min-w-0 flex-1 rounded-full border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] px-3 text-sm outline-none"
+                    <Select
+                      aria-label="Posto para alocar"
+                      className="h-10 min-w-0 flex-1 rounded-full"
                       value={selectedPostId}
-                      onChange={(event) => setSelectedPostId(event.target.value)}
+                      onValueChange={setSelectedPostId}
                       disabled={Boolean(selectedOperationalBreak)}
-                    >
-                      <option value="">Selecione um posto</option>
-                      {freePosts.map((post) => (
-                        <option key={post.id} value={post.id}>
-                          {post.name}
-                        </option>
-                      ))}
-                      {selectedAllocation ? (
-                        <option value={selectedAllocation.post_id}>
-                          {selectedAllocation.operational_posts?.name ?? "Posto atual"}
-                        </option>
-                      ) : null}
-                    </select>
+                      placeholder="Selecione um posto"
+                      options={[
+                        { value: "", label: "Selecione um posto" },
+                        ...freePosts.map((post) => ({ value: post.id, label: post.name })),
+                        ...(selectedAllocation
+                          ? [
+                              {
+                                value: selectedAllocation.post_id,
+                                label: selectedAllocation.operational_posts?.name ?? "Posto atual",
+                              },
+                            ]
+                          : []),
+                      ]}
+                    />
                     <Button
                       type="button"
                       variant="default"
@@ -1958,7 +2218,7 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
                   <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-[color:var(--bg-surface-soft)] px-3 py-2">
                     <div className="text-sm text-muted-foreground">
                       {selectedOperationalBreak
-                        ? "Posto pausado por cafe. Confirme o retorno antes de liberar ou mover."
+                        ? "Posto pausado por café. Confirme o retorno antes de liberar ou mover."
                         : "Para mover este operador, libere o posto atual primeiro."}
                     </div>
                     <Button
@@ -1968,7 +2228,7 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
                         finalizePostAllocation.isPending ||
                         Boolean(selectedOperationalBreak)
                       }
-                      onClick={() => void handleReleasePost(selectedAllocation)}
+                      onClick={() => openTimeEdit("exit", hhmmFromIso(new Date().toISOString()))}
                     >
                       {finalizePostAllocation.isPending ? "Liberando..." : "Liberar posto"}
                     </Button>
@@ -1976,8 +2236,132 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
                 ) : null}
               </div>
 
+              {selectedAllocation ? (
+                <div className="space-y-3 rounded-2xl border border-[color:var(--border-soft)] p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                        Tempo no posto
+                      </div>
+                      <div className="text-sm text-[color:var(--text-primary)]">
+                        Desde {formatTimeBR(selectedAllocation.started_at)} ·{" "}
+                        {formatDuration(minutesSinceTimestamp(selectedAllocation.started_at, nowMs))}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() =>
+                          openTimeEdit("start", hhmmFromIso(selectedAllocation.started_at))
+                        }
+                      >
+                        Ajustar horário de início
+                      </Button>
+                      {!selectedOperationalBreak ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openTimeEdit("break", hhmmFromIso(new Date().toISOString()))}
+                        >
+                          Liberar intervalo/café
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {timeEditMode ? (
+                    <div className="space-y-3 rounded-2xl bg-[color:var(--bg-surface-soft)] p-3">
+                      <div className="text-sm font-medium text-[color:var(--text-primary)]">
+                        {timeEditMode === "start"
+                          ? "Corrigir o horário em que entrou no posto"
+                          : timeEditMode === "exit"
+                            ? "Registrar a saída do posto"
+                            : "Registrar a saída para intervalo ou café"}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {timeEditMode === "start"
+                          ? "O tempo no posto começa na entrada da escala. Só altere se o horário real for diferente; a mudança fica na auditoria."
+                          : "Se o colaborador saiu antes de você registrar, informe o horário real. Deixe o horário atual para registrar agora."}
+                      </div>
+                      <div className="flex flex-wrap items-end gap-3">
+                        <label className="space-y-1 text-xs">
+                          <span className="font-medium">
+                            {timeEditMode === "start" ? "Entrou no posto às" : "Saiu às"}
+                          </span>
+                          <Input
+                            type="time"
+                            className="w-32"
+                            value={timeEditValue}
+                            onChange={(event) => setTimeEditValue(event.target.value)}
+                          />
+                        </label>
+                        {timeEditMode === "exit" ? (
+                          <label className="min-w-48 flex-1 space-y-1 text-xs">
+                            <span className="font-medium">Motivo</span>
+                            <Select
+                              value={exitReason}
+                              onValueChange={setExitReason}
+                              options={POST_EXIT_REASONS}
+                            />
+                          </label>
+                        ) : null}
+                        {timeEditMode === "break" ? (
+                          <label className="min-w-48 flex-1 space-y-1 text-xs">
+                            <span className="font-medium">Tipo</span>
+                            <Select
+                              value={breakTypeChoice}
+                              onValueChange={(value) =>
+                                setBreakTypeChoice(value as OperationalBreakType)
+                              }
+                              options={(Object.keys(breakTypeLabel) as OperationalBreakType[]).map(
+                                (type) => ({ value: type, label: breakTypeLabel[type] })
+                              )}
+                            />
+                          </label>
+                        ) : null}
+                        <div className="flex gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={
+                              adjustAllocationStart.isPending ||
+                              finalizePostAllocation.isPending ||
+                              releaseEmployeeBreak.isPending
+                            }
+                            onClick={() =>
+                              void (timeEditMode === "start"
+                                ? handleAdjustStart(selectedAllocation)
+                                : timeEditMode === "exit"
+                                  ? handleExitPost(selectedAllocation)
+                                  : handleReleaseBreakAt(selectedAllocation))
+                            }
+                          >
+                            {timeEditMode === "start"
+                              ? "Confirmar alteração"
+                              : timeEditMode === "exit"
+                                ? "Confirmar saída do posto"
+                                : "Confirmar liberação"}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setTimeEditMode(null)}
+                          >
+                            Cancelar
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
               <div className="rounded-2xl border border-dashed border-[color:var(--border-soft)] p-4 text-sm text-muted-foreground">
-                Horario de trabalho em andamento:{" "}
+                Horário de trabalho em andamento:{" "}
                 {selectedAllocation
                   ? formatDuration(minutesSinceTimestamp(selectedAllocation.started_at, nowMs))
                   : formatDuration(minutesSinceTimeValue(selectedSchedule.start_time, nowMinutes))}
@@ -1986,7 +2370,7 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
           ) : null}
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setSelectedScheduleId(null)}>
+            <Button type="button" variant="outline" onClick={closeScheduleControl}>
               Fechar
             </Button>
           </DialogFooter>

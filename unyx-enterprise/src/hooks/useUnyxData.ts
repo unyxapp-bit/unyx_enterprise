@@ -15,6 +15,7 @@ import {
   createProductCategory,
   createProductVariant,
   createProductionOrder,
+  adjustPostAllocationStart,
   allocatePost,
   approveChecklistRun,
   confirmCashMovement,
@@ -115,6 +116,7 @@ import {
   cancelInvitation,
   markCommsPostRead,
   recordBreakAlreadyDone,
+  closeOrphanOperationalStatus,
   recordOperationalEvent,
   registerEmployeeBreakDelay,
   releaseEmployeeBreak,
@@ -1311,6 +1313,7 @@ export function useAllocatePost() {
       employee_id: string
       schedule_id?: string | null
       notes?: string | null
+      started_at?: string | null
     }) => allocatePost(input),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["post-allocations"] })
@@ -1353,13 +1356,39 @@ export function useTransferPostAllocation() {
   })
 }
 
+export function useAdjustPostAllocationStart() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: {
+      allocation_id: string
+      branch_id: string
+      started_at: string
+      previous_started_at: string
+    }) => adjustPostAllocationStart(profile, input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["post-allocations"] })
+      await queryClient.invalidateQueries({ queryKey: ["allocation-history"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      toast.success("Horário no posto corrigido.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
 export function useFinalizePostAllocation() {
   const queryClient = useQueryClient()
   useRequiredProfile()
 
   return useMutation({
-    mutationFn: (input: { allocation_id: string; notes?: string | null }) =>
-      finalizePostAllocation(input),
+    mutationFn: (input: {
+      allocation_id: string
+      notes?: string | null
+      ended_at?: string | null
+    }) => finalizePostAllocation(input),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["post-allocations"] })
       await queryClient.invalidateQueries({ queryKey: ["allocation-history"] })
@@ -1599,6 +1628,21 @@ export function useSetupSegmentDefaults() {
     },
     onError: (error) => {
       toast.error(error.message)
+    },
+  })
+}
+
+export function useCloseOrphanOperationalStatus() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (status: { id: string; branch_id: string; current_status: string }) =>
+      closeOrphanOperationalStatus(profile, status),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["operational-status"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
     },
   })
 }

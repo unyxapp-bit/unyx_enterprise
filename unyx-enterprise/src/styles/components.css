@@ -501,7 +501,7 @@
 
 @media (min-width: 1024px) {
   .poster-editor-workspace {
-    height: calc(100dvh - var(--app-top-nav-height, 4rem) - 6rem);
+    height: calc(100dvh - var(--app-top-nav-height, 4rem) - 5.5rem);
   }
 }
 
@@ -566,4 +566,11 @@
 
 .poster-surface .bg-primary.text-primary-foreground {
   color: var(--primary-foreground) !important;
+}
+
+/* Campos de formulário: <label class="space-y-1"> é inline por padrão, e margens verticais
+   (space-y-*) não valem em elementos inline. Deixa o rótulo em bloco com a menor
+   especificidade possível, para qualquer classe de display (flex, grid...) continuar vencendo. */
+label:where(.space-y-1) {
+  display: block;
 }

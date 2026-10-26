@@ -12,7 +12,7 @@ export interface PlanConfig {
 export const planConfig: Record<SubscriptionPlan, PlanConfig> = {
   starter: {
     label: "Starter",
-    description: "Core basico, 1 filial, 30 colaboradores",
+    description: "Core básico, 1 filial, 30 colaboradores",
     maxBranches: 1,
     maxEmployees: 30,
   },

@@ -34,6 +34,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
+import { Select } from "@/components/ui/select"
 import {
   useAttendanceEvents,
   useBranches,
@@ -60,11 +61,6 @@ import type { Branch, EmployeeWithRelations, Sector } from "@/types/domain"
 
 const PAGE_SIZE = 12
 
-const fieldClass =
-  "h-8 w-full rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
-
-const filterClass =
-  "h-9 rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
 
 interface EmployeeFormState {
   branch_id: string
@@ -117,7 +113,7 @@ function EmployeeStatusBadge({ active }: { active: boolean }) {
       variant="outline"
       className={
         active
-          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+          ? "border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
           : "border-zinc-200 bg-zinc-50 text-zinc-600"
       }
     >
@@ -190,12 +186,12 @@ function EmployeesImportDialog({
         }
 
         if (!branchId) {
-          nextErrors.push(`Linha ${index + 2}: filial nao encontrada.`)
+          nextErrors.push(`Linha ${index + 2}: filial não encontrada.`)
           return
         }
 
         if (sectorName && !sectorId) {
-          nextErrors.push(`Linha ${index + 2}: setor nao encontrado na filial.`)
+          nextErrors.push(`Linha ${index + 2}: setor não encontrado na filial.`)
           return
         }
 
@@ -220,7 +216,7 @@ function EmployeesImportDialog({
       setRows(nextRows)
       setErrors(nextErrors)
     } catch (error) {
-      setErrors([error instanceof Error ? error.message : "Nao foi possivel ler a planilha."])
+      setErrors([error instanceof Error ? error.message : "Não foi possível ler a planilha."])
     }
   }
 
@@ -243,14 +239,14 @@ function EmployeesImportDialog({
           Importar
         </Button>
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>Importar colaboradores</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
-          <div className="rounded-lg border bg-slate-50 p-3 text-sm text-slate-700">
+          <div className="rounded-lg border bg-slate-50 dark:bg-slate-800/60 p-3 text-sm text-slate-700 dark:text-slate-300">
             Colunas aceitas: nome, filial, setor, cargo, telefone, cpf/documento e
-            observacoes. Use arquivos .xlsx ou .csv.
+            observações. Use arquivos .xlsx ou .csv.
           </div>
           <Input
             type="file"
@@ -263,7 +259,7 @@ function EmployeesImportDialog({
             </div>
           ) : null}
           {errors.length > 0 ? (
-            <div className="max-h-40 overflow-auto rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+            <div className="max-h-40 overflow-auto rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-300">
               {errors.slice(0, 12).map((error) => (
                 <div key={error}>{error}</div>
               ))}
@@ -334,7 +330,7 @@ function EmployeeEditInlineDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose() }}>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>Editar colaborador</DialogTitle>
         </DialogHeader>
@@ -359,33 +355,26 @@ function EmployeeEditInlineDialog({
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="space-y-1 text-sm">
               <span className="font-medium">Filial</span>
-              <select
-                className={fieldClass}
+              <Select
                 value={form.branch_id}
-                onChange={(e) =>
-                  setForm((c) => ({ ...c, branch_id: e.target.value, sector_id: "" }))
-                }
-              >
-                <option value="">Selecione</option>
-                {branches.filter((b) => b.active).map((b) => (
-                  <option key={b.id} value={b.id}>{b.name}</option>
-                ))}
-              </select>
+                onValueChange={(value) => setForm((c) => ({ ...c, branch_id: value, sector_id: "" }))}
+                placeholder="Selecione"
+                options={[
+                  { value: "", label: "Selecione" },
+                  ...branches.filter((b) => b.active).map((b) => ({ value: b.id, label: b.name })),
+                ]}
+              />
             </label>
             <label className="space-y-1 text-sm">
               <span className="font-medium">Setor</span>
-              <select
-                className={fieldClass}
+              <Select
                 value={form.sector_id}
-                onChange={(e) =>
-                  setForm((c) => ({ ...c, sector_id: e.target.value }))
-                }
-              >
-                <option value="">Sem setor</option>
-                {(sectors.data ?? []).filter((s) => s.active).map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
+                onValueChange={(value) => setForm((c) => ({ ...c, sector_id: value }))}
+                options={[
+                  { value: "", label: "Sem setor" },
+                  ...(sectors.data ?? []).filter((s) => s.active).map((s) => ({ value: s.id, label: s.name })),
+                ]}
+              />
             </label>
           </div>
 
@@ -434,13 +423,13 @@ function EmployeeEditInlineDialog({
 
           {form.branch_id !== employee.branch_id ||
           form.sector_id !== (employee.sector_id ?? "") ? (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            <div className="rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
               Verifique escalas futuras deste colaborador depois de alterar filial ou setor.
             </div>
           ) : null}
 
           {formError || updateEmployee.error ? (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            <div className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">
               {formError ?? updateEmployee.error?.message}
             </div>
           ) : null}
@@ -512,12 +501,12 @@ function EmployeeActionsMenu({
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => setDialog("toggle")}>
             {employee.active
-              ? <UserRoundX className="mr-2 size-4 text-amber-600" />
-              : <UserRoundCheck className="mr-2 size-4 text-emerald-600" />}
+              ? <UserRoundX className="mr-2 size-4 text-amber-600 dark:text-amber-300" />
+              : <UserRoundCheck className="mr-2 size-4 text-emerald-600 dark:text-emerald-300" />}
             {employee.active ? "Desativar" : "Ativar"}
           </DropdownMenuItem>
           <DropdownMenuItem
-            className="text-red-600 focus:text-red-600"
+            className="text-red-600 dark:text-red-300 focus:text-red-600"
             onClick={() => setDialog("delete")}
           >
             <Trash2 className="mr-2 size-4" />
@@ -543,7 +532,7 @@ function EmployeeActionsMenu({
               {employeeEvents.map((e) => (
                 <div
                   key={e.id}
-                  className="flex items-start justify-between gap-3 rounded-lg border bg-slate-50 px-3 py-2 text-sm"
+                  className="flex items-start justify-between gap-3 rounded-lg border bg-slate-50 dark:bg-slate-800/60 px-3 py-2 text-sm"
                 >
                   <div>
                     <div className="font-medium">
@@ -611,11 +600,11 @@ function EmployeeActionsMenu({
             <p className="text-sm text-muted-foreground">
               O colaborador e todos os seus dados serão removidos permanentemente.
             </p>
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            <div className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">
               Esta ação não pode ser desfeita. Tem certeza?
             </div>
             {deleteEmployees.error && (
-              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              <div className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">
                 {deleteEmployees.error.message}
               </div>
             )}
@@ -849,6 +838,7 @@ export function EmployeesPage() {
   return (
     <>
       <PageHeader
+        large
         title="Colaboradores"
         description={`${activeCount} ativos na operação`}
         action={
@@ -865,7 +855,7 @@ export function EmployeesPage() {
                   Novo colaborador
                 </Button>
               </DialogTrigger>
-              <DialogContent>
+              <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
               <DialogHeader>
                 <DialogTitle>Cadastrar colaborador</DialogTitle>
               </DialogHeader>
@@ -890,37 +880,26 @@ export function EmployeesPage() {
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="space-y-1 text-sm">
                     <span className="font-medium">Filial</span>
-                    <select
-                      className={fieldClass}
+                    <Select
                       value={form.branch_id}
-                      onChange={(e) =>
-                        setForm((c) => ({ ...c, branch_id: e.target.value, sector_id: "" }))
-                      }
-                    >
-                      <option value="">Selecione</option>
-                      {activeBranches.map((b) => (
-                        <option key={b.id} value={b.id}>
-                          {b.name}
-                        </option>
-                      ))}
-                    </select>
+                      onValueChange={(value) => setForm((c) => ({ ...c, branch_id: value, sector_id: "" }))}
+                      placeholder="Selecione"
+                      options={[
+                        { value: "", label: "Selecione" },
+                        ...activeBranches.map((b) => ({ value: b.id, label: b.name })),
+                      ]}
+                    />
                   </label>
                   <label className="space-y-1 text-sm">
                     <span className="font-medium">Setor</span>
-                    <select
-                      className={fieldClass}
+                    <Select
                       value={form.sector_id}
-                      onChange={(e) =>
-                        setForm((c) => ({ ...c, sector_id: e.target.value }))
-                      }
-                    >
-                      <option value="">Sem setor</option>
-                      {(formSectors.data ?? []).filter((s) => s.active).map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name}
-                        </option>
-                      ))}
-                    </select>
+                      onValueChange={(value) => setForm((c) => ({ ...c, sector_id: value }))}
+                      options={[
+                        { value: "", label: "Sem setor" },
+                        ...(formSectors.data ?? []).filter((s) => s.active).map((s) => ({ value: s.id, label: s.name })),
+                      ]}
+                    />
                   </label>
                 </div>
 
@@ -968,7 +947,7 @@ export function EmployeesPage() {
                 </label>
 
                 {formError || createEmployee.error ? (
-                  <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  <div className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">
                     {formError ?? createEmployee.error?.message}
                   </div>
                 ) : null}
@@ -986,38 +965,33 @@ export function EmployeesPage() {
       />
 
       <div className="space-y-4 p-6">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-lg border bg-white p-4">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <UserRoundCheck className="size-4 text-emerald-600" />
-              Ativos
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+          {[
+            { title: "Ativos", value: activeCount, icon: <UserRoundCheck className="text-emerald-600 dark:text-emerald-300" />, tone: "" },
+            { title: "Com status operacional", value: withOperationalStatusCount, icon: <History className="text-sky-600 dark:text-sky-300" />, tone: "" },
+            {
+              title: "Sem setor",
+              value: withoutSectorCount,
+              icon: <UserRoundX className="text-amber-600 dark:text-amber-300" />,
+              tone: withoutSectorCount > 0 ? "border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10" : "",
+            },
+            { title: "Inativos", value: inactiveCount, icon: <UserRoundX className="text-zinc-500" />, tone: "" },
+          ].map((metric) => (
+            <div
+              key={metric.title}
+              className={`flex items-center gap-2 rounded-lg border bg-white dark:bg-[color:var(--bg-surface)] px-2.5 py-1.5 shadow-sm ${metric.tone}`}
+            >
+              <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800 [&_svg]:size-3.5">
+                {metric.icon}
+              </span>
+              <div className="min-w-0">
+                <div className="truncate text-[10px] font-medium leading-tight text-muted-foreground">
+                  {metric.title}
+                </div>
+                <div className="text-base font-semibold leading-tight">{metric.value}</div>
+              </div>
             </div>
-            <div className="mt-2 text-2xl font-semibold">{activeCount}</div>
-          </div>
-          <div className="rounded-lg border bg-white p-4">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <History className="size-4 text-sky-600" />
-              Com status operacional
-            </div>
-            <div className="mt-2 text-2xl font-semibold">
-              {withOperationalStatusCount}
-            </div>
-          </div>
-          <div
-            className={`rounded-lg border p-4 ${
-              withoutSectorCount > 0 ? "border-amber-200 bg-amber-50" : "bg-white"
-            }`}
-          >
-            <div className="text-sm text-muted-foreground">Sem setor</div>
-            <div className="mt-2 text-2xl font-semibold">{withoutSectorCount}</div>
-          </div>
-          <div className="rounded-lg border bg-white p-4">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <UserRoundX className="size-4 text-zinc-500" />
-              Inativos
-            </div>
-            <div className="mt-2 text-2xl font-semibold">{inactiveCount}</div>
-          </div>
+          ))}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -1031,35 +1005,35 @@ export function EmployeesPage() {
             />
           </div>
           {sectorOptions.length > 0 ? (
-            <select
-              className={filterClass}
+            <Select
+              aria-label="Filtrar por setor"
+              className="w-44"
               value={sectorFilter}
-              onChange={(e) => setSectorFilter(e.target.value)}
-            >
-              <option value="">Todos os setores</option>
-              {sectorOptions.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
+              onValueChange={setSectorFilter}
+              options={[
+                { value: "", label: "Todos os setores" },
+                ...sectorOptions.map((sector) => ({ value: sector, label: sector })),
+              ]}
+            />
           ) : null}
-          <select
-            className={filterClass}
+          <Select
+            aria-label="Filtrar por status"
+            className="w-44"
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as "" | "active" | "inactive")}
-          >
-            <option value="">Todos os status</option>
-            <option value="active">Ativos</option>
-            <option value="inactive">Inativos</option>
-          </select>
+            onValueChange={(value) => setStatusFilter(value as "" | "active" | "inactive")}
+            options={[
+              { value: "", label: "Todos os status" },
+              { value: "active", label: "Ativos" },
+              { value: "inactive", label: "Inativos" },
+            ]}
+          />
           <Button
             variant="outline"
             size="sm"
             onClick={() => setFilteredSelection(!allFilteredSelected)}
             disabled={filteredEmployees.length === 0}
           >
-            {allFilteredSelected ? "Limpar selecao" : "Selecionar todos"}
+            {allFilteredSelected ? "Limpar seleção" : "Selecionar todos"}
           </Button>
           <Button
             variant="outline"
@@ -1073,8 +1047,8 @@ export function EmployeesPage() {
         </div>
 
         {selectedCount > 0 ? (
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-slate-50 px-3 py-2 text-sm">
-            <span className="font-medium text-slate-700">
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-slate-50 dark:bg-slate-800/60 px-3 py-2 text-sm">
+            <span className="font-medium text-slate-700 dark:text-slate-300">
               {selectedCount} colaborador(es) selecionado(s)
             </span>
             <div className="flex flex-wrap gap-2">
@@ -1083,7 +1057,7 @@ export function EmployeesPage() {
                 size="sm"
                 onClick={() => setSelectedIds(new Set())}
               >
-                Limpar selecao
+                Limpar seleção
               </Button>
               <Dialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
                 <DialogTrigger asChild>
@@ -1172,7 +1146,7 @@ export function EmployeesPage() {
               return (
                 <div
                   key={employee.id}
-                  className="group flex items-center gap-4 rounded-lg border bg-white p-4 shadow-sm transition-colors hover:bg-slate-50"
+                  className="group flex items-center gap-4 rounded-lg border bg-white dark:bg-[color:var(--bg-surface)] p-4 shadow-sm transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
                 >
                   <input
                     type="checkbox"
@@ -1220,13 +1194,13 @@ export function EmployeesPage() {
           </div>
 
           {pageCount > 1 ? (
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-2 text-sm text-slate-600">
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-2 text-sm text-slate-600 dark:text-slate-300">
               <span>
                 {pageIndex * PAGE_SIZE + 1}–{Math.min((pageIndex + 1) * PAGE_SIZE, filteredEmployees.length)} de {filteredEmployees.length} colaboradores
               </span>
               <div className="flex items-center gap-1">
                 <button
-                  className="rounded-md border bg-white px-3 py-1.5 text-sm transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="rounded-md border bg-white dark:bg-[color:var(--bg-surface)] px-3 py-1.5 text-sm transition-colors hover:bg-slate-50 dark:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
                   onClick={() => setPageIndex((p) => p - 1)}
                   disabled={pageIndex === 0}
                 >
@@ -1252,7 +1226,7 @@ export function EmployeesPage() {
                       className={`min-w-[32px] rounded-md border px-2 py-1.5 text-sm transition-colors ${
                         i === pageIndex
                           ? "border-indigo-600 bg-indigo-600 font-semibold text-white"
-                          : "bg-white hover:bg-slate-50"
+                          : "bg-white dark:bg-[color:var(--bg-surface)] hover:bg-slate-50 dark:hover:bg-slate-800"
                       }`}
                       onClick={() => setPageIndex(i)}
                     >
@@ -1261,7 +1235,7 @@ export function EmployeesPage() {
                   )
                 })}
                 <button
-                  className="rounded-md border bg-white px-3 py-1.5 text-sm transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="rounded-md border bg-white dark:bg-[color:var(--bg-surface)] px-3 py-1.5 text-sm transition-colors hover:bg-slate-50 dark:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
                   onClick={() => setPageIndex((p) => p + 1)}
                   disabled={pageIndex === pageCount - 1}
                 >

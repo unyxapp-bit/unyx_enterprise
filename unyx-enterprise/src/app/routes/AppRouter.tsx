@@ -1,8 +1,10 @@
 import { lazy, Suspense } from "react"
-import { BrowserRouter, Navigate, Outlet, Route, Routes } from "react-router-dom"
+import type { ReactNode } from "react"
+import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom"
 
 import { AppLayout } from "@/app/layout/AppLayout"
 import { useAuth } from "@/app/providers/auth-context"
+import { ErrorBoundary } from "@/components/shared/ErrorBoundary"
 import { StateBlock } from "@/components/shared/StateBlock"
 import { canAccessUser, type PermissionKey } from "@/lib/permissions"
 
@@ -120,6 +122,11 @@ function RouteFallback() {
   )
 }
 
+function RouteErrorBoundary({ children }: { children: ReactNode }) {
+  const { pathname } = useLocation()
+  return <ErrorBoundary resetKey={pathname}>{children}</ErrorBoundary>
+}
+
 export function AppRouter() {
   const basename =
     import.meta.env.BASE_URL === "/"
@@ -128,6 +135,7 @@ export function AppRouter() {
 
   return (
     <BrowserRouter basename={basename}>
+      <RouteErrorBoundary>
       <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/" element={<LoginPage />} />
@@ -223,6 +231,7 @@ export function AppRouter() {
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </Suspense>
+      </RouteErrorBoundary>
     </BrowserRouter>
   )
 }

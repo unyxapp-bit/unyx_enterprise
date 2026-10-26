@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react"
 import {
   Ban,
+  Building2,
   Check,
   ChevronDown,
   ChevronUp,
@@ -42,6 +43,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
+import { Select } from "@/components/ui/select"
 import {
   useBranches,
   useCancelInvitation,
@@ -77,11 +79,11 @@ const roleDescription: Record<UserRole, string> = {
 }
 
 const roleBadge: Record<UserRole, string> = {
-  owner:          "border-violet-200 bg-violet-50 text-violet-700",
-  admin:          "border-blue-200 bg-blue-50 text-blue-700",
-  branch_manager: "border-sky-200 bg-sky-50 text-sky-700",
+  owner:          "border-violet-200 dark:border-violet-500/30 bg-violet-50 dark:bg-violet-500/10 text-violet-700 dark:text-violet-300",
+  admin:          "border-blue-200 dark:border-blue-500/30 bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300",
+  branch_manager: "border-sky-200 dark:border-sky-500/30 bg-sky-50 dark:bg-sky-500/10 text-sky-700 dark:text-sky-300",
   supervisor:     "border-teal-200 bg-teal-50 text-teal-700",
-  operator:       "border-slate-200 bg-slate-100 text-slate-700",
+  operator:       "border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300",
   employee:       "border-zinc-200 bg-zinc-50 text-zinc-600",
 }
 
@@ -93,17 +95,12 @@ const inviteStatusLabel: Record<Invitation["status"], string> = {
 }
 
 const inviteStatusBadge: Record<Invitation["status"], string> = {
-  pending:   "border-amber-200 bg-amber-50 text-amber-700",
-  accepted:  "border-emerald-200 bg-emerald-50 text-emerald-700",
+  pending:   "border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  accepted:  "border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
   cancelled: "border-zinc-200 bg-zinc-50 text-zinc-500",
-  expired:   "border-red-200 bg-red-50 text-red-600",
+  expired:   "border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-300",
 }
 
-const fieldClass =
-  "h-8 w-full rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
-
-const filterClass =
-  "h-9 rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
 
 // ─── EditRoleDialog ───────────────────────────────────────────────────────────
 
@@ -178,7 +175,7 @@ function EditRoleDialog({
 
         <div className="flex-1 overflow-y-auto space-y-5 pr-1">
           {/* Usuário */}
-          <div className="rounded-lg border bg-slate-50 p-3 text-sm">
+          <div className="rounded-lg border bg-slate-50 dark:bg-slate-800/60 p-3 text-sm">
             <div className="font-medium">{user.name}</div>
             <div className="mt-0.5 text-muted-foreground">{user.email}</div>
             <div className="mt-1.5">
@@ -191,15 +188,11 @@ function EditRoleDialog({
           {/* Papel */}
           <div className="space-y-1.5">
             <label className="text-sm font-medium">Papel base</label>
-            <select
-              className={fieldClass}
+            <Select
               value={role}
-              onChange={(e) => handleRoleChange(e.target.value as UserRole)}
-            >
-              {Object.entries(roleLabel).map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
-              ))}
-            </select>
+              onValueChange={(value) => handleRoleChange(value as UserRole)}
+              options={Object.entries(roleLabel).map(([value, label]) => ({ value, label }))}
+            />
             <p className="text-xs text-muted-foreground">{roleDescription[role]}</p>
           </div>
 
@@ -210,7 +203,7 @@ function EditRoleDialog({
               {isCustomized && (
                 <button
                   type="button"
-                  className="text-xs text-sky-600 hover:text-sky-800"
+                  className="text-xs text-sky-600 dark:text-sky-300 hover:text-sky-800 dark:hover:text-sky-200"
                   onClick={resetToRoleDefaults}
                 >
                   Restaurar padrão do papel
@@ -218,26 +211,26 @@ function EditRoleDialog({
               )}
             </div>
             {isCustomized && (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-700">
+              <div className="rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 px-3 py-1.5 text-xs text-amber-700 dark:text-amber-300">
                 Permissões personalizadas ativas para este usuário.
               </div>
             )}
             <div className="rounded-lg border divide-y overflow-hidden">
               {Object.entries(PERMISSION_GROUP).map(([group, keys]) => (
                 <div key={group}>
-                  <div className="bg-slate-50 px-3 py-1.5 text-[0.65rem] font-semibold uppercase tracking-wide text-slate-400">
+                  <div className="bg-slate-50 dark:bg-slate-800/60 px-3 py-1.5 text-[0.65rem] font-semibold uppercase tracking-wide text-slate-400">
                     {group}
                   </div>
                   <div className="divide-y">
                     {keys.map((key) => (
                       <label
                         key={key}
-                        className="flex cursor-pointer items-center justify-between px-3 py-2.5 hover:bg-slate-50"
+                        className="flex cursor-pointer items-center justify-between px-3 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800"
                       >
-                        <span className="text-sm text-slate-700">{PERMISSION_LABEL[key]}</span>
+                        <span className="text-sm text-slate-700 dark:text-slate-300">{PERMISSION_LABEL[key]}</span>
                         <input
                           type="checkbox"
-                          className="size-4 rounded border-slate-300 accent-slate-950"
+                          className="size-4 rounded border-slate-300 dark:border-slate-600 accent-slate-950"
                           checked={perms.has(key)}
                           onChange={() => togglePerm(key)}
                         />
@@ -250,12 +243,12 @@ function EditRoleDialog({
           </div>
 
           {blocked && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            <div className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">
               Não é possível remover o único Proprietário. Promova outro usuário antes.
             </div>
           )}
           {updateRole.error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            <div className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">
               {updateRole.error.message}
             </div>
           )}
@@ -308,22 +301,20 @@ function EditBranchDialog({
         <div className="space-y-4">
           <label className="space-y-1 text-sm">
             <span className="font-medium">Filial</span>
-            <select
-              className={fieldClass}
+            <Select
               value={branchId}
-              onChange={(e) => setBranchId(e.target.value)}
-            >
-              <option value="">Sem filial</option>
-              {(branches.data ?? []).map((b) => (
-                <option key={b.id} value={b.id}>{b.name}</option>
-              ))}
-            </select>
+              onValueChange={setBranchId}
+              options={[
+                { value: "", label: "Sem filial" },
+                ...(branches.data ?? []).map((b) => ({ value: b.id, label: b.name })),
+              ]}
+            />
           </label>
           <p className="text-xs text-muted-foreground">
             A filial define quais dados o usuário pode visualizar e gerenciar.
           </p>
           {setBranch.error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            <div className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">
               {setBranch.error.message}
             </div>
           )}
@@ -375,7 +366,7 @@ function ToggleActiveDialog({
             : "O usuário perderá acesso imediatamente. O histórico será preservado."}
         </p>
         {toggle.error && (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <div className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">
             {toggle.error.message}
           </div>
         )}
@@ -422,11 +413,11 @@ function RemoveUserDialog({
           <p className="text-sm text-muted-foreground">
             O usuário será desativado e perderá acesso à organização. O histórico de atividades é preservado.
           </p>
-          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <div className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">
             Esta ação não pode ser desfeita facilmente. Tem certeza?
           </div>
           {remove.error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            <div className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">
               {remove.error.message}
             </div>
           )}
@@ -479,12 +470,12 @@ function UserActionsMenu({
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => setDialog("toggle")}>
             {user.active
-              ? <Ban className="mr-2 size-4 text-amber-600" />
-              : <UserCheck className="mr-2 size-4 text-emerald-600" />}
+              ? <Ban className="mr-2 size-4 text-amber-600 dark:text-amber-300" />
+              : <UserCheck className="mr-2 size-4 text-emerald-600 dark:text-emerald-300" />}
             {user.active ? "Desativar usuário" : "Ativar usuário"}
           </DropdownMenuItem>
           <DropdownMenuItem
-            className="text-red-600 focus:text-red-600"
+            className="text-red-600 dark:text-red-300 focus:text-red-600"
             onClick={() => setDialog("remove")}
           >
             <UserMinus className="mr-2 size-4" />
@@ -517,7 +508,7 @@ function HistoricInvites({ invitations }: { invitations: Invitation[] }) {
       {open && (
         <div className="overflow-hidden rounded-lg border">
           <table className="w-full text-left text-sm">
-            <thead className="border-b bg-slate-50 text-xs uppercase text-muted-foreground">
+            <thead className="border-b bg-slate-50 dark:bg-slate-800/60 text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="px-3 py-2">Email</th>
                 <th className="px-3 py-2">Papel</th>
@@ -527,7 +518,7 @@ function HistoricInvites({ invitations }: { invitations: Invitation[] }) {
             </thead>
             <tbody className="divide-y">
               {invitations.map((inv) => (
-                <tr key={inv.id} className="hover:bg-slate-50">
+                <tr key={inv.id} className="hover:bg-slate-50 dark:hover:bg-slate-800">
                   <td className="px-3 py-2 text-muted-foreground">{inv.email}</td>
                   <td className="px-3 py-2">
                     <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${roleBadge[inv.role]}`}>
@@ -598,12 +589,12 @@ function InviteSection() {
   }
 
   return (
-    <Card className="border bg-white shadow-sm">
+    <Card className="border bg-white dark:bg-[color:var(--bg-surface)] shadow-sm">
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2">
             <MailPlus className="size-5" />
-            Convidar usuario
+            Convidar usuário
           </CardTitle>
           <Button size="sm" variant="outline" onClick={() => { setShowForm((v) => !v); setLastInvitedEmail(null) }}>
             {showForm
@@ -615,8 +606,8 @@ function InviteSection() {
       <CardContent className="space-y-5">
 
         {/* Como funciona */}
-        <div className="rounded-lg border bg-slate-50 px-4 py-3 text-sm space-y-1.5">
-          <p className="font-medium text-slate-700">Como funciona</p>
+        <div className="rounded-lg border bg-slate-50 dark:bg-slate-800/60 px-4 py-3 text-sm space-y-1.5">
+          <p className="font-medium text-slate-700 dark:text-slate-300">Como funciona</p>
           <ol className="list-decimal list-inside space-y-1 text-muted-foreground text-xs">
             <li>Registre o convite com o email, papel e filial da pessoa.</li>
             <li>Compartilhe o link do sistema e informe o email que deve ser usado no cadastro.</li>
@@ -627,7 +618,7 @@ function InviteSection() {
 
         {/* Formulario de convite */}
         {showForm && (
-          <div className="rounded-lg border bg-slate-50 p-4 space-y-3">
+          <div className="rounded-lg border bg-slate-50 dark:bg-slate-800/60 p-4 space-y-3">
             <p className="text-sm font-medium">Registrar convite</p>
             <div className="grid gap-3 sm:grid-cols-3">
               <label className="space-y-1 text-sm">
@@ -643,24 +634,26 @@ function InviteSection() {
               </label>
               <label className="space-y-1 text-sm">
                 <span className="text-muted-foreground">Papel</span>
-                <select className={fieldClass} value={role} onChange={(e) => setRole(e.target.value as UserRole)}>
-                  {Object.entries(roleLabel).map(([v, l]) => (
-                    <option key={v} value={v}>{l}</option>
-                  ))}
-                </select>
+                <Select
+                  value={role}
+                  onValueChange={(value) => setRole(value as UserRole)}
+                  options={Object.entries(roleLabel).map(([value, label]) => ({ value, label }))}
+                />
               </label>
               <label className="space-y-1 text-sm">
                 <span className="text-muted-foreground">Filial (opcional)</span>
-                <select className={fieldClass} value={branchId} onChange={(e) => setBranchId(e.target.value)}>
-                  <option value="">Sem filial</option>
-                  {(branches.data ?? []).map((b) => (
-                    <option key={b.id} value={b.id}>{b.name}</option>
-                  ))}
-                </select>
+                <Select
+                  value={branchId}
+                  onValueChange={setBranchId}
+                  options={[
+                    { value: "", label: "Sem filial" },
+                    ...(branches.data ?? []).map((b) => ({ value: b.id, label: b.name })),
+                  ]}
+                />
               </label>
             </div>
             {create.error && (
-              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              <div className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">
                 {create.error.message}
               </div>
             )}
@@ -674,47 +667,47 @@ function InviteSection() {
 
         {/* Card de sucesso apos criar convite */}
         {lastInvitedEmail && (
-          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 space-y-3">
+          <div className="rounded-lg border border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 p-4 space-y-3">
             <div className="flex items-start justify-between gap-2">
-              <p className="text-sm font-medium text-emerald-800">
+              <p className="text-sm font-medium text-emerald-800 dark:text-emerald-300">
                 Convite registrado para <span className="font-mono">{lastInvitedEmail}</span>
               </p>
               <button
-                className="shrink-0 text-emerald-600 hover:text-emerald-800"
+                className="shrink-0 text-emerald-600 dark:text-emerald-300 hover:text-emerald-800 dark:hover:text-emerald-200"
                 onClick={() => setLastInvitedEmail(null)}
                 aria-label="Fechar"
               >
                 <X className="size-4" />
               </button>
             </div>
-            <p className="text-xs text-emerald-700">
+            <p className="text-xs text-emerald-700 dark:text-emerald-300">
               Envie o link abaixo para a pessoa e instrua a criar conta usando{" "}
               <strong>exatamente o email: {lastInvitedEmail}</strong>
             </p>
             <div className="space-y-2">
               <div className="flex items-center gap-2">
-                <span className="text-xs text-emerald-700 w-10 shrink-0">Link</span>
-                <Input readOnly value={loginUrl} className="font-mono text-xs bg-white" />
+                <span className="text-xs text-emerald-700 dark:text-emerald-300 w-10 shrink-0">Link</span>
+                <Input readOnly value={loginUrl} className="font-mono text-xs bg-white dark:bg-[color:var(--bg-surface)]" />
                 <Button
                   variant="outline"
                   size="sm"
-                  className="shrink-0 bg-white"
+                  className="shrink-0 bg-white dark:bg-[color:var(--bg-surface)]"
                   onClick={() => copyText(loginUrl, setCopiedLink)}
                 >
-                  {copiedLink ? <Check className="size-4 text-emerald-600" /> : <Copy className="size-4" />}
+                  {copiedLink ? <Check className="size-4 text-emerald-600 dark:text-emerald-300" /> : <Copy className="size-4" />}
                   {copiedLink ? "Copiado" : "Copiar"}
                 </Button>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-xs text-emerald-700 w-10 shrink-0">Email</span>
-                <Input readOnly value={lastInvitedEmail} className="font-mono text-xs bg-white" />
+                <span className="text-xs text-emerald-700 dark:text-emerald-300 w-10 shrink-0">Email</span>
+                <Input readOnly value={lastInvitedEmail} className="font-mono text-xs bg-white dark:bg-[color:var(--bg-surface)]" />
                 <Button
                   variant="outline"
                   size="sm"
-                  className="shrink-0 bg-white"
+                  className="shrink-0 bg-white dark:bg-[color:var(--bg-surface)]"
                   onClick={() => copyText(lastInvitedEmail, setCopiedEmail)}
                 >
-                  {copiedEmail ? <Check className="size-4 text-emerald-600" /> : <Copy className="size-4" />}
+                  {copiedEmail ? <Check className="size-4 text-emerald-600 dark:text-emerald-300" /> : <Copy className="size-4" />}
                   {copiedEmail ? "Copiado" : "Copiar"}
                 </Button>
               </div>
@@ -728,7 +721,7 @@ function InviteSection() {
             <p className="text-sm font-medium">Aguardando cadastro ({pending.length})</p>
             <div className="overflow-hidden rounded-lg border">
               <table className="w-full text-left text-sm">
-                <thead className="border-b bg-slate-50 text-xs uppercase text-muted-foreground">
+                <thead className="border-b bg-slate-50 dark:bg-slate-800/60 text-xs uppercase text-muted-foreground">
                   <tr>
                     <th className="px-3 py-2">Email</th>
                     <th className="px-3 py-2">Papel</th>
@@ -739,7 +732,7 @@ function InviteSection() {
                 </thead>
                 <tbody className="divide-y">
                   {pending.map((inv) => (
-                    <tr key={inv.id} className="hover:bg-slate-50">
+                    <tr key={inv.id} className="hover:bg-slate-50 dark:hover:bg-slate-800">
                       <td className="px-3 py-2 font-medium">{inv.email}</td>
                       <td className="px-3 py-2">
                         <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${roleBadge[inv.role]}`}>
@@ -860,58 +853,54 @@ export function UsersPage() {
   return (
     <>
       <PageHeader
+        large
         title="Usuários e Permissões"
         description="Gerencie os perfis e papéis dos usuários da organização."
       />
 
       <div className="space-y-6 p-6">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-lg border bg-white p-4">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Shield className="size-4 text-slate-600" />
-              Usuarios
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+          {[
+            { title: "Usuários", value: (profiles.data ?? []).length, icon: <Shield className="text-slate-600 dark:text-slate-300" />, tone: "" },
+            { title: "Ativos", value: activeCount, icon: <UserCheck className="text-emerald-600 dark:text-emerald-300" />, tone: "" },
+            {
+              title: "Admins ativos",
+              value: adminCount,
+              icon: <UserCog className="text-sky-600 dark:text-sky-300" />,
+              tone: adminCount === 0 ? "border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10" : "",
+            },
+            { title: "Com filial definida", value: branchScopedCount, icon: <Building2 className="text-slate-600 dark:text-slate-300" />, tone: "" },
+          ].map((metric) => (
+            <div
+              key={metric.title}
+              className={`flex items-center gap-2 rounded-lg border bg-white dark:bg-[color:var(--bg-surface)] px-2.5 py-1.5 shadow-sm ${metric.tone}`}
+            >
+              <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800 [&_svg]:size-3.5">
+                {metric.icon}
+              </span>
+              <div className="min-w-0">
+                <div className="truncate text-[10px] font-medium leading-tight text-muted-foreground">
+                  {metric.title}
+                </div>
+                <div className="text-base font-semibold leading-tight">{metric.value}</div>
+              </div>
             </div>
-            <div className="mt-2 text-2xl font-semibold">
-              {(profiles.data ?? []).length}
-            </div>
-          </div>
-          <div className="rounded-lg border bg-white p-4">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <UserCheck className="size-4 text-emerald-600" />
-              Ativos
-            </div>
-            <div className="mt-2 text-2xl font-semibold">{activeCount}</div>
-          </div>
-          <div
-            className={`rounded-lg border p-4 ${
-              adminCount === 0 ? "border-amber-200 bg-amber-50" : "bg-white"
-            }`}
-          >
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <UserCog className="size-4 text-sky-600" />
-              Admins ativos
-            </div>
-            <div className="mt-2 text-2xl font-semibold">{adminCount}</div>
-          </div>
-          <div className="rounded-lg border bg-white p-4">
-            <div className="text-sm text-muted-foreground">Com filial definida</div>
-            <div className="mt-2 text-2xl font-semibold">{branchScopedCount}</div>
-          </div>
+          ))}
         </div>
 
         {inactiveCount > 0 ? (
-          <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+          <div className="flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-4 py-3 text-sm text-slate-700 dark:text-slate-300">
             <UserMinus className="size-4 shrink-0 text-zinc-500" />
-            {inactiveCount} usuario(s) inativo(s) continuam no historico de acesso.
+            {inactiveCount} usuário(s) inativo(s) continuam no histórico de acesso.
           </div>
         ) : null}
 
-        <Card className="border bg-white shadow-sm">
+        <Card className="border bg-white dark:bg-[color:var(--bg-surface)] shadow-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Shield className="size-5" />
               Usuários da organização
-              <span className="ml-1 rounded-full border bg-slate-100 px-2 py-0.5 text-xs font-normal text-muted-foreground">
+              <span className="ml-1 rounded-full border bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs font-normal text-muted-foreground">
                 {activeCount} ativo{activeCount !== 1 ? "s" : ""}
                 {inactiveCount > 0 ? `, ${inactiveCount} inativo${inactiveCount !== 1 ? "s" : ""}` : ""}
               </span>
@@ -934,35 +923,37 @@ export function UsersPage() {
                       onChange={(e) => setSearch(e.target.value)}
                     />
                   </div>
-                  <select
-                    className={filterClass}
+                  <Select
+                    aria-label="Filtrar por papel"
+                    className="w-44"
                     value={roleFilter}
-                    onChange={(e) => setRoleFilter(e.target.value as UserRole | "")}
-                  >
-                    <option value="">Todos os papéis</option>
-                    {Object.entries(roleLabel).map(([v, l]) => (
-                      <option key={v} value={v}>{l}</option>
-                    ))}
-                  </select>
-                  <select
-                    className={filterClass}
+                    onValueChange={(value) => setRoleFilter(value as UserRole | "")}
+                    options={[
+                      { value: "", label: "Todos os papéis" },
+                      ...Object.entries(roleLabel).map(([value, label]) => ({ value, label })),
+                    ]}
+                  />
+                  <Select
+                    aria-label="Filtrar por filial"
+                    className="w-44"
                     value={branchFilter}
-                    onChange={(e) => setBranchFilter(e.target.value)}
-                  >
-                    <option value="">Todas as filiais</option>
-                    {(branches.data ?? []).map((b) => (
-                      <option key={b.id} value={b.id}>{b.name}</option>
-                    ))}
-                  </select>
-                  <select
-                    className={filterClass}
+                    onValueChange={setBranchFilter}
+                    options={[
+                      { value: "", label: "Todas as filiais" },
+                      ...(branches.data ?? []).map((b) => ({ value: b.id, label: b.name })),
+                    ]}
+                  />
+                  <Select
+                    aria-label="Filtrar por status"
+                    className="w-40"
                     value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value as "" | "active" | "inactive")}
-                  >
-                    <option value="">Todos os status</option>
-                    <option value="active">Ativos</option>
-                    <option value="inactive">Inativos</option>
-                  </select>
+                    onValueChange={(value) => setStatusFilter(value as "" | "active" | "inactive")}
+                    options={[
+                      { value: "", label: "Todos os status" },
+                      { value: "active", label: "Ativos" },
+                      { value: "inactive", label: "Inativos" },
+                    ]}
+                  />
                 </div>
 
                 {filteredProfiles.length === 0 ? (
@@ -973,7 +964,7 @@ export function UsersPage() {
                 ) : (
                   <div className="overflow-hidden rounded-lg border">
                     <table className="w-full text-left text-sm">
-                      <thead className="border-b bg-slate-50 text-xs uppercase text-muted-foreground">
+                      <thead className="border-b bg-slate-50 dark:bg-slate-800/60 text-xs uppercase text-muted-foreground">
                         <tr>
                           <Th label="Nome"    k="name"       sortKey={sortKey} sortAsc={sortAsc} onSort={toggleSort} />
                           <th className="px-4 py-3">Email</th>
@@ -986,12 +977,12 @@ export function UsersPage() {
                       </thead>
                       <tbody className="divide-y">
                         {filteredProfiles.map((p) => (
-                          <tr key={p.id} className={`hover:bg-slate-50 ${!p.active ? "opacity-60" : ""}`}>
+                          <tr key={p.id} className={`hover:bg-slate-50 dark:hover:bg-slate-800 ${!p.active ? "opacity-60" : ""}`}>
                             <td className="px-4 py-3 font-medium">
                               <div className="flex items-center gap-2">
                                 {p.name}
                                 {p.id === currentProfile?.id && (
-                                  <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700">
+                                  <span className="rounded-full border border-sky-200 dark:border-sky-500/30 bg-sky-50 dark:bg-sky-500/10 px-2 py-0.5 text-xs font-medium text-sky-700 dark:text-sky-300">
                                     Você
                                   </span>
                                 )}
@@ -1007,7 +998,7 @@ export function UsersPage() {
                             <td className="px-4 py-3">
                               <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${
                                 p.active
-                                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                  ? "border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
                                   : "border-zinc-200 bg-zinc-50 text-zinc-600"
                               }`}>
                                 {p.active ? "Ativo" : "Inativo"}

@@ -1,3 +1,4 @@
+import { parseQuestion } from "@/features/frontstore/formQuestions"
 import { supabase } from "@/lib/supabase"
 import { getActionMeta } from "@/lib/status"
 import { planConfig } from "@/lib/plans"
@@ -145,6 +146,8 @@ export interface OperationalBreakReleaseInput {
   schedule_id?: string | null
   break_type: OperationalBreakType
   notes?: string | null
+  /** Horário real da saída para o intervalo (ISO), quando o fiscal registra com atraso. */
+  started_at?: string | null
 }
 
 function raise(error: { message: string } | null) {
@@ -2004,11 +2007,24 @@ export async function setOperationalFlowStatus(
   return status as OperationalStatusRecord
 }
 
+async function setAllocationTimes(
+  allocationId: string,
+  patch: { started_at?: string; ended_at?: string }
+) {
+  const { error } = await supabase
+    .from("post_allocations")
+    .update(patch)
+    .eq("id", allocationId)
+  raise(error)
+}
+
 export async function allocatePost(input: {
   post_id: string
   employee_id: string
   schedule_id?: string | null
   notes?: string | null
+  /** Início da contagem no posto (ISO); por padrão o app usa a entrada da escala. */
+  started_at?: string | null
 }) {
   const { data, error } = await supabase.rpc("allocate_post", {
     p_post_id: input.post_id,
@@ -2019,7 +2035,28 @@ export async function allocatePost(input: {
 
   if (isMissingAllocationFeature(error)) throw new Error(allocationFeatureMessage())
   raise(error)
-  return data as PostAllocation
+  const allocation = data as PostAllocation
+  if (input.started_at) {
+    await setAllocationTimes(allocation.id, { started_at: input.started_at })
+    return { ...allocation, started_at: input.started_at }
+  }
+  return allocation
+}
+
+/** Corrige o horário em que o colaborador entrou no posto; fica registrado na auditoria. */
+export async function adjustPostAllocationStart(
+  profile: UserProfile,
+  input: { allocation_id: string; branch_id: string; started_at: string; previous_started_at: string }
+) {
+  await setAllocationTimes(input.allocation_id, { started_at: input.started_at })
+  await createAuditLog(profile, {
+    branch_id: input.branch_id,
+    action: "post_allocation_start_adjusted",
+    entity_type: "post_allocations",
+    entity_id: input.allocation_id,
+    old_value: { started_at: input.previous_started_at },
+    new_value: { started_at: input.started_at },
+  })
 }
 
 export async function transferPostAllocation(input: {
@@ -2043,6 +2080,8 @@ export async function transferPostAllocation(input: {
 export async function finalizePostAllocation(input: {
   allocation_id: string
   notes?: string | null
+  /** Horário real em que o colaborador saiu do posto (ISO), se já tiver saído antes. */
+  ended_at?: string | null
 }) {
   const { data, error } = await supabase.rpc("finalize_post_allocation", {
     p_allocation_id: input.allocation_id,
@@ -2051,6 +2090,10 @@ export async function finalizePostAllocation(input: {
 
   if (isMissingAllocationFeature(error)) throw new Error(allocationFeatureMessage())
   raise(error)
+  if (input.ended_at) {
+    await setAllocationTimes(input.allocation_id, { ended_at: input.ended_at })
+    return { ...(data as PostAllocation), ended_at: input.ended_at }
+  }
   return data as PostAllocation
 }
 
@@ -2068,7 +2111,27 @@ export async function releaseEmployeeBreak(input: OperationalBreakReleaseInput) 
     throw new Error(operationalBreakFeatureMessage())
   }
   raise(error)
-  return data as OperationalBreak
+  const released = data as OperationalBreak
+  if (input.started_at) {
+    // Saída registrada depois do fato: o intervalo passa a contar do horário real.
+    const duration = Math.max(
+      Date.parse(released.planned_end) - Date.parse(released.planned_start),
+      0
+    )
+    const startedMs = Date.parse(input.started_at)
+    const patch = {
+      planned_start: input.started_at,
+      actual_start: input.started_at,
+      planned_end: new Date(startedMs + duration).toISOString(),
+    }
+    const { error: updateError } = await supabase
+      .from("operational_breaks")
+      .update(patch)
+      .eq("id", released.id)
+    raise(updateError)
+    return { ...released, ...patch }
+  }
+  return released
 }
 
 export async function returnEmployeeBreak(input: {
@@ -3322,11 +3385,14 @@ export async function submitOperationalFormResponse(
   raise(formError)
   if (!form) throw new Error("Formulario nao encontrado ou inativo.")
 
-  const questions = normalizeOperationalQuestions(form.questions ?? [])
+  // As respostas usam o rotulo da pergunta como chave (o sufixo "::tipo" fica de fora).
+  const questions = normalizeOperationalQuestions(form.questions ?? []).map(parseQuestion)
   const answers = Object.fromEntries(
-    questions.map((question) => [question, input.answers[question]?.trim() ?? ""])
+    questions.map((question) => [question.label, input.answers[question.label]?.trim() ?? ""])
   )
-  const missingAnswers = questions.filter((question) => !answers[question])
+  const missingAnswers = questions.filter(
+    (question) => question.required && !answers[question.label]
+  )
   if (missingAnswers.length > 0) {
     throw new Error("Responda todas as perguntas antes de enviar.")
   }
@@ -3580,6 +3646,46 @@ export async function recordOperationalEvent(
 
   raise(auditError)
   return event as AttendanceEvent
+}
+
+// Status operacional sem escala vinculada (a escala foi apagada): nao ha como registrar
+// evento, entao o status e encerrado diretamente e a acao fica na auditoria.
+export async function closeOrphanOperationalStatus(
+  profile: UserProfile,
+  status: { id: string; branch_id: string; current_status: string }
+) {
+  const values = {
+    priority_level: 0,
+    delay_minutes: 0,
+    status_reason: "Encerrado sem escala vinculada.",
+    updated_at: new Date().toISOString(),
+  }
+
+  let { error } = await supabase
+    .from("operational_status")
+    .update({ ...values, current_status: "finalizado" })
+    .eq("id", status.id)
+    .eq("organization_id", profile.organization_id)
+    .is("schedule_id", null)
+
+  if (isUnsupportedFinalizedStatus(error)) {
+    ;({ error } = await supabase
+      .from("operational_status")
+      .update({ ...values, current_status: "folga" })
+      .eq("id", status.id)
+      .eq("organization_id", profile.organization_id)
+      .is("schedule_id", null))
+  }
+  raise(error)
+
+  await createAuditLog(profile, {
+    branch_id: status.branch_id,
+    action: "status_encerrado_sem_escala",
+    entity_type: "operational_status",
+    entity_id: status.id,
+    old_value: { current_status: status.current_status },
+    new_value: { current_status: "finalizado" },
+  })
 }
 
 async function recordBreakAlreadyDoneFallback(

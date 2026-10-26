@@ -27,6 +27,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { Select } from "@/components/ui/select"
 import {
   useAllEmployees,
   useBranches,
@@ -66,9 +67,6 @@ import type {
   UserRole,
 } from "@/types/domain"
 
-const fieldClass =
-  "h-8 w-full rounded-lg border bg-white px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
-
 type OperationalSettingsFormValues = {
   mode: OperationalMode
 } & ReturnType<typeof getOperationalModeDefaults>
@@ -76,7 +74,7 @@ type OperationalSettingsFormValues = {
 const adminRoles: UserRole[] = ["owner", "admin"]
 
 const roleLabel: Record<UserRole, string> = {
-  owner: "Proprietario",
+  owner: "Proprietário",
   admin: "Administrador",
   branch_manager: "Gerente de filial",
   supervisor: "Supervisor",
@@ -113,15 +111,15 @@ const operationalRuleOptions = [
   },
   {
     key: "block_break_on_peak_hours",
-    label: "Proteger intervalo em horario de pico",
+    label: "Proteger intervalo em horário de pico",
     description:
-      "Ajuda a evitar liberacao de intervalo nos horarios mais sensiveis da operacao.",
+      "Ajuda a evitar liberação de intervalo nos horários mais sensíveis da operação.",
   },
   {
     key: "require_responsible_presence",
-    label: "Exigir responsavel presente",
+    label: "Exigir responsável presente",
     description:
-      "Usado em operacoes que dependem de supervisor, responsavel tecnico ou gerente no turno.",
+      "Usado em operações que dependem de supervisor, responsável tecnico ou gerente no turno.",
   },
 ] as const satisfies ReadonlyArray<{
   key: keyof Pick<
@@ -188,7 +186,7 @@ function buildOperationalSettingsForm(
 
 function PermissionNotice({ text }: { text: string }) {
   return (
-    <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+    <div className="flex items-start gap-2 rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
       <AlertTriangle className="mt-0.5 size-4 shrink-0" />
       <span>{text}</span>
     </div>
@@ -217,7 +215,7 @@ function OrganizationForm({
 
     if (disabled) return
     if (!form.name.trim()) {
-      setError("Informe a razao social da organizacao.")
+      setError("Informe a razao social da organização.")
       return
     }
 
@@ -232,7 +230,7 @@ function OrganizationForm({
   return (
     <form className="space-y-4" onSubmit={handleSubmit}>
       {disabled ? (
-        <PermissionNotice text="Somente proprietarios e administradores podem editar dados da organizacao." />
+        <PermissionNotice text="Somente proprietários e administradores podem editar dados da organização." />
       ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2">
@@ -269,34 +267,25 @@ function OrganizationForm({
         </label>
         <label className="space-y-1 text-sm">
           <span className="font-medium">Segmento</span>
-          <select
-            className={fieldClass}
+          <Select
             disabled={disabled}
             value={form.segment}
-            onChange={(e) =>
-              setForm((current) => ({
-                ...current,
-                segment: e.target.value as BusinessSegment,
-              }))
+            onValueChange={(value) =>
+              setForm((current) => ({ ...current, segment: value as BusinessSegment }))
             }
-          >
-            {Object.entries(segmentLabel).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
+            options={Object.entries(segmentLabel).map(([value, label]) => ({ value, label }))}
+          />
         </label>
       </div>
 
       {error || updateOrganization.error ? (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <div className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">
           {error ?? updateOrganization.error?.message}
         </div>
       ) : null}
 
       <Button type="submit" disabled={disabled || updateOrganization.isPending}>
-        {updateOrganization.isPending ? "Salvando..." : "Salvar organizacao"}
+        {updateOrganization.isPending ? "Salvando..." : "Salvar organização"}
       </Button>
     </form>
   )
@@ -351,51 +340,42 @@ function OperationalSettingsEditor({
   return (
     <form className="space-y-4" onSubmit={handleSubmit}>
       {disabled ? (
-        <PermissionNotice text="Somente proprietarios e administradores podem alterar modos e regras operacionais." />
+        <PermissionNotice text="Somente proprietários e administradores podem alterar modos e regras operacionais." />
       ) : null}
 
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant="outline">
-          {selectedBranchId ? "Configuracao de filial" : "Padrao da organizacao"}
+          {selectedBranchId ? "Configuração de filial" : "Padrão da organização"}
         </Badge>
         {inheritedFromOrganization ? (
-          <Badge variant="secondary">Herdando padrao da organizacao</Badge>
+          <Badge variant="secondary">Herdando padrão da organização</Badge>
         ) : null}
       </div>
 
       <label className="space-y-1 text-sm">
-        <span className="font-medium">Escopo da configuracao</span>
-        <select
-          className={fieldClass}
+        <span className="font-medium">Escopo da configuração</span>
+        <Select
+          aria-label="Escopo da configuração"
           value={selectedBranchId ?? ""}
-          onChange={(event) => setSelectedBranchId(event.target.value || null)}
-        >
-          <option value="">Padrao da organizacao</option>
-          {branches.map((branch) => (
-            <option key={branch.id} value={branch.id}>
-              {branch.name}
-            </option>
-          ))}
-        </select>
+          onValueChange={(value) => setSelectedBranchId(value || null)}
+          options={[
+            { value: "", label: "Padrão da organização" },
+            ...branches.map((branch) => ({ value: branch.id, label: branch.name })),
+          ]}
+        />
         <p className="text-xs text-muted-foreground">
-          Escolher uma filial aqui nao altera a filial selecionada no restante do app.
+          Escolher uma filial aqui não altera a filial selecionada no restante do app.
         </p>
       </label>
 
       <label className="space-y-1 text-sm">
         <span className="font-medium">Modo operacional</span>
-        <select
-          className={fieldClass}
+        <Select
           disabled={disabled}
           value={form.mode}
-          onChange={(event) => handleModeChange(event.target.value as OperationalMode)}
-        >
-          {Object.entries(operationalModeNames).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
+          onValueChange={(value) => handleModeChange(value as OperationalMode)}
+          options={Object.entries(operationalModeNames).map(([value, label]) => ({ value, label }))}
+        />
         <p className="text-xs text-muted-foreground">
           {operationalModeDescriptions[form.mode]}
         </p>
@@ -403,7 +383,7 @@ function OperationalSettingsEditor({
 
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="space-y-1 text-sm">
-          <span className="font-medium">Tolerancia de atraso (min)</span>
+          <span className="font-medium">Tolerância de atraso (min)</span>
           <Input
             disabled={disabled}
             type="number"
@@ -419,7 +399,7 @@ function OperationalSettingsEditor({
           />
         </label>
         <label className="space-y-1 text-sm">
-          <span className="font-medium">Tolerancia de intervalo (min)</span>
+          <span className="font-medium">Tolerância de intervalo (min)</span>
           <Input
             disabled={disabled}
             type="number"
@@ -440,7 +420,7 @@ function OperationalSettingsEditor({
         {operationalRuleOptions.map((option) => (
           <label
             key={option.key}
-            className="flex items-start gap-2 rounded-lg border bg-slate-50 p-3 text-sm"
+            className="flex items-start gap-2 rounded-lg border bg-slate-50 dark:bg-slate-800/60 p-3 text-sm"
           >
             <input
               disabled={disabled}
@@ -470,7 +450,7 @@ function OperationalSettingsEditor({
         </p>
         <div className="grid gap-3 sm:grid-cols-3">
           <label className="space-y-1 text-sm">
-            <span className="font-medium">Fila em atencao</span>
+            <span className="font-medium">Fila em atenção</span>
             <Input
               disabled={disabled}
               type="number"
@@ -534,7 +514,7 @@ function OperationalSettingsEditor({
       ) : null}
 
       {saveSettings.error ? (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <div className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">
           {saveSettings.error.message}
         </div>
       ) : null}
@@ -550,7 +530,7 @@ function OperationalSettingsEditor({
           onClick={handleResetDefaults}
         >
           <RotateCcw className="size-4" />
-          Restaurar padrao
+          Restaurar padrão
         </Button>
       </div>
     </form>
@@ -640,7 +620,7 @@ function CurrentUserForm({
     }
 
     if (passwordForm.password !== passwordForm.confirmation) {
-      setPasswordError("As senhas nao conferem.")
+      setPasswordError("As senhas não conferem.")
       return
     }
 
@@ -651,16 +631,16 @@ function CurrentUserForm({
   return (
     <div className="space-y-5">
       <div className="grid gap-3 sm:grid-cols-3">
-        <div className="rounded-lg border bg-slate-50 p-3">
+        <div className="rounded-lg border bg-slate-50 dark:bg-slate-800/60 p-3">
           <div className="text-xs text-muted-foreground">Papel</div>
           <div className="mt-1 font-medium">{roleLabel[profile.role]}</div>
         </div>
-        <div className="rounded-lg border bg-slate-50 p-3">
+        <div className="rounded-lg border bg-slate-50 dark:bg-slate-800/60 p-3">
           <div className="text-xs text-muted-foreground">Status</div>
           <div className="mt-1 font-medium">{profile.active ? "Ativo" : "Inativo"}</div>
         </div>
-        <div className="rounded-lg border bg-slate-50 p-3">
-          <div className="text-xs text-muted-foreground">Filial padrao</div>
+        <div className="rounded-lg border bg-slate-50 dark:bg-slate-800/60 p-3">
+          <div className="text-xs text-muted-foreground">Filial padrão</div>
           <div className="mt-1 font-medium">
             {branches.find((branch) => branch.id === profile.branch_id)?.name ??
               "Sem filial"}
@@ -695,34 +675,27 @@ function CurrentUserForm({
               }
             />
             <p className="text-xs text-muted-foreground">
-              A troca de email pode exigir confirmacao pelo Supabase Auth.
+              A troca de email pode exigir confirmação pelo Supabase Auth.
             </p>
           </label>
         </div>
 
         <label className="space-y-1 text-sm">
-          <span className="font-medium">Filial padrao</span>
-          <select
-            className={fieldClass}
+          <span className="font-medium">Filial padrão</span>
+          <Select
             value={profileForm.branch_id}
-            onChange={(event) =>
-              setProfileForm((current) => ({
-                ...current,
-                branch_id: event.target.value,
-              }))
+            onValueChange={(value) =>
+              setProfileForm((current) => ({ ...current, branch_id: value }))
             }
-          >
-            <option value="">Sem filial padrao</option>
-            {branches.map((branch) => (
-              <option key={branch.id} value={branch.id}>
-                {branch.name}
-              </option>
-            ))}
-          </select>
+            options={[
+              { value: "", label: "Sem filial padrão" },
+              ...branches.map((branch) => ({ value: branch.id, label: branch.name })),
+            ]}
+          />
         </label>
 
         {profileError || updateProfile.error ? (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <div className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">
             {profileError ?? updateProfile.error?.message}
           </div>
         ) : null}
@@ -733,11 +706,11 @@ function CurrentUserForm({
         </Button>
       </form>
 
-      <form className="space-y-4 rounded-lg border bg-slate-50 p-4" onSubmit={handlePasswordSubmit}>
+      <form className="space-y-4 rounded-lg border bg-slate-50 dark:bg-slate-800/60 p-4" onSubmit={handlePasswordSubmit}>
         <div>
           <div className="flex items-center gap-2 font-medium">
             <Lock className="size-4" />
-            Seguranca de acesso
+            Segurança de acesso
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
             Atualize sua senha de login. A sessao atual continua ativa.
@@ -774,7 +747,7 @@ function CurrentUserForm({
         </div>
 
         {passwordError || updatePassword.error ? (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <div className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">
             {passwordError ?? updatePassword.error?.message}
           </div>
         ) : null}
@@ -801,19 +774,19 @@ function UsageItem({
   const overLimit = limit !== null && current > limit
 
   return (
-    <div className="rounded-lg border bg-slate-50 p-3">
+    <div className="rounded-lg border bg-slate-50 dark:bg-slate-800/60 p-3">
       <div className="flex items-center justify-between gap-2 text-sm">
         <span className="font-medium">{label}</span>
         {limit === null ? (
-          <span className="text-xs font-medium text-emerald-600">Ilimitado</span>
+          <span className="text-xs font-medium text-emerald-600 dark:text-emerald-300">Ilimitado</span>
         ) : (
-          <span className={overLimit ? "font-medium text-red-600" : "text-muted-foreground"}>
+          <span className={overLimit ? "font-medium text-red-600 dark:text-red-300" : "text-muted-foreground"}>
             {current} / {limit}
           </span>
         )}
       </div>
       {limit !== null ? (
-        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200">
+        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
           <div
             className={`h-full rounded-full transition-all ${
               overLimit || percent >= 100
@@ -831,30 +804,36 @@ function UsageItem({
 }
 
 const planBadgeClass: Record<SubscriptionPlan, string> = {
-  starter: "border-slate-200 bg-slate-100 text-slate-600",
-  growth: "border-blue-200 bg-blue-50 text-blue-700",
-  enterprise: "border-violet-200 bg-violet-50 text-violet-700",
+  starter: "border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300",
+  growth: "border-blue-200 dark:border-blue-500/30 bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300",
+  enterprise: "border-violet-200 dark:border-violet-500/30 bg-violet-50 dark:bg-violet-500/10 text-violet-700 dark:text-violet-300",
 }
 
 const subscriptionStatusLabel: Record<string, string> = {
-  trial: "Periodo de teste",
+  trial: "Período de teste",
   active: "Ativo",
   past_due: "Pagamento pendente",
   cancelled: "Cancelado",
 }
 
 const subscriptionStatusClass: Record<string, string> = {
-  trial: "border-amber-200 bg-amber-50 text-amber-700",
-  active: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  past_due: "border-red-200 bg-red-50 text-red-600",
+  trial: "border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  active: "border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+  past_due: "border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-300",
   cancelled: "border-zinc-200 bg-zinc-100 text-zinc-500",
 }
 
+// As chaves ("Basico", "Indisponivel") seguem sem acento por serem comparadas em outros arquivos.
+const planAccessLabel: Record<string, string> = {
+  Basico: "Básico",
+  Indisponivel: "Indisponível",
+}
+
 const planAccessClass: Record<string, string> = {
-  Completo: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  Basico: "border-blue-200 bg-blue-50 text-blue-700",
-  Opcional: "border-amber-200 bg-amber-50 text-amber-700",
-  Indisponivel: "border-red-200 bg-red-50 text-red-600",
+  Completo: "border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+  Basico: "border-blue-200 dark:border-blue-500/30 bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300",
+  Opcional: "border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  Indisponivel: "border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-300",
 }
 
 function effectiveBranchLimit(
@@ -905,11 +884,11 @@ function PlanModulesPanel({
   return (
     <div className="space-y-4">
       {!canViewBilling ? (
-        <PermissionNotice text="Detalhes de plano e assinatura ficam visiveis para proprietarios e administradores." />
+        <PermissionNotice text="Detalhes de plano e assinatura ficam visíveis para proprietários e administradores." />
       ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <div className="rounded-lg border bg-slate-50 p-3">
+        <div className="rounded-lg border bg-slate-50 dark:bg-slate-800/60 p-3">
           <div className="text-xs text-muted-foreground">Plano</div>
           <div className="mt-1">
             <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${planBadgeClass[currentPlan]}`}>
@@ -917,11 +896,11 @@ function PlanModulesPanel({
             </span>
           </div>
         </div>
-        <div className="rounded-lg border bg-slate-50 p-3">
+        <div className="rounded-lg border bg-slate-50 dark:bg-slate-800/60 p-3">
           <div className="text-xs text-muted-foreground">Status</div>
           <div className="mt-1">
             {status ? (
-              <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${subscriptionStatusClass[status] ?? "border-slate-200 bg-slate-100 text-slate-600"}`}>
+              <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${subscriptionStatusClass[status] ?? "border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300"}`}>
                 {subscriptionStatusLabel[status] ?? status}
               </span>
             ) : (
@@ -963,7 +942,7 @@ function PlanModulesPanel({
                 return (
                   <div
                     key={module.key}
-                    className={`rounded-lg border p-3 ${blocked ? "bg-slate-50 opacity-60" : "bg-white"}`}
+                    className={`rounded-lg border p-3 ${blocked ? "bg-slate-50 dark:bg-slate-800/60 opacity-60" : "bg-white dark:bg-[color:var(--bg-surface)]"}`}
                   >
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div>
@@ -975,15 +954,15 @@ function PlanModulesPanel({
                       <div className="flex flex-wrap items-center gap-1.5">
                         <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${
                           blocked
-                            ? "border-red-200 bg-red-50 text-red-600"
+                            ? "border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-300"
                             : enabled
-                              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                              : "border-amber-200 bg-amber-50 text-amber-700"
+                              ? "border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                              : "border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300"
                         }`}>
-                          {blocked ? "Indisponivel" : enabled ? "Ativo" : "Pendente"}
+                          {blocked ? "Indisponível" : enabled ? "Ativo" : "Pendente"}
                         </span>
-                        <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${planAccessClass[planAccess] ?? "border-slate-200 bg-slate-100 text-slate-600"}`}>
-                          {planAccess}
+                        <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${planAccessClass[planAccess] ?? "border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300"}`}>
+                          {planAccessLabel[planAccess] ?? planAccess}
                         </span>
                       </div>
                     </div>
@@ -1024,14 +1003,14 @@ function PlanCard({
   const currentPlan: SubscriptionPlan = organization?.plan ?? subscription?.plan ?? "starter"
 
   return (
-    <Card className="border bg-white shadow-sm">
+    <Card className="border bg-white dark:bg-[color:var(--bg-surface)] shadow-sm">
       <CardHeader
         className="cursor-pointer select-none"
         onClick={() => setOpen((v) => !v)}
       >
         <CardTitle className="flex items-center gap-2">
           <CreditCard className="size-5" />
-          <span className="flex-1">Plano e modulos</span>
+          <span className="flex-1">Plano e módulos</span>
           <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${planBadgeClass[currentPlan]}`}>
             {planLabel[currentPlan]}
           </span>
@@ -1045,7 +1024,7 @@ function PlanCard({
         <CardContent className="space-y-5">
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              Altere o plano para testar diferentes niveis de acesso e limites.
+              Altere o plano para testar diferentes níveis de acesso e limites.
             </p>
             <div className="grid gap-2 sm:grid-cols-3">
               {planSwitcherOptions.map(({ plan, description }) => {
@@ -1058,7 +1037,7 @@ function PlanCard({
                     className={`rounded-lg border p-3 text-left transition-colors disabled:cursor-not-allowed ${
                       active
                         ? "border-primary bg-primary text-primary-foreground"
-                        : "border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-slate-100 disabled:opacity-50"
+                        : "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 hover:border-slate-300 dark:hover:border-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50"
                     }`}
                   >
                     <div className="text-sm font-semibold">{planLabel[plan]}</div>
@@ -1073,13 +1052,13 @@ function PlanCard({
               <p className="text-xs text-muted-foreground">Atualizando plano...</p>
             ) : null}
             {updatePlan.error ? (
-              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              <div className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">
                 {updatePlan.error.message}
               </div>
             ) : null}
             {updatePlan.isSuccess ? (
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-                Plano atualizado. Os modulos refletem a mudanca imediatamente.
+              <div className="rounded-lg border border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">
+                Plano atualizado. Os módulos refletem a mudanca imediatamente.
               </div>
             ) : null}
           </div>
@@ -1128,65 +1107,66 @@ export function SettingsPage() {
   return (
     <>
       <PageHeader
-        title="Configuracoes"
-        description="Dados da organizacao, perfil, plano, modulos, regras operacionais e auditoria."
+        large
+        title="Configurações"
+        description="Dados da organização, perfil, plano, módulos, regras operacionais e auditoria."
       />
 
       <div className="space-y-4 p-6">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-lg border bg-white p-4">
-            <div className="text-sm text-muted-foreground">Prontidao</div>
-            <div className="mt-2 flex items-end gap-2">
-              <span className="text-2xl font-semibold">{completedChecks}/4</span>
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+          <div className="rounded-lg border bg-white dark:bg-[color:var(--bg-surface)] px-3 py-2">
+            <div className="text-xs text-muted-foreground">Prontidão</div>
+            <div className="flex items-end gap-2">
+              <span className="text-xl font-semibold">{completedChecks}/4</span>
               <span className="pb-1 text-xs text-muted-foreground">itens</span>
             </div>
           </div>
-          <div className="rounded-lg border bg-white p-4">
-            <div className="text-sm text-muted-foreground">Filiais ativas</div>
-            <div className="mt-2 text-2xl font-semibold">{activeBranchCount}</div>
+          <div className="rounded-lg border bg-white dark:bg-[color:var(--bg-surface)] px-3 py-2">
+            <div className="text-xs text-muted-foreground">Filiais ativas</div>
+            <div className="text-xl font-semibold">{activeBranchCount}</div>
           </div>
-          <div className="rounded-lg border bg-white p-4">
-            <div className="text-sm text-muted-foreground">Colaboradores ativos</div>
-            <div className="mt-2 text-2xl font-semibold">{activeEmployeeCount}</div>
+          <div className="rounded-lg border bg-white dark:bg-[color:var(--bg-surface)] px-3 py-2">
+            <div className="text-xs text-muted-foreground">Colaboradores ativos</div>
+            <div className="text-xl font-semibold">{activeEmployeeCount}</div>
           </div>
           <div
-            className={`rounded-lg border p-4 ${
-              enabledModuleCount === 0 ? "border-amber-200 bg-amber-50" : "bg-white"
+            className={`rounded-lg border px-3 py-2 ${
+              enabledModuleCount === 0 ? "border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10" : "bg-white dark:bg-[color:var(--bg-surface)]"
             }`}
           >
-            <div className="text-sm text-muted-foreground">Modulos ativos</div>
-            <div className="mt-2 text-2xl font-semibold">{enabledModuleCount}</div>
+            <div className="text-xs text-muted-foreground">Módulos ativos</div>
+            <div className="text-xl font-semibold">{enabledModuleCount}</div>
           </div>
         </div>
 
         {completedChecks < configChecks.length ? (
-          <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <div className="flex items-center gap-2 rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-300">
             <AlertTriangle className="size-4 shrink-0" />
-            Existem configuracoes basicas pendentes para deixar a operacao completa.
+            Existem configurações básicas pendentes para deixar a operação completa.
           </div>
         ) : (
-          <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          <div className="flex items-center gap-2 rounded-lg border border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 px-4 py-3 text-sm text-emerald-800 dark:text-emerald-300">
             <CheckCircle2 className="size-4 shrink-0" />
-            Configuracao essencial pronta para uso operacional.
+            Configuração essencial pronta para uso operacional.
           </div>
         )}
 
         <div className="grid gap-4 xl:grid-cols-[1fr_0.85fr]">
           <div className="space-y-4">
-            <Card className="border bg-white shadow-sm">
+            <Card className="border bg-white dark:bg-[color:var(--bg-surface)] shadow-sm">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Building className="size-5" />
-                  Organizacao
+                  Organização
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 {organization.isLoading ? (
-                  <StateBlock type="loading" title="Carregando organizacao" />
+                  <StateBlock type="loading" title="Carregando organização" />
                 ) : organization.isError ? (
                   <StateBlock
                     type="error"
-                    title="Erro ao carregar organizacao"
+                    title="Erro ao carregar organização"
                     description={organization.error.message}
                   />
                 ) : organization.data ? (
@@ -1196,12 +1176,12 @@ export function SettingsPage() {
                     organization={organization.data}
                   />
                 ) : (
-                  <StateBlock title="Organizacao nao encontrada" />
+                  <StateBlock title="Organização não encontrada" />
                 )}
               </CardContent>
             </Card>
 
-            <Card className="border bg-white shadow-sm">
+            <Card className="border bg-white dark:bg-[color:var(--bg-surface)] shadow-sm">
               <CardHeader
                 className="cursor-pointer select-none"
                 onClick={() => setOpsOpen((v) => !v)}
@@ -1224,23 +1204,23 @@ export function SettingsPage() {
                   <div className="space-y-3 border-t pt-4">
                     <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
                       <Gauge className="size-3.5" />
-                      Saude da configuracao
+                      Saúde da configuração
                     </div>
                     {[
-                      { label: "Organizacao cadastrada", done: Boolean(organization.data) },
+                      { label: "Organização cadastrada", done: Boolean(organization.data) },
                       { label: "Filial ativa", done: Boolean((branches.data ?? []).some((b) => b.active)) },
                       { label: "Colaboradores ativos", done: Boolean((employees.data ?? []).some((e) => e.active)) },
-                      { label: "Modulos vinculados", done: Boolean((organizationModules.data ?? []).length) },
+                      { label: "Módulos vinculados", done: Boolean((organizationModules.data ?? []).length) },
                     ].map((item) => (
                       <div
                         key={item.label}
-                        className="flex items-center justify-between gap-3 rounded-lg border bg-slate-50 p-3 text-sm"
+                        className="flex items-center justify-between gap-3 rounded-lg border bg-slate-50 dark:bg-slate-800/60 p-3 text-sm"
                       >
                         <span>{item.label}</span>
                         {item.done ? (
-                          <CheckCircle2 className="size-4 text-emerald-600" />
+                          <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-300" />
                         ) : (
-                          <AlertTriangle className="size-4 text-amber-600" />
+                          <AlertTriangle className="size-4 text-amber-600 dark:text-amber-300" />
                         )}
                       </div>
                     ))}
@@ -1249,14 +1229,14 @@ export function SettingsPage() {
               ) : null}
             </Card>
 
-            <Card className="border bg-white shadow-sm">
+            <Card className="border bg-white dark:bg-[color:var(--bg-surface)] shadow-sm">
               <CardHeader
                 className="cursor-pointer select-none"
                 onClick={() => setUserOpen((v) => !v)}
               >
                 <CardTitle className="flex items-center gap-2">
                   <Shield className="size-5" />
-                  <span className="flex-1">Usuario atual</span>
+                  <span className="flex-1">Usuário atual</span>
                   <ChevronDown
                     className={`size-4 text-muted-foreground transition-transform duration-200 ${userOpen ? "rotate-180" : ""}`}
                   />
@@ -1267,7 +1247,7 @@ export function SettingsPage() {
                   {profile ? (
                     <CurrentUserForm branches={branches.data ?? []} profile={profile} />
                   ) : (
-                    <StateBlock title="Perfil nao encontrado" />
+                    <StateBlock title="Perfil não encontrado" />
                   )}
                 </CardContent>
               ) : null}
@@ -1276,17 +1256,17 @@ export function SettingsPage() {
 
           <div className="space-y-4">
             {branches.isLoading || employees.isLoading || organizationModules.isLoading ? (
-              <Card className="border bg-white shadow-sm">
+              <Card className="border bg-white dark:bg-[color:var(--bg-surface)] shadow-sm">
                 <CardContent className="pt-6">
-                  <StateBlock type="loading" title="Carregando plano e modulos" />
+                  <StateBlock type="loading" title="Carregando plano e módulos" />
                 </CardContent>
               </Card>
             ) : organizationModules.isError ? (
-              <Card className="border bg-white shadow-sm">
+              <Card className="border bg-white dark:bg-[color:var(--bg-surface)] shadow-sm">
                 <CardContent className="pt-6">
                   <StateBlock
                     type="error"
-                    title="Erro ao carregar modulos da organizacao"
+                    title="Erro ao carregar módulos da organização"
                     description={organizationModules.error.message}
                   />
                 </CardContent>

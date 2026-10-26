@@ -14,7 +14,7 @@ export function normalizeColumn(value: string) {
     .replace(/^_+|_+$/g, "")
 }
 
-function parseCsvLine(line: string) {
+function parseCsvLine(line: string, delimiter: string) {
   const cells: string[] = []
   let current = ""
   let quoted = false
@@ -34,7 +34,7 @@ function parseCsvLine(line: string) {
       continue
     }
 
-    if ((char === "," || char === ";") && !quoted) {
+    if (char === delimiter && !quoted) {
       cells.push(current.trim())
       current = ""
       continue
@@ -72,11 +72,14 @@ export async function parseSpreadsheet(file: File) {
 
   if (lowerName.endsWith(".csv")) {
     const text = await file.text()
-    const matrix = text
+    const lines = text
       .replace(/^\uFEFF/, "")
       .split(/\r?\n/)
       .filter((line) => line.trim().length > 0)
-      .map(parseCsvLine)
+    // O separador vem do cabeçalho: ";" (Excel em português, onde a vírgula é decimal, como em
+    // 24,99) ou ",". Assim "24,99" numa planilha separada por ";" continua uma célula só.
+    const delimiter = (lines[0] ?? "").includes(";") ? ";" : ","
+    const matrix = lines.map((line) => parseCsvLine(line, delimiter))
 
     return rowsFromMatrix(matrix)
   }

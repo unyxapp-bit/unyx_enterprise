@@ -28,6 +28,16 @@ describe("poster editor custom elements", () => {
     expect(markup).toContain("<ellipse")
   })
 
+  it("exports the brush stroke as a deterministic filled path", () => {
+    const element = createCustomElement("shape", { shape: "brush", fill: "#FFD400", width: 60, height: 20 })
+    const first = customElementSvg(element, 800, 1100)
+    const second = customElementSvg(element, 800, 1100)
+
+    expect(first).toContain("<path")
+    expect(first).toContain('fill="#FFD400"')
+    expect(first).toBe(second)
+  })
+
   it("fits large custom text inside its box during export", () => {
     const element = createCustomElement("text", {
       value: "OFERTA MUITO ESPECIAL",

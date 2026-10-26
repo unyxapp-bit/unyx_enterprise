@@ -29,14 +29,14 @@ export const operationalModeNames: Record<OperationalMode, string> = {
 
 export const operationalModeDescriptions: Record<OperationalMode, string> = {
   supermarket:
-    "Prioriza frente de caixa, cobertura, intervalos e atrasos criticos.",
+    "Prioriza frente de caixa, cobertura, intervalos e atrasos críticos.",
   retail_store:
-    "Prioriza cobertura por setor, faltas, atrasos por area e realocacao.",
+    "Prioriza cobertura por setor, faltas, atrasos por área e realocação.",
   restaurant:
-    "Prioriza equipe minima por turno, horarios de pico e funcoes criticas.",
+    "Prioriza equipe mínima por turno, horários de pico e funções críticas.",
   pharmacy:
-    "Prioriza responsavel obrigatorio, atendimento e rastreabilidade operacional.",
-  other: "Mantem a operacao generica com foco em atrasos, intervalos e alertas.",
+    "Prioriza responsável obrigatório, atendimento e rastreabilidade operacional.",
+  other: "Mantém a operação genérica com foco em atrasos, intervalos e alertas.",
 }
 
 export const operationalModeDefaults: Record<

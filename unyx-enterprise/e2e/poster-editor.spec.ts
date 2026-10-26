@@ -48,16 +48,61 @@ test("imports template, edits text, saves locally and in cloud, exports vector P
 
   await page.getByPlaceholder("Nome do produto").fill("TESTE VETORIAL")
   await page.getByRole("button", { name: "Camadas" }).click()
-  await page.getByRole("button", { name: "Salvar versao" }).click()
-  await expect(page.getByText("Versoes salvas")).toBeVisible()
-  await expect(page.getByText("Sincronizacao automatica ativa")).toBeVisible()
+  await page.getByRole("button", { name: "Salvar versão" }).click()
+  await expect(page.getByText("Versões salvas")).toBeVisible()
+  await expect(page.getByText("Sincronização automática ativa")).toBeVisible()
   await cloudSave
 
   await page.getByRole("button", { name: "Exportar" }).click()
   const downloadPromise = page.waitForEvent("download")
-  await page.getByRole("menuitem", { name: "PDF para impressao" }).click()
+  await page.getByRole("menuitem", { name: "PDF para impressão" }).click()
   const download = await downloadPromise
   expect(download.suggestedFilename()).toMatch(/\.pdf$/)
+})
+
+test("builds several posters in a queue and exports one PDF with one page each", async ({ page }) => {
+  await page.locator("aside button", { hasText: "Aproveite Agora" }).first().click()
+  await page.getByRole("button", { name: /^Fila/ }).click()
+  const products = ["ARROZ", "FEIJAO", "CAFE"]
+  for (const product of products) {
+    await page.getByRole("button", { name: "Texto", exact: true }).click()
+    await page.getByPlaceholder("Nome do produto").fill(product)
+    await page.getByRole("button", { name: /^Fila/ }).click()
+    await page.getByRole("button", { name: "Adicionar cartaz atual à fila" }).click()
+  }
+  await expect(page.getByRole("button", { name: "Exportar PDF da fila (3 páginas)" })).toBeVisible()
+
+  // Edita o segundo item e salva a alteração na fila.
+  await page.getByRole("button", { name: "Editar cartaz 2" }).click()
+  await expect(page.getByPlaceholder("Nome do produto")).toHaveValue("FEIJAO")
+  await page.getByPlaceholder("Nome do produto").fill("FEIJAO PRETO")
+  await page.getByRole("button", { name: /^Fila/ }).click()
+  await page.getByRole("button", { name: "Salvar alterações na fila" }).click()
+  await expect(page.getByRole("complementary").getByText("FEIJAO PRETO", { exact: true })).toBeVisible()
+
+  const downloadPromise = page.waitForEvent("download")
+  await page.getByRole("button", { name: "Exportar PDF da fila (3 páginas)" }).click()
+  const download = await downloadPromise
+  expect(download.suggestedFilename()).toBe("cartazes_3_paginas.pdf")
+  const path = await download.path()
+  const { readFileSync } = await import("node:fs")
+  const pdf = readFileSync(path).toString("latin1")
+  expect((pdf.match(/\/Type\s*\/Page[^s]/g) ?? []).length).toBe(3)
+})
+
+test("creates one queued poster per spreadsheet row", async ({ page }) => {
+  await page.getByRole("button", { name: /^Fila/ }).click()
+  const csv = ["Produto;Descrição;Preço;Unidade", "ARROZ;PACOTE 5KG;24,99;UNID", "FEIJAO;PACOTE 1KG;8,49;UNID", ";sem produto;1,00;"].join("\n")
+  await page.getByLabel("Arquivo da planilha de cartazes").setInputFiles({
+    name: "cartazes.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from(csv, "utf-8"),
+  })
+  await expect(page.getByRole("button", { name: "Exportar PDF da fila (2 páginas)" })).toBeVisible()
+  await page.getByRole("button", { name: "Editar cartaz 2" }).click()
+  await expect(page.getByPlaceholder("Nome do produto")).toHaveValue("FEIJAO")
+  await expect(page.getByPlaceholder("Ex: 24", { exact: true })).toHaveValue("8")
+  await expect(page.getByPlaceholder("Ex: 99")).toHaveValue("49")
 })
 
 test("keeps editor text readable in light and dark application themes", async ({ page }) => {

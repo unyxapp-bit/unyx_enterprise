@@ -218,7 +218,7 @@ export function OperationalPostsMapBoard({
     return (
       <StateBlock
         title="Nenhum posto cadastrado"
-        description="Cadastre postos para visualizar a ocupacao da operacao."
+        description="Cadastre postos para visualizar a ocupação da operação."
       />
     )
   }
@@ -226,25 +226,25 @@ export function OperationalPostsMapBoard({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-emerald-700">
+        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 px-2.5 py-1 text-emerald-700 dark:text-emerald-300">
           <span className="size-2 rounded-full bg-emerald-500" />
           Ocupado
         </span>
-        <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-amber-700">
+        <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 px-2.5 py-1 text-amber-700 dark:text-amber-300">
           <span className="size-2 rounded-full bg-amber-500" />
           Pausado
         </span>
-        <span className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-sky-700">
+        <span className="inline-flex items-center gap-1 rounded-full border border-sky-200 dark:border-sky-500/30 bg-sky-50 dark:bg-sky-500/10 px-2.5 py-1 text-sky-700 dark:text-sky-300">
           <span className="size-2 rounded-full bg-sky-500" />
           Livre
         </span>
-        <span className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-zinc-100 px-2.5 py-1 text-zinc-600">
+        <span className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-zinc-100 px-2.5 py-1 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900/80 dark:text-zinc-300">
           <span className="size-2 rounded-full bg-zinc-400" />
           Inativo
         </span>
       </div>
 
-      <div className="grid gap-2.5 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
         {cards.map(({ post, allocation, operationalBreak, status }) => {
           const config = statusConfig[status]
           const StatusIcon = config.icon
@@ -267,46 +267,24 @@ export function OperationalPostsMapBoard({
                 }
               }}
             >
-              <CardContent className="space-y-2 p-2.5">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="truncate text-[13px] font-semibold text-[color:var(--text-primary)]">
-                      {post.name}
-                    </div>
-                    <div className="mt-0.5 truncate text-[10px] text-muted-foreground">
-                      {postTypeLabel[post.type] ?? post.type} ·{" "}
-                      {post.sectors?.name ?? "Sem setor"}
-                    </div>
+              <CardContent className="space-y-1.5 p-2">
+                <div className="flex items-center justify-between gap-1.5">
+                  <div className="truncate text-xs font-semibold text-[color:var(--text-primary)]">
+                    {post.name}
                   </div>
-
-                  <div className="flex flex-col items-end gap-1">
-                    <Badge
-                      variant="outline"
-                      className={cn("h-5 rounded-full px-1.5 py-0 text-[9px]", config.badgeClass)}
-                    >
-                      <StatusIcon className="mr-1 size-2.5" />
-                      {config.label}
-                    </Badge>
-                    {!post.active ? (
-                      <Badge
-                        variant="outline"
-                        className="h-5 rounded-full border-zinc-200 bg-white px-1.5 py-0 text-[9px] text-zinc-600"
-                      >
-                        Desativado
-                      </Badge>
-                    ) : null}
-                    {post.sector_id ? null : (
-                      <Badge
-                        variant="outline"
-                        className="h-5 rounded-full border-amber-200 bg-amber-50 px-1.5 py-0 text-[9px] text-amber-700"
-                      >
-                        Sem setor
-                      </Badge>
-                    )}
-                  </div>
+                  <Badge
+                    variant="outline"
+                    className={cn("h-4 shrink-0 rounded-full px-1.5 py-0 text-[9px]", config.badgeClass)}
+                  >
+                    <StatusIcon className="mr-0.5 size-2.5" />
+                    {config.label}
+                  </Badge>
+                </div>
+                <div className="-mt-1 truncate text-[10px] text-muted-foreground">
+                  {postTypeLabel[post.type] ?? post.type} · {post.sectors?.name ?? "Sem setor"}
                 </div>
 
-                <div className="rounded-lg border border-dashed border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] px-2.5 py-1.5 text-[11px] text-muted-foreground">
+                <div className="rounded-md border border-dashed border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] px-2 py-1 text-[10px] text-muted-foreground">
                   {status === "occupied" ? (
                     <div className="flex min-w-0 items-center justify-between gap-2">
                       <div className="flex min-w-0 items-center gap-1.5 text-[color:var(--text-primary)]">
@@ -322,7 +300,7 @@ export function OperationalPostsMapBoard({
                   ) : status === "paused" ? (
                     <div className="flex min-w-0 items-center justify-between gap-2">
                       <div className="flex min-w-0 items-center gap-1.5 text-[color:var(--text-primary)]">
-                        <Coffee className="size-3 shrink-0 text-amber-600" />
+                        <Coffee className="size-3 shrink-0 text-amber-600 dark:text-amber-300" />
                         <span className="truncate font-medium">
                           {allocation?.employees?.name ?? "Colaborador"}
                         </span>
@@ -333,8 +311,8 @@ export function OperationalPostsMapBoard({
                     </div>
                   ) : status === "free" ? (
                     <div className="flex items-center gap-1.5 text-[color:var(--text-primary)]">
-                      <Unlock className="size-3 shrink-0 text-sky-600" />
-                      <span>Disponivel para alocacao.</span>
+                      <Unlock className="size-3 shrink-0 text-sky-600 dark:text-sky-300" />
+                      <span>Disponível para alocação.</span>
                     </div>
                   ) : (
                     <div className="flex items-center gap-1.5 text-[color:var(--text-primary)]">
@@ -349,7 +327,7 @@ export function OperationalPostsMapBoard({
                     type="button"
                     variant="destructive"
                     size="sm"
-                    className="h-7 w-full rounded-lg text-[11px]"
+                    className="h-6 w-full rounded-md text-[10px]"
                     disabled={isReleasePending}
                     onClick={async (event) => {
                       event.stopPropagation()
@@ -403,7 +381,7 @@ export function OperationalPostsMapBoard({
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="rounded-2xl border border-[color:var(--border-soft)] p-4">
                       <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                        {selectedCard.status === "paused" ? "Pausado ha" : "Em uso ha"}
+                        {selectedCard.status === "paused" ? "Pausado há" : "Em uso há"}
                       </div>
                       <div className="mt-1 text-2xl font-semibold text-[color:var(--text-primary)]">
                         {formatDuration(selectedMinutes)}
@@ -431,12 +409,12 @@ export function OperationalPostsMapBoard({
                   </div>
                 </div>
               ) : selectedCard.status === "free" ? (
-                <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-800">
-                  Este posto esta livre e pronto para receber uma nova alocacao.
+                <div className="rounded-2xl border border-sky-200 dark:border-sky-500/30 bg-sky-50 dark:bg-sky-500/10 p-4 text-sm text-sky-800 dark:text-sky-300">
+                  Este posto está livre e pronto para receber uma nova alocação.
                 </div>
               ) : (
-                <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-700">
-                  Este posto esta inativo no momento.
+                <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900/60 dark:text-zinc-300">
+                  Este posto está inativo no momento.
                 </div>
               )}
 
