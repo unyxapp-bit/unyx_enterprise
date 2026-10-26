@@ -1758,7 +1758,39 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
     }
   }
 
+  // PDF a partir da imagem do cartaz renderizada pelo navegador: mantém exatamente as fontes,
+  // posições e quebras de linha do editor (o PDF vetorial troca fontes que não são padrão).
+  const pdfPageImage = async (markup: string) => {
+    const maxPixels = 90_000_000
+    const scale = Math.min(1, Math.sqrt(maxPixels / (outputSize.width * outputSize.height)))
+    const canvas = await rasterizeSvg(
+      markup,
+      Math.round(outputSize.width * scale),
+      Math.round(outputSize.height * scale)
+    )
+    return canvas.toDataURL("image/jpeg", 0.95)
+  }
+
   const exportPdf = async () => {
+    const markup = posterSvgMarkup()
+    if (!markup) return
+    setExporting("pdf")
+    try {
+      const { jsPDF } = await import("jspdf")
+      const widthPt = (geometry.totalWidthMm / 25.4) * 72
+      const heightPt = (geometry.totalHeightMm / 25.4) * 72
+      const pdf = new jsPDF({ orientation: widthPt > heightPt ? "landscape" : "portrait", unit: "pt", format: [widthPt, heightPt], compress: true })
+      pdf.addImage(await pdfPageImage(markup), "JPEG", 0, 0, widthPt, heightPt, undefined, "FAST")
+      downloadBlob(pdf.output("blob"), `${posterFileName()}.pdf`)
+      toast.success(`PDF para impressão exportado em ${documentSettings.dpi} DPI.`)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao exportar PDF.")
+    } finally {
+      setExporting(null)
+    }
+  }
+
+  const exportPdfVector = async () => {
     const markup = posterSvgMarkup()
     if (!markup) return
     setExporting("pdf")
@@ -1974,7 +2006,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
     if (queue.length === 0) return
     setExporting("pdf")
     try {
-      const [{ jsPDF }] = await Promise.all([import("jspdf"), import("svg2pdf.js")])
+      const { jsPDF } = await import("jspdf")
       const widthPt = (geometry.totalWidthMm / 25.4) * 72
       const heightPt = (geometry.totalHeightMm / 25.4) * 72
       const pdf = new jsPDF({ orientation: widthPt > heightPt ? "landscape" : "portrait", unit: "pt", format: [widthPt, heightPt], compress: true })
@@ -1991,11 +2023,8 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
           geometry,
           documentSettings
         )
-        const parsed = new DOMParser().parseFromString(markup, "image/svg+xml")
-        const svg = parsed.documentElement
-        if (parsed.querySelector("parsererror") || svg.localName !== "svg") throw new Error("SVG do cartaz inválido.")
         if (pages > 0) pdf.addPage([widthPt, heightPt], widthPt > heightPt ? "landscape" : "portrait")
-        await pdf.svg(svg, { x: 0, y: 0, width: widthPt, height: heightPt })
+        pdf.addImage(await pdfPageImage(markup), "JPEG", 0, 0, widthPt, heightPt, undefined, "FAST")
         pages += 1
       }
       if (pages === 0) throw new Error("Nenhum cartaz da fila tem template disponível.")
@@ -2828,6 +2857,10 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                 <DropdownMenuItem onSelect={() => void exportPdf()}>
                   <FileDown />
                   PDF para impressão
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => void exportPdfVector()}>
+                  <FileDown />
+                  PDF vetorial (fontes padrão)
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   disabled={queue.length === 0}
