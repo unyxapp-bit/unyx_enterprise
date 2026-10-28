@@ -7,9 +7,25 @@ import { useAuth } from "@/app/providers/auth-context"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import {
+  normalizeStaffCode,
+  staffEmail,
+  staffLoginErrorMessage,
+} from "@/features/staff/staffAccess"
 import { getAccessMode, setAccessMode } from "@/lib/accessMode"
 
-type AuthMode = "sign-in" | "sign-up"
+type AuthMode = "sign-in" | "staff" | "sign-up"
+
+// O computador lembra a loja do último fiscal: no dia a dia ele digita só código e senha.
+const STAFF_STORE_KEY = "unyx-staff-store"
+
+function readStoredStore() {
+  try {
+    return window.localStorage.getItem(STAFF_STORE_KEY) ?? ""
+  } catch {
+    return ""
+  }
+}
 
 export function LoginPage() {
   const { session, signIn, signUp } = useAuth()
@@ -17,6 +33,8 @@ export function LoginPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
+  const [staffStore, setStaffStore] = useState(readStoredStore)
+  const [staffCode, setStaffCode] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -51,12 +69,24 @@ export function LoginPage() {
         return
       }
 
+      if (mode === "staff") {
+        await signIn(staffEmail(staffStore, staffCode), password)
+        try {
+          window.localStorage.setItem(STAFF_STORE_KEY, normalizeStaffCode(staffStore))
+        } catch {
+          // sem armazenamento local: o fiscal digita a loja na próxima vez
+        }
+        return
+      }
+
       await signIn(email, password)
     } catch (authError) {
       setError(
-        authError instanceof Error
-          ? authError.message
-          : "Não foi possível continuar."
+        mode === "staff"
+          ? staffLoginErrorMessage(authError)
+          : authError instanceof Error
+            ? authError.message
+            : "Não foi possível continuar."
       )
     } finally {
       setIsSubmitting(false)
@@ -106,17 +136,28 @@ export function LoginPage() {
         <Card className="w-full max-w-md border border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] shadow-[0_20px_48px_rgb(15_23_42/0.10)]">
           <CardHeader>
             <CardTitle className="text-xl">
-              {mode === "sign-in" ? "Entrar no Unyx Ops" : "Criar conta"}
+              {mode === "sign-in"
+                ? "Entrar no Unyx Ops"
+                : mode === "staff"
+                  ? "Entrada do fiscal"
+                  : "Criar conta"}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="mb-4 grid grid-cols-2 rounded-full border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] p-1">
+            <div className="mb-4 grid grid-cols-3 rounded-full border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] p-1">
               <Button
                 type="button"
                 variant={mode === "sign-in" ? "default" : "ghost"}
                 onClick={() => changeMode("sign-in")}
               >
                 Entrar
+              </Button>
+              <Button
+                type="button"
+                variant={mode === "staff" ? "default" : "ghost"}
+                onClick={() => changeMode("staff")}
+              >
+                Fiscal
               </Button>
               <Button
                 type="button"
@@ -128,18 +169,49 @@ export function LoginPage() {
             </div>
 
             <form className="space-y-4" onSubmit={handleSubmit}>
-              <div className="space-y-2">
-                <label className="text-sm font-medium" htmlFor="email">
-                  Email
-                </label>
-                <Input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  required
-                />
-              </div>
+              {mode === "staff" ? (
+                <>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium" htmlFor="staff-store">
+                      Código da loja
+                    </label>
+                    <Input
+                      id="staff-store"
+                      value={staffStore}
+                      onChange={(event) => setStaffStore(normalizeStaffCode(event.target.value))}
+                      autoComplete="off"
+                      autoCapitalize="none"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium" htmlFor="staff-code">
+                      Código de acesso
+                    </label>
+                    <Input
+                      id="staff-code"
+                      value={staffCode}
+                      onChange={(event) => setStaffCode(normalizeStaffCode(event.target.value))}
+                      autoComplete="username"
+                      autoCapitalize="none"
+                      required
+                    />
+                  </div>
+                </>
+              ) : (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium" htmlFor="email">
+                    Email
+                  </label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    required
+                  />
+                </div>
+              )}
 
               <div className="space-y-2">
                 <label className="text-sm font-medium" htmlFor="password">
@@ -189,9 +261,9 @@ export function LoginPage() {
               <Button className="w-full" type="submit" disabled={isSubmitting}>
                 {isSubmitting
                   ? "Aguarde..."
-                  : mode === "sign-in"
-                    ? "Entrar"
-                    : "Criar conta"}
+                  : mode === "sign-up"
+                    ? "Criar conta"
+                    : "Entrar"}
                 <ArrowRight className="size-4" />
               </Button>
             </form>

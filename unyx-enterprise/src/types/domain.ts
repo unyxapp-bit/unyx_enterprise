@@ -179,6 +179,10 @@ export interface UserProfile {
   role: UserRole
   active: boolean
   custom_permissions: string[] | null
+  /** Código de acesso do fiscal (login por código e senha); vazio nos usuários com e-mail. */
+  login_code?: string | null
+  /** Função do fiscal na loja (ex.: Fiscal de caixa). */
+  job_title?: string | null
   created_at: string
   updated_at: string
   branches?: Pick<Branch, "name"> | null

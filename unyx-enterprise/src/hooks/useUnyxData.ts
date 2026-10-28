@@ -4,6 +4,7 @@ import { toast } from "sonner"
 import { useAuth } from "@/app/providers/auth-context"
 import type { DiscountReason } from "@/features/pos/cashierDiscount"
 import type { CoinDepositStatus } from "@/features/pos/coinDeposit"
+import type { CustomerOrderInput, CustomerOrderStatus } from "@/features/pos/customerOrder"
 import type { CoinExchangeResult, CoinRates } from "@/features/pos/coinExchange"
 import { eventLabel } from "@/lib/status"
 import { useAppStore } from "@/store/useAppStore"
@@ -85,6 +86,16 @@ import {
   updateChecklistProcedure,
   listAllAuditLogs,
   cancelCashierDiscount,
+  createStaffMember,
+  getStaffStoreCode,
+  removeStaffMember,
+  setStaffActive,
+  setStaffPassword,
+  updateStaffProfile,
+  createCustomerOrder,
+  listCustomerOrders,
+  updateCustomerOrder,
+  updateCustomerOrderStatus,
   createCashierDiscount,
   createCoinDeposit,
   createCoinExchange,
@@ -2926,6 +2937,151 @@ export function useCreateCashierDiscount() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["cashier-discounts"] })
       toast.success("Desconto registrado.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+// ---- Encomendas de clientes ----
+
+export function useCustomerOrders() {
+  const { profile } = useAuth()
+
+  return useQuery({
+    queryKey: ["customer-orders", profile?.organization_id],
+    queryFn: () => listCustomerOrders(profile!.organization_id),
+    enabled: Boolean(profile),
+    retry: 1,
+  })
+}
+
+export function useCreateCustomerOrder() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: CustomerOrderInput & { id: string }) => createCustomerOrder(profile, input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["customer-orders"] })
+      toast.success("Encomenda registrada.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useUpdateCustomerOrder() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: CustomerOrderInput & { id: string }) => updateCustomerOrder(profile, input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["customer-orders"] })
+      toast.success("Encomenda atualizada.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+const ORDER_STATUS_TOAST: Record<CustomerOrderStatus, string> = {
+  pendente: "Encomenda reaberta.",
+  pronta: "Encomenda marcada como pronta.",
+  retirada: "Encomenda marcada como retirada.",
+  cancelada: "Encomenda cancelada.",
+}
+
+export function useUpdateCustomerOrderStatus() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: { id: string; status: CustomerOrderStatus }) =>
+      updateCustomerOrderStatus(profile, input),
+    onSuccess: async (_, variables) => {
+      await queryClient.invalidateQueries({ queryKey: ["customer-orders"] })
+      toast.success(ORDER_STATUS_TOAST[variables.status])
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+// ---- Fiscais (acesso por código e senha) ----
+
+export function useStaffStoreCode() {
+  const { profile } = useAuth()
+
+  return useQuery({
+    queryKey: ["staff-store", profile?.organization_id],
+    queryFn: getStaffStoreCode,
+    enabled: Boolean(profile),
+    retry: 1,
+    staleTime: Infinity,
+  })
+}
+
+export function useCreateStaffMember() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: createStaffMember,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["user-profiles"] })
+      toast.success("Fiscal cadastrado.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useUpdateStaffProfile() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (input: {
+      profileId: string
+      name: string
+      job_title: string
+      branch_id: string | null
+      permissions: string[]
+    }) => updateStaffProfile(input.profileId, input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["user-profiles"] })
+      toast.success("Fiscal atualizado.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useSetStaffPassword() {
+  return useMutation({
+    mutationFn: (input: { profileId: string; password: string }) =>
+      setStaffPassword(input.profileId, input.password),
+    onSuccess: () => { toast.success("Senha alterada. Passe a nova senha ao fiscal.") },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useSetStaffActive() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (input: { profileId: string; active: boolean }) =>
+      setStaffActive(input.profileId, input.active),
+    onSuccess: async (_, variables) => {
+      await queryClient.invalidateQueries({ queryKey: ["user-profiles"] })
+      toast.success(variables.active ? "Acesso liberado." : "Acesso bloqueado.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useRemoveStaffMember() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: removeStaffMember,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["user-profiles"] })
+      toast.success("Fiscal removido.")
     },
     onError: (error) => { toast.error(error.message) },
   })

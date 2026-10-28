@@ -68,6 +68,9 @@ const PosCashPage = lazy(() =>
 const PosProductsPage = lazy(() =>
   import("@/features/pos/PosProductsPage").then((m) => ({ default: m.PosProductsPage }))
 )
+const CustomerOrdersPage = lazy(() =>
+  import("@/features/pos/CustomerOrdersPage").then((m) => ({ default: m.CustomerOrdersPage }))
+)
 const CashierDiscountPage = lazy(() =>
   import("@/features/pos/CashierDiscountPage").then((m) => ({ default: m.CashierDiscountPage }))
 )
@@ -91,6 +94,9 @@ const SchedulesPage = lazy(() =>
 )
 const SettingsPage = lazy(() =>
   import("@/features/settings/SettingsPage").then((m) => ({ default: m.SettingsPage }))
+)
+const StaffPage = lazy(() =>
+  import("@/features/staff/StaffPage").then((m) => ({ default: m.StaffPage }))
 )
 const UsersPage = lazy(() =>
   import("@/features/users/UsersPage").then((m) => ({ default: m.UsersPage }))
@@ -183,6 +189,7 @@ export function AppRouter() {
             </Route>
             <Route element={<RequirePermission perm="users" />}>
               <Route path="users" element={<UsersPage />} />
+              <Route path="staff" element={<StaffPage />} />
             </Route>
             <Route element={<RequirePermission perm="settings" />}>
               <Route path="settings" element={<SettingsPage />} />
@@ -200,6 +207,7 @@ export function AppRouter() {
             <Route element={<RequirePermission perm="pos_cash" />}>
               <Route path="pos/discounts" element={<CashierDiscountPage />} />
               <Route path="pos/coins" element={<CoinExchangePage />} />
+              <Route path="pos/orders" element={<CustomerOrdersPage />} />
             </Route>
             <Route element={<RequirePermission perm="pos_posters" />}>
               <Route path="pos/posters" element={<PosterEditorPage />} />

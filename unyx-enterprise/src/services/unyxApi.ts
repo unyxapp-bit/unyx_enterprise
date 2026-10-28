@@ -2,6 +2,13 @@ import { parseQuestion } from "@/features/frontstore/formQuestions"
 import type { CashierDiscountRecord, DiscountReason } from "@/features/pos/cashierDiscount"
 import type { CoinDepositRecord, CoinDepositStatus } from "@/features/pos/coinDeposit"
 import {
+  cleanItems,
+  parseItems,
+  type CustomerOrderInput,
+  type CustomerOrderRecord,
+  type CustomerOrderStatus,
+} from "@/features/pos/customerOrder"
+import {
   DEFAULT_COIN_RATES,
   sanitizeRates,
   type CoinExchangeRecord,
@@ -6712,4 +6719,167 @@ export async function cancelCashierDiscount(
     throw new Error("Este desconto já foi cancelado ou não foi encontrado. Atualize a lista.")
   }
   return (data as unknown as CashierDiscountRecord[])[0]
+}
+
+// ---- Encomendas de clientes ----
+
+function isMissingOrderFeature(error: { code?: string; message: string } | null) {
+  if (!error) return false
+  const message = error.message.toLowerCase()
+  return (
+    ["PGRST205", "PGRST204", "42P01", "42703"].includes(error.code ?? "") ||
+    message.includes("schema cache") ||
+    (message.includes("customer_orders") && message.includes("does not exist"))
+  )
+}
+
+function orderFeatureMessage() {
+  return "As encomendas ainda não estão instaladas no banco. Rode o supabase/customer_orders.sql no SQL Editor do Supabase, aguarde alguns segundos e recarregue o app."
+}
+
+function toOrderRecord(row: unknown): CustomerOrderRecord {
+  const record = row as CustomerOrderRecord
+  return { ...record, items: parseItems(record.items), paid_cents: record.paid_cents ?? 0 }
+}
+
+/** Pedidos em andamento (qualquer data) e os das últimas semanas, mais os futuros. */
+export async function listCustomerOrders(organizationId: string) {
+  const since = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString()
+  const { data, error } = await supabase
+    .from("customer_orders" as never)
+    .select("*" as never)
+    .eq("organization_id" as never, organizationId)
+    .or(`pickup_at.gte.${since},status.in.(pendente,pronta)`)
+    .order("pickup_at" as never, { ascending: true })
+    .limit(500)
+  if (isMissingOrderFeature(error)) throw new Error(orderFeatureMessage())
+  raise(error)
+  return ((data ?? []) as unknown[]).map(toOrderRecord)
+}
+
+function orderPayload(input: CustomerOrderInput) {
+  return {
+    branch_id: input.branch_id,
+    customer_name: input.customer_name.trim(),
+    customer_phone: input.customer_phone?.trim() || null,
+    ordered_at: input.ordered_at,
+    pickup_at: input.pickup_at,
+    items: cleanItems(input.items),
+    notes: input.notes?.trim() || null,
+    total_cents: input.total_cents,
+    paid_cents: input.paid_cents,
+    attendant_name: input.attendant_name?.trim() || null,
+  }
+}
+
+export async function createCustomerOrder(profile: UserProfile, input: CustomerOrderInput & { id: string }) {
+  const { data, error } = await supabase
+    .from("customer_orders" as never)
+    .insert({
+      id: input.id,
+      organization_id: profile.organization_id,
+      created_by: profile.id,
+      ...orderPayload(input),
+    } as never)
+    .select("*" as never)
+    .single()
+  if (isMissingOrderFeature(error)) throw new Error(orderFeatureMessage())
+  raise(error)
+  return toOrderRecord(data)
+}
+
+export async function updateCustomerOrder(profile: UserProfile, input: CustomerOrderInput & { id: string }) {
+  const { data, error } = await supabase
+    .from("customer_orders" as never)
+    .update(orderPayload(input) as never)
+    .eq("id" as never, input.id)
+    .eq("organization_id" as never, profile.organization_id)
+    .select("*" as never)
+    .single()
+  if (isMissingOrderFeature(error)) throw new Error(orderFeatureMessage())
+  raise(error)
+  return toOrderRecord(data)
+}
+
+export async function updateCustomerOrderStatus(
+  profile: UserProfile,
+  input: { id: string; status: CustomerOrderStatus }
+) {
+  const { error } = await supabase
+    .from("customer_orders" as never)
+    .update({ status: input.status, status_at: new Date().toISOString() } as never)
+    .eq("id" as never, input.id)
+    .eq("organization_id" as never, profile.organization_id)
+  if (isMissingOrderFeature(error)) throw new Error(orderFeatureMessage())
+  raise(error)
+}
+
+// ---- Fiscais (acesso por código e senha) ----
+
+/** Chama a Edge Function staff-admin e devolve a mensagem de erro que ela mandou. */
+async function callStaffAdmin<T>(body: Record<string, unknown>): Promise<T> {
+  const { data, error } = await supabase.functions.invoke<T & { error?: string }>("staff-admin", { body })
+  if (error) {
+    let message = error.message
+    const context = (error as { context?: unknown }).context
+    if (context instanceof Response) {
+      try {
+        const payload = (await context.json()) as { error?: string }
+        if (payload?.error) message = payload.error
+      } catch {
+        // mantém a mensagem padrão
+      }
+    }
+    throw new Error(message)
+  }
+  if (!data) throw new Error("A função de fiscais não respondeu.")
+  if ((data as { error?: string }).error) throw new Error((data as { error: string }).error)
+  return data as T
+}
+
+/** Código da loja usado no login dos fiscais (a função cria na primeira vez). */
+export async function getStaffStoreCode() {
+  const { prefix } = await callStaffAdmin<{ prefix: string }>({ action: "store" })
+  return prefix
+}
+
+export async function createStaffMember(input: {
+  name: string
+  job_title: string
+  login_code: string
+  password: string
+  branch_id: string | null
+  permissions: string[]
+}) {
+  const { profile } = await callStaffAdmin<{ profile: UserProfile }>({ action: "create", ...input })
+  return profile
+}
+
+export async function setStaffPassword(profileId: string, password: string) {
+  await callStaffAdmin({ action: "set_password", profile_id: profileId, password })
+}
+
+export async function setStaffActive(profileId: string, active: boolean) {
+  await callStaffAdmin({ action: "set_active", profile_id: profileId, active })
+}
+
+export async function removeStaffMember(profileId: string) {
+  await callStaffAdmin({ action: "remove", profile_id: profileId })
+}
+
+/** Nome, função, filial e telas liberadas: o gerente (admin da loja) altera direto pelo perfil. */
+export async function updateStaffProfile(
+  profileId: string,
+  input: { name: string; job_title: string; branch_id: string | null; permissions: string[] }
+) {
+  const { error } = await supabase
+    .from("user_profiles")
+    .update({
+      name: input.name.trim(),
+      job_title: input.job_title.trim() || null,
+      branch_id: input.branch_id,
+      custom_permissions: input.permissions,
+    })
+    .eq("id", profileId)
+  raise(error)
 }
