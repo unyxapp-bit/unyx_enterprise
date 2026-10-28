@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { FileDown, Printer, RotateCcw, Save } from "lucide-react"
+import { Ban, FileDown, Printer, RotateCcw, Save } from "lucide-react"
 
 import { useAuth } from "@/app/providers/auth-context"
 import { PageHeader } from "@/components/shared/PageHeader"
@@ -7,11 +7,21 @@ import { StateBlock } from "@/components/shared/StateBlock"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Combobox } from "@/components/ui/select"
 import {
   calculateDiscount,
   DISCOUNT_REASON_LABEL,
+  isDiscountCanceled,
+  MIN_CANCEL_REASON_LENGTH,
   productLine,
   sanitizeQuantity,
   type CashierDiscountRecord,
@@ -27,6 +37,7 @@ import { readStorage, writeStorage } from "@/features/pos/coinStorage"
 import { MoneyField } from "@/features/pos/MoneyField"
 import { printHtml } from "@/features/frontstore/formPrint"
 import {
+  useCancelCashierDiscount,
   useCashierDiscounts,
   useCreateCashierDiscount,
   useEmployees,
@@ -88,6 +99,9 @@ export function CashierDiscountPage() {
   const { profile } = useAuth()
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
   const createDiscount = useCreateCashierDiscount()
+  const cancelDiscount = useCancelCashierDiscount()
+  const [cancelTarget, setCancelTarget] = useState<CashierDiscountRecord | null>(null)
+  const [cancelReason, setCancelReason] = useState("")
   const products = useProducts()
   const posts = useOperationalPosts()
   const employees = useEmployees()
@@ -257,13 +271,31 @@ export function CashierDiscountPage() {
   }
 
   const dayTotals = useMemo(() => {
-    const list = history.data ?? []
+    // Descontos cancelados continuam na lista, mas não entram nos totais.
+    const all = history.data ?? []
+    const list = all.filter((item) => !isDiscountCanceled(item))
     return {
       count: list.length,
+      canceled: all.length - list.length,
       total: list.reduce((sum, item) => sum + item.discount_cents, 0),
       wrongPrice: list.filter((item) => item.reason === "preco_errado").length,
     }
   }, [history.data])
+
+  const closeCancel = () => {
+    setCancelTarget(null)
+    setCancelReason("")
+  }
+
+  const confirmCancel = async () => {
+    if (!cancelTarget || cancelReason.trim().length < MIN_CANCEL_REASON_LENGTH) return
+    try {
+      await cancelDiscount.mutateAsync({ id: cancelTarget.id, reason: cancelReason })
+      closeCancel()
+    } catch {
+      // O hook já mostra o erro em toast.
+    }
+  }
 
   return (
     <div>
@@ -509,7 +541,10 @@ export function CashierDiscountPage() {
               <>
                 <div className="grid grid-cols-3 gap-2">
                   {[
-                    { label: "Descontos", value: String(dayTotals.count) },
+                    {
+                      label: "Descontos",
+                      value: String(dayTotals.count) + (dayTotals.canceled ? ` (+${dayTotals.canceled} cancelado${dayTotals.canceled > 1 ? "s" : ""})` : ""),
+                    },
                     { label: "Preço errado", value: String(dayTotals.wrongPrice) },
                     { label: "Total concedido", value: money(dayTotals.total) },
                   ].map((item) => (
@@ -536,12 +571,17 @@ export function CashierDiscountPage() {
                         <th className="px-3 py-2 font-medium">Caixa / Operador</th>
                         <th className="px-3 py-2 font-medium">Motivo</th>
                         <th className="px-3 py-2 font-medium">Fiscal</th>
-                        <th className="py-2 pl-3 text-right font-medium">Ficha</th>
+                        <th className="py-2 pl-3 text-right font-medium">Ações</th>
                       </tr>
                     </thead>
                     <tbody>
                       {(history.data ?? []).map((item) => (
-                        <HistoryRow key={item.id} item={item} onPdf={downloadPdf} />
+                        <HistoryRow
+                          key={item.id}
+                          item={item}
+                          onPdf={downloadPdf}
+                          onCancel={() => setCancelTarget(item)}
+                        />
                       ))}
                     </tbody>
                   </table>
@@ -551,6 +591,41 @@ export function CashierDiscountPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={Boolean(cancelTarget)} onOpenChange={(open) => { if (!open) closeCancel() }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Cancelar desconto</DialogTitle>
+            <DialogDescription>
+              {cancelTarget
+                ? `${productLine(cancelTarget.product_name, cancelTarget.quantity)} — ${money(cancelTarget.discount_cents)}. O registro continua no histórico, marcado como cancelado, e deixa de contar nos totais. Não dá para desfazer.`
+                : null}
+            </DialogDescription>
+          </DialogHeader>
+          <label className="block space-y-1 text-sm">
+            <span className="font-medium">Motivo do cancelamento (obrigatório)</span>
+            <textarea
+              className={textareaClass}
+              value={cancelReason}
+              onChange={(event) => setCancelReason(event.target.value)}
+              placeholder="Ex.: preço digitado errado"
+              autoFocus
+            />
+          </label>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeCancel}>
+              Voltar
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={cancelReason.trim().length < MIN_CANCEL_REASON_LENGTH || cancelDiscount.isPending}
+              onClick={() => void confirmCancel()}
+            >
+              {cancelDiscount.isPending ? "Cancelando..." : "Cancelar desconto"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -558,24 +633,44 @@ export function CashierDiscountPage() {
 function HistoryRow({
   item,
   onPdf,
+  onCancel,
 }: {
   item: CashierDiscountRecord
   onPdf: (slip: DiscountSlip, name: string) => Promise<void>
+  onCancel: () => void
 }) {
+  const canceled = isDiscountCanceled(item)
   return (
-    <tr className="border-b border-[color:var(--border-soft)] last:border-0">
+    <tr
+      className={cn(
+        "border-b border-[color:var(--border-soft)] last:border-0",
+        canceled && "bg-red-50/60 text-muted-foreground dark:bg-red-500/5"
+      )}
+    >
       <td className="whitespace-nowrap py-2 pr-3 tabular-nums">{timeBR(item.created_at)}</td>
       <td className="px-3 py-2">
-        <div className="font-medium text-[color:var(--text-primary)]">
+        <div className={cn("font-medium text-[color:var(--text-primary)]", canceled && "line-through")}>
           {productLine(item.product_name, item.quantity)}
         </div>
+        {canceled ? (
+          <div className="text-xs text-red-700 dark:text-red-300" title={item.cancel_reason ?? undefined}>
+            <Badge variant="outline" className="mr-1 rounded-full border-red-300 text-red-700 dark:text-red-300">
+              Cancelado
+            </Badge>
+            {item.cancel_reason}
+            {item.canceled_by_name ? ` — ${item.canceled_by_name}` : ""}
+            {item.canceled_at ? ` às ${timeBR(item.canceled_at)}` : ""}
+          </div>
+        ) : null}
         {item.product_code ? (
           <div className="text-xs text-muted-foreground">Cód. {item.product_code}</div>
         ) : null}
       </td>
       <td className="px-3 py-2 text-right tabular-nums">{money(item.system_price_cents)}</td>
       <td className="px-3 py-2 text-right tabular-nums">{money(item.sale_price_cents)}</td>
-      <td className="px-3 py-2 text-right font-semibold tabular-nums">{money(item.discount_cents)}</td>
+      <td className={cn("px-3 py-2 text-right font-semibold tabular-nums", canceled && "line-through")}>
+        {money(item.discount_cents)}
+      </td>
       <td className="px-3 py-2">
         <div className="font-medium text-[color:var(--text-primary)]">{item.pdv || "—"}</div>
         <div className="text-xs text-muted-foreground">{item.operator_name || "—"}</div>
@@ -598,7 +693,8 @@ function HistoryRow({
             variant="ghost"
             className="size-8"
             aria-label={`Imprimir ficha de ${item.product_name}`}
-            title="Imprimir a ficha"
+            title={canceled ? "Desconto cancelado" : "Imprimir a ficha"}
+            disabled={canceled}
             onClick={() => printHtml(buildDiscountHtml(item))}
           >
             <Printer className="size-4" />
@@ -608,11 +704,24 @@ function HistoryRow({
             variant="ghost"
             className="size-8"
             aria-label={`Baixar PDF da ficha de ${item.product_name}`}
-            title="Baixar em PDF"
+            title={canceled ? "Desconto cancelado" : "Baixar em PDF"}
+            disabled={canceled}
             onClick={() => void onPdf(item, `desconto_${item.id.slice(0, 8)}.pdf`)}
           >
             <FileDown className="size-4" />
           </Button>
+          {canceled ? null : (
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-8 text-red-600 hover:text-red-700"
+              aria-label={`Cancelar desconto de ${item.product_name}`}
+              title="Cancelar este desconto"
+              onClick={onCancel}
+            >
+              <Ban className="size-4" />
+            </Button>
+          )}
         </div>
       </td>
     </tr>

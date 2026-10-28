@@ -6613,18 +6613,24 @@ export async function updateCoinDepositStatus(
 
 function isMissingDiscountFeature(error: { code?: string; message: string } | null) {
   if (!error) return false
-  return error.message.toLowerCase().includes("cashier_discounts")
+  const message = error.message.toLowerCase()
+  // Só vale para tabela/coluna que não existe; erros de permissão (RLS) mostram a mensagem real.
+  return (
+    ["PGRST205", "PGRST204", "42P01", "42703"].includes(error.code ?? "") ||
+    message.includes("schema cache") ||
+    (message.includes("cashier_discounts") && message.includes("does not exist"))
+  )
 }
 
 function discountFeatureMessage() {
-  return "Os descontos no caixa ainda não estão instalados no banco. Rode o supabase/cashier_discounts.sql no SQL Editor do Supabase, aguarde alguns segundos e recarregue o app."
+  return "Os descontos no caixa ainda não estão instalados (ou atualizados) no banco. Rode o supabase/cashier_discounts.sql no SQL Editor do Supabase, aguarde alguns segundos e recarregue o app."
 }
 
 export async function listCashierDiscounts(organizationId: string, dateKey: string) {
   const { start, end } = dayRange(dateKey)
   const { data, error } = await supabase
     .from("cashier_discounts" as never)
-    .select("*, user_profiles(name)" as never)
+    .select("*, user_profiles!created_by(name)" as never)
     .eq("organization_id" as never, organizationId)
     .gte("created_at" as never, start)
     .lt("created_at" as never, end)
@@ -6674,9 +6680,36 @@ export async function createCashierDiscount(
       pdv: input.pdv?.trim() || null,
       operator_name: input.operator_name?.trim() || null,
     } as never)
-    .select("*, user_profiles(name)" as never)
+    .select("*, user_profiles!created_by(name)" as never)
     .single()
   if (isMissingDiscountFeature(error)) throw new Error(discountFeatureMessage())
   raise(error)
   return data as unknown as CashierDiscountRecord
+}
+
+/** Cancela um desconto (uma única vez): o registro fica no histórico, marcado como cancelado. */
+export async function cancelCashierDiscount(
+  profile: UserProfile,
+  input: { id: string; reason: string }
+) {
+  const reason = input.reason.trim()
+  if (reason.length < 3) throw new Error("Informe o motivo do cancelamento.")
+  const { data, error } = await supabase
+    .from("cashier_discounts" as never)
+    .update({
+      canceled_at: new Date().toISOString(),
+      canceled_by: profile.id,
+      canceled_by_name: profile.name,
+      cancel_reason: reason,
+    } as never)
+    .eq("id" as never, input.id)
+    .eq("organization_id" as never, profile.organization_id)
+    .is("canceled_at" as never, null)
+    .select("*, user_profiles!created_by(name)" as never)
+  if (isMissingDiscountFeature(error)) throw new Error(discountFeatureMessage())
+  raise(error)
+  if (!data || (data as unknown[]).length === 0) {
+    throw new Error("Este desconto já foi cancelado ou não foi encontrado. Atualize a lista.")
+  }
+  return (data as unknown as CashierDiscountRecord[])[0]
 }

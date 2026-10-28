@@ -73,5 +73,17 @@ export interface CashierDiscountRecord {
   pdv: string | null
   operator_name: string | null
   created_at: string
+  /** Preenchidos quando o desconto foi cancelado; o registro continua no histórico. */
+  canceled_at?: string | null
+  canceled_by?: string | null
+  canceled_by_name?: string | null
+  cancel_reason?: string | null
   user_profiles?: { name: string } | null
+}
+
+export const MIN_CANCEL_REASON_LENGTH = 3
+
+/** Um desconto cancelado não conta nos totais do dia. */
+export function isDiscountCanceled(item: Pick<CashierDiscountRecord, "canceled_at">) {
+  return Boolean(item.canceled_at)
 }

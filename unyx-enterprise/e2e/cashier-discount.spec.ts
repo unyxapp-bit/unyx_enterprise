@@ -110,6 +110,53 @@ test("calculates the discount from the catalog price and registers the slip", as
   await expect(page.getByPlaceholder("Descrição do produto")).toHaveValue("")
 })
 
+test("cancels a registered discount with a reason and keeps it in the history", async ({ page }) => {
+  const base = {
+    organization_id: "o", branch_id: null, created_by: null, product_id: null, product_code: "1050444",
+    quantity: 1, system_price_cents: 1289, sale_price_cents: 1190, discount_cents: 99, reason: "preco_errado",
+    reason_description: null, fiscal_name: "Lorena", pdv: "Caixa 108", operator_name: "Francielly",
+    created_at: new Date().toISOString(), user_profiles: { name: "Poster Tester" },
+  }
+  let canceled: Record<string, unknown> | null = null
+  await page.route("https://test.supabase.co/**", async (route) => {
+    const table = new URL(route.request().url()).pathname.split("/").pop()
+    const method = route.request().method()
+    if (table === "cashier_discounts" && method === "PATCH") {
+      canceled = route.request().postDataJSON()
+      return route.fulfill({ json: [{ ...base, id: "d-1", product_name: "Batata errada", ...canceled }] })
+    }
+    if (table === "cashier_discounts") {
+      return route.fulfill({
+        json: [
+          canceled
+            ? { ...base, id: "d-1", product_name: "Batata errada", ...canceled }
+            : { ...base, id: "d-1", product_name: "Batata errada" },
+          { ...base, id: "d-2", product_name: "Arroz", discount_cents: 50 },
+        ],
+      })
+    }
+    return route.fallback()
+  })
+  await page.setViewportSize({ width: 1400, height: 1000 })
+  await page.goto("/app/pos/discounts")
+  await expect(page.getByText("Batata errada")).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByText("R$ 1,49").first()).toBeVisible()
+
+  await page.getByRole("button", { name: "Cancelar desconto de Batata errada" }).click()
+  const confirm = page.getByRole("button", { name: "Cancelar desconto", exact: true })
+  // Sem motivo não cancela.
+  await expect(confirm).toBeDisabled()
+  await page.getByPlaceholder("Ex.: preço digitado errado").fill("Preço digitado errado")
+  await confirm.click()
+
+  await expect.poll(() => canceled).not.toBeNull()
+  expect(canceled).toMatchObject({ cancel_reason: "Preço digitado errado", canceled_by_name: "Poster Tester" })
+  // O registro fica na lista, marcado como cancelado, e sai do total do dia.
+  await expect(page.getByText("Cancelado", { exact: true })).toBeVisible()
+  await expect(page.getByText("R$ 0,50").first()).toBeVisible()
+  await expect(page.getByRole("button", { name: "Cancelar desconto de Batata errada" })).toHaveCount(0)
+})
+
 test("the PDV suggestions list scrolls when there are many cash registers", async ({ page }) => {
   const posts = Array.from({ length: 40 }, (_, index) => ({
     id: "post-" + index,

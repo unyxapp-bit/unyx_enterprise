@@ -84,6 +84,7 @@ import {
   updateProductionOrderStatus,
   updateChecklistProcedure,
   listAllAuditLogs,
+  cancelCashierDiscount,
   createCashierDiscount,
   createCoinDeposit,
   createCoinExchange,
@@ -2884,6 +2885,20 @@ export function useCashierDiscounts(dateKey: string) {
     queryFn: () => listCashierDiscounts(profile!.organization_id, dateKey),
     enabled: Boolean(profile),
     retry: 1,
+  })
+}
+
+export function useCancelCashierDiscount() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: { id: string; reason: string }) => cancelCashierDiscount(profile, input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["cashier-discounts"] })
+      toast.success("Desconto cancelado.")
+    },
+    onError: (error) => { toast.error(error.message) },
   })
 }
 
