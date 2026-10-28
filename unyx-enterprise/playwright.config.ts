@@ -6,6 +6,8 @@ export default defineConfig({
   testDir: "./e2e",
   fullyParallel: false,
   reporter: "list",
+  // O servidor de desenvolvimento compila cada tela na primeira visita: dá mais tempo às verificações.
+  expect: { timeout: 15_000 },
   use: {
     baseURL: "http://127.0.0.1:4173",
     ...devices["Desktop Chrome"],

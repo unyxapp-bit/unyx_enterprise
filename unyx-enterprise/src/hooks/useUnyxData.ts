@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { useAuth } from "@/app/providers/auth-context"
+import type { DiscountReason } from "@/features/pos/cashierDiscount"
 import type { CoinDepositStatus } from "@/features/pos/coinDeposit"
 import type { CoinExchangeResult, CoinRates } from "@/features/pos/coinExchange"
 import { eventLabel } from "@/lib/status"
@@ -83,10 +84,12 @@ import {
   updateProductionOrderStatus,
   updateChecklistProcedure,
   listAllAuditLogs,
+  createCashierDiscount,
   createCoinDeposit,
   createCoinExchange,
   getCoinRates,
   listAttendanceEvents,
+  listCashierDiscounts,
   listCoinDeposits,
   listCoinExchanges,
   saveCoinRates,
@@ -2866,6 +2869,48 @@ export function useUpdateCoinDepositStatus() {
     onSuccess: async (_, variables) => {
       await queryClient.invalidateQueries({ queryKey: ["coin-deposits"] })
       toast.success(variables.status === "concluida" ? "Troca marcada como concluída." : "Recebimento cancelado.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+// ---- Descontos no caixa ----
+
+export function useCashierDiscounts(dateKey: string) {
+  const { profile } = useAuth()
+
+  return useQuery({
+    queryKey: ["cashier-discounts", profile?.organization_id, dateKey],
+    queryFn: () => listCashierDiscounts(profile!.organization_id, dateKey),
+    enabled: Boolean(profile),
+    retry: 1,
+  })
+}
+
+export function useCreateCashierDiscount() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: {
+      id: string
+      branch_id: string | null
+      product_id?: string | null
+      product_name: string
+      product_code?: string | null
+      quantity: number
+      system_price_cents: number
+      sale_price_cents: number
+      discount_cents: number
+      reason: DiscountReason
+      reason_description?: string | null
+      fiscal_name?: string | null
+      pdv?: string | null
+      operator_name?: string | null
+    }) => createCashierDiscount(profile, input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["cashier-discounts"] })
+      toast.success("Desconto registrado.")
     },
     onError: (error) => { toast.error(error.message) },
   })

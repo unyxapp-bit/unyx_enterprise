@@ -158,7 +158,11 @@ export function Combobox({
           align="start"
           sideOffset={4}
           onOpenAutoFocus={(event) => event.preventDefault()}
-          className={cn(contentClass, "max-h-72 w-[var(--radix-popover-trigger-width)] min-w-[8rem]")}
+          // A lista rola quando há mais sugestões do que cabem (contentClass esconde o excedente).
+          className={cn(
+            contentClass,
+            "max-h-72 w-[var(--radix-popover-trigger-width)] min-w-[8rem] overflow-y-auto overscroll-contain"
+          )}
         >
           {visible.map((suggestion) => (
             <button

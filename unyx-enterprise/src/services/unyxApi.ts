@@ -1,4 +1,5 @@
 import { parseQuestion } from "@/features/frontstore/formQuestions"
+import type { CashierDiscountRecord, DiscountReason } from "@/features/pos/cashierDiscount"
 import type { CoinDepositRecord, CoinDepositStatus } from "@/features/pos/coinDeposit"
 import {
   DEFAULT_COIN_RATES,
@@ -6606,4 +6607,76 @@ export async function updateCoinDepositStatus(
     .eq("organization_id" as never, profile.organization_id)
   if (isMissingCoinFeature(error)) throw new Error(coinFeatureMessage())
   raise(error)
+}
+
+// ---- Descontos no caixa ----
+
+function isMissingDiscountFeature(error: { code?: string; message: string } | null) {
+  if (!error) return false
+  return error.message.toLowerCase().includes("cashier_discounts")
+}
+
+function discountFeatureMessage() {
+  return "Os descontos no caixa ainda não estão instalados no banco. Rode o supabase/cashier_discounts.sql no SQL Editor do Supabase, aguarde alguns segundos e recarregue o app."
+}
+
+export async function listCashierDiscounts(organizationId: string, dateKey: string) {
+  const { start, end } = dayRange(dateKey)
+  const { data, error } = await supabase
+    .from("cashier_discounts" as never)
+    .select("*, user_profiles(name)" as never)
+    .eq("organization_id" as never, organizationId)
+    .gte("created_at" as never, start)
+    .lt("created_at" as never, end)
+    .order("created_at" as never, { ascending: false })
+    .limit(500)
+  if (isMissingDiscountFeature(error)) throw new Error(discountFeatureMessage())
+  raise(error)
+  return (data ?? []) as unknown as CashierDiscountRecord[]
+}
+
+export async function createCashierDiscount(
+  profile: UserProfile,
+  input: {
+    id: string
+    branch_id: string | null
+    product_id?: string | null
+    product_name: string
+    product_code?: string | null
+    quantity: number
+    system_price_cents: number
+    sale_price_cents: number
+    discount_cents: number
+    reason: DiscountReason
+    reason_description?: string | null
+    fiscal_name?: string | null
+    pdv?: string | null
+    operator_name?: string | null
+  }
+) {
+  const { data, error } = await supabase
+    .from("cashier_discounts" as never)
+    .insert({
+      id: input.id,
+      organization_id: profile.organization_id,
+      branch_id: input.branch_id,
+      created_by: profile.id,
+      product_id: input.product_id ?? null,
+      product_name: input.product_name.trim(),
+      product_code: input.product_code?.trim() || null,
+      quantity: input.quantity,
+      system_price_cents: input.system_price_cents,
+      sale_price_cents: input.sale_price_cents,
+      discount_cents: input.discount_cents,
+      reason: input.reason,
+      reason_description: input.reason_description?.trim() || null,
+      fiscal_name: input.fiscal_name?.trim() || null,
+      pdv: input.pdv?.trim() || null,
+      operator_name: input.operator_name?.trim() || null,
+    } as never)
+    .select("*, user_profiles(name)" as never)
+    .single()
+  if (isMissingDiscountFeature(error)) throw new Error(discountFeatureMessage())
+  raise(error)
+  return data as unknown as CashierDiscountRecord
 }

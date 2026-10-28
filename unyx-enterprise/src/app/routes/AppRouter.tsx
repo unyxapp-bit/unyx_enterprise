@@ -68,6 +68,9 @@ const PosCashPage = lazy(() =>
 const PosProductsPage = lazy(() =>
   import("@/features/pos/PosProductsPage").then((m) => ({ default: m.PosProductsPage }))
 )
+const CashierDiscountPage = lazy(() =>
+  import("@/features/pos/CashierDiscountPage").then((m) => ({ default: m.CashierDiscountPage }))
+)
 const CoinExchangePage = lazy(() =>
   import("@/features/pos/CoinExchangePage").then((m) => ({ default: m.CoinExchangePage }))
 )
@@ -195,6 +198,7 @@ export function AppRouter() {
               <Route path="pos/products" element={<PosProductsPage />} />
             </Route>
             <Route element={<RequirePermission perm="pos_cash" />}>
+              <Route path="pos/discounts" element={<CashierDiscountPage />} />
               <Route path="pos/coins" element={<CoinExchangePage />} />
             </Route>
             <Route element={<RequirePermission perm="pos_posters" />}>
