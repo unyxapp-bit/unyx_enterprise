@@ -437,7 +437,7 @@ export function CashierDiscountPage() {
               <iframe
                 title="Prévia da ficha de desconto"
                 srcDoc={buildDiscountHtml(slipPreview)}
-                className="h-[520px] w-full rounded-xl border border-[color:var(--border-soft)] bg-white"
+                className="h-[400px] w-full rounded-xl border border-[color:var(--border-soft)] bg-white"
               />
 
               <Button

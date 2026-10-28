@@ -91,6 +91,8 @@ test("builds several posters in a queue and exports one PDF with one page each",
 })
 
 test("creates one queued poster per spreadsheet row", async ({ page }) => {
+  // Os templates da biblioteca carregam em segundo plano: a importação precisa de um template.
+  await expect(page.getByText("Aproveite Agora").first()).toBeVisible({ timeout: 20_000 })
   await page.getByRole("button", { name: /^Fila/ }).click()
   const csv = ["Produto;Descrição;Preço;Unidade", "ARROZ;PACOTE 5KG;24,99;UNID", "FEIJAO;PACOTE 1KG;8,49;UNID", ";sem produto;1,00;"].join("\n")
   await page.getByLabel("Arquivo da planilha de cartazes").setInputFiles({
@@ -106,6 +108,8 @@ test("creates one queued poster per spreadsheet row", async ({ page }) => {
 })
 
 test("navigates the queue with previous and next arrows keeping edits", async ({ page }) => {
+  // Os templates da biblioteca carregam em segundo plano: a importação precisa de um template.
+  await expect(page.getByText("Aproveite Agora").first()).toBeVisible({ timeout: 20_000 })
   await page.getByRole("button", { name: /^Fila/ }).click()
   const csv = ["Produto;Descrição;Preço;Unidade", "ARROZ;PACOTE 5KG;24,99;UNID", "FEIJAO;PACOTE 1KG;8,49;UNID", "MILHO;LATA;3,99;UNID"].join("\n")
   await page.getByLabel("Arquivo da planilha de cartazes").setInputFiles({

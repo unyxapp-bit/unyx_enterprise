@@ -5,6 +5,8 @@ const production = process.env.PLAYWRIGHT_PRODUCTION === "true"
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: false,
+  // Um arquivo por vez: vários navegadores competindo pelo servidor de desenvolvimento causavam falhas ocasionais.
+  workers: 1,
   reporter: "list",
   // O servidor de desenvolvimento compila cada tela na primeira visita: dá mais tempo às verificações.
   expect: { timeout: 15_000 },
