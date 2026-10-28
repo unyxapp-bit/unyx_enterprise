@@ -43,17 +43,14 @@ import {
   SEGMENT_LABELS,
   SEGMENT_POST_TYPES,
 } from "@/lib/segmentConfig"
-import { finalizePostAllocation as finalizePostAllocationRequest } from "@/services/unyxApi"
 import { useAppStore } from "@/store/useAppStore"
 import type {
   OperationalPost,
   OperationalPostType,
-  PostAllocation,
   Sector,
 } from "@/types/domain"
 import { OperationalPostsMapBoard } from "@/features/operational/components"
 import { ControlePDVIntervalos } from "@/features/allocation/ControlePDVIntervalos"
-import { toast } from "sonner"
 
 const m3ChipClass =
   "rounded-full border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] px-3 py-1 text-xs text-[color:var(--text-secondary)]"
@@ -146,7 +143,6 @@ export function AllocationPage() {
   const [typeFilter, setTypeFilter] = useState<OperationalPostType | "all">("all")
   const [sectorFilter, setSectorFilter] = useState("")
   const [viewMode, setViewMode] = useState<AllocationViewMode>("mapa")
-  const [releasePending, setReleasePending] = useState(false)
 
   const allPosts = useMemo(
     () =>
@@ -250,25 +246,6 @@ export function AllocationPage() {
     }
   }
 
-  async function handleReleaseAllocation(allocation: PostAllocation) {
-    setReleasePending(true)
-    try {
-      const isCashier = allocation.operational_posts?.type === "cashier"
-      await finalizePostAllocationRequest({
-        allocation_id: allocation.id,
-        notes: isCashier
-          ? "Caixa liberado pelo mapa de postos"
-          : "Posto liberado pelo mapa de postos",
-      })
-      toast.success(isCashier ? "Caixa liberado." : "Posto liberado.")
-      window.setTimeout(() => window.location.reload(), 120)
-    } catch (error) {
-      setReleasePending(false)
-      toast.error(error instanceof Error ? error.message : "Não foi possível liberar.")
-      throw error
-    }
-  }
-
   const currentView = viewMeta[viewMode]
 
   return (
@@ -331,8 +308,6 @@ export function AllocationPage() {
                   isLoading={isLoading}
                   isError={false}
                   error={undefined}
-                  onReleaseAllocation={handleReleaseAllocation}
-                  isReleasePending={releasePending}
                 />
 
                 <SectionPanel

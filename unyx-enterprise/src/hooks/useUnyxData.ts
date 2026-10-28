@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { useAuth } from "@/app/providers/auth-context"
+import type { CoinDepositStatus } from "@/features/pos/coinDeposit"
+import type { CoinExchangeResult, CoinRates } from "@/features/pos/coinExchange"
 import { eventLabel } from "@/lib/status"
 import { useAppStore } from "@/store/useAppStore"
 import {
@@ -81,7 +83,16 @@ import {
   updateProductionOrderStatus,
   updateChecklistProcedure,
   listAllAuditLogs,
+  createCoinDeposit,
+  createCoinExchange,
+  getCoinRates,
   listAttendanceEvents,
+  listCoinDeposits,
+  listCoinExchanges,
+  saveCoinRates,
+  updateCoinDepositStatus,
+  listEmployeeDayAllocations,
+  listEmployeeDayEvents,
   listAuditLogs,
   listBranches,
   listDashboardRows,
@@ -356,6 +367,24 @@ export function useAttendanceEvents() {
     queryKey: ["attendance-events", profile?.organization_id, selectedBranchId],
     queryFn: () => listAttendanceEvents(selectedBranchId, profile!.organization_id),
     enabled: Boolean(profile),
+    refetchInterval: 45_000,
+  })
+}
+
+export function useEmployeeDayEvents(employeeId: string | null, dateKey: string) {
+  return useQuery({
+    queryKey: ["attendance-events", "employee-day", employeeId, dateKey],
+    queryFn: () => listEmployeeDayEvents(employeeId!, dateKey),
+    enabled: Boolean(employeeId),
+    refetchInterval: 45_000,
+  })
+}
+
+export function useEmployeeDayAllocations(employeeId: string | null, dateKey: string) {
+  return useQuery({
+    queryKey: ["post-allocations", "employee-day", employeeId, dateKey],
+    queryFn: () => listEmployeeDayAllocations(employeeId!, dateKey),
+    enabled: Boolean(employeeId),
     refetchInterval: 45_000,
   })
 }
@@ -2731,3 +2760,113 @@ export function useCreatePosCashMovement() {
 
 // suppress unused import warning
 void (undefined as unknown as PaymentMethod)
+
+// ---- Troca de moedas ----
+
+export function useCoinRates() {
+  const { profile } = useAuth()
+
+  return useQuery({
+    queryKey: ["coin-rates", profile?.organization_id],
+    queryFn: () => getCoinRates(profile!.organization_id),
+    enabled: Boolean(profile),
+  })
+}
+
+export function useSaveCoinRates() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (rates: CoinRates) => saveCoinRates(profile, rates),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["coin-rates"] })
+      toast.success("Percentuais salvos.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useCoinExchanges(dateKey: string) {
+  const { profile } = useAuth()
+
+  return useQuery({
+    queryKey: ["coin-exchanges", profile?.organization_id, dateKey],
+    queryFn: () => listCoinExchanges(profile!.organization_id, dateKey),
+    enabled: Boolean(profile),
+    retry: 1,
+  })
+}
+
+export function useCreateCoinExchange() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: {
+      branch_id: string | null
+      customer_name?: string | null
+      customer_phone?: string | null
+      deposit_id?: string | null
+      fiscal_name?: string | null
+      notes?: string | null
+      result: CoinExchangeResult
+    }) => createCoinExchange(profile, input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["coin-exchanges"] })
+      toast.success("Troca registrada.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+// ---- Moedas deixadas para troca ----
+
+export function useCoinDeposits(onlyPending: boolean) {
+  const { profile } = useAuth()
+
+  return useQuery({
+    queryKey: ["coin-deposits", profile?.organization_id, onlyPending],
+    queryFn: () => listCoinDeposits(profile!.organization_id, onlyPending),
+    enabled: Boolean(profile),
+    retry: 1,
+  })
+}
+
+export function useCreateCoinDeposit() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: {
+      id: string
+      branch_id: string | null
+      customer_name: string
+      customer_phone?: string | null
+      left_at: string
+      estimated_cents: number
+      fiscal_name?: string | null
+      notes?: string | null
+    }) => createCoinDeposit(profile, input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["coin-deposits"] })
+      toast.success("Recebimento registrado.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}
+
+export function useUpdateCoinDepositStatus() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: { id: string; status: Exclude<CoinDepositStatus, "pendente"> }) =>
+      updateCoinDepositStatus(profile, input),
+    onSuccess: async (_, variables) => {
+      await queryClient.invalidateQueries({ queryKey: ["coin-deposits"] })
+      toast.success(variables.status === "concluida" ? "Troca marcada como concluída." : "Recebimento cancelado.")
+    },
+    onError: (error) => { toast.error(error.message) },
+  })
+}

@@ -1,4 +1,12 @@
 import { parseQuestion } from "@/features/frontstore/formQuestions"
+import type { CoinDepositRecord, CoinDepositStatus } from "@/features/pos/coinDeposit"
+import {
+  DEFAULT_COIN_RATES,
+  sanitizeRates,
+  type CoinExchangeRecord,
+  type CoinExchangeResult,
+  type CoinRates,
+} from "@/features/pos/coinExchange"
 import { supabase } from "@/lib/supabase"
 import { getActionMeta } from "@/lib/status"
 import { planConfig } from "@/lib/plans"
@@ -1676,6 +1684,44 @@ export async function listAttendanceEvents(
   const { data, error } = await query
   raise(error)
   return (data ?? []) as AttendanceEvent[]
+}
+
+function dayRange(dateKey: string) {
+  const [year, month, day] = dateKey.split("-").map(Number)
+  return {
+    start: new Date(year, month - 1, day).toISOString(),
+    end: new Date(year, month - 1, day + 1).toISOString(),
+  }
+}
+
+/** Eventos de presença de um colaborador no dia (chegada, intervalos, saída...). */
+export async function listEmployeeDayEvents(employeeId: string, dateKey: string) {
+  const { start, end } = dayRange(dateKey)
+  const { data, error } = await supabase
+    .from("attendance_events")
+    .select("*")
+    .eq("employee_id", employeeId)
+    .gte("event_time", start)
+    .lt("event_time", end)
+    .order("event_time", { ascending: true })
+    .limit(80)
+  raise(error)
+  return (data ?? []) as AttendanceEvent[]
+}
+
+/** Postos por onde o colaborador passou no dia (inclui alocações já encerradas). */
+export async function listEmployeeDayAllocations(employeeId: string, dateKey: string) {
+  const { start, end } = dayRange(dateKey)
+  const { data, error } = await supabase
+    .from("post_allocations")
+    .select("*, operational_posts(name)")
+    .eq("employee_id", employeeId)
+    .gte("started_at", start)
+    .lt("started_at", end)
+    .order("started_at", { ascending: true })
+    .limit(40)
+  raise(error)
+  return (data ?? []) as PostAllocation[]
 }
 
 export async function listOperationalPosts(
@@ -6403,4 +6449,161 @@ export async function importSchedules(
     skipped: rows.length - payload.length,
     errors,
   }
+}
+
+// ---- Troca de moedas ----
+
+function isMissingCoinFeature(error: { code?: string; message: string } | null) {
+  if (!error) return false
+  return error.message.toLowerCase().includes("coin_exchange")
+}
+
+function coinFeatureMessage() {
+  return "A troca de moedas ainda não está instalada no banco. Rode o supabase/coin_exchanges.sql no SQL Editor do Supabase, aguarde alguns segundos e recarregue o app."
+}
+
+export async function getCoinRates(organizationId: string): Promise<CoinRates> {
+  const { data, error } = await supabase
+    .from("coin_exchange_settings" as never)
+    .select("rates" as never)
+    .eq("organization_id" as never, organizationId)
+    .maybeSingle()
+  if (isMissingCoinFeature(error)) return DEFAULT_COIN_RATES
+  raise(error)
+  return sanitizeRates((data as unknown as { rates?: unknown } | null)?.rates)
+}
+
+export async function saveCoinRates(profile: UserProfile, rates: CoinRates) {
+  const { error } = await supabase.from("coin_exchange_settings" as never).upsert(
+    {
+      organization_id: profile.organization_id,
+      rates: sanitizeRates(rates),
+      updated_by: profile.id,
+      updated_at: new Date().toISOString(),
+    } as never,
+    { onConflict: "organization_id" }
+  )
+  if (isMissingCoinFeature(error)) throw new Error(coinFeatureMessage())
+  raise(error)
+}
+
+export async function listCoinExchanges(organizationId: string, dateKey: string) {
+  const { start, end } = dayRange(dateKey)
+  const { data, error } = await supabase
+    .from("coin_exchanges" as never)
+    .select("*, user_profiles(name)" as never)
+    .eq("organization_id" as never, organizationId)
+    .gte("created_at" as never, start)
+    .lt("created_at" as never, end)
+    .order("created_at" as never, { ascending: false })
+    .limit(300)
+  if (isMissingCoinFeature(error)) throw new Error(coinFeatureMessage())
+  raise(error)
+  return (data ?? []) as unknown as CoinExchangeRecord[]
+}
+
+export async function createCoinExchange(
+  profile: UserProfile,
+  input: {
+    branch_id: string | null
+    customer_name?: string | null
+    customer_phone?: string | null
+    deposit_id?: string | null
+    fiscal_name?: string | null
+    notes?: string | null
+    result: CoinExchangeResult
+  }
+) {
+  const { result } = input
+  const { error } = await supabase.from("coin_exchanges" as never).insert({
+    organization_id: profile.organization_id,
+    branch_id: input.branch_id,
+    created_by: profile.id,
+    customer_name: input.customer_name?.trim() || null,
+    customer_phone: input.customer_phone?.trim() || null,
+    deposit_id: input.deposit_id ?? null,
+    fiscal_name: input.fiscal_name?.trim() || null,
+    notes: input.notes?.trim() || null,
+    items: result.lines
+      .filter((line) => line.quantity > 0)
+      .map((line) => ({
+        id: line.id,
+        quantity: line.quantity,
+        rate: line.rate,
+        face_cents: line.faceCents,
+        bonus_cents: line.bonusCents,
+      })),
+    coin_count: result.coinCount,
+    face_cents: result.faceCents,
+    bonus_cents: result.bonusCents,
+    total_cents: result.totalCents,
+  } as never)
+  if (isMissingCoinFeature(error)) throw new Error(coinFeatureMessage())
+  raise(error)
+}
+
+// ---- Moedas deixadas para troca ----
+
+export async function listCoinDeposits(organizationId: string, onlyPending: boolean) {
+  let query = supabase
+    .from("coin_deposits" as never)
+    .select("*, branches(name), user_profiles(name)" as never)
+    .eq("organization_id" as never, organizationId)
+    .order("left_at" as never, { ascending: false })
+    .limit(200)
+  if (onlyPending) query = query.eq("status" as never, "pendente")
+  const { data, error } = await query
+  if (isMissingCoinFeature(error)) throw new Error(coinFeatureMessage())
+  raise(error)
+  return (data ?? []) as unknown as CoinDepositRecord[]
+}
+
+export async function createCoinDeposit(
+  profile: UserProfile,
+  input: {
+    id: string
+    branch_id: string | null
+    customer_name: string
+    customer_phone?: string | null
+    left_at: string
+    estimated_cents: number
+    fiscal_name?: string | null
+    notes?: string | null
+  }
+) {
+  const { data, error } = await supabase
+    .from("coin_deposits" as never)
+    .insert({
+      id: input.id,
+      organization_id: profile.organization_id,
+      branch_id: input.branch_id,
+      created_by: profile.id,
+      customer_name: input.customer_name.trim(),
+      customer_phone: input.customer_phone?.trim() || null,
+      left_at: input.left_at,
+      estimated_cents: input.estimated_cents,
+      fiscal_name: input.fiscal_name?.trim() || null,
+      notes: input.notes?.trim() || null,
+    } as never)
+    .select("*, branches(name), user_profiles(name)" as never)
+    .single()
+  if (isMissingCoinFeature(error)) throw new Error(coinFeatureMessage())
+  raise(error)
+  return data as unknown as CoinDepositRecord
+}
+
+export async function updateCoinDepositStatus(
+  profile: UserProfile,
+  input: { id: string; status: Exclude<CoinDepositStatus, "pendente"> }
+) {
+  const { error } = await supabase
+    .from("coin_deposits" as never)
+    .update({
+      status: input.status,
+      completed_at: input.status === "concluida" ? new Date().toISOString() : null,
+    } as never)
+    .eq("id" as never, input.id)
+    .eq("organization_id" as never, profile.organization_id)
+  if (isMissingCoinFeature(error)) throw new Error(coinFeatureMessage())
+  raise(error)
 }

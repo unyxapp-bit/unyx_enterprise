@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   Coffee,
   MapPinned,
+  Search,
   Unlock,
   type LucideIcon,
 } from "lucide-react"
@@ -10,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import {
   Dialog,
   DialogContent,
@@ -33,8 +35,6 @@ interface OperationalPostsMapBoardProps {
   isLoading: boolean
   isError: boolean
   error?: Error | null
-  onReleaseAllocation?: (allocation: PostAllocation) => void | Promise<void>
-  isReleasePending?: boolean
 }
 
 type PostCardModel = {
@@ -43,6 +43,9 @@ type PostCardModel = {
   operationalBreak: OperationalBreak | null
   status: PostMapStatus
 }
+
+// Posto ocupado há muito tempo sem pausa: o card destaca o tempo em âmbar.
+const LONG_OCCUPANCY_MINUTES = 240
 
 const ACTIVE_BREAK_STATUS_SET = new Set(["pendente", "liberado", "atrasado"])
 
@@ -162,10 +165,12 @@ export function OperationalPostsMapBoard({
   isLoading,
   isError,
   error,
-  onReleaseAllocation,
-  isReleasePending = false,
 }: OperationalPostsMapBoardProps) {
   const [selectedCard, setSelectedCard] = useState<PostCardModel | null>(null)
+  const [openInExitMode, setOpenInExitMode] = useState(false)
+  const [statusFilter, setStatusFilter] = useState<PostMapStatus | "all">("all")
+  const [searchText, setSearchText] = useState("")
+  const [groupBySector, setGroupBySector] = useState(true)
   const [nowMs, setNowMs] = useState(() => Date.now())
 
   useEffect(() => {
@@ -217,6 +222,40 @@ export function OperationalPostsMapBoard({
     [activeCoffeeBreakByAllocationId, allocationByPostId, posts]
   )
 
+  const counts = useMemo(() => {
+    const total = { all: cards.length, occupied: 0, paused: 0, free: 0, inactive: 0 }
+    for (const card of cards) total[card.status] += 1
+    return total
+  }, [cards])
+
+  const visibleCards = useMemo(() => {
+    const needle = searchText.trim().toLowerCase()
+    return cards.filter((card) => {
+      if (statusFilter !== "all" && card.status !== statusFilter) return false
+      if (!needle) return true
+      return (
+        card.post.name.toLowerCase().includes(needle) ||
+        (card.post.sectors?.name ?? "").toLowerCase().includes(needle) ||
+        (card.allocation?.employees?.name ?? "").toLowerCase().includes(needle)
+      )
+    })
+  }, [cards, searchText, statusFilter])
+
+  const groups = useMemo(() => {
+    if (!groupBySector) return [{ name: "", items: visibleCards }]
+    const map = new Map<string, PostCardModel[]>()
+    for (const card of visibleCards) {
+      const name = card.post.sectors?.name ?? "Sem setor"
+      map.set(name, [...(map.get(name) ?? []), card])
+    }
+    return [...map.entries()].map(([name, items]) => ({ name, items }))
+  }, [groupBySector, visibleCards])
+
+  const openCard = (card: PostCardModel, exitMode = false) => {
+    setOpenInExitMode(exitMode)
+    setSelectedCard(card)
+  }
+
   const selectedMinutes =
     selectedCard?.status === "paused"
       ? minutesSince(
@@ -251,29 +290,7 @@ export function OperationalPostsMapBoard({
     )
   }
 
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 px-2.5 py-1 text-emerald-700 dark:text-emerald-300">
-          <span className="size-2 rounded-full bg-emerald-500" />
-          Ocupado
-        </span>
-        <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 px-2.5 py-1 text-amber-700 dark:text-amber-300">
-          <span className="size-2 rounded-full bg-amber-500" />
-          Pausado
-        </span>
-        <span className="inline-flex items-center gap-1 rounded-full border border-sky-200 dark:border-sky-500/30 bg-sky-50 dark:bg-sky-500/10 px-2.5 py-1 text-sky-700 dark:text-sky-300">
-          <span className="size-2 rounded-full bg-sky-500" />
-          Livre
-        </span>
-        <span className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-zinc-100 px-2.5 py-1 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900/80 dark:text-zinc-300">
-          <span className="size-2 rounded-full bg-zinc-400" />
-          Inativo
-        </span>
-      </div>
-
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
-        {cards.map(({ post, allocation, operationalBreak, status }) => {
+  const renderCard = ({ post, allocation, operationalBreak, status }: PostCardModel) => {
           const config = statusConfig[status]
           const StatusIcon = config.icon
 
@@ -287,11 +304,11 @@ export function OperationalPostsMapBoard({
               )}
               role="button"
               tabIndex={0}
-              onClick={() => setSelectedCard({ post, allocation, operationalBreak, status })}
+              onClick={() => openCard({ post, allocation, operationalBreak, status })}
               onKeyDown={(event) => {
                 if (event.key === "Enter" || event.key === " ") {
                   event.preventDefault()
-                  setSelectedCard({ post, allocation, operationalBreak, status })
+                  openCard({ post, allocation, operationalBreak, status })
                 }
               }}
             >
@@ -321,8 +338,15 @@ export function OperationalPostsMapBoard({
                           {allocation?.employees?.name ?? "Colaborador"}
                         </span>
                       </div>
-                      <div className="shrink-0 text-[11px]">
-                        {formatDateTimeBR(allocation?.started_at)}
+                      <div
+                        className={cn(
+                          "shrink-0 text-[11px]",
+                          minutesSince(allocation?.started_at, nowMs) >= LONG_OCCUPANCY_MINUTES &&
+                            "font-semibold text-amber-700 dark:text-amber-300"
+                        )}
+                        title={`Desde ${formatDateTimeBR(allocation?.started_at)}`}
+                      >
+                        há {formatDuration(minutesSince(allocation?.started_at, nowMs))}
                       </div>
                     </div>
                   ) : status === "paused" ? (
@@ -334,7 +358,7 @@ export function OperationalPostsMapBoard({
                         </span>
                       </div>
                       <div className="shrink-0 text-[11px]">
-                        Ate {formatTimeBR(operationalBreak?.planned_end)}
+                        Até {formatTimeBR(operationalBreak?.planned_end)}
                       </div>
                     </div>
                   ) : status === "free" ? (
@@ -350,31 +374,98 @@ export function OperationalPostsMapBoard({
                   )}
                 </div>
 
-                {status === "occupied" && allocation && onReleaseAllocation ? (
+                {status === "occupied" && allocation ? (
                   <Button
                     type="button"
                     variant="destructive"
                     size="sm"
                     className="h-6 w-full rounded-md text-[10px]"
-                    disabled={isReleasePending}
-                    onClick={async (event) => {
+                    onClick={(event) => {
                       event.stopPropagation()
-                      try {
-                        await onReleaseAllocation(allocation)
-                      } catch {
-                        // The mutation hook already shows the error toast.
-                      }
+                      openCard({ post, allocation, operationalBreak, status }, true)
                     }}
                   >
                     <Unlock className="size-3.5" />
-                    {releaseActionLabel(post, isReleasePending)}
+                    {releaseActionLabel(post, false)}
                   </Button>
                 ) : null}
               </CardContent>
             </Card>
           )
-        })}
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        {(
+          [
+            { key: "all", label: "Todos", dot: "bg-slate-400", chip: "border-[color:var(--border-soft)] bg-[color:var(--bg-surface)] text-[color:var(--text-primary)]" },
+            { key: "occupied", label: "Ocupados", dot: "bg-emerald-500", chip: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300" },
+            { key: "paused", label: "Em pausa", dot: "bg-amber-500", chip: "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300" },
+            { key: "free", label: "Livres", dot: "bg-sky-500", chip: "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300" },
+            { key: "inactive", label: "Inativos", dot: "bg-zinc-400", chip: "border-zinc-200 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900/80 dark:text-zinc-300" },
+          ] as const
+        ).map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            aria-pressed={statusFilter === item.key}
+            onClick={() => setStatusFilter(statusFilter === item.key ? "all" : item.key)}
+            className={cn(
+              "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium transition",
+              item.chip,
+              statusFilter === item.key && "ring-2 ring-[color:var(--primary)]"
+            )}
+          >
+            <span className={cn("size-2 rounded-full", item.dot)} />
+            {item.label}
+            <span className="text-sm font-semibold">{counts[item.key]}</span>
+          </button>
+        ))}
+        <div className="relative ml-auto min-w-48 flex-1 sm:max-w-xs">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={searchText}
+            onChange={(event) => setSearchText(event.target.value)}
+            placeholder="Buscar posto, setor ou colaborador"
+            aria-label="Buscar no mapa de postos"
+            className="h-8 rounded-full pl-9 text-xs"
+          />
+        </div>
+        <Button
+          type="button"
+          variant={groupBySector ? "default" : "outline"}
+          size="sm"
+          className="h-8 rounded-full px-3 text-xs"
+          aria-pressed={groupBySector}
+          onClick={() => setGroupBySector((value) => !value)}
+        >
+          Agrupar por setor
+        </Button>
       </div>
+
+      {visibleCards.length === 0 ? (
+        <StateBlock
+          title="Nenhum posto encontrado"
+          description="Ajuste a busca ou o filtro de status para ver os postos."
+        />
+      ) : (
+        groups.map((group) => (
+          <section key={group.name || "todos"} className="space-y-2">
+            {groupBySector ? (
+              <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {group.name}
+                <span className="rounded-full bg-[color:var(--bg-surface-soft)] px-2 py-0.5 text-[10px] font-medium normal-case">
+                  {group.items.length} {group.items.length === 1 ? "posto" : "postos"}
+                </span>
+              </h3>
+            ) : null}
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
+              {group.items.map(renderCard)}
+            </div>
+          </section>
+        ))
+      )}
 
       <Dialog
         open={Boolean(selectedCard)}
@@ -475,6 +566,8 @@ export function OperationalPostsMapBoard({
 
                   {selectedCard.status === "occupied" ? (
                     <AllocationTimeActions
+                      key={`${selectedCard.allocation.id}-${openInExitMode ? "exit" : "view"}`}
+                      initialMode={openInExitMode ? "exit" : undefined}
                       allocation={
                         allocations.find((item) => item.id === selectedCard.allocation?.id) ??
                         selectedCard.allocation

@@ -42,6 +42,7 @@ import {
 import { scheduleStatusLabel, statusMeta } from "@/lib/status"
 import { cn } from "@/lib/utils"
 import { AllocationTimeActions } from "@/features/operational/components/AllocationTimeActions"
+import { EmployeeDayTimeline } from "@/features/operational/components/EmployeeDayTimeline"
 import {
   formatDuration,
   localDateKey,
@@ -56,30 +57,13 @@ import type {
   ScheduleWithRelations,
 } from "@/types/domain"
 import { useAppStore } from "@/store/useAppStore"
-
-const ACTIVE_STATUS_SET = new Set([
-  "trabalhando",
-  "voltou",
-  "pico",
-  "apoio_operacional",
-  "fechamento",
-])
-
-const WORK_STARTED_STATUS_SET = new Set([
-  ...ACTIVE_STATUS_SET,
-  "aguardando_sangria",
-  "troca_de_caixa",
-  "deve_sair",
-  "em_intervalo",
-])
-
-const NON_WORKING_SCHEDULE_STATUS_SET = new Set([
-  "absent",
-  "day_off",
-  "banked_hours",
-  "cancelled",
-  "finished",
-])
+import {
+  ACTIVE_STATUS_SET,
+  coverageInfo,
+  deriveScheduleState,
+  scheduleUrgency,
+  type ScheduleState,
+} from "./scheduleState"
 
 const ACTIVE_BREAK_STATUS_SET = new Set<OperationalBreakStatus>([
   "pendente",
@@ -91,6 +75,29 @@ const COFFEE_BREAK_TYPES: OperationalBreakType[] = ["cafe_manha", "cafe_tarde"]
 const INTERVAL_DELAY_NOTICE_MINUTES = 10
 
 export type ControlePDVTab = "overview" | "releases"
+
+type ScheduleFilter =
+  | "all"
+  | "working"
+  | "break"
+  | "no_post"
+  | "alert"
+  | "arrival"
+  | "release"
+  | "return"
+  | "exit"
+
+// Tudo o que o card, os filtros e o painel "Agora" precisam saber de cada colaborador.
+interface ScheduleView {
+  schedule: ScheduleWithRelations
+  status: OperationalStatusRecord | undefined
+  allocation: PostAllocation | null
+  operationalBreak: OperationalBreak | null
+  state: ScheduleState
+  intervalNotice: ReturnType<typeof intervalNoticeState>
+  hasReachedEnd: boolean
+  urgency: number
+}
 
 interface ControlePDVIntervalosProps {
   tab?: ControlePDVTab
@@ -265,7 +272,7 @@ function breakTimerState(item: OperationalBreak, nowMs: number) {
 
   if (!Number.isNaN(actualStartMs) && nowMs < actualStartMs) {
     return {
-      label: `Comeca em ${formatDuration(Math.ceil((actualStartMs - nowMs) / 60_000))}`,
+      label: `Começa em ${formatDuration(Math.ceil((actualStartMs - nowMs) / 60_000))}`,
       isOverdue: false,
     }
   }
@@ -281,13 +288,13 @@ function breakTimerState(item: OperationalBreak, nowMs: number) {
     }
 
     return {
-      label: `Atrasado ha ${formatDuration(minutes)}`,
+      label: `Atrasado há ${formatDuration(minutes)}`,
       isOverdue: true,
     }
   }
 
   return {
-    label: `Em andamento ha ${formatDuration(
+    label: `Em andamento há ${formatDuration(
       minutesSinceTimestamp(item.actual_start ?? item.planned_start, nowMs)
     )}`,
     isOverdue: false,
@@ -369,7 +376,7 @@ function intervalNoticeState(
       return {
         tone: "critical" as const,
         title: "Retorno do intervalo pendente",
-        detail: `Intervalo acabou ha ${formatDuration(progress.minutesAfterEnd)}.`,
+        detail: `Intervalo acabou há ${formatDuration(progress.minutesAfterEnd)}.`,
         action: null,
       }
     }
@@ -379,7 +386,7 @@ function intervalNoticeState(
       title: "Intervalo em andamento",
       detail:
         progress.minutesAfterEnd === null
-          ? `Em intervalo ha ${formatDuration(progress.minutesSinceStart)}.`
+          ? `Em intervalo há ${formatDuration(progress.minutesSinceStart)}.`
           : `Restam ${formatDuration(
               Math.max(0, Math.abs(progress.minutesAfterEnd))
             )}.`,
@@ -402,9 +409,9 @@ function intervalNoticeState(
     return {
       tone: "warning" as const,
       title: "Intervalo sem registro",
-      detail: `Janela terminou ha ${formatDuration(
+      detail: `Janela terminou há ${formatDuration(
         progress.minutesAfterEnd
-      )}. Confirme se foi realizado no horario da escala.`,
+      )}. Confirme se foi realizado no horário da escala.`,
       action: "confirmDone" as const,
     }
   }
@@ -413,7 +420,7 @@ function intervalNoticeState(
     return {
       tone: "warning" as const,
       title: "Intervalo atrasado",
-      detail: `Trabalhando sem intervalo ha ${formatDuration(
+      detail: `Trabalhando sem intervalo há ${formatDuration(
         progress.minutesSinceStart
       )}.`,
       action: "release" as const,
@@ -425,7 +432,7 @@ function intervalNoticeState(
     title: "Pode sair para intervalo",
     detail:
       progress.minutesSinceStart > 0
-        ? `Janela aberta ha ${formatDuration(progress.minutesSinceStart)}.`
+        ? `Janela aberta há ${formatDuration(progress.minutesSinceStart)}.`
         : "Horário de intervalo chegou.",
     action: "release" as const,
   }
@@ -508,7 +515,7 @@ function badgeTone(
           className: "border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300",
         }
       : {
-          label: "Almoco",
+          label: "Almoço",
           className: "border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300",
         }
   }
@@ -649,9 +656,7 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
   const [selectedScheduleId, setSelectedScheduleId] = useState<string | null>(null)
   const [selectedPostId, setSelectedPostId] = useState<string>("")
   const [searchText, setSearchText] = useState("")
-  const [statusFilter, setStatusFilter] = useState<
-    "all" | "working" | "break" | "no_post" | "alert"
-  >("all")
+  const [statusFilter, setStatusFilter] = useState<ScheduleFilter>("all")
 
   const activePosts = useMemo(
     () => (postsQuery.data ?? []).filter((post) => post.active),
@@ -736,20 +741,103 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
     [schedulesQuery.data]
   )
 
+  const lateToleranceMinutes = settingsQuery.data?.late_tolerance_minutes ?? 5
+
+  const scheduleViews = useMemo(() => {
+    const map = new Map<string, ScheduleView>()
+    for (const schedule of workingSchedules) {
+      const status = statusByScheduleId.get(schedule.id)
+      const allocation = allocationByScheduleId.get(schedule.id) ?? null
+      const operationalBreak =
+        (allocation ? activeBreakByAllocationId.get(allocation.id) : null) ??
+        activeBreakByScheduleId.get(schedule.id) ??
+        null
+      const state = deriveScheduleState({
+        scheduleStatus: schedule.status,
+        startTime: schedule.start_time,
+        currentStatus: status?.current_status ?? null,
+        hasAllocation: Boolean(allocation),
+        hasActiveBreak: Boolean(operationalBreak),
+        nowMinutes,
+        lateToleranceMinutes,
+      })
+      const intervalNotice = intervalNoticeState(
+        schedule,
+        operationalBreak,
+        nowMs,
+        nowMinutes,
+        state.hasEntry
+      )
+      const { hasReachedEnd } = scheduleEndState(schedule, nowMinutes)
+      const urgency = scheduleUrgency(state, {
+        returnPending: intervalNotice?.action === "return",
+        releasePending: intervalNotice?.action === "release",
+        exitPending: hasReachedEnd,
+        critical: status?.current_status === "alerta_critico",
+      })
+      map.set(schedule.id, {
+        schedule,
+        status,
+        allocation,
+        operationalBreak,
+        state,
+        intervalNotice,
+        hasReachedEnd,
+        urgency,
+      })
+    }
+    return map
+  }, [
+    activeBreakByAllocationId,
+    activeBreakByScheduleId,
+    allocationByScheduleId,
+    lateToleranceMinutes,
+    nowMinutes,
+    nowMs,
+    statusByScheduleId,
+    workingSchedules,
+  ])
+
   // Escalados cujo horário de entrada já passou e ainda sem chegada registrada.
   const pendingArrivalSchedules = useMemo(
     () =>
-      workingSchedules.filter((schedule) => {
-        if (NON_WORKING_SCHEDULE_STATUS_SET.has(schedule.status)) return false
-        if (!hasStartTimeArrived(schedule.start_time, nowMinutes)) return false
-        if (["working", "on_break", "returned"].includes(schedule.status)) return false
-        if (allocationByScheduleId.has(schedule.id)) return false
-        if (activeBreakByScheduleId.has(schedule.id)) return false
-        const current = statusByScheduleId.get(schedule.id)?.current_status
-        return !current || current === "aguardando_evento" || current === "alerta_critico"
-      }),
-    [activeBreakByScheduleId, allocationByScheduleId, nowMinutes, statusByScheduleId, workingSchedules]
+      [...scheduleViews.values()]
+        .filter((view) => view.state.awaitingArrival && view.state.startArrived)
+        .map((view) => view.schedule),
+    [scheduleViews]
   )
+
+  // Cobertura mínima: quem pode sair para o intervalo sem deixar o mapa descoberto.
+  const coverage = useMemo(
+    () =>
+      coverageInfo(
+        activeAllocations.length,
+        activeAllocations.filter((allocation) => activeBreakByAllocationId.has(allocation.id))
+          .length,
+        breakSettingsQuery.data?.minimum_active_operators ?? 0
+      ),
+    [activeAllocations, activeBreakByAllocationId, breakSettingsQuery.data?.minimum_active_operators]
+  )
+
+  // Painel "Agora": o que pede ação neste minuto (ignora quem já saiu/está oculto).
+  const nowCounts = useMemo(() => {
+    const counts = { arrival: 0, no_post: 0, release: 0, return: 0, exit: 0 }
+    for (const view of scheduleViews.values()) {
+      if (
+        hiddenScheduleIds.has(view.schedule.id) ||
+        view.schedule.status === "finished" ||
+        view.status?.current_status === "finalizado"
+      ) {
+        continue
+      }
+      if (view.state.awaitingArrival && view.state.startArrived) counts.arrival += 1
+      if (view.state.workingWithoutPost) counts.no_post += 1
+      if (view.intervalNotice?.action === "release") counts.release += 1
+      if (view.intervalNotice?.action === "return") counts.return += 1
+      if (view.hasReachedEnd && !view.state.unavailable) counts.exit += 1
+    }
+    return counts
+  }, [hiddenScheduleIds, scheduleViews])
 
   const intervalDurationSummary = useMemo(
     () =>
@@ -768,12 +856,9 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
 
     return workingSchedules
       .filter((schedule) => {
-        const status = statusByScheduleId.get(schedule.id)
-        const allocation = allocationByScheduleId.get(schedule.id) ?? null
-        const operationalBreak =
-          (allocation ? activeBreakByAllocationId.get(allocation.id) : null) ??
-          activeBreakByScheduleId.get(schedule.id) ??
-          null
+        const view = scheduleViews.get(schedule.id)
+        if (!view) return false
+        const { status, allocation, operationalBreak } = view
         const currentStatus = status?.current_status ?? null
 
         if (
@@ -797,7 +882,13 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
           return false
         }
         if (statusFilter === "break" && schedule.status !== "on_break" && !operationalBreak) return false
-        if (statusFilter === "no_post" && (allocation || operationalBreak)) return false
+        if (statusFilter === "no_post" && !view.state.workingWithoutPost) return false
+        if (statusFilter === "arrival" && !(view.state.awaitingArrival && view.state.startArrived)) {
+          return false
+        }
+        if (statusFilter === "release" && view.intervalNotice?.action !== "release") return false
+        if (statusFilter === "return" && view.intervalNotice?.action !== "return") return false
+        if (statusFilter === "exit" && !(view.hasReachedEnd && !view.state.unavailable)) return false
         if (statusFilter === "alert") {
           const overdueCoffee =
             isCoffeeMarker(schedule.notes) &&
@@ -841,18 +932,20 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
 
         return true
       })
-      .sort(compareSchedulesByStartTime)
+      .sort(
+        (left, right) =>
+          (scheduleViews.get(left.id)?.urgency ?? 7) -
+            (scheduleViews.get(right.id)?.urgency ?? 7) ||
+          compareSchedulesByStartTime(left, right)
+      )
   }, [
-    activeBreakByAllocationId,
-    activeBreakByScheduleId,
-    allocationByScheduleId,
+    scheduleViews,
     hiddenScheduleIds,
     nowMs,
     nowMinutes,
     searchText,
     settingsQuery.data?.break_tolerance_minutes,
     settingsQuery.data?.coffee_break_duration_minutes,
-    statusByScheduleId,
     statusFilter,
     workingSchedules,
   ])
@@ -862,48 +955,15 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
     [selectedScheduleId, workingSchedules]
   )
 
-  const selectedStatus = selectedSchedule ? statusByScheduleId.get(selectedSchedule.id) : null
-  const selectedAllocation = selectedSchedule
-    ? allocationByScheduleId.get(selectedSchedule.id) ?? null
-    : null
-  const selectedOperationalBreak =
-    (selectedAllocation ? activeBreakByAllocationId.get(selectedAllocation.id) : null) ??
-    (selectedSchedule ? activeBreakByScheduleId.get(selectedSchedule.id) : null) ??
-    null
-
-  const selectedHasEntry = selectedSchedule
-    ? Boolean(selectedAllocation) ||
-      selectedSchedule.status === "working" ||
-      selectedSchedule.status === "on_break" ||
-      selectedSchedule.status === "returned" ||
-      Boolean(selectedStatus && WORK_STARTED_STATUS_SET.has(selectedStatus.current_status))
-    : false
-  const selectedUnavailable = selectedSchedule
-    ? NON_WORKING_SCHEDULE_STATUS_SET.has(selectedSchedule.status) ||
-      selectedStatus?.current_status === "finalizado" ||
-      selectedStatus?.current_status === "folga"
-    : true
-  const selectedAwaitingArrival =
-    Boolean(selectedSchedule) &&
-    !selectedHasEntry &&
-    !selectedAllocation &&
-    !selectedOperationalBreak &&
-    !selectedUnavailable
-  const selectedWorkingWithoutPost =
-    Boolean(selectedSchedule) &&
-    selectedHasEntry &&
-    !selectedAllocation &&
-    !selectedOperationalBreak &&
-    !selectedUnavailable
-  const selectedArrivalStarted = selectedSchedule
-    ? hasStartTimeArrived(selectedSchedule.start_time, nowMinutes)
-    : false
-  const selectedArrivalLateMinutes =
-    selectedSchedule && selectedArrivalStarted
-      ? minutesSinceTimeValue(selectedSchedule.start_time, nowMinutes)
-      : 0
-  const selectedArrivalIsLate =
-    selectedArrivalLateMinutes > (settingsQuery.data?.late_tolerance_minutes ?? 5)
+  const selectedView = selectedSchedule ? scheduleViews.get(selectedSchedule.id) : undefined
+  const selectedStatus = selectedView?.status ?? null
+  const selectedAllocation = selectedView?.allocation ?? null
+  const selectedOperationalBreak = selectedView?.operationalBreak ?? null
+  const selectedAwaitingArrival = selectedView?.state.awaitingArrival ?? false
+  const selectedWorkingWithoutPost = selectedView?.state.workingWithoutPost ?? false
+  const selectedArrivalStarted = selectedView?.state.startArrived ?? false
+  const selectedArrivalLateMinutes = selectedView?.state.arrivalLateMinutes ?? 0
+  const selectedArrivalIsLate = selectedView?.state.arrivalIsLate ?? false
 
   const releaseCandidates = useMemo(() => {
     const coffeeWindowOpen =
@@ -1100,7 +1160,7 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
       branch_id: schedule.branch_id,
       employee_id: schedule.employee_id,
       schedule_id: schedule.id,
-      notes: `Intervalo realizado no horario da escala (${formatTimeValue(
+      notes: `Intervalo realizado no horário da escala (${formatTimeValue(
         schedule.break_start
       )} - ${formatTimeValue(schedule.break_end)}) confirmado pelo controle PDV.`,
     })
@@ -1231,6 +1291,52 @@ Use apenas se ninguém atrasou nem faltou.`
           headerClassName="rounded-[24px] bg-[color:var(--bg-muted)] px-4 text-[color:var(--text-primary)]"
           contentClassName="rounded-[24px] bg-[color:var(--bg-surface)] p-3"
         >
+          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-2xl border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] px-3 py-2">
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Agora
+            </span>
+            {(
+              [
+                { key: "arrival", label: "Chegada atrasada", tone: "red" },
+                { key: "return", label: "Retorno pendente", tone: "red" },
+                { key: "no_post", label: "Sem posto", tone: "amber" },
+                { key: "release", label: "Liberar intervalo", tone: "emerald" },
+                { key: "exit", label: "Saída atingida", tone: "amber" },
+              ] as const
+            )
+              .filter((item) => nowCounts[item.key] > 0)
+              .map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => setStatusFilter(statusFilter === item.key ? "all" : item.key)}
+                  aria-pressed={statusFilter === item.key}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition",
+                    item.tone === "red"
+                      ? "border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
+                      : item.tone === "amber"
+                        ? "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300"
+                        : "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300",
+                    statusFilter === item.key && "ring-2 ring-[color:var(--primary)]"
+                  )}
+                >
+                  <span className="text-sm font-semibold">{nowCounts[item.key]}</span>
+                  {item.label}
+                </button>
+              ))}
+            {Object.values(nowCounts).every((count) => count === 0) ? (
+              <span className="text-xs text-emerald-700 dark:text-emerald-300">
+                Tudo em dia: nenhuma ação pendente agora.
+              </span>
+            ) : null}
+            {coverage.minimum > 0 ? (
+              <span className="ml-auto text-xs text-muted-foreground">
+                Cobertura: {coverage.active} em posto · mínimo {coverage.minimum}
+              </span>
+            ) : null}
+          </div>
+
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <div className="relative min-w-0 flex-1">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -1287,12 +1393,16 @@ Use apenas se ninguém atrasou nem faltou.`
 
           <div className="grid gap-2.5 lg:grid-cols-3">
             {visibleSchedules.map((schedule) => {
-              const status = statusByScheduleId.get(schedule.id)
-              const allocation = allocationByScheduleId.get(schedule.id) ?? null
-              const operationalBreak =
-                (allocation ? activeBreakByAllocationId.get(allocation.id) : null) ??
-                activeBreakByScheduleId.get(schedule.id) ??
-                null
+              const view = scheduleViews.get(schedule.id)
+              if (!view) return null
+              const { status, allocation, operationalBreak, state, intervalNotice } = view
+              const {
+                awaitingArrival,
+                canMarkAbsent,
+                startArrived,
+                arrivalLateMinutes,
+                arrivalIsLate,
+              } = state
               const tone = badgeTone(schedule, status, allocation, operationalBreak)
               const elapsed = allocation
                 ? minutesSinceTimestamp(allocation.started_at, nowMs)
@@ -1303,40 +1413,6 @@ Use apenas se ninguém atrasou nem faltou.`
                 nowMinutes
               )
               const isOvertime = overtimeScheduleIds.has(schedule.id)
-              const hasOperationalEntry =
-                Boolean(allocation) ||
-                schedule.status === "working" ||
-                schedule.status === "on_break" ||
-                schedule.status === "returned" ||
-                Boolean(status && WORK_STARTED_STATUS_SET.has(status.current_status))
-              const canMarkAbsent =
-                hasStartTimeArrived(schedule.start_time, nowMinutes) &&
-                !allocation &&
-                !operationalBreak &&
-                !NON_WORKING_SCHEDULE_STATUS_SET.has(schedule.status) &&
-                status?.current_status !== "finalizado" &&
-                status?.current_status !== "folga"
-              const awaitingArrival =
-                !hasOperationalEntry &&
-                !allocation &&
-                !operationalBreak &&
-                !NON_WORKING_SCHEDULE_STATUS_SET.has(schedule.status) &&
-                status?.current_status !== "finalizado" &&
-                status?.current_status !== "folga"
-              const startArrived = hasStartTimeArrived(schedule.start_time, nowMinutes)
-              const arrivalLateMinutes = startArrived
-                ? minutesSinceTimeValue(schedule.start_time, nowMinutes)
-                : 0
-              const arrivalIsLate =
-                arrivalLateMinutes > (settingsQuery.data?.late_tolerance_minutes ?? 5)
-              const intervalNotice = intervalNoticeState(
-                schedule,
-                operationalBreak,
-                nowMs,
-                nowMinutes,
-                hasOperationalEntry
-              )
-
               return (
                 <div
                   key={schedule.id}
@@ -1382,7 +1458,7 @@ Use apenas se ninguém atrasou nem faltou.`
                         Jornada
                       </div>
                       <div className="mt-0.5 truncate font-medium text-[color:var(--text-primary)]">
-                        {schedule.start_time ?? "--:--"} → {schedule.end_time ?? "--:--"}
+                        {formatTimeValue(schedule.start_time)} → {formatTimeValue(schedule.end_time)}
                       </div>
                     </div>
                     <div className="rounded-xl bg-[color:var(--bg-surface-soft)] px-2.5 py-1.5">
@@ -1473,6 +1549,17 @@ Use apenas se ninguém atrasou nem faltou.`
                           <div className="mt-0.5">
                             {intervalNotice.detail}
                           </div>
+                          {intervalNotice.action === "release" && coverage.minimum > 0 ? (
+                            <div
+                              className={cn(
+                                "mt-0.5 font-medium",
+                                coverage.canLeave ? "" : "text-red-700 dark:text-red-300"
+                              )}
+                            >
+                              Cobertura: {coverage.active} em posto (mínimo {coverage.minimum}) ·{" "}
+                              {coverage.canLeave ? "pode sair" : "aguarde cobertura"}
+                            </div>
+                          ) : null}
                         </div>
 
                         {intervalNotice.action === "release" && allocation ? (
@@ -2090,9 +2177,12 @@ Use apenas se ninguém atrasou nem faltou.`
                     <div className="text-sm text-muted-foreground">
                       {selectedOperationalBreak
                         ? "Confirme o retorno antes de alocar este colaborador."
-                        : "Escolha um posto livre para este colaborador."}
+                        : selectedAllocation
+                          ? `Alocado em ${selectedAllocation.operational_posts?.name ?? "um posto"}.`
+                          : "Escolha um posto livre para este colaborador."}
                     </div>
                   </div>
+                  {selectedAllocation ? null : (
                   <div className="flex min-w-0 flex-1 gap-2 sm:max-w-md">
                     <Select
                       aria-label="Posto para alocar"
@@ -2104,14 +2194,6 @@ Use apenas se ninguém atrasou nem faltou.`
                       options={[
                         { value: "", label: "Selecione um posto" },
                         ...freePosts.map((post) => ({ value: post.id, label: post.name })),
-                        ...(selectedAllocation
-                          ? [
-                              {
-                                value: selectedAllocation.post_id,
-                                label: selectedAllocation.operational_posts?.name ?? "Posto atual",
-                              },
-                            ]
-                          : []),
                       ]}
                     />
                     <Button
@@ -2120,20 +2202,20 @@ Use apenas se ninguém atrasou nem faltou.`
                       disabled={
                         allocatePost.isPending ||
                         !selectedPostId ||
-                        Boolean(selectedOperationalBreak) ||
-                        Boolean(selectedAllocation)
+                        Boolean(selectedOperationalBreak)
                       }
                       onClick={() => void handleAllocatePost(selectedSchedule)}
                     >
                       {allocatePost.isPending ? "Alocando..." : "Alocar"}
                     </Button>
                   </div>
+                  )}
                 </div>
                 {selectedAllocation ? (
                   <div className="mt-3 rounded-2xl bg-[color:var(--bg-surface-soft)] px-3 py-2 text-sm text-muted-foreground">
                     {selectedOperationalBreak
                       ? "Posto pausado por café. Confirme o retorno antes de liberar ou mover."
-                      : "Para mover este operador, registre a saída do posto em \"Tempo no posto\"."}
+                      : "Para mover este operador, use \"Liberar posto\" em Ações."}
                   </div>
                 ) : null}
               </div>
@@ -2146,6 +2228,8 @@ Use apenas se ninguém atrasou nem faltou.`
                   onExited={closeScheduleControl}
                 />
               ) : null}
+
+              <EmployeeDayTimeline employeeId={selectedSchedule.employee_id} dateKey={today} />
 
               <div className="rounded-2xl border border-dashed border-[color:var(--border-soft)] p-4 text-sm text-muted-foreground">
                 Horário de trabalho em andamento:{" "}

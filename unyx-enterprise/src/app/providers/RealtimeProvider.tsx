@@ -14,6 +14,7 @@ const tableQueryKeyMap: Record<string, string> = {
   operational_status: "operational-status",
   operational_posts: "operational-posts",
   post_allocations: "post-allocations",
+  operational_breaks: "operational-breaks",
   cash_movements: "cash-movements",
   customers: "customers",
   products: "pos-products",

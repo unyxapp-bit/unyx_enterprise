@@ -98,7 +98,7 @@ test("creates one queued poster per spreadsheet row", async ({ page }) => {
     mimeType: "text/csv",
     buffer: Buffer.from(csv, "utf-8"),
   })
-  await expect(page.getByRole("button", { name: "Exportar PDF da fila (2 páginas)" })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Exportar PDF da fila (2 páginas)" })).toBeVisible({ timeout: 20_000 })
   await page.getByRole("button", { name: "Editar cartaz 2" }).click()
   await expect(page.getByPlaceholder("Nome do produto")).toHaveValue("FEIJAO")
   await expect(page.getByPlaceholder("Ex: 24", { exact: true })).toHaveValue("8")

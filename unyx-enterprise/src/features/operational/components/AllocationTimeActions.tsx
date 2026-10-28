@@ -44,6 +44,7 @@ export function AllocationTimeActions({
   hasActiveBreak,
   nowMs,
   exitLabel = "Liberar posto",
+  initialMode,
   onExited,
 }: {
   allocation: PostAllocation
@@ -51,11 +52,19 @@ export function AllocationTimeActions({
   nowMs: number
   /** Rótulo do botão de saída, ex.: "Liberar caixa". */
   exitLabel?: string
+  /** Abre o formulário já neste modo (ex.: "exit" ao clicar em Liberar no card do mapa). */
+  initialMode?: Mode
   /** Chamado depois que o posto é liberado ou o intervalo/café é liberado (o modal pai se fecha). */
   onExited?: () => void
 }) {
-  const [mode, setMode] = useState<Mode | null>(null)
-  const [time, setTime] = useState("")
+  const [mode, setMode] = useState<Mode | null>(initialMode ?? null)
+  const [time, setTime] = useState(() =>
+    initialMode === "start"
+      ? hhmmFromIso(allocation.started_at)
+      : initialMode
+        ? hhmmFromIso(new Date().toISOString())
+        : ""
+  )
   const [exitReason, setExitReason] = useState(EXIT_REASONS[0].value)
   const [breakType, setBreakType] = useState<OperationalBreakType>("intervalo")
 
