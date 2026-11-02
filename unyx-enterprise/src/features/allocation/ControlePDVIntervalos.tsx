@@ -45,6 +45,7 @@ import { AllocationTimeActions } from "@/features/operational/components/Allocat
 import { EmployeeDayTimeline } from "@/features/operational/components/EmployeeDayTimeline"
 import {
   formatDuration,
+  minutesWorkedUntil,
   localDateKey,
   timeToMinutes,
 } from "@/features/operational/utils"
@@ -1404,14 +1405,22 @@ Use apenas se ninguém atrasou nem faltou.`
                 arrivalIsLate,
               } = state
               const tone = badgeTone(schedule, status, allocation, operationalBreak)
-              const elapsed = allocation
-                ? minutesSinceTimestamp(allocation.started_at, nowMs)
-                : minutesSinceTimeValue(schedule.start_time, nowMinutes)
-              const postName = allocation?.operational_posts?.name ?? "Sem posto"
               const { hasReachedEnd, overtimeMinutes } = scheduleEndState(
                 schedule,
                 nowMinutes
               )
+              const isOvertimeNow = overtimeScheduleIds.has(schedule.id)
+              // O tempo segue a escala: depois do horário de saída ele para, a menos que a hora extra
+              // tenha sido marcada.
+              const scaleDuration = timeWindowDuration(schedule.start_time, schedule.end_time)
+              const elapsed = allocation
+                ? isOvertimeNow
+                  ? minutesSinceTimestamp(allocation.started_at, nowMs)
+                  : minutesWorkedUntil(allocation.started_at, schedule, nowMs)
+                : hasReachedEnd && !isOvertimeNow && scaleDuration !== null
+                  ? scaleDuration
+                  : minutesSinceTimeValue(schedule.start_time, nowMinutes)
+              const postName = allocation?.operational_posts?.name ?? "Sem posto"
               const isOvertime = overtimeScheduleIds.has(schedule.id)
               return (
                 <div
@@ -2139,7 +2148,11 @@ Use apenas se ninguém atrasou nem faltou.`
                   <div className="mt-1 text-sm text-muted-foreground">
                     {selectedAllocation
                       ? `Alocado há ${formatDuration(
-                          minutesSinceTimestamp(selectedAllocation.started_at, nowMs)
+                          minutesWorkedUntil(
+                            selectedAllocation.started_at,
+                            selectedSchedule,
+                            nowMs
+                          )
                         )}`
                       : selectedWorkingWithoutPost
                         ? `Trabalhando sem posto há ${formatDuration(
@@ -2234,7 +2247,9 @@ Use apenas se ninguém atrasou nem faltou.`
               <div className="rounded-2xl border border-dashed border-[color:var(--border-soft)] p-4 text-sm text-muted-foreground">
                 Horário de trabalho em andamento:{" "}
                 {selectedAllocation
-                  ? formatDuration(minutesSinceTimestamp(selectedAllocation.started_at, nowMs))
+                  ? formatDuration(
+                      minutesWorkedUntil(selectedAllocation.started_at, selectedSchedule, nowMs)
+                    )
                   : formatDuration(minutesSinceTimeValue(selectedSchedule.start_time, nowMinutes))}
               </div>
             </div>

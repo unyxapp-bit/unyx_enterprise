@@ -19,6 +19,16 @@ function normalize(value: string) {
     .toLocaleLowerCase("pt-BR")
 }
 
+/** A pergunta que identifica o colaborador avaliado: tipo "employee" ou rótulo começando por "colaborador". */
+export function findCollaboratorQuestion<T extends { kind: string; label: string }>(
+  questions: T[]
+) {
+  return questions.find(
+    (question) =>
+      question.kind === "employee" || normalize(question.label).startsWith("colaborador")
+  )
+}
+
 export function summarizeByCollaborator(
   responses: { form_id: string; answers: Record<string, string> }[],
   questionsByFormId: Map<string, string[]>
@@ -27,10 +37,7 @@ export function summarizeByCollaborator(
 
   for (const response of responses) {
     const questions = (questionsByFormId.get(response.form_id) ?? []).map(parseQuestion)
-    const collaboratorQuestion = questions.find(
-      (question) =>
-        question.kind === "employee" || normalize(question.label).startsWith("colaborador")
-    )
+    const collaboratorQuestion = findCollaboratorQuestion(questions)
     const name = collaboratorQuestion
       ? (response.answers[collaboratorQuestion.label] ?? "").trim()
       : ""

@@ -1,5 +1,6 @@
 import { parseQuestion } from "./formQuestions"
 import type { ParsedQuestion } from "./formQuestions"
+import { findCollaboratorQuestion } from "./formSummary"
 import type { CollaboratorSummary } from "./formSummary"
 
 export interface PrintableForm {
@@ -50,6 +51,10 @@ const styles = `
   table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
   th, td { border: 1px solid #111; padding: 4px 6px; text-align: left; }
   th { background: #eee; }
+  .signatures { display: flex; gap: 28px; margin-top: 30px; break-inside: avoid; }
+  .signature { flex: 1; text-align: center; }
+  .signature .sign-line { border-top: 1px solid #111; margin-top: 34px; padding-top: 3px; font-size: 11px; font-weight: 600; }
+  .signature .sign-name { font-size: 11px; color: #444; min-height: 14px; }
   .footer { margin-top: 18px; color: #555; font-size: 10px; }
   @page { margin: 14mm; }
 `
@@ -77,6 +82,19 @@ function blankField(question: ParsedQuestion) {
   return '<div class="line"></div>'
 }
 
+function signatureBlock(options: { fiscalName?: string; collaborator?: string | null }) {
+  const box = (label: string, name: string) =>
+    `<div class="signature"><div class="sign-line">${escapeHtml(label)}</div><div class="sign-name">${escapeHtml(
+      name
+    )}</div></div>`
+  // collaborator: null = formulário sem colaborador; "" = colaborador a preencher à mão.
+  const collaborator =
+    options.collaborator === null || options.collaborator === undefined
+      ? ""
+      : box("Assinatura do colaborador", options.collaborator)
+  return `<div class="signatures">${box("Visto do fiscal", options.fiscalName ?? "")}${collaborator}</div>`
+}
+
 function formBody(form: PrintableForm) {
   const meta = [form.category, form.scope].filter(Boolean).join(" · ")
   const questions = form.questions
@@ -97,7 +115,10 @@ function formBody(form: PrintableForm) {
     <div class="identify"><div>Data:</div><div>Responsável:</div></div>
     ${questions}
     <div class="question"><div class="label">Observação geral</div>
-      <div class="line"></div><div class="line"></div></div>`
+      <div class="line"></div><div class="line"></div></div>
+    ${signatureBlock({
+      collaborator: findCollaboratorQuestion(form.questions.map(parseQuestion)) ? "" : null,
+    })}`
 }
 
 export function buildFormHtml(form: PrintableForm) {
@@ -118,6 +139,16 @@ function responseBody(response: PrintableResponse) {
     )
     .join("")
 
+  const collaboratorQuestion = findCollaboratorQuestion(
+    labels.map((label, index) => {
+      const parsed = response.questions ? parseQuestion(response.questions[index]) : null
+      return { kind: parsed?.kind ?? "auto", label }
+    })
+  )
+  const collaboratorName = collaboratorQuestion
+    ? (response.answers[collaboratorQuestion.label] ?? "").trim()
+    : null
+
   return `<div class="header"><h1>${escapeHtml(response.formTitle)}</h1>
     <p class="meta">${escapeHtml(
       [response.scope, response.author, response.submittedAt].filter(Boolean).join(" · ")
@@ -129,7 +160,8 @@ function responseBody(response: PrintableResponse) {
             response.notes
           )}</div></div>`
         : ""
-    }`
+    }
+    ${signatureBlock({ fiscalName: response.author, collaborator: collaboratorName })}`
 }
 
 export function buildResponsesHtml(

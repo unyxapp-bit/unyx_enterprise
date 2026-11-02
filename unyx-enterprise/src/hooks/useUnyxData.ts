@@ -123,6 +123,9 @@ import {
   listOperationalForms,
   listOperationalFormResponses,
   listOperationalNotes,
+  listScheduleRecords,
+  reconcileSchedulesByScale,
+  correctScheduleAttendance,
   listOperationalBreaks,
   listOperationalPosts,
   listOperationalQueueSignals,
@@ -1745,6 +1748,62 @@ export function useRecordOperationalEvent() {
     onError: (error) => {
       toast.error(friendlyOperationalActionError(error.message))
     },
+  })
+}
+
+async function invalidateAttendanceQueries(queryClient: ReturnType<typeof useQueryClient>) {
+  for (const key of [
+    "schedules",
+    "operational-status",
+    "operational-breaks",
+    "attendance-events",
+    "post-allocations",
+    "report-events",
+    "audit-logs",
+    "dashboard",
+    "schedule-records",
+  ]) {
+    await queryClient.invalidateQueries({ queryKey: [key] })
+  }
+}
+
+/** Confirma no horário da escala o que ninguém registrou; os totais voltam para quem chamou. */
+export function useReconcileSchedulesByScale() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: reconcileSchedulesByScale,
+    onSuccess: async (result) => {
+      if (result.arrivals + result.breaks + result.returns + result.exits > 0) {
+        await invalidateAttendanceQueries(queryClient)
+      }
+    },
+  })
+}
+
+export function useCorrectScheduleAttendance() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: correctScheduleAttendance,
+    onSuccess: async () => {
+      await invalidateAttendanceQueries(queryClient)
+      toast.success("Conferência salva.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useScheduleRecords(scheduleIds: string[]) {
+  const { profile } = useAuth()
+  const key = scheduleIds.slice().sort().join(",")
+
+  return useQuery({
+    queryKey: ["schedule-records", key],
+    queryFn: () => listScheduleRecords(scheduleIds),
+    enabled: Boolean(profile) && scheduleIds.length > 0,
   })
 }
 

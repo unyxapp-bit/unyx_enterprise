@@ -1,6 +1,8 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import type { FormEvent } from "react"
+import { toast } from "sonner"
 import {
+  ClipboardCheck,
   Coffee,
   LayoutGrid,
   Pencil,
@@ -28,6 +30,7 @@ import { Input } from "@/components/ui/input"
 import {
   useBranches,
   useCreateOperationalPost,
+  useReconcileSchedulesByScale,
   useOperationalBreaks,
   useOperationalPosts,
   usePostAllocations,
@@ -51,6 +54,13 @@ import type {
 } from "@/types/domain"
 import { OperationalPostsMapBoard } from "@/features/operational/components"
 import { ControlePDVIntervalos } from "@/features/allocation/ControlePDVIntervalos"
+import { ScaleReconciliationPanel } from "@/features/allocation/ScaleReconciliationPanel"
+import {
+  AUTO_CONFIRM_GRACE_TODAY_MINUTES,
+  RECONCILE_DAYS_BACK,
+  summarizeReconciliation,
+} from "@/features/allocation/scaleReconciliation"
+import { localDateKey } from "@/features/operational/utils"
 
 const m3ChipClass =
   "rounded-full border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] px-3 py-1 text-xs text-[color:var(--text-secondary)]"
@@ -79,7 +89,7 @@ type PostFormState = {
 }
 
 type PostStatusFilter = "all" | "active" | "inactive" | "without_sector"
-type AllocationViewMode = "mapa" | "controle" | "liberacoes"
+type AllocationViewMode = "mapa" | "controle" | "liberacoes" | "conferencia"
 
 const viewMeta: Record<
   AllocationViewMode,
@@ -100,7 +110,15 @@ const viewMeta: Record<
     title: "Liberações operacionais",
     description: "Controle de cafés, intervalos, retornos e atrasos.",
   },
+  conferencia: {
+    title: "Conferência da escala",
+    description: "Confirma o que a escala previa e permite corrigir o que fugiu dela.",
+  },
 }
+
+// A conferência roda ao abrir a tela, no máximo uma vez a cada 10 minutos por filial.
+const RECONCILE_INTERVAL_MS = 10 * 60_000
+const lastReconcileAt = new Map<string, number>()
 
 function emptyPostForm(branchId = ""): PostFormState {
   return {
@@ -129,6 +147,7 @@ export function AllocationPage() {
   const updatePost = useUpdateOperationalPost()
   const togglePost = useToggleOperationalPost()
   const setupDefaults = useSetupSegmentDefaults()
+  const reconcile = useReconcileSchedulesByScale()
 
   const segment = org.data?.segment ?? "other"
   const sortedPostTypes = SEGMENT_POST_TYPES[segment]
@@ -143,6 +162,67 @@ export function AllocationPage() {
   const [typeFilter, setTypeFilter] = useState<OperationalPostType | "all">("all")
   const [sectorFilter, setSectorFilter] = useState("")
   const [viewMode, setViewMode] = useState<AllocationViewMode>("mapa")
+
+  // O fiscal nem sempre está na loja: o que a escala previa e ninguém registrou é confirmado no horário
+  // da escala. Hoje só depois de uma folga (quem está na loja ainda registra na hora); dias anteriores, já.
+  const reconcileBranchIds = useMemo(
+    () =>
+      selectedBranchId
+        ? [selectedBranchId]
+        : (branches.data ?? []).map((branch) => branch.id),
+    [branches.data, selectedBranchId]
+  )
+  const reconcileKey = reconcileBranchIds.join(",")
+
+  useEffect(() => {
+    if (!reconcileKey) return
+    const now = Date.now()
+    const due = reconcileKey
+      .split(",")
+      .filter((id) => now - (lastReconcileAt.get(id) ?? 0) > RECONCILE_INTERVAL_MS)
+    if (due.length === 0) return
+    for (const id of due) lastReconcileAt.set(id, now)
+
+    let cancelled = false
+    void (async () => {
+      const totals = { arrivals: 0, breaks: 0, returns: 0, exits: 0 }
+      try {
+        for (const branchId of due) {
+          for (let back = RECONCILE_DAYS_BACK; back >= 0; back -= 1) {
+            const day = new Date()
+            day.setDate(day.getDate() - back)
+            const result = await reconcile.mutateAsync({
+              branch_id: branchId,
+              date: localDateKey(day),
+              grace_minutes: back === 0 ? AUTO_CONFIRM_GRACE_TODAY_MINUTES : 0,
+            })
+            totals.arrivals += result.arrivals
+            totals.breaks += result.breaks
+            totals.returns += result.returns
+            totals.exits += result.exits
+          }
+        }
+      } catch (error) {
+        for (const id of due) lastReconcileAt.delete(id)
+        const message = error instanceof Error ? error.message : ""
+        if (!cancelled && message.includes("schedule_reconciliation.sql")) toast.error(message)
+        else console.warn("Falha na conferência conforme a escala.", error)
+        return
+      }
+      const summary = summarizeReconciliation(totals)
+      if (summary && !cancelled) {
+        toast.success(`Confirmado conforme a escala: ${summary}.`, {
+          description: "Corrija na aba Conferência o que fugiu da escala.",
+          action: { label: "Revisar", onClick: () => setViewMode("conferencia") },
+        })
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reconcileKey])
 
   const allPosts = useMemo(
     () =>
@@ -293,12 +373,23 @@ export function AllocationPage() {
                 <Coffee className="size-4" />
                 Liberações
               </Button>
+              <Button
+                type="button"
+                variant={viewMode === "conferencia" ? "default" : "ghost"}
+                className="rounded-full"
+                onClick={() => setViewMode("conferencia")}
+              >
+                <ClipboardCheck className="size-4" />
+                Conferência
+              </Button>
             </div>
 
             {viewMode === "controle" ? (
               <ControlePDVIntervalos tab="overview" />
             ) : viewMode === "liberacoes" ? (
               <ControlePDVIntervalos tab="releases" />
+            ) : viewMode === "conferencia" ? (
+              <ScaleReconciliationPanel />
             ) : (
               <>
                 <OperationalPostsMapBoard

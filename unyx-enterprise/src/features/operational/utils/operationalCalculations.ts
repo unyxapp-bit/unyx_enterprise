@@ -148,3 +148,37 @@ export function removeNoteMarker(current: string | null, marker: string): string
     .join(",")
   return cleaned || null
 }
+
+interface ScheduleWindow {
+  work_date?: string | null
+  start_time?: string | null
+  end_time?: string | null
+}
+
+/** Momento (hora local) em que a escala termina; considera turnos que passam da meia-noite. */
+export function scheduleEndDate(schedule: ScheduleWindow | null | undefined): Date | null {
+  if (!schedule?.work_date || !schedule.end_time) return null
+  const [year, month, day] = schedule.work_date.split("-").map(Number)
+  const end = timeToMinutes(schedule.end_time)
+  if (!year || !month || !day || end === null) return null
+  const start = timeToMinutes(schedule.start_time)
+  const crossesMidnight = start !== null && end <= start
+  return new Date(year, month - 1, day + (crossesMidnight ? 1 : 0), Math.floor(end / 60), end % 60)
+}
+
+/**
+ * Minutos desde `startedAt`, sem passar do fim da escala: quem já tinha horário de saída e ainda não
+ * foi registrado como "saiu" não continua acumulando tempo depois do horário da escala.
+ */
+export function minutesWorkedUntil(
+  startedAt: string | null | undefined,
+  schedule: ScheduleWindow | null | undefined,
+  nowMs: number
+): number {
+  if (!startedAt) return 0
+  const startedMs = new Date(startedAt).getTime()
+  if (Number.isNaN(startedMs)) return 0
+  const endMs = scheduleEndDate(schedule)?.getTime()
+  const limit = endMs !== undefined && nowMs > endMs ? endMs : nowMs
+  return Math.max(0, Math.floor((limit - startedMs) / 60_000))
+}

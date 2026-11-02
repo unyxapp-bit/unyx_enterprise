@@ -33,4 +33,32 @@ describe("formPrint", () => {
     })
     expect(html.indexOf("1. A")).toBeLessThan(html.indexOf("2. B"))
   })
+
+  it("traz o visto do fiscal e, só com colaborador, a assinatura dele", () => {
+    const base = { title: "F", description: null, category: null, scope: "L" }
+    const without = buildFormHtml({ ...base, questions: ["Pontualidade ::choice=Sim|Não"] })
+    expect(without).toContain("Visto do fiscal")
+    expect(without).not.toContain("Assinatura do colaborador")
+
+    const withCollaborator = buildFormHtml({ ...base, questions: ["Colaborador avaliado ::employee"] })
+    expect(withCollaborator).toContain("Visto do fiscal")
+    expect(withCollaborator).toContain("Assinatura do colaborador")
+  })
+
+  it("na resposta, escreve o nome do fiscal e do colaborador sob as linhas", () => {
+    const html = buildResponseHtml({
+      formTitle: "F",
+      scope: "L",
+      author: "Lorena",
+      submittedAt: "24/10/2026",
+      answers: { "Colaborador avaliado": "João", Obs: "ok" },
+      notes: null,
+      questions: ["Colaborador avaliado ::employee", "Obs"],
+    })
+    expect(html).toContain('<div class="sign-name">Lorena</div>')
+    expect(html).toContain('<div class="sign-name">João</div>')
+
+    const plain = buildResponseHtml({ formTitle: "F", scope: "L", author: "Lorena", submittedAt: "", answers: { Obs: "ok" }, notes: null, questions: ["Obs"] })
+    expect(plain).not.toContain("Assinatura do colaborador")
+  })
 })

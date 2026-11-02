@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { BarChart2, Clock, Download, TrendingDown, Users } from "lucide-react"
 import {
   Bar,
@@ -24,7 +24,15 @@ import {
 } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { useReportEvents } from "@/hooks/useUnyxData"
+import {
+  useBranches,
+  useReconcileSchedulesByScale,
+  useReportEvents,
+  useSchedules,
+} from "@/hooks/useUnyxData"
+import { dayClosure } from "@/features/allocation/scaleReconciliation"
+import { localDateKey } from "@/features/operational/utils"
+import { useAppStore } from "@/store/useAppStore"
 import { buildCsv, downloadCsv } from "@/lib/exportCsv"
 import { formatDateBR } from "@/lib/format"
 import { eventLabel } from "@/lib/status"
@@ -33,7 +41,12 @@ import { ScheduleComplianceAudit } from "@/features/reports/ScheduleComplianceAu
 function getRelativeISODate(daysOffset: number) {
   const date = new Date()
   date.setDate(date.getDate() + daysOffset)
-  return date.toISOString().slice(0, 10)
+  return localDateKey(date)
+}
+
+// Dia do evento no fuso local: um evento às 22h não pode cair no dia seguinte (UTC).
+function eventDay(eventTime: string) {
+  return localDateKey(new Date(eventTime))
 }
 
 const filterClass =
@@ -41,11 +54,49 @@ const filterClass =
 
 export function ReportsPage() {
   const events = useReportEvents()
+  const selectedBranchId = useAppStore((state) => state.selectedBranchId)
+  const branches = useBranches()
+  const reconcile = useReconcileSchedulesByScale()
+  const today = localDateKey()
+  const todaySchedules = useSchedules(today)
+  const [nowMs, setNowMs] = useState(() => Date.now())
   const [startDate, setStartDate] = useState(() => getRelativeISODate(-30))
   const [endDate, setEndDate] = useState(() => getRelativeISODate(0))
   const [employeeFilter, setEmployeeFilter] = useState("")
   const [branchFilter, setBranchFilter] = useState("")
   const [sectorFilter, setSectorFilter] = useState("")
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 60_000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  // O relatório do dia só é gerado quando a escala do dia termina (a última saída prevista).
+  const closure = useMemo(
+    () => dayClosure(todaySchedules.data ?? [], new Date(nowMs)),
+    [nowMs, todaySchedules.data]
+  )
+  const todayOpen = todaySchedules.isSuccess && !closure.closed
+  const reportEndDate = todayOpen && endDate >= today ? getRelativeISODate(-1) : endDate
+
+  // Com o dia encerrado, confirma pela escala o que ninguém registrou, para o relatório sair completo.
+  const reconcileBranchKey = (
+    selectedBranchId ? [selectedBranchId] : (branches.data ?? []).map((branch) => branch.id)
+  ).join(",")
+  const dayIsClosed = todaySchedules.isSuccess && closure.closed
+  useEffect(() => {
+    if (!dayIsClosed || !reconcileBranchKey) return
+    void (async () => {
+      for (const branchId of reconcileBranchKey.split(",")) {
+        try {
+          await reconcile.mutateAsync({ branch_id: branchId, date: today, grace_minutes: 0 })
+        } catch {
+          // Sem a conferência instalada o relatório usa o que consta no sistema.
+        }
+      }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dayIsClosed, reconcileBranchKey, today])
 
   const employeeOptions = useMemo(() => {
     const map = new Map<string, string>()
@@ -81,14 +132,14 @@ export function ReportsPage() {
   const filteredEvents = useMemo(() => {
     const list = events.data ?? []
     return list.filter((e) => {
-      const d = e.event_time.slice(0, 10)
-      const inRange = d >= startDate && d <= endDate
+      const d = eventDay(e.event_time)
+      const inRange = d >= startDate && d <= reportEndDate
       const inEmployee = !employeeFilter || e.employee_id === employeeFilter
       const inBranch = !branchFilter || e.branch_id === branchFilter
       const inSector = !sectorFilter || e.employees?.sectors?.name === sectorFilter
       return inRange && inEmployee && inBranch && inSector
     })
-  }, [branchFilter, employeeFilter, endDate, events.data, sectorFilter, startDate])
+  }, [branchFilter, employeeFilter, events.data, reportEndDate, sectorFilter, startDate])
 
   const periodDays = useMemo(() => {
     const start = new Date(startDate)
@@ -102,10 +153,10 @@ export function ReportsPage() {
     prevEnd.setDate(prevEnd.getDate() - 1)
     const prevStart = new Date(prevEnd)
     prevStart.setDate(prevStart.getDate() - periodDays + 1)
-    const ps = prevStart.toISOString().slice(0, 10)
-    const pe = prevEnd.toISOString().slice(0, 10)
+    const ps = localDateKey(prevStart)
+    const pe = localDateKey(prevEnd)
     return list.filter((e) => {
-      const d = e.event_time.slice(0, 10)
+      const d = eventDay(e.event_time)
       const inRange = d >= ps && d <= pe
       const inEmployee = !employeeFilter || e.employee_id === employeeFilter
       const inBranch = !branchFilter || e.branch_id === branchFilter
@@ -183,7 +234,7 @@ export function ReportsPage() {
   const dailyChartData = useMemo(() => {
     const map = new Map<string, { date: string; faltas: number; atrasos: number; ocorrencias: number; total: number }>()
     for (const e of filteredEvents) {
-      const day = e.event_time.slice(0, 10)
+      const day = eventDay(e.event_time)
       if (!map.has(day)) map.set(day, { date: day, faltas: 0, atrasos: 0, ocorrencias: 0, total: 0 })
       const entry = map.get(day)!
       entry.total++
@@ -310,9 +361,19 @@ export function ReportsPage() {
         ) : (
           <>
             <p className="text-xs text-muted-foreground">
-              Período: {formatDateBR(startDate)} — {formatDateBR(endDate)} ·{" "}
+              Período: {formatDateBR(startDate)} — {formatDateBR(reportEndDate)} ·{" "}
               {stats.total} eventos registrados
             </p>
+            {todayOpen && endDate >= today && closure.closesAt ? (
+              <p
+                role="status"
+                className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
+              >
+                O relatório de hoje é gerado ao fim da escala do dia, depois das{" "}
+                {closure.closesAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}.
+                Até lá, o período mostra os dias anteriores.
+              </p>
+            ) : null}
 
             <BentoGrid>
               <MetricCard

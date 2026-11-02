@@ -22,7 +22,7 @@ import { StateBlock } from "@/components/shared/StateBlock"
 import { formatDateTimeBR } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import type { OperationalBreak, OperationalPost, PostAllocation } from "@/types/domain"
-import { formatDuration, postTypeLabel, timeToMinutes } from "../utils"
+import { formatDuration, minutesWorkedUntil, postTypeLabel, timeToMinutes } from "../utils"
 import { AllocateEmployeeToPost } from "./AllocateEmployeeToPost"
 import { AllocationTimeActions } from "./AllocationTimeActions"
 
@@ -264,7 +264,11 @@ export function OperationalPostsMapBoard({
           nowMs
         )
       : selectedCard?.allocation
-        ? minutesSince(selectedCard.allocation.started_at, nowMs)
+        ? minutesWorkedUntil(
+            selectedCard.allocation.started_at,
+            selectedCard.allocation.schedules,
+            nowMs
+          )
         : 0
 
   if (isLoading) {
@@ -341,12 +345,13 @@ export function OperationalPostsMapBoard({
                       <div
                         className={cn(
                           "shrink-0 text-[11px]",
-                          minutesSince(allocation?.started_at, nowMs) >= LONG_OCCUPANCY_MINUTES &&
+                          minutesWorkedUntil(allocation?.started_at, allocation?.schedules, nowMs) >=
+                            LONG_OCCUPANCY_MINUTES &&
                             "font-semibold text-amber-700 dark:text-amber-300"
                         )}
                         title={`Desde ${formatDateTimeBR(allocation?.started_at)}`}
                       >
-                        há {formatDuration(minutesSince(allocation?.started_at, nowMs))}
+                        há {formatDuration(minutesWorkedUntil(allocation?.started_at, allocation?.schedules, nowMs))}
                       </div>
                     </div>
                   ) : status === "paused" ? (

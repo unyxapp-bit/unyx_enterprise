@@ -3911,6 +3911,119 @@ export async function recordBreakAlreadyDone(
   return data as AttendanceEvent
 }
 
+export interface ScaleReconciliationResult {
+  arrivals: number
+  breaks: number
+  returns: number
+  exits: number
+}
+
+export const EMPTY_RECONCILIATION: ScaleReconciliationResult = {
+  arrivals: 0,
+  breaks: 0,
+  returns: 0,
+  exits: 0,
+}
+
+function reconciliationNotInstalled(error: { code?: string; message: string } | null) {
+  if (!error) return false
+  return (
+    error.code === "PGRST202" ||
+    error.code === "42883" ||
+    error.message.includes("reconcile_schedules_by_scale") ||
+    error.message.includes("correct_schedule_attendance")
+  )
+}
+
+const RECONCILIATION_NOT_INSTALLED =
+  "A conferência conforme a escala ainda não está instalada no Supabase. Rode supabase/schedule_reconciliation.sql e tente novamente."
+
+function browserTimeZone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Sao_Paulo"
+  } catch {
+    return "America/Sao_Paulo"
+  }
+}
+
+/**
+ * Confirma, no horário da escala, o que a escala previa e ninguém registrou (chegada, intervalo, retorno e
+ * saída). `graceMinutes` só confirma o que passou há mais que isso.
+ */
+export async function reconcileSchedulesByScale(input: {
+  branch_id: string
+  date: string
+  grace_minutes: number
+}) {
+  const { data, error } = await supabase.rpc("reconcile_schedules_by_scale", {
+    p_branch_id: input.branch_id,
+    p_date: input.date,
+    p_grace_minutes: input.grace_minutes,
+    p_timezone: browserTimeZone(),
+  })
+  if (reconciliationNotInstalled(error)) throw new Error(RECONCILIATION_NOT_INSTALLED)
+  raise(error)
+  const result = (data ?? {}) as Partial<ScaleReconciliationResult>
+  return {
+    arrivals: Number(result.arrivals ?? 0),
+    breaks: Number(result.breaks ?? 0),
+    returns: Number(result.returns ?? 0),
+    exits: Number(result.exits ?? 0),
+  } satisfies ScaleReconciliationResult
+}
+
+export interface ScheduleCorrectionInput {
+  schedule_id: string
+  outcome: "compareceu" | "faltou"
+  /** "HH:MM"; vazio mantém o horário da escala (entrada) ou ignora (demais). */
+  arrival?: string
+  break_start?: string
+  break_end?: string
+  exit?: string
+}
+
+/** Troca o que foi presumido pela escala pelos horários reais informados depois. */
+export async function correctScheduleAttendance(input: ScheduleCorrectionInput) {
+  const { error } = await supabase.rpc("correct_schedule_attendance", {
+    p_schedule_id: input.schedule_id,
+    p_outcome: input.outcome,
+    p_arrival: input.arrival || null,
+    p_break_start: input.break_start || null,
+    p_break_end: input.break_end || null,
+    p_exit: input.exit || null,
+    p_timezone: browserTimeZone(),
+  })
+  if (reconciliationNotInstalled(error)) throw new Error(RECONCILIATION_NOT_INSTALLED)
+  raise(error)
+}
+
+/** Registros de presença e intervalos de um conjunto de escalas, para a tela de conferência. */
+export async function listScheduleRecords(scheduleIds: string[]) {
+  if (scheduleIds.length === 0) {
+    return { events: [] as AttendanceEvent[], breaks: [] as OperationalBreak[] }
+  }
+  const [eventsResult, breaksResult] = await Promise.all([
+    supabase
+      .from("attendance_events")
+      .select("*")
+      .in("schedule_id", scheduleIds)
+      .order("event_time", { ascending: true })
+      .limit(1000),
+    supabase
+      .from("operational_breaks")
+      .select("*")
+      .in("schedule_id", scheduleIds)
+      .order("planned_start", { ascending: true })
+      .limit(500),
+  ])
+  raise(eventsResult.error)
+  if (!isMissingOperationalBreakFeature(breaksResult.error)) raise(breaksResult.error)
+  return {
+    events: (eventsResult.data ?? []) as AttendanceEvent[],
+    breaks: (breaksResult.error ? [] : breaksResult.data ?? []) as OperationalBreak[],
+  }
+}
+
 export async function listAuditLogs(
   branchId?: string | null,
   organizationId?: string | null

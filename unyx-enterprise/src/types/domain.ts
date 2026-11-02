@@ -286,6 +286,8 @@ export interface DashboardRow {
   updated_at: string
 }
 
+export type RecordSource = "manual" | "escala" | "retroativo"
+
 export interface AttendanceEvent {
   id: string
   organization_id: string
@@ -296,6 +298,8 @@ export interface AttendanceEvent {
   event_time: string
   created_by: string | null
   notes: string | null
+  /** Como o registro nasceu: na hora, conforme a escala ou informado depois na conferência. */
+  source?: RecordSource
   created_at: string
   employees?: (Pick<Employee, "name"> & {
     sectors?: Pick<Sector, "name"> | null
@@ -357,6 +361,7 @@ export interface OperationalBreak {
   released_by: string | null
   returned_by: string | null
   notes: string | null
+  source?: RecordSource
   created_at: string
   updated_at: string
   operational_posts?: OperationalPost | null
