@@ -3076,17 +3076,33 @@ function normalizeOperationalQuestions(questions: string[]) {
   return normalizeChecklistItems(questions)
 }
 
+export const OPERATIONAL_NOTES_PAGE_SIZE = 160
+
+// A anotação já foi gravada quando a auditoria roda: uma falha aqui não pode virar erro para o usuário
+// (ele tentaria de novo e duplicaria a anotação).
+async function createNoteAuditLog(
+  profile: UserProfile,
+  input: Parameters<typeof createAuditLog>[1]
+) {
+  try {
+    await createAuditLog(profile, input)
+  } catch (error) {
+    console.warn("Falha ao registrar auditoria da anotação.", error)
+  }
+}
+
 export async function listOperationalNotes(
   branchId?: string | null,
   status?: OperationalNoteStatus | "all",
-  organizationId?: string | null
+  organizationId?: string | null,
+  limit = OPERATIONAL_NOTES_PAGE_SIZE
 ) {
   let query = supabase
     .from("operational_notes")
     .select(operationalNoteSelect)
     .eq("active", true)
     .order("created_at", { ascending: false })
-    .limit(160)
+    .limit(limit)
 
   if (organizationId) query = query.eq("organization_id", organizationId)
   if (branchId) query = query.or(`branch_id.is.null,branch_id.eq.${branchId}`)
@@ -3105,8 +3121,8 @@ export async function createOperationalNote(
 ) {
   const title = input.title.trim()
   const content = input.content.trim()
-  if (!title) throw new Error("Informe o titulo da anotacao.")
-  if (!content) throw new Error("Informe o conteudo da anotacao.")
+  if (!title) throw new Error("Informe o título da anotação.")
+  if (!content) throw new Error("Informe o conteúdo da anotação.")
 
   await validateOptionalScope(profile, input.branch_id, input.sector_id)
 
@@ -3130,7 +3146,7 @@ export async function createOperationalNote(
   if (isMissingFrontStoreFeature(error)) throw new Error(frontStoreFeatureMessage())
   raise(error)
 
-  await createAuditLog(profile, {
+  await createNoteAuditLog(profile, {
     branch_id: input.branch_id,
     action: "operational_note_created",
     entity_type: "operational_notes",
@@ -3156,7 +3172,7 @@ export async function updateOperationalNote(
 
   if (isMissingFrontStoreFeature(previousError)) throw new Error(frontStoreFeatureMessage())
   raise(previousError)
-  if (!previous) throw new Error("Anotacao nao encontrada.")
+  if (!previous) throw new Error("Anotação não encontrada.")
 
   const branchId = input.branch_id === undefined ? previous.branch_id : input.branch_id
   const sectorId = input.sector_id === undefined ? previous.sector_id : input.sector_id
@@ -3184,8 +3200,8 @@ export async function updateOperationalNote(
           : previous.resolved_at,
   }
 
-  if (!payload.title) throw new Error("Informe o titulo da anotacao.")
-  if (!payload.content) throw new Error("Informe o conteudo da anotacao.")
+  if (!payload.title) throw new Error("Informe o título da anotação.")
+  if (!payload.content) throw new Error("Informe o conteúdo da anotação.")
 
   const { data, error } = await supabase
     .from("operational_notes")
@@ -3198,7 +3214,7 @@ export async function updateOperationalNote(
   if (isMissingFrontStoreFeature(error)) throw new Error(frontStoreFeatureMessage())
   raise(error)
 
-  await createAuditLog(profile, {
+  await createNoteAuditLog(profile, {
     branch_id: data.branch_id,
     action: "operational_note_updated",
     entity_type: "operational_notes",
@@ -3220,7 +3236,7 @@ export async function deleteOperationalNote(profile: UserProfile, noteId: string
 
   if (isMissingFrontStoreFeature(previousError)) throw new Error(frontStoreFeatureMessage())
   raise(previousError)
-  if (!previous) throw new Error("Anotacao nao encontrada.")
+  if (!previous) throw new Error("Anotação não encontrada.")
 
   const { error } = await supabase
     .from("operational_notes")
@@ -3231,7 +3247,7 @@ export async function deleteOperationalNote(profile: UserProfile, noteId: string
   if (isMissingFrontStoreFeature(error)) throw new Error(frontStoreFeatureMessage())
   raise(error)
 
-  await createAuditLog(profile, {
+  await createNoteAuditLog(profile, {
     branch_id: previous.branch_id,
     action: "operational_note_deleted",
     entity_type: "operational_notes",

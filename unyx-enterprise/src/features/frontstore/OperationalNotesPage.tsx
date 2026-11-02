@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import type { DragEvent, FormEvent } from "react"
 import {
   Archive,
@@ -9,10 +9,13 @@ import {
   Clock3,
   Edit3,
   Plus,
+  Printer,
   StickyNote,
   Trash2,
 } from "lucide-react"
 
+import { printHtml } from "@/features/frontstore/formPrint"
+import { buildNoteHtml } from "@/features/frontstore/operationalNotePrint"
 import { PageHeader } from "@/components/shared/PageHeader"
 import { StateBlock } from "@/components/shared/StateBlock"
 import { Badge } from "@/components/ui/badge"
@@ -37,6 +40,7 @@ import {
 } from "@/hooks/useUnyxData"
 import { formatDateTimeBR } from "@/lib/format"
 import { cn } from "@/lib/utils"
+import { OPERATIONAL_NOTES_PAGE_SIZE } from "@/services/unyxApi"
 import { useAppStore } from "@/store/useAppStore"
 import type {
   OperationalNote,
@@ -120,6 +124,58 @@ function priorityVariant(priority: OperationalSupportPriority) {
   return "outline"
 }
 
+// ISO do banco (UTC) -> valor do campo de data/hora no fuso do navegador.
+function toDatetimeLocal(value: string | null) {
+  if (!value) return ""
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ""
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+  return local.toISOString().slice(0, 16)
+}
+
+// Valor do campo (horário local, sem fuso) -> ISO com fuso, para o banco não tratar como UTC.
+function fromDatetimeLocal(value: string) {
+  if (!value) return null
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date.toISOString()
+}
+
+const LONG_CONTENT = 140
+
+function fullDateTime(value: string | null) {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+    .format(date)
+    .replace(",", "")
+}
+
+function printNote(note: OperationalNote) {
+  printHtml(
+    buildNoteHtml({
+      title: note.title,
+      content: note.content,
+      category: note.category,
+      priority: priorityLabel[note.priority],
+      priorityLevel: note.priority,
+      status: statusLabel[note.status],
+      scope: scopeLabel(note),
+      author: note.user_profiles?.name ?? "Usuário",
+      createdAt: fullDateTime(note.created_at) ?? "",
+      dueAt: fullDateTime(note.due_at),
+      resolvedAt: fullDateTime(note.resolved_at),
+      printedAt: fullDateTime(new Date().toISOString()) ?? undefined,
+    })
+  )
+}
+
 function scopeLabel(note: OperationalNote) {
   const branch = note.branches?.name ?? "Toda empresa"
   return note.sectors?.name ? `${branch} - ${note.sectors.name}` : branch
@@ -135,10 +191,18 @@ export function OperationalNotesPage() {
   const [deleteTarget, setDeleteTarget] = useState<OperationalNote | null>(null)
   const [draggingNoteId, setDraggingNoteId] = useState<string | null>(null)
   const [dragOverStatus, setDragOverStatus] = useState<OperationalNoteStatus | null>(null)
-  const [renderTime] = useState(() => Date.now())
+  const [renderTime, setRenderTime] = useState(() => Date.now())
+  const [noteLimit, setNoteLimit] = useState(OPERATIONAL_NOTES_PAGE_SIZE)
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set())
+  const [submitError, setSubmitError] = useState<string | null>(null)
   const [form, setForm] = useState(emptyForm)
 
-  const notes = useOperationalNotes("all")
+  useEffect(() => {
+    const timer = window.setInterval(() => setRenderTime(Date.now()), 60_000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  const notes = useOperationalNotes("all", noteLimit)
   const branches = useBranches()
   const sectors = useSectors(form.branch_id || selectedBranchId || null)
   const createNote = useCreateOperationalNote()
@@ -161,14 +225,15 @@ export function OperationalNotesPage() {
     const hasArchived = filteredNotes.some((note) => note.status === "archived")
     return noteColumns.filter((column) => {
       if (statusFilter !== "all") return column.status === statusFilter
-      if (column.status === "archived") return hasArchived
+      if (column.status === "archived") return hasArchived || draggingNoteId !== null
       return true
     })
-  }, [filteredNotes, statusFilter])
+  }, [draggingNoteId, filteredNotes, statusFilter])
 
   function resetForm() {
     setForm(emptyForm)
     setEditing(null)
+    setSubmitError(null)
   }
 
   function openCreate() {
@@ -187,7 +252,7 @@ export function OperationalNotesPage() {
       category: note.category ?? "",
       priority: note.priority,
       status: note.status,
-      due_at: note.due_at ? note.due_at.slice(0, 16) : "",
+      due_at: toDatetimeLocal(note.due_at),
     })
     setOpen(true)
   }
@@ -202,13 +267,19 @@ export function OperationalNotesPage() {
       category: form.category || null,
       priority: form.priority,
       status: form.status,
-      due_at: form.due_at || null,
+      due_at: fromDatetimeLocal(form.due_at),
     }
 
-    if (editing) {
-      await updateNote.mutateAsync({ noteId: editing.id, values: payload })
-    } else {
-      await createNote.mutateAsync(payload)
+    try {
+      if (editing) {
+        await updateNote.mutateAsync({ noteId: editing.id, values: payload })
+      } else {
+        await createNote.mutateAsync(payload)
+      }
+    } catch (error) {
+      // O formulário continua aberto com o que foi digitado; o aviso aparece dentro dele.
+      setSubmitError(error instanceof Error ? error.message : "Não foi possível salvar a anotação.")
+      return
     }
 
     resetForm()
@@ -217,9 +288,18 @@ export function OperationalNotesPage() {
 
   async function setNoteStatus(note: OperationalNote, status: OperationalNoteStatus) {
     if (note.status === status) return
-    await updateNote.mutateAsync({
-      noteId: note.id,
-      values: { status },
+    try {
+      await updateNote.mutateAsync({ noteId: note.id, values: { status } })
+    } catch {
+      // O aviso já sai pelo toast e o cartão volta para a coluna de origem.
+    }
+  }
+
+  function toggleExpanded(noteId: string) {
+    setExpandedIds((current) => {
+      const next = new Set(current)
+      if (!next.delete(noteId)) next.add(noteId)
+      return next
     })
   }
 
@@ -424,6 +504,12 @@ export function OperationalNotesPage() {
                     </label>
                   </div>
 
+                  {submitError ? (
+                    <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                      {submitError}
+                    </p>
+                  ) : null}
+
                   <DialogFooter>
                     <Button type="submit" disabled={isPending}>
                       {isPending ? "Salvando..." : "Salvar anotação"}
@@ -557,6 +643,10 @@ export function OperationalNotesPage() {
                         const overdue = isOverdue(note)
                         const action = primaryStatusAction(note)
                         const ActionIcon = action.icon
+                        const expanded = expandedIds.has(note.id)
+                        const isLong =
+                          note.content.length > LONG_CONTENT ||
+                          note.content.split("\n").length > 3
                         return (
                           <div
                             key={note.id}
@@ -597,9 +687,24 @@ export function OperationalNotesPage() {
                               </Badge>
                             </div>
 
-                            <p className="mt-3 max-h-20 overflow-hidden whitespace-pre-wrap rounded-lg border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] px-3 py-2 text-xs leading-5 text-[color:var(--text-secondary)]">
+                            <p
+                              className={cn(
+                                "mt-3 overflow-hidden whitespace-pre-wrap break-words rounded-lg border border-[color:var(--border-soft)] bg-[color:var(--bg-surface-soft)] px-3 py-2 text-xs leading-5 text-[color:var(--text-secondary)]",
+                                !expanded && "max-h-20"
+                              )}
+                            >
                               {note.content}
                             </p>
+                            {isLong ? (
+                              <button
+                                type="button"
+                                className="mt-1 text-[11px] font-medium text-[color:var(--text-muted)] underline-offset-2 hover:underline"
+                                aria-expanded={expanded}
+                                onClick={() => toggleExpanded(note.id)}
+                              >
+                                {expanded ? "Ver menos" : "Ver mais"}
+                              </button>
+                            ) : null}
 
                             <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[11px] text-[color:var(--text-muted)]">
                               {note.category ? (
@@ -648,13 +753,46 @@ export function OperationalNotesPage() {
                               <Button
                                 type="button"
                                 size="sm"
-                                variant="destructive"
-                                onClick={() => removeNote(note)}
+                                variant="outline"
+                                onClick={() => printNote(note)}
                               >
-                                <Trash2 className="size-3.5" />
-                                Excluir
+                                <Printer className="size-3.5" />
+                                Imprimir
                               </Button>
+                              {note.status === "archived" ? (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={() => removeNote(note)}
+                                >
+                                  <Trash2 className="size-3.5" />
+                                  Excluir
+                                </Button>
+                              ) : (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={updateNote.isPending}
+                                  onClick={() => void setNoteStatus(note, "archived")}
+                                >
+                                  <Archive className="size-3.5" />
+                                  Arquivar
+                                </Button>
+                              )}
                             </div>
+                            <Select
+                              aria-label={`Mover ${note.title} para`}
+                              className="mt-2 w-full"
+                              value={note.status}
+                              onValueChange={(value) =>
+                                void setNoteStatus(note, value as OperationalNoteStatus)
+                              }
+                              options={(Object.keys(statusLabel) as OperationalNoteStatus[]).map(
+                                (status) => ({ value: status, label: `Mover para: ${statusLabel[status]}` })
+                              )}
+                            />
                           </div>
                         )
                       })
@@ -665,6 +803,19 @@ export function OperationalNotesPage() {
             })}
           </div>
         )}
+
+        {!notes.isLoading && !notes.isError && (notes.data ?? []).length >= noteLimit ? (
+          <div className="flex justify-center">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={notes.isFetching}
+              onClick={() => setNoteLimit((current) => current + OPERATIONAL_NOTES_PAGE_SIZE)}
+            >
+              {notes.isFetching ? "Carregando..." : "Carregar mais anotações"}
+            </Button>
+          </div>
+        ) : null}
 
         {createNote.error || updateNote.error || deleteNote.error ? (
           <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-[color:var(--text-secondary)]">
@@ -682,7 +833,7 @@ export function OperationalNotesPage() {
             <DialogTitle>Excluir anotação</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Deseja excluir permanentemente "{deleteTarget?.title}"?
+            Deseja excluir permanentemente "{deleteTarget?.title}"? Esta ação não pode ser desfeita.
           </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteTarget(null)}>

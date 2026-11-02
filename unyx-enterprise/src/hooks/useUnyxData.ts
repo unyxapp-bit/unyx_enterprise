@@ -210,6 +210,7 @@ import type {
   OperationalPostType,
   OperationalStatus,
   OperationalSettings,
+  OperationalNote,
   OperationalNoteStatus,
   PaymentMethod,
   PosCashMovementType,
@@ -580,15 +581,19 @@ export function useChecklistRuns(since?: string | null) {
   })
 }
 
-export function useOperationalNotes(status?: OperationalNoteStatus | "all") {
+export function useOperationalNotes(
+  status?: OperationalNoteStatus | "all",
+  limit?: number
+) {
   const { profile } = useAuth()
   const selectedBranchId = useAppStore((state) => state.selectedBranchId)
 
   return useQuery({
-    queryKey: ["operational-notes", profile?.organization_id, selectedBranchId, status],
+    queryKey: ["operational-notes", profile?.organization_id, selectedBranchId, status, limit],
     queryFn: () =>
-      listOperationalNotes(selectedBranchId, status, profile!.organization_id),
+      listOperationalNotes(selectedBranchId, status, profile!.organization_id, limit),
     enabled: Boolean(profile),
+    placeholderData: (previous) => previous,
   })
 }
 
@@ -970,7 +975,7 @@ export function useCreateOperationalNote() {
       await queryClient.invalidateQueries({ queryKey: ["operational-notes"] })
       await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
       await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
-      toast.success("Anotacao registrada.")
+      toast.success("Anotação registrada.")
     },
     onError: (error) => { toast.error(error.message) },
   })
@@ -985,13 +990,35 @@ export function useUpdateOperationalNote() {
       noteId: string
       values: Partial<OperationalNoteInput & { active: boolean }>
     }) => updateOperationalNote(profile, input.noteId, input.values),
+    // Move o cartão na hora; se o banco recusar, volta ao estado anterior.
+    onMutate: async ({ noteId, values }) => {
+      await queryClient.cancelQueries({ queryKey: ["operational-notes"] })
+      const snapshots = queryClient.getQueriesData<OperationalNote[]>({
+        queryKey: ["operational-notes"],
+      })
+      if (values.status) {
+        for (const [key, data] of snapshots) {
+          if (!data) continue
+          queryClient.setQueryData<OperationalNote[]>(
+            key,
+            data.map((note) =>
+              note.id === noteId ? { ...note, status: values.status! } : note
+            )
+          )
+        }
+      }
+      return { snapshots }
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["operational-notes"] })
       await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
       await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
-      toast.success("Anotacao atualizada.")
+      toast.success("Anotação atualizada.")
     },
-    onError: (error) => { toast.error(error.message) },
+    onError: (error, _input, context) => {
+      for (const [key, data] of context?.snapshots ?? []) queryClient.setQueryData(key, data)
+      toast.error(error.message)
+    },
   })
 }
 
@@ -1005,7 +1032,7 @@ export function useDeleteOperationalNote() {
       await queryClient.invalidateQueries({ queryKey: ["operational-notes"] })
       await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
       await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
-      toast.success("Anotacao excluida.")
+      toast.success("Anotação excluída.")
     },
     onError: (error) => { toast.error(error.message) },
   })
