@@ -39,6 +39,7 @@ import {
   useAttendanceEvents,
   useBranches,
   useCreateEmployee,
+  useCreateSector,
   useDeleteEmployees,
   useEmployees,
   useImportEmployees,
@@ -280,6 +281,130 @@ function EmployeesImportDialog({
   )
 }
 
+// Setor do colaborador: escolhe um existente ou cria na hora, sem precisar sair do cadastro.
+function SectorField({
+  branchId,
+  sectors,
+  value,
+  onChange,
+}: {
+  branchId: string
+  sectors: Sector[]
+  value: string
+  onChange: (sectorId: string) => void
+}) {
+  const createSector = useCreateSector()
+  const [creating, setCreating] = useState(false)
+  const [name, setName] = useState("")
+  const [error, setError] = useState<string | null>(null)
+  const [pendingSectorId, setPendingSectorId] = useState<string | null>(null)
+  const activeSectors = branchId
+    ? sectors.filter((sector) => sector.active && sector.branch_id === branchId)
+    : []
+
+  useEffect(() => {
+    if (pendingSectorId && sectors.some((sector) => sector.active && sector.id === pendingSectorId)) {
+      onChange(pendingSectorId)
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setPendingSectorId(null)
+    }
+  }, [pendingSectorId, sectors, onChange])
+
+  function closeCreator() {
+    setCreating(false)
+    setName("")
+    setError(null)
+  }
+
+  async function handleCreate() {
+    const trimmed = name.trim()
+    if (!trimmed) {
+      setError("Informe o nome do setor.")
+      return
+    }
+    // Evita setor duplicado: se já existe com esse nome na filial, só seleciona.
+    const existing = activeSectors.find(
+      (sector) => sector.name.trim().toLowerCase() === trimmed.toLowerCase()
+    )
+    if (existing) {
+      onChange(existing.id)
+      closeCreator()
+      return
+    }
+    try {
+      const created = await createSector.mutateAsync({
+        branch_id: branchId,
+        name: trimmed,
+        description: null,
+      })
+      // Seleciona só quando o setor já está na lista: antes disso o Select volta para "Sem setor".
+      setPendingSectorId(created.id)
+      closeCreator()
+    } catch {
+      // O aviso de erro já é mostrado pelo próprio hook.
+    }
+  }
+
+  return (
+    <div className="space-y-1 text-sm">
+      <span className="font-medium">Setor</span>
+      <Select
+        value={value}
+        onValueChange={onChange}
+        disabled={!branchId}
+        options={[
+          { value: "", label: "Sem setor" },
+          ...activeSectors.map((sector) => ({ value: sector.id, label: sector.name })),
+        ]}
+      />
+      {!branchId ? (
+        <p className="text-xs text-muted-foreground">Selecione a filial acima para escolher ou criar um setor.</p>
+      ) : creating ? (
+        <div className="space-y-1.5 rounded-lg border border-[color:var(--border-soft)] p-2">
+          <div className="flex gap-2">
+            <Input
+              autoFocus
+              value={name}
+              placeholder="Ex.: Caixa, Padaria, Açougue"
+              onChange={(event) => {
+                setName(event.target.value)
+                setError(null)
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault()
+                  void handleCreate()
+                }
+                if (event.key === "Escape") closeCreator()
+              }}
+            />
+            <Button type="button" size="sm" disabled={createSector.isPending} onClick={() => void handleCreate()}>
+              Criar
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={closeCreator}>
+              Cancelar
+            </Button>
+          </div>
+          {error ? <p className="text-xs text-destructive">{error}</p> : null}
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          {activeSectors.length === 0 ? (
+            <span className="text-xs text-muted-foreground">Esta filial ainda não tem setores.</span>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => setCreating(true)}
+            className="text-xs font-medium text-[color:var(--primary)] hover:underline"
+          >
+            + Criar novo setor
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function EmployeeEditInlineDialog({
   employee,
   branches,
@@ -357,7 +482,7 @@ function EmployeeEditInlineDialog({
               <span className="font-medium">Filial</span>
               <Select
                 value={form.branch_id}
-                onValueChange={(value) => setForm((c) => ({ ...c, branch_id: value, sector_id: "" }))}
+                onValueChange={(value) => setForm((c) => (c.branch_id === value ? c : { ...c, branch_id: value, sector_id: "" }))}
                 placeholder="Selecione"
                 options={[
                   { value: "", label: "Selecione" },
@@ -365,17 +490,12 @@ function EmployeeEditInlineDialog({
                 ]}
               />
             </label>
-            <label className="space-y-1 text-sm">
-              <span className="font-medium">Setor</span>
-              <Select
-                value={form.sector_id}
-                onValueChange={(value) => setForm((c) => ({ ...c, sector_id: value }))}
-                options={[
-                  { value: "", label: "Sem setor" },
-                  ...(sectors.data ?? []).filter((s) => s.active).map((s) => ({ value: s.id, label: s.name })),
-                ]}
-              />
-            </label>
+            <SectorField
+              branchId={form.branch_id}
+              sectors={sectors.data ?? []}
+              value={form.sector_id}
+              onChange={(sectorId) => setForm((c) => ({ ...c, sector_id: sectorId }))}
+            />
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
@@ -651,6 +771,15 @@ export function EmployeesPage() {
   const operationalStatuses = useOperationalStatuses()
   const attendanceEventsQuery = useAttendanceEvents()
   const formSectors = useSectors(form.branch_id || selectedBranchId)
+  const onlyBranchId = activeBranches.length === 1 ? activeBranches[0].id : ""
+
+  // Com uma única filial ativa não há o que escolher: já vem selecionada.
+  useEffect(() => {
+    if (onlyBranchId && !form.branch_id) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setForm((current) => (current.branch_id ? current : { ...current, branch_id: onlyBranchId }))
+    }
+  }, [onlyBranchId, form.branch_id])
   const createEmployee = useCreateEmployee()
   const deleteEmployeesBulk = useDeleteEmployees()
 
@@ -882,7 +1011,7 @@ export function EmployeesPage() {
                     <span className="font-medium">Filial</span>
                     <Select
                       value={form.branch_id}
-                      onValueChange={(value) => setForm((c) => ({ ...c, branch_id: value, sector_id: "" }))}
+                      onValueChange={(value) => setForm((c) => (c.branch_id === value ? c : { ...c, branch_id: value, sector_id: "" }))}
                       placeholder="Selecione"
                       options={[
                         { value: "", label: "Selecione" },
@@ -890,17 +1019,12 @@ export function EmployeesPage() {
                       ]}
                     />
                   </label>
-                  <label className="space-y-1 text-sm">
-                    <span className="font-medium">Setor</span>
-                    <Select
-                      value={form.sector_id}
-                      onValueChange={(value) => setForm((c) => ({ ...c, sector_id: value }))}
-                      options={[
-                        { value: "", label: "Sem setor" },
-                        ...(formSectors.data ?? []).filter((s) => s.active).map((s) => ({ value: s.id, label: s.name })),
-                      ]}
-                    />
-                  </label>
+                  <SectorField
+                    branchId={form.branch_id}
+                    sectors={formSectors.data ?? []}
+                    value={form.sector_id}
+                    onChange={(sectorId) => setForm((c) => ({ ...c, sector_id: sectorId }))}
+                  />
                 </div>
 
                 <div className="grid gap-3 sm:grid-cols-2">
