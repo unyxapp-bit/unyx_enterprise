@@ -38,6 +38,12 @@ import {
   useUpdateSchedule,
 } from "@/hooks/useUnyxData"
 import { buildCsv, downloadCsv } from "@/lib/exportCsv"
+import {
+  dayOffsetOf,
+  shiftTimeline,
+  shortDateLabel,
+  type ShiftTimeline,
+} from "@/features/operational/utils/scheduleTimeline"
 import { formatDateBR, formatTime } from "@/lib/format"
 import { scheduleStatusLabel } from "@/lib/status"
 import { cn } from "@/lib/utils"
@@ -110,7 +116,51 @@ function scheduleSummary(schedule: ScheduleWithRelations) {
     return scheduleStatusLabel[schedule.status]
   }
 
-  return `${formatTime(schedule.start_time)} - ${formatTime(schedule.end_time)}`
+  return `${formatTime(schedule.start_time)} - ${formatShiftTime(schedule, "end_time")}`
+}
+
+const TIMELINE_KEY: Record<
+  "start_time" | "break_start" | "break_end" | "end_time",
+  keyof ShiftTimeline
+> = {
+  start_time: "start",
+  break_start: "breakStart",
+  break_end: "breakEnd",
+  end_time: "end",
+}
+
+type ScheduleTimeField = keyof typeof TIMELINE_KEY
+
+/** Quantos dias depois do dia da escala esse horário acontece (0 = no mesmo dia). */
+function timeDayOffset(
+  times: Parameters<typeof shiftTimeline>[0],
+  field: ScheduleTimeField
+) {
+  return dayOffsetOf(shiftTimeline(times)[TIMELINE_KEY[field]])
+}
+
+// Horário depois da meia-noite: a data muda sozinha para o dia seguinte; só mostramos qual é.
+function NextDayHint({
+  times,
+  field,
+  workDate,
+}: {
+  times: Parameters<typeof shiftTimeline>[0]
+  field: ScheduleTimeField
+  workDate: string
+}) {
+  const offset = timeDayOffset(times, field)
+  if (offset === 0) return null
+  return (
+    <span className="block text-[0.7rem] font-normal text-amber-600 dark:text-amber-300">
+      Dia seguinte · {shortDateLabel(workDate, offset)}
+    </span>
+  )
+}
+
+function formatShiftTime(schedule: ScheduleWithRelations, field: ScheduleTimeField) {
+  const offset = timeDayOffset(schedule, field)
+  return `${formatTime(schedule[field])}${offset > 0 ? " (+1)" : ""}`
 }
 
 function isScheduleIncomplete(schedule: ScheduleWithRelations) {
@@ -210,6 +260,7 @@ function ScheduleEditDialog({ schedule }: { schedule: ScheduleWithRelations }) {
                       setForm((c) => ({ ...c, [field]: e.target.value }))
                     }
                   />
+                  <NextDayHint times={form} field={field} workDate={schedule.work_date} />
                 </label>
               )
             )}
@@ -1175,6 +1226,7 @@ export function SchedulesPage() {
                         </span>
                         <Input type="time" disabled={scheduleClearsTimes(form.status)} value={form[field]}
                           onChange={(e) => setForm((c) => ({ ...c, [field]: e.target.value }))} />
+                        <NextDayHint times={form} field={field} workDate={form.work_date} />
                       </label>
                     ))}
                   </div>
@@ -1368,9 +1420,9 @@ export function SchedulesPage() {
                       </td>
                       <td className="px-4 py-3">{schedule.employees?.sectors?.name ?? "-"}</td>
                       <td className="px-4 py-3">{formatTime(schedule.start_time)}</td>
-                      <td className="px-4 py-3">{formatTime(schedule.break_start)}</td>
-                      <td className="px-4 py-3">{formatTime(schedule.break_end)}</td>
-                      <td className="px-4 py-3">{formatTime(schedule.end_time)}</td>
+                      <td className="px-4 py-3">{formatShiftTime(schedule, "break_start")}</td>
+                      <td className="px-4 py-3">{formatShiftTime(schedule, "break_end")}</td>
+                      <td className="px-4 py-3">{formatShiftTime(schedule, "end_time")}</td>
                       <td className="px-4 py-3">{scheduleStatusLabel[schedule.status]}</td>
                       <td className="px-4 py-3">
                         <div className="flex justify-end gap-2">

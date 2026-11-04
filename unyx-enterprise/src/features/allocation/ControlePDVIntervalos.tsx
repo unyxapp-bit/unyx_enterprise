@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 import {
   Ban,
@@ -49,6 +49,12 @@ import {
   localDateKey,
   timeToMinutes,
 } from "@/features/operational/utils"
+import {
+  addDaysToDateKey,
+  isOvernightStillRunning,
+  minutesSinceWorkDate,
+  shiftTimeline,
+} from "@/features/operational/utils/scheduleTimeline"
 import type {
   OperationalBreak,
   OperationalBreakStatus,
@@ -129,9 +135,21 @@ function minutesSinceTimestamp(value: string | null | undefined, nowMs: number) 
   return Math.max(0, Math.floor((nowMs - startedAt) / 60_000))
 }
 
-function minutesSinceTimeValue(value: string | null | undefined, nowMinutes: number) {
+// Com `shiftStart`, um horário anterior à entrada é do dia seguinte (ex.: intervalo 00:30 num turno
+// 18:00 → 02:00) e o relógio é medido na mesma linha do tempo.
+function minutesSinceTimeValue(
+  value: string | null | undefined,
+  nowMinutes: number,
+  shiftStart?: string | null
+) {
   const startMin = timeToMinutes(value)
   if (startMin === null) return 0
+  const shift = timeToMinutes(shiftStart)
+  if (shift !== null && startMin < shift) {
+    const nowOnAxis = nowMinutes < shift ? nowMinutes + 24 * 60 : nowMinutes
+    const elapsedAfterMidnight = nowOnAxis - (startMin + 24 * 60)
+    return elapsedAfterMidnight < 0 ? elapsedAfterMidnight + 24 * 60 : elapsedAfterMidnight
+  }
   const elapsed = nowMinutes - startMin
   return elapsed < 0 ? elapsed + 24 * 60 : elapsed
 }
@@ -180,12 +198,22 @@ function hasStartTimeArrived(
 function isNowInsideTimeWindow(
   start: string | null | undefined,
   end: string | null | undefined,
-  currentMinutes: number
+  currentMinutes: number,
+  shiftStart?: string | null
 ) {
   const startMin = timeToMinutes(start)
   const endMin = timeToMinutes(end)
   if (startMin === null || endMin === null) return false
   if (startMin === endMin) return currentMinutes === startMin
+
+  const shift = timeToMinutes(shiftStart)
+  if (shift !== null) {
+    const startAxis = startMin < shift ? startMin + 24 * 60 : startMin
+    let endAxis = startMin < shift ? endMin + 24 * 60 : endMin
+    if (endAxis <= startAxis) endAxis += 24 * 60
+    const nowAxis = currentMinutes < shift ? currentMinutes + 24 * 60 : currentMinutes
+    return nowAxis >= startAxis && nowAxis <= endAxis
+  }
 
   if (endMin < startMin) {
     return currentMinutes >= startMin || currentMinutes <= endMin
@@ -217,17 +245,23 @@ function timeWindowLabel(
 function timeWindowProgress(
   start: string | null | undefined,
   end: string | null | undefined,
-  currentMinutes: number
+  currentMinutes: number,
+  shiftStart?: string | null
 ) {
-  const startMin = timeToMinutes(start)
-  if (startMin === null) return null
+  const rawStartMin = timeToMinutes(start)
+  if (rawStartMin === null) return null
 
   const endMin = timeToMinutes(end)
-  let normalizedNow = currentMinutes
-  let normalizedEnd = endMin
+  const shift = timeToMinutes(shiftStart)
+  // Janela depois da meia-noite em relação à entrada do turno: tudo vai para o dia seguinte.
+  const afterMidnight = shift !== null && rawStartMin < shift
+  const startMin = afterMidnight ? rawStartMin + 24 * 60 : rawStartMin
+  let normalizedNow =
+    shift !== null && currentMinutes < shift ? currentMinutes + 24 * 60 : currentMinutes
+  let normalizedEnd = endMin === null ? null : afterMidnight ? endMin + 24 * 60 : endMin
 
-  if (endMin !== null && endMin <= startMin) {
-    normalizedEnd = endMin + 24 * 60
+  if (normalizedEnd !== null && normalizedEnd <= startMin) {
+    normalizedEnd += 24 * 60
     if (normalizedNow < startMin) normalizedNow += 24 * 60
   }
 
@@ -367,7 +401,8 @@ function intervalNoticeState(
   const progress = timeWindowProgress(
     schedule.break_start,
     schedule.break_end,
-    nowMinutes
+    nowMinutes,
+    schedule.start_time
   )
 
   if (!progress) return null
@@ -635,8 +670,15 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
 
   const nowMs = now.getTime()
   const nowMinutes = now.getHours() * 60 + now.getMinutes()
+  // Relógio na linha do tempo da escala: quem começou ontem à noite já está "no dia seguinte".
+  const clockFor = useCallback(
+    (schedule: { work_date: string }) =>
+      schedule.work_date < today ? nowMinutes + 24 * 60 : nowMinutes,
+    [nowMinutes, today]
+  )
 
   const schedulesQuery = useSchedules(today)
+  const previousSchedulesQuery = useSchedules(addDaysToDateKey(today, -1))
   const statusesQuery = useOperationalStatuses()
   const postsQuery = useOperationalPosts(selectedBranchId)
   const allocationsQuery = usePostAllocations(selectedBranchId)
@@ -736,10 +778,16 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
 
   const workingSchedules = useMemo(
     () =>
-      (schedulesQuery.data ?? [])
+      [
+        ...(schedulesQuery.data ?? []),
+        // Turno da noite que começou ontem e ainda não terminou continua no controle de hoje.
+        ...(previousSchedulesQuery.data ?? []).filter((schedule) =>
+          isOvernightStillRunning(schedule, schedule.work_date, now)
+        ),
+      ]
         .slice()
         .sort(compareSchedulesByStartTime),
-    [schedulesQuery.data]
+    [now, previousSchedulesQuery.data, schedulesQuery.data]
   )
 
   const lateToleranceMinutes = settingsQuery.data?.late_tolerance_minutes ?? 5
@@ -759,17 +807,17 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
         currentStatus: status?.current_status ?? null,
         hasAllocation: Boolean(allocation),
         hasActiveBreak: Boolean(operationalBreak),
-        nowMinutes,
+        nowMinutes: clockFor(schedule),
         lateToleranceMinutes,
       })
       const intervalNotice = intervalNoticeState(
         schedule,
         operationalBreak,
         nowMs,
-        nowMinutes,
+        clockFor(schedule),
         state.hasEntry
       )
-      const { hasReachedEnd } = scheduleEndState(schedule, nowMinutes)
+      const { hasReachedEnd } = scheduleEndState(schedule, clockFor(schedule))
       const urgency = scheduleUrgency(state, {
         returnPending: intervalNotice?.action === "return",
         releasePending: intervalNotice?.action === "release",
@@ -792,8 +840,8 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
     activeBreakByAllocationId,
     activeBreakByScheduleId,
     allocationByScheduleId,
+    clockFor,
     lateToleranceMinutes,
-    nowMinutes,
     nowMs,
     statusByScheduleId,
     workingSchedules,
@@ -893,12 +941,12 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
         if (statusFilter === "alert") {
           const overdueCoffee =
             isCoffeeMarker(schedule.notes) &&
-            minutesSinceTimeValue(schedule.break_start, nowMinutes) >
+            minutesSinceTimeValue(schedule.break_start, clockFor(schedule), schedule.start_time) >
               (settingsQuery.data?.coffee_break_duration_minutes ?? 10)
           const overdueBreak =
             schedule.status === "on_break" &&
             Boolean(schedule.break_end) &&
-            minutesSinceTimeValue(schedule.break_start, nowMinutes) >
+            minutesSinceTimeValue(schedule.break_start, clockFor(schedule), schedule.start_time) >
               (settingsQuery.data?.break_tolerance_minutes ?? 15)
           const uncovered =
             Boolean(status && ACTIVE_STATUS_SET.has(status.current_status)) && !allocation
@@ -909,7 +957,8 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
           const intervalProgress = timeWindowProgress(
             schedule.break_start,
             schedule.break_end,
-            nowMinutes
+            clockFor(schedule),
+            schedule.start_time
           )
           const delayedIntervalStart =
             !operationalBreak &&
@@ -941,9 +990,9 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
       )
   }, [
     scheduleViews,
+    clockFor,
     hiddenScheduleIds,
     nowMs,
-    nowMinutes,
     searchText,
     settingsQuery.data?.break_tolerance_minutes,
     settingsQuery.data?.coffee_break_duration_minutes,
@@ -986,7 +1035,8 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
         const intervalWindowOpen = isNowInsideTimeWindow(
           breakStart,
           breakEnd,
-          nowMinutes
+          clockFor({ work_date: schedule?.work_date ?? allocation.schedules?.work_date ?? today }),
+          schedule?.start_time ?? allocation.schedules?.start_time
         )
         const availableBreakTypes: OperationalBreakType[] = []
 
@@ -1016,10 +1066,12 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
   }, [
     activeAllocations,
     activeBreakByAllocationId,
+    clockFor,
     nowMinutes,
     settingsQuery.data?.coffee_break_enabled,
     settingsQuery.data?.coffee_window_end,
     settingsQuery.data?.coffee_window_start,
+    today,
     workingSchedules,
   ])
 
@@ -1051,8 +1103,9 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
     if (!selectedPostId) return
     // O tempo no posto conta desde a entrada da escala (e só muda com confirmação depois).
     const scheduledStart =
-      schedule.start_time && hasStartTimeArrived(schedule.start_time, nowMinutes)
-        ? isoFromDayAndTime(today, formatTimeValue(schedule.start_time))
+      schedule.start_time &&
+      (schedule.work_date < today || hasStartTimeArrived(schedule.start_time, nowMinutes))
+        ? isoFromDayAndTime(schedule.work_date, formatTimeValue(schedule.start_time))
         : null
     await allocatePost.mutateAsync({
       post_id: selectedPostId,
@@ -1170,9 +1223,12 @@ export function ControlePDVIntervalos({ tab = "overview" }: ControlePDVIntervalo
   // A chegada é marcada por quem controla o PDV: grava o horário real e, se passou da
   // tolerância de atraso, registra quantos minutos o colaborador atrasou.
   async function handleMarkArrived(schedule: ScheduleWithRelations) {
-    const startMin = timeToMinutes(schedule.start_time)
+    const startMin = shiftTimeline(schedule).start
+    const elapsedOnShiftDay = minutesSinceWorkDate(schedule.work_date, now)
     const lateMinutes =
-      startMin !== null && nowMinutes > startMin ? nowMinutes - startMin : 0
+      startMin !== null && elapsedOnShiftDay !== null && elapsedOnShiftDay > startMin
+        ? elapsedOnShiftDay - startMin
+        : 0
     const tolerance = settingsQuery.data?.late_tolerance_minutes ?? 5
     const arrivedAt = new Intl.DateTimeFormat("pt-BR", {
       hour: "2-digit",
@@ -1240,7 +1296,7 @@ Use apenas se ninguém atrasou nem faltou.`
       employee_id: schedule.employee_id,
       schedule_id: schedule.id,
       event_type: "falta_detectada",
-      delay_minutes: minutesSinceTimeValue(schedule.start_time, nowMinutes),
+      delay_minutes: minutesSinceTimeValue(schedule.start_time, clockFor(schedule)),
       notes: "Falta marcada pelo controle PDV.",
     })
   }
@@ -1407,7 +1463,7 @@ Use apenas se ninguém atrasou nem faltou.`
               const tone = badgeTone(schedule, status, allocation, operationalBreak)
               const { hasReachedEnd, overtimeMinutes } = scheduleEndState(
                 schedule,
-                nowMinutes
+                clockFor(schedule)
               )
               const isOvertimeNow = overtimeScheduleIds.has(schedule.id)
               // O tempo segue a escala: depois do horário de saída ele para, a menos que a hora extra
@@ -1419,7 +1475,7 @@ Use apenas se ninguém atrasou nem faltou.`
                   : minutesWorkedUntil(allocation.started_at, schedule, nowMs)
                 : hasReachedEnd && !isOvertimeNow && scaleDuration !== null
                   ? scaleDuration
-                  : minutesSinceTimeValue(schedule.start_time, nowMinutes)
+                  : minutesSinceTimeValue(schedule.start_time, clockFor(schedule))
               const postName = allocation?.operational_posts?.name ?? "Sem posto"
               const isOvertime = overtimeScheduleIds.has(schedule.id)
               return (
@@ -2156,7 +2212,7 @@ Use apenas se ninguém atrasou nem faltou.`
                         )}`
                       : selectedWorkingWithoutPost
                         ? `Trabalhando sem posto há ${formatDuration(
-                            minutesSinceTimeValue(selectedSchedule.start_time, nowMinutes)
+                            minutesSinceTimeValue(selectedSchedule.start_time, clockFor(selectedSchedule))
                           )}.`
                         : "Nenhuma alocação em andamento."}
                   </div>
@@ -2250,7 +2306,7 @@ Use apenas se ninguém atrasou nem faltou.`
                   ? formatDuration(
                       minutesWorkedUntil(selectedAllocation.started_at, selectedSchedule, nowMs)
                     )
-                  : formatDuration(minutesSinceTimeValue(selectedSchedule.start_time, nowMinutes))}
+                  : formatDuration(minutesSinceTimeValue(selectedSchedule.start_time, clockFor(selectedSchedule)))}
               </div>
             </div>
           ) : null}

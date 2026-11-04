@@ -5,6 +5,12 @@ import { Select } from "@/components/ui/select"
 import { useAllocatePost, useSchedules } from "@/hooks/useUnyxData"
 import type { OperationalBreak, OperationalPost, PostAllocation } from "@/types/domain"
 import { isoFromDayAndTime, localDateKey, timeToMinutes } from "../utils"
+import {
+  addDaysToDateKey,
+  isOvernightStillRunning,
+  minutesSinceWorkDate,
+  shiftTimeline,
+} from "../utils/scheduleTimeline"
 
 const UNAVAILABLE_SCHEDULE_STATUS = new Set([
   "absent",
@@ -40,24 +46,30 @@ export function AllocateEmployeeToPost({
   const today = localDateKey(new Date(nowMs))
   const branchId = post.branch_id
   const schedulesQuery = useSchedules(today, branchId)
+  // Turno da noite que começou ontem e ainda não terminou também pode ser alocado.
+  const previousSchedulesQuery = useSchedules(addDaysToDateKey(today, -1), branchId)
 
   const candidates = useMemo(() => {
     const now = new Date(nowMs)
-    const nowMin = now.getHours() * 60 + now.getMinutes()
     const busyEmployees = new Set(allocations.map((item) => item.employee_id))
     for (const item of operationalBreaks) {
       if (ACTIVE_BREAK_STATUS.has(item.status)) busyEmployees.add(item.employee_id)
     }
 
-    return (schedulesQuery.data ?? [])
+    const overnightFromYesterday = (previousSchedulesQuery.data ?? []).filter((schedule) =>
+      isOvernightStillRunning(schedule, schedule.work_date, now)
+    )
+
+    return [...(schedulesQuery.data ?? []), ...overnightFromYesterday]
       .filter((schedule) => {
         if (schedule.branch_id !== branchId) return false
         if (UNAVAILABLE_SCHEDULE_STATUS.has(schedule.status)) return false
         if (busyEmployees.has(schedule.employee_id)) return false
-        const start = timeToMinutes(schedule.start_time)
-        const end = timeToMinutes(schedule.end_time)
-        if (start === null || nowMin < start) return false
-        if (end !== null && end > start && nowMin >= end) return false
+        // Medido a partir do dia da própria escala: turno da noite vale até a saída do dia seguinte.
+        const elapsed = minutesSinceWorkDate(schedule.work_date, now)
+        const { start, end } = shiftTimeline(schedule)
+        if (elapsed === null || start === null || elapsed < start) return false
+        if (end !== null && elapsed >= end) return false
         return true
       })
       .sort(
@@ -65,7 +77,7 @@ export function AllocateEmployeeToPost({
           (timeToMinutes(left.start_time) ?? 0) - (timeToMinutes(right.start_time) ?? 0) ||
           (left.employees?.name ?? "").localeCompare(right.employees?.name ?? "", "pt-BR")
       )
-  }, [allocations, branchId, nowMs, operationalBreaks, schedulesQuery.data])
+  }, [allocations, branchId, nowMs, operationalBreaks, previousSchedulesQuery.data, schedulesQuery.data])
 
   const selected = candidates.find((schedule) => schedule.id === scheduleId) ?? null
 
@@ -78,7 +90,7 @@ export function AllocateEmployeeToPost({
         schedule_id: selected.id,
         notes: "Alocação realizada pelo mapa de postos",
         started_at: selected.start_time
-          ? isoFromDayAndTime(today, trimTime(selected.start_time))
+          ? isoFromDayAndTime(selected.work_date, trimTime(selected.start_time))
           : null,
       })
       setScheduleId("")

@@ -73,7 +73,12 @@ import {
 } from "@/hooks/useUnyxData"
 import { formatDateBR, formatDateTimeBR, minutesLabel } from "@/lib/format"
 import { statusMeta } from "@/lib/status"
-import { localDateKey, operationalMinutesForDate } from "@/features/operational/utils"
+import { localDateKey } from "@/features/operational/utils"
+import {
+  addDaysToDateKey,
+  isOvernightStillRunning,
+  isShiftRunning,
+} from "@/features/operational/utils/scheduleTimeline"
 import { useAppStore } from "@/store/useAppStore"
 import type {
   DashboardRow,
@@ -337,12 +342,12 @@ function getPendingGroup(status: OperationalStatus) {
   return groups[status] ?? statusMeta[status].label
 }
 
-function allocationBelongsToDate(allocation: PostAllocation, date: string) {
+function allocationBelongsToDate(allocation: PostAllocation, dates: string[]) {
   if (allocation.schedules?.work_date) {
-    return allocation.schedules.work_date === date
+    return dates.includes(allocation.schedules.work_date)
   }
 
-  return allocation.started_at.slice(0, 10) === date
+  return dates.includes(allocation.started_at.slice(0, 10))
 }
 
 function allocationMatchesDashboardFilters(
@@ -1080,6 +1085,11 @@ export function DashboardPage() {
   const sectorFilter = ""
   const dashboard = useDashboardRows(date)
   const schedules = useSchedules(date)
+  // Turno da noite que começou ontem e passou da meia-noite continua na operação de hoje.
+  // Fora de "hoje" repete a mesma data, então a consulta é reaproveitada sem pedir de novo.
+  const overnightDate = date === todayKey ? addDaysToDateKey(date, -1) : null
+  const previousDashboard = useDashboardRows(overnightDate ?? date)
+  const previousSchedules = useSchedules(overnightDate ?? date)
   const statuses = useOperationalStatuses()
   const organization = useOrganization()
   const operationalSettings = useOperationalSettings()
@@ -1104,44 +1114,74 @@ export function DashboardPage() {
     operationalSettings.data?.mode ?? organization.data?.segment
   )
   const modeConfig = modeUiConfig[mode]
-  const rows = useMemo(() => dashboard.data ?? [], [dashboard.data])
+  const overnightRows = useMemo(
+    () =>
+      overnightDate
+        ? (previousDashboard.data ?? []).filter((row) =>
+            isOvernightStillRunning(row, row.work_date, new Date(currentTimeMs))
+          )
+        : [],
+    [currentTimeMs, overnightDate, previousDashboard.data]
+  )
+  const overnightSchedules = useMemo(
+    () =>
+      overnightDate
+        ? (previousSchedules.data ?? []).filter((schedule) =>
+            isOvernightStillRunning(schedule, schedule.work_date, new Date(currentTimeMs))
+          )
+        : [],
+    [currentTimeMs, overnightDate, previousSchedules.data]
+  )
+  const rows = useMemo(
+    () => [...(dashboard.data ?? []), ...overnightRows],
+    [dashboard.data, overnightRows]
+  )
+  // Datas de escala que contam para o painel: a escolhida e, se houver, a noite anterior.
+  const workDates = useMemo(
+    () => (overnightDate && overnightRows.length > 0 ? [date, overnightDate] : [date]),
+    [date, overnightDate, overnightRows.length]
+  )
   const liveStatuses = useMemo(
     () => statuses.data ?? [],
     [statuses.data]
   )
   const scheduledToday = useMemo(
-    () => schedules.data ?? [],
-    [schedules.data]
+    () => [...(schedules.data ?? []), ...overnightSchedules],
+    [schedules.data, overnightSchedules]
   )
   const activePostAllocations = useMemo(() => {
     return (postAllocations.data ?? []).filter(
       (allocation) =>
         !allocation.ended_at &&
         ACTIVE_ALLOCATION_STATUSES.has(allocation.status) &&
-        allocationBelongsToDate(allocation, date)
+        allocationBelongsToDate(allocation, workDates)
     )
-  }, [date, postAllocations.data])
+  }, [workDates, postAllocations.data])
 
   const statusByScheduleId = useMemo(() => {
     const map = new Map<string, OperationalStatusRecord>()
     for (const status of liveStatuses) {
-      if (status.schedule_id && status.schedules?.work_date === date) {
+      if (
+        status.schedule_id &&
+        status.schedules?.work_date &&
+        workDates.includes(status.schedules.work_date)
+      ) {
         map.set(status.schedule_id, status)
       }
     }
     return map
-  }, [date, liveStatuses])
+  }, [workDates, liveStatuses])
 
   const statusByEmployeeId = useMemo(() => {
     const map = new Map<string, OperationalStatusRecord>()
     for (const status of liveStatuses) {
-      if (status.schedules?.work_date && status.schedules.work_date !== date) {
+      if (status.schedules?.work_date && !workDates.includes(status.schedules.work_date)) {
         continue
       }
       map.set(status.employee_id, status)
     }
     return map
-  }, [date, liveStatuses])
+  }, [workDates, liveStatuses])
 
   const realWorkingPostAllocations = useMemo(() => {
     return activePostAllocations.filter((allocation) => {
@@ -1247,12 +1287,6 @@ export function DashboardPage() {
     }
   }, [checklistProcedures.data, checklistRuns.data, currentTimeMs, date])
 
-  const toMin = (t: string | null) => {
-    if (!t) return null
-    const [h, m] = t.split(":").map(Number)
-    return h * 60 + m
-  }
-
   const liveRows = useMemo(() => {
     const today = localDateKey()
     if (date !== today) {
@@ -1261,16 +1295,13 @@ export function DashboardPage() {
       )
     }
 
-    const nowMin = operationalMinutesForDate(date)
+    // Cada escala é medida a partir do próprio dia: turno da noite vale até a saída do dia seguinte.
+    const now = new Date(currentTimeMs)
     return filteredRows.filter((row) => {
       if (["folga", "finalizado"].includes(row.current_status)) return false
-      const startMin = toMin(row.start_time)
-      const endMin = toMin(row.end_time)
-      if (startMin !== null && nowMin < startMin) return false
-      if (endMin !== null && nowMin > endMin) return false
-      return true
+      return isShiftRunning(row, row.work_date ?? date, now)
     })
-  }, [date, filteredRows])
+  }, [currentTimeMs, date, filteredRows])
 
   const allocatedWorkingCount = new Set(
     postAllocationsInScope.map((allocation) => allocation.employee_id)
