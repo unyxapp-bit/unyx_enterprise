@@ -38,6 +38,9 @@ const CommsPage = lazy(() =>
 const CustomersPage = lazy(() =>
   import("@/features/customers/CustomersPage").then((m) => ({ default: m.CustomersPage }))
 )
+const HomePage = lazy(() =>
+  import("@/features/home/HomePage").then((m) => ({ default: m.HomePage }))
+)
 const DashboardPage = lazy(() =>
   import("@/features/dashboard/DashboardPage").then((m) => ({ default: m.DashboardPage }))
 )
@@ -155,7 +158,10 @@ export function AppRouter() {
           <Route element={<ProtectedRoute />}>
             <Route path="/access" element={<AccessChoicePage />} />
             <Route path="/app" element={<AppLayout />}>
-              <Route index element={<DashboardPage />} />
+              <Route index element={<HomePage />} />
+              <Route element={<RequirePermission perm="dashboard" />}>
+                <Route path="dashboard" element={<DashboardPage />} />
+              </Route>
 
             <Route element={<RequirePermission perm="operations" />}>
               <Route path="allocation" element={<AllocationPage />} />

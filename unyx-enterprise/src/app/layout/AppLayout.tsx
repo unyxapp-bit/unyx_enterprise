@@ -1,38 +1,13 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 
 import {
-  BarChart2,
-  BellRing,
   Building2,
-  BadgePercent,
-  CalendarDays,
-  Coins,
-  ClipboardList,
-  Contact,
-  FileText,
-  GraduationCap,
   ChevronDown,
-  Image as ImageIcon,
-  LayoutDashboard,
-  ListChecks,
   LogOut,
-  MapPinned,
   Menu,
-  MessageSquareText,
   Moon,
-  Package,
-  ReceiptText,
-  Settings,
   ShoppingCart,
-  Sparkles,
-  StickyNote,
   Sun,
-  Trophy,
-  Truck,
-  KeyRound,
-  UserCog,
-  Users,
-  Wallet,
   X,
 } from "lucide-react"
 import { NavLink, Navigate, Outlet, useLocation, useNavigate } from "react-router-dom"
@@ -49,111 +24,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { navGroups, navItemDescriptions, roleLabel } from "@/app/layout/navConfig"
+import { recordRecentModule } from "@/features/home/recentModules"
 import { OnboardingPage } from "@/features/onboarding/OnboardingPage"
 import { useOperationalStatuses } from "@/hooks/useUnyxData"
 import { clearAccessMode, getAccessMode, type AccessMode } from "@/lib/accessMode"
-import { canAccessUser, type PermissionKey } from "@/lib/permissions"
+import { canAccessUser } from "@/lib/permissions"
 import { cn } from "@/lib/utils"
-import type { UserRole } from "@/types/domain"
-
-const roleLabel: Record<UserRole, string> = {
-  owner: "Proprietario",
-  admin: "Administrador",
-  branch_manager: "Gerente de filial",
-  supervisor: "Supervisor",
-  operator: "Operador",
-  employee: "Colaborador",
-}
-
-const navGroups = [
-  {
-    label: "Unyx Ops",
-    items: [
-      { to: "/app",            label: "Dashboard", icon: LayoutDashboard, perm: "dashboard"  as PermissionKey },
-      { to: "/app/allocation", label: "Mapa de postos", icon: MapPinned,  perm: "operations" as PermissionKey },
-      { to: "/app/alerts",     label: "Alertas",   icon: BellRing,        perm: "alerts"     as PermissionKey },
-      { to: "/app/schedules",  label: "Escalas",   icon: CalendarDays,    perm: "schedules"  as PermissionKey },
-      { to: "/app/checklists", label: "Checklists", icon: ListChecks,      perm: "checklists" as PermissionKey },
-      { to: "/app/notes",      label: "Anotacoes", icon: StickyNote,      perm: "front_notes" as PermissionKey },
-      { to: "/app/forms",      label: "Formularios", icon: FileText,      perm: "front_forms" as PermissionKey },
-    ],
-  },
-  {
-    label: "Unyx Control",
-    items: [
-      { to: "/app/branches",  label: "Filiais",       icon: Building2, perm: "branches"  as PermissionKey },
-      { to: "/app/employees", label: "Colaboradores", icon: Users,     perm: "employees" as PermissionKey },
-      { to: "/app/customers", label: "Clientes",      icon: Contact,   perm: "customers" as PermissionKey },
-      { to: "/app/users",     label: "Usuarios",      icon: UserCog,   perm: "users"     as PermissionKey },
-      { to: "/app/staff",     label: "Fiscais",       icon: KeyRound,  perm: "users"     as PermissionKey },
-      { to: "/app/settings",  label: "Configuracoes", icon: Settings,  perm: "settings"  as PermissionKey },
-    ],
-  },
-  {
-    label: "Unyx POS",
-    items: [
-      { to: "/app/pos/sell",     label: "PDV — Venda", icon: ShoppingCart, perm: "pos_sell"     as PermissionKey },
-      { to: "/app/pos/cash",     label: "Caixa",       icon: Wallet,       perm: "pos_cash"     as PermissionKey },
-      { to: "/app/pos/products", label: "Produtos",    icon: Package,      perm: "pos_products" as PermissionKey },
-      { to: "/app/pos/coins",    label: "Troca de moedas", icon: Coins,    perm: "pos_cash"     as PermissionKey },
-      { to: "/app/pos/discounts", label: "Descontos",  icon: BadgePercent, perm: "pos_cash"     as PermissionKey },
-      { to: "/app/pos/orders",    label: "Encomendas", icon: ClipboardList, perm: "pos_cash"    as PermissionKey },
-      { to: "/app/pos/posters",  label: "Cartazes",    icon: ImageIcon,    perm: "pos_posters"  as PermissionKey },
-      { to: "/app/pos/sales",    label: "Historico",   icon: ReceiptText,  perm: "pos_sales"    as PermissionKey },
-      { to: "/app/pos/fiscal",    label: "Cupons / NFC-e", icon: ReceiptText, perm: "fiscal_documents" as PermissionKey },
-      { to: "/app/deliveries",    label: "Entregas",    icon: Truck,        perm: "deliveries"   as PermissionKey },
-    ],
-  },
-  {
-    label: "Unyx Insight",
-    items: [
-      { to: "/app/reports", label: "Relatorios", icon: BarChart2,     perm: "reports" as PermissionKey },
-      { to: "/app/audit",   label: "Auditoria",  icon: ClipboardList, perm: "audit"   as PermissionKey },
-    ],
-  },
-  {
-    label: "Expansao",
-    items: [
-      { to: "/app/comms",   label: "Comms",   icon: MessageSquareText, perm: "comms"   as PermissionKey },
-      { to: "/app/game",    label: "Game",    icon: Trophy,            perm: "game"    as PermissionKey },
-      { to: "/app/academy", label: "Academy", icon: GraduationCap,     perm: "academy" as PermissionKey },
-      { to: "/app/ai",      label: "AI",      icon: Sparkles,          perm: "ai"      as PermissionKey },
-    ],
-  },
-]
-
-const navItemDescriptions: Record<string, string> = {
-  "/app": "Visao geral da operacao e indicadores do dia.",
-  "/app/allocation": "Mapa de postos para ocupados, livres e inativos.",
-  "/app/alerts": "Riscos operacionais e pendencias criticas.",
-  "/app/schedules": "Monte, importe e confira a escala por filial.",
-  "/app/checklists": "Rotinas de abertura, fechamento e verificacoes.",
-  "/app/notes": "Registre comunicados e observacoes de frente.",
-  "/app/forms": "Capturas operacionais padronizadas por setor.",
-  "/app/branches": "Gerencie unidades, enderecos e status ativos.",
-  "/app/employees": "Cadastro da equipe, cargos e setores.",
-  "/app/customers": "Base de clientes e dados comerciais.",
-  "/app/users": "Acessos, convites, papeis e permissoes.",
-  "/app/staff": "Fiscais com acesso por codigo e senha e telas liberadas.",
-  "/app/settings": "Regras operacionais e parametros da empresa.",
-  "/app/pos/sell": "Venda rapida, carrinho e finalizacao.",
-  "/app/pos/cash": "Abertura, fechamento e movimentos de caixa.",
-  "/app/pos/products": "Catalogo, precos e disponibilidade.",
-  "/app/pos/coins": "Troca de moedas com acrescimo por tipo.",
-  "/app/pos/discounts": "Fichas de desconto no caixa, com calculo e impressao.",
-  "/app/pos/orders": "Encomendas de clientes com retirada marcada e comprovante.",
-  "/app/pos/posters": "Cartazes de oferta e avisos para loja.",
-  "/app/pos/sales": "Consulta de vendas e comprovantes.",
-  "/app/pos/production": "Pedidos de preparo e producao interna.",
-  "/app/pos/fiscal": "Documentos fiscais e emissao vinculada.",
-  "/app/deliveries": "Pedidos, despachos e acompanhamento.",
-  "/app/reports": "Analises, exportacoes e leitura de desempenho.",
-  "/app/audit": "Eventos, rastreabilidade e historico de acoes.",
-  "/app/comms": "Comunicacao interna e alinhamento da equipe.",
-  "/app/game": "Engajamento, metas e reconhecimento.",
-  "/app/academy": "Treinamentos, trilhas e aprendizado.",
-  "/app/ai": "Agente operacional, relatorios e sugestoes.",
-}
 
 const navGroupFooter: Record<string, { label: string; badge?: string; description: string }> = {
   "Unyx Ops": {
@@ -208,6 +85,11 @@ export function AppLayout() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const location = useLocation()
   const navigate = useNavigate()
+
+  const profileId = profile?.id
+  useEffect(() => {
+    if (profileId) recordRecentModule(profileId, location.pathname)
+  }, [profileId, location.pathname])
 
   const criticalCount = (opStatuses ?? []).filter(
     (s) => s.current_status === "alerta_critico"
@@ -275,7 +157,7 @@ export function AppLayout() {
           <nav className="hidden flex-1 items-center gap-0.5 lg:flex">
             {visibleNavGroups.map((group) => {
               const visibleItems = group.items.filter((item) =>
-                canAccessUser(profile, item.perm)
+                (!item.perm || canAccessUser(profile, item.perm))
               )
               if (visibleItems.length === 0) return null
 
@@ -470,7 +352,7 @@ export function AppLayout() {
             <nav className="space-y-4 px-3 py-2">
               {visibleNavGroups.map((group) => {
                 const visibleItems = group.items.filter((item) =>
-                  canAccessUser(profile, item.perm)
+                  (!item.perm || canAccessUser(profile, item.perm))
                 )
                 if (visibleItems.length === 0) return null
                 return (
