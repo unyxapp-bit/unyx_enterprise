@@ -6588,6 +6588,46 @@ export async function importSchedules(
   }
 }
 
+export interface ScheduleChangesResult {
+  created: number
+  updated: number
+  errors: string[]
+}
+
+/** Cria as escalas novas e atualiza as que já existem, de uma vez só (usado pela escala do papel). */
+export async function applyScheduleChanges(
+  profile: UserProfile,
+  input: {
+    create: ScheduleImportInput[]
+    update: Array<{
+      id: string
+      label: string
+      values: Pick<ScheduleImportInput, "start_time" | "break_start" | "break_end" | "end_time" | "status" | "notes">
+    }>
+  }
+): Promise<ScheduleChangesResult> {
+  const errors: string[] = []
+  let created = 0
+  let updated = 0
+
+  if (input.create.length > 0) {
+    const result = await importSchedules(profile, input.create)
+    created = result.created
+    errors.push(...result.errors)
+  }
+
+  for (const item of input.update) {
+    try {
+      await updateSchedule(profile, item.id, item.values)
+      updated += 1
+    } catch (error) {
+      errors.push(`${item.label}: ${error instanceof Error ? error.message : "não foi possível atualizar"}`)
+    }
+  }
+
+  return { created, updated, errors }
+}
+
 // ---- Troca de moedas ----
 
 function isMissingCoinFeature(error: { code?: string; message: string } | null) {

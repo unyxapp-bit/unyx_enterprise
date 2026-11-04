@@ -12,6 +12,7 @@ import {
   Trash2,
 } from "lucide-react"
 
+import { PaperScheduleDialog } from "@/features/schedules/components/PaperScheduleDialog"
 import { PageHeader } from "@/components/shared/PageHeader"
 import { StateBlock } from "@/components/shared/StateBlock"
 import { Button } from "@/components/ui/button"
@@ -1094,6 +1095,12 @@ export function SchedulesPage() {
               <Download className="mr-1.5 size-4" />
               Exportar CSV
             </Button>
+            <PaperScheduleDialog
+              branches={branches.data ?? []}
+              currentDate={today}
+              employees={allEmployees.data ?? []}
+              selectedBranchId={selectedBranchId}
+            />
             <SchedulesImportDialog
               branches={branches.data ?? []}
               currentDate={today}

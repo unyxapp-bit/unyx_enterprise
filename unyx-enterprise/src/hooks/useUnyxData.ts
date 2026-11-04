@@ -124,6 +124,7 @@ import {
   listOperationalFormResponses,
   listOperationalNotes,
   listScheduleRecords,
+  applyScheduleChanges,
   reconcileSchedulesByScale,
   correctScheduleAttendance,
   listOperationalBreaks,
@@ -1251,6 +1252,26 @@ export function useCreateSchedule() {
       await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
       await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
       toast.success("Escala cadastrada com sucesso.")
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+}
+
+export function useApplyScheduleChanges() {
+  const queryClient = useQueryClient()
+  const profile = useRequiredProfile()
+
+  return useMutation({
+    mutationFn: (input: Parameters<typeof applyScheduleChanges>[1]) =>
+      applyScheduleChanges(profile, input),
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries({ queryKey: ["schedules"] })
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs"] })
+      await queryClient.invalidateQueries({ queryKey: ["audit-logs-all"] })
+      toast.success(`${result.created} escala(s) criada(s), ${result.updated} atualizada(s).`)
     },
     onError: (error) => {
       toast.error(error.message)
