@@ -65,6 +65,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
@@ -463,6 +465,35 @@ function cloneStyles(templateId?: string, auto?: AutoLayoutPreset | null): Poste
     }
   }
   return styles
+}
+
+// Campos travados na aba Camadas mantêm o estilo atual quando o layout é refeito.
+function keepLockedStyles(fresh: PosterStyles, previous: PosterStyles | undefined): PosterStyles {
+  if (!previous) return fresh
+  return FIELD_KEYS.reduce((next, field) => {
+    next[field] = previous[field]?.locked ? previous[field] : fresh[field]
+    return next
+  }, {} as PosterStyles)
+}
+
+// A aba Camadas lista a ordem salva; garante que todo campo e elemento adicionado apareça nela
+// e que nenhum id que não existe mais fique sobrando (versões antigas ou incompletas).
+function normalizeLayerOrders(
+  orders: Record<string, EditorElementId[]> | undefined,
+  customElements: Record<string, PosterCustomElement[]> | undefined
+): Record<string, EditorElementId[]> {
+  const templateIds = new Set([...Object.keys(orders ?? {}), ...Object.keys(customElements ?? {})])
+  return Object.fromEntries(
+    [...templateIds].map((templateId) => {
+      const valid = new Set<EditorElementId>([
+        ...FIELD_KEYS,
+        ...(customElements?.[templateId] ?? []).map((element) => element.id),
+      ])
+      const kept = [...new Set(orders?.[templateId] ?? [])].filter((id) => valid.has(id))
+      const missing = [...valid].filter((id) => !kept.includes(id))
+      return [templateId, [...kept, ...missing]]
+    })
+  )
 }
 
 function normalizeStylesByTemplate(
@@ -922,7 +953,13 @@ type SavedPosterVersion = {
   id: string
   createdAt: string
   snapshot: PosterSnapshot
+  name?: string
+  // Miniatura em JPEG (data URL) para reconhecer a versão na lista.
+  thumbnail?: string
 }
+
+const MAX_SAVED_VERSIONS = 30
+const VERSION_THUMBNAIL_WIDTH = 160
 
 const POSTER_DRAFT_STORAGE_KEY = "unyx-poster-editor-draft-v2"
 const POSTER_VERSIONS_STORAGE_KEY = "unyx-poster-editor-versions-v2"
@@ -946,8 +983,9 @@ function roundTo(value: number, decimals = 1) {
 
 // Estilos/textos exibidos a partir dos salvos: com "Centavos a 50%" ligado, o tamanho dos
 // centavos segue o R$ inteiro; os centavos aparecem com a vírgula na frente.
+// Centavos travados na aba Camadas mantêm o tamanho salvo, mesmo com o "50%" ligado.
 function deriveStyles(base: PosterStyles, centsLinked: boolean): PosterStyles {
-  return centsLinked
+  return centsLinked && !base.preco_centavos.locked
     ? {
         ...base,
         preco_centavos: { ...base.preco_centavos, ...reducedCentsSize(base.preco_reais) },
@@ -1041,6 +1079,11 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
   const [savedVersions, setSavedVersions] = useState<SavedPosterVersion[]>(
     () => readStoredValue<SavedPosterVersion[]>(versionsStorageKey) ?? []
   )
+  // Libera as travas só para organizar: não altera o cadeado de cada elemento.
+  const [locksReleased, setLocksReleased] = useState(false)
+  const [versionName, setVersionName] = useState("")
+  const [renamingVersionId, setRenamingVersionId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState("")
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null)
   const [historyState, setHistoryState] = useState({ undo: 0, redo: 0 })
   const [exporting, setExporting] = useState<"png" | "pdf" | null>(null)
@@ -1143,7 +1186,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
         height: Math.max(1, (layout.height / height) * 100),
         rotation: style.rotation,
         opacity: style.opacity,
-        locked: style.locked,
+        locked: style.locked && !locksReleased,
       }]
     }
     const custom = customElements.find((element) => element.id === id)
@@ -1156,7 +1199,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
           height: custom.height,
           rotation: custom.rotation,
           opacity: custom.opacity,
-          locked: custom.locked,
+          locked: custom.locked && !locksReleased,
         }]
       : []
   })
@@ -1217,7 +1260,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
     setFields({ ...snapshot.fields })
     setStylesByTemplate(normalizeStylesByTemplate(snapshot.stylesByTemplate))
     setCustomElementsByTemplate(structuredClone(snapshot.customElementsByTemplate ?? {}))
-    setLayerOrderByTemplate(structuredClone(snapshot.layerOrderByTemplate))
+    setLayerOrderByTemplate(normalizeLayerOrders(snapshot.layerOrderByTemplate, snapshot.customElementsByTemplate))
     setDocumentSettings({ ...DEFAULT_DOCUMENT_SETTINGS, ...snapshot.documentSettings })
     if (snapshot.uploadedTemplates) {
       setUploadedTemplates(snapshot.uploadedTemplates)
@@ -1391,6 +1434,18 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
       const nextFieldStyle = {
         ...templateStyles[field],
         [key]: value,
+      }
+      // Ao travar os centavos com o "50%" ligado, grava o tamanho que está na tela para não mudar depois.
+      if (field === "preco_centavos" && key === "locked" && value === true && centsLinked) {
+        const shown = styles.preco_centavos
+        Object.assign(nextFieldStyle, {
+          fontSize: shown.fontSize,
+          letterSpacing: shown.letterSpacing,
+          strokeWidth: shown.strokeWidth,
+          shadowBlur: shown.shadowBlur,
+          shadowX: shown.shadowX,
+          shadowY: shown.shadowY,
+        })
       }
       // A posição é livre: o texto pode ficar parcialmente (ou totalmente) fora da folha.
       nextFieldStyle.x = Math.max(POSITION_MIN, Math.min(POSITION_MAX, nextFieldStyle.x))
@@ -1581,6 +1636,20 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
 
   const pasteSelected = () => appendCustomCopies(clipboardRef.current)
 
+  // Trava/destrava de uma vez tudo o que está selecionado (atalho: L).
+  const toggleSelectedLock = () => {
+    if (!activeTemplate || selectedIds.length === 0) return
+    const fieldIds = selectedIds.filter(isPosterFieldKey)
+    const customIds = selectedIds.filter((id) => !isPosterFieldKey(id))
+    const allLocked =
+      fieldIds.every((id) => styles[id].locked) &&
+      customIds.every((id) => customElements.find((element) => element.id === id)?.locked)
+    checkpoint()
+    fieldIds.forEach((id) => updateStyle(id, "locked", !allLocked, false))
+    customIds.forEach((id) => updateCustomElement(id, { locked: !allLocked }, false))
+    toast.success(allLocked ? "Seleção destravada." : "Seleção travada.")
+  }
+
   const deleteSelected = () => {
     if (!activeTemplate || selectedIds.length === 0) return
     checkpoint()
@@ -1644,7 +1713,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
     checkpoint()
     setStylesByTemplate((current) => ({
       ...current,
-      [activeTemplate.id]: cloneStyles(activeTemplate.id),
+      [activeTemplate.id]: keepLockedStyles(cloneStyles(activeTemplate.id), current[activeTemplate.id]),
     }))
     setZoomPercent(0)
     transformRef.current = null
@@ -1687,7 +1756,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
       : null
     setStylesByTemplate((current) => ({
       ...current,
-      [activeTemplate.id]: cloneStyles(activeTemplate.id, auto),
+      [activeTemplate.id]: keepLockedStyles(cloneStyles(activeTemplate.id, auto), current[activeTemplate.id]),
     }))
     setCustomElementsByTemplate((current) => ({
       ...current,
@@ -2078,26 +2147,97 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
     setLayerOrderByTemplate((current) => ({ ...current, [activeTemplate.id]: next }))
   }
 
-  const saveVersion = () => {
-    const version: SavedPosterVersion = {
-      id: crypto.randomUUID(),
-      createdAt: new Date().toISOString(),
-      // Os templates importados já estão no espaço de trabalho; não se repetem em cada versão.
-      snapshot: { ...cloneSnapshot(currentSnapshot), uploadedTemplates: undefined } as unknown as PosterSnapshot,
-    }
-    const next = [version, ...savedVersions].slice(0, 10)
+  const persistVersions = (next: SavedPosterVersion[]) => {
     setSavedVersions(next)
     try {
       window.localStorage.setItem(versionsStorageKey, JSON.stringify(next))
     } catch {
-      // O cache local é opcional: a versão segue para a nuvem com o espaço de trabalho.
+      // O cache local é opcional: a alteração segue para a nuvem com o espaço de trabalho.
     }
+  }
+
+  const versionThumbnail = async () => {
+    try {
+      const markup = posterSvgMarkup()
+      if (!markup) return undefined
+      const width = VERSION_THUMBNAIL_WIDTH
+      const height = Math.max(1, Math.round((width * outputSize.height) / outputSize.width))
+      const canvas = await rasterizeSvg(markup, width, height)
+      return canvas.toDataURL("image/jpeg", 0.7)
+    } catch {
+      // Sem miniatura a versão continua válida.
+      return undefined
+    }
+  }
+
+  const saveVersion = async () => {
+    const isFull = savedVersions.length >= MAX_SAVED_VERSIONS
+    if (
+      isFull &&
+      !window.confirm(
+        `Você já tem ${MAX_SAVED_VERSIONS} versões salvas. Ao salvar, a mais antiga será descartada. Continuar?`
+      )
+    ) {
+      return
+    }
+    const version: SavedPosterVersion = {
+      id: crypto.randomUUID(),
+      createdAt: new Date().toISOString(),
+      name: versionName.trim().slice(0, 60) || undefined,
+      thumbnail: await versionThumbnail(),
+      // Os templates importados já estão no espaço de trabalho; não se repetem em cada versão.
+      snapshot: { ...cloneSnapshot(currentSnapshot), uploadedTemplates: undefined } as unknown as PosterSnapshot,
+    }
+    persistVersions([version, ...savedVersions].slice(0, MAX_SAVED_VERSIONS))
+    setVersionName("")
     toast.success("Versão salva.")
   }
 
+  const commitRenameVersion = () => {
+    if (!renamingVersionId) return
+    const name = renameValue.trim().slice(0, 60) || undefined
+    persistVersions(savedVersions.map((item) => (item.id === renamingVersionId ? { ...item, name } : item)))
+    setRenamingVersionId(null)
+  }
+
+  const deleteVersion = (version: SavedPosterVersion) => {
+    if (!window.confirm("Excluir esta versão salva?")) return
+    persistVersions(savedVersions.filter((item) => item.id !== version.id))
+    toast.success("Versão excluída.")
+  }
+
   const restoreVersion = (version: SavedPosterVersion) => {
+    const templateId = version.snapshot.activeTemplateId
+    if (templateId && !templates.some((item) => item.id === templateId)) {
+      toast.error("O template desta versão não existe mais; não é possível restaurá-la.")
+      return
+    }
     checkpoint()
     restoreSnapshot(cloneSnapshot(version.snapshot))
+    // Os cartazes da fila recebem o mesmo layout da versão (posições, estilos, camadas e elementos
+    // adicionados); cada um mantém o seu template e os seus textos.
+    const layoutTemplateId = version.snapshot.activeTemplateId
+    const layoutStyles = layoutTemplateId ? version.snapshot.stylesByTemplate?.[layoutTemplateId] : undefined
+    if (layoutTemplateId && layoutStyles && queue.length > 0) {
+      const layoutElements = version.snapshot.customElementsByTemplate?.[layoutTemplateId] ?? []
+      const layoutOrder = normalizeLayerOrders(
+        { [layoutTemplateId]: version.snapshot.layerOrderByTemplate?.[layoutTemplateId] ?? [] },
+        { [layoutTemplateId]: layoutElements }
+      )[layoutTemplateId]
+      const centsReduced = Boolean(version.snapshot.documentSettings?.priceCentsReduced)
+      setQueue((items) =>
+        items.map((item) => ({
+          ...item,
+          styles: normalizeStylesByTemplate({ [item.templateId]: layoutStyles })[item.templateId],
+          customElements: structuredClone(layoutElements),
+          layerOrder: structuredClone(layoutOrder),
+          priceCentsReduced: centsReduced,
+        }))
+      )
+    }
+    // A seleção anterior pode apontar para elementos que a versão não tem.
+    setSelectedIds(["produto"])
+    setSelectedField("produto")
     toast.success("Versão restaurada.")
   }
 
@@ -2186,6 +2326,8 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
     setDocumentSettings((current) => ({ ...current, priceCentsReduced: reduced }))
     setStylesByTemplate((current) => {
       const templateStyles = current[activeTemplate.id] ?? cloneStyles(activeTemplate.id)
+      // Centavos travados mantêm posição e tamanho; só o modo "50%" é alterado.
+      if (templateStyles.preco_centavos.locked) return current
       const placed = linkedCentsStyle(templateStyles.preco_reais, fields.preco_reais, width, height, reduced)
       return {
         ...current,
@@ -2487,6 +2629,11 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
     if (event.key === "Delete" || event.key === "Backspace") {
       event.preventDefault()
       deleteSelected()
+      return
+    }
+    if (!command && event.key.toLowerCase() === "l") {
+      event.preventDefault()
+      toggleSelectedLock()
       return
     }
     if (event.key === " ") {
@@ -2847,15 +2994,52 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
               <RotateCcw data-icon="inline-start" />
               Restaurar layout
             </Button>
-            <Button
-              variant="outline"
-              onClick={() => void autoLayoutActiveTemplate()}
-              disabled={!activeTemplate}
-              title="Posiciona e dimensiona os textos e o preço conforme a arte do template"
-            >
-              <Wand2 data-icon="inline-start" />
-              Ajustar ao template
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  disabled={!activeTemplate}
+                  title="Escolha uma versão salva ou o ajuste automático à arte do template"
+                >
+                  <Wand2 data-icon="inline-start" />
+                  Ajustar ao template
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                className="max-h-96 w-72 overflow-y-auto [&_[role=menuitem]]:gap-2.5 [&_[role=menuitem]_svg]:size-4 [&_[role=menuitem]_svg]:shrink-0"
+              >
+                <DropdownMenuItem onSelect={() => void autoLayoutActiveTemplate()}>
+                  <Wand2 />
+                  Ajuste automático à arte
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>Versões salvas</DropdownMenuLabel>
+                {savedVersions.length === 0 ? (
+                  <p className="px-2 py-1.5 text-xs text-muted-foreground">Nenhuma versão salva ainda.</p>
+                ) : (
+                  savedVersions.map((version) => {
+                    const templateName = templates.find((item) => item.id === version.snapshot.activeTemplateId)?.name
+                    return (
+                      <DropdownMenuItem key={version.id} onSelect={() => restoreVersion(version)}>
+                        {version.thumbnail ? (
+                          <img src={version.thumbnail} alt="" className="h-10 w-8 shrink-0 rounded-sm border bg-white object-contain" />
+                        ) : null}
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-medium">
+                            {version.name ?? new Date(version.createdAt).toLocaleDateString("pt-BR")}
+                          </span>
+                          <span className="block truncate text-xs text-muted-foreground">
+                            {templateName ? `${templateName} · ` : ""}
+                            {new Date(version.createdAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}
+                          </span>
+                        </span>
+                      </DropdownMenuItem>
+                    )
+                  })
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button disabled={!activeTemplate || exporting !== null}>
@@ -3169,6 +3353,27 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                 </button>
                 <button
                   type="button"
+                  className="inline-flex size-8 items-center justify-center rounded-md border border-slate-700 text-slate-400 hover:bg-slate-800 disabled:opacity-30"
+                  onClick={toggleSelectedLock}
+                  disabled={selectedIds.length === 0}
+                  aria-label="Travar ou destravar seleção"
+                  title="Travar/destravar a seleção (L)"
+                >
+                  <Lock className="size-4" />
+                </button>
+                <button
+                  type="button"
+                  className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-md border px-2 text-xs transition-colors ${locksReleased ? "border-amber-500 bg-amber-500/15 text-amber-300" : "border-slate-700 text-slate-400 hover:bg-slate-800"}`}
+                  onClick={() => setLocksReleased((current) => !current)}
+                  aria-pressed={locksReleased}
+                  aria-label="Liberar todas as travas para organizar"
+                  title="Libera todas as travas temporariamente para organizar; ao desligar, elas voltam"
+                >
+                  {locksReleased ? <Unlock className="size-4" /> : <Lock className="size-4" />}
+                  {locksReleased ? "Travas liberadas" : "Liberar travas"}
+                </button>
+                <button
+                  type="button"
                   className="inline-flex size-8 items-center justify-center rounded-md border border-slate-700 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-300 disabled:opacity-30"
                   onClick={undo}
                   disabled={historyState.undo === 0}
@@ -3477,7 +3682,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                           transform={`rotate(${style.rotation} ${x} ${y})`}
                           opacity={style.opacity}
                           onPointerDown={(event) => startTransform(event, id, "move")}
-                          style={{ cursor: style.locked ? "default" : "grab" }}
+                          style={{ cursor: style.locked && !locksReleased ? "default" : "grab" }}
                         >
                           {style.shadowBlur > 0 || style.shadowX !== 0 || style.shadowY !== 0 ? (
                             <text
@@ -3547,7 +3752,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                         transform={`translate(${x} ${y}) rotate(${element.rotation})`}
                         opacity={element.opacity}
                         onPointerDown={(event) => startTransform(event, id, "move")}
-                        style={{ cursor: element.locked ? "default" : "grab" }}
+                        style={{ cursor: element.locked && !locksReleased ? "default" : "grab" }}
                       >
                         {element.kind === "image" && element.src ? (
                           <image
@@ -4716,48 +4921,13 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                       <div className="flex items-center justify-between gap-2">
                         <div>
                           <p className="text-xs font-semibold text-slate-100">
-                            Transformação
+                            Alinhar e organizar
                           </p>
                           <p className="text-[0.65rem] text-slate-500">
                             {selectedBounds.length} selecionado(s)
                           </p>
                         </div>
                         <Move className="size-4 text-primary" />
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2">
-                        {(
-                          [
-                            ["x", "Posição X", primaryBounds.x, POSITION_MIN, POSITION_MAX, 0.1],
-                            ["y", "Posição Y", primaryBounds.y, POSITION_MIN, POSITION_MAX, 0.1],
-                            ["width", "Largura", primaryBounds.width, 1, 300, 0.1],
-                            ["height", "Altura", primaryBounds.height, 1, 300, 0.1],
-                            ["rotation", "Rotação", primaryBounds.rotation, -180, 180, 1],
-                            ["opacity", "Opacidade", primaryBounds.opacity, 0, 1, 0.05],
-                          ] satisfies Array<[
-                            "x" | "y" | "width" | "height" | "rotation" | "opacity",
-                            string,
-                            number,
-                            number,
-                            number,
-                            number,
-                          ]>
-                        ).map(([key, label, value, min, max, step]) => (
-                          <label key={key} className="text-[0.65rem] text-slate-400">
-                            {label}
-                            <input
-                              type="number"
-                              min={min}
-                              max={max}
-                              step={step}
-                              value={Number(value.toFixed(2))}
-                              onChange={(event) =>
-                                updatePrimaryTransform(key, Number(event.target.value))
-                              }
-                              className="mt-1 h-8 w-full rounded-md border border-slate-700 bg-slate-950 px-2 text-xs text-white outline-none focus:border-primary"
-                            />
-                          </label>
-                        ))}
                       </div>
 
                       <div>
@@ -5097,6 +5267,7 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                         const name = field ? FIELD_META[field].label : custom?.name ?? "Elemento"
                         const visible = field ? styles[field].visible : custom?.visible ?? false
                         const locked = field ? styles[field].locked : custom?.locked ?? false
+                        const bounds = allElementBounds.find((item) => item.id === elementId)
                         return (
                           <div
                             key={elementId}
@@ -5160,6 +5331,48 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                             >
                               <ChevronDown className="size-3.5" />
                             </button>
+                            {bounds && elementId === primarySelectedId ? (
+                      <div className="col-span-full mt-1 grid grid-cols-3 gap-1.5 px-1 pb-1">
+                        {(
+                          [
+                            ["x", "Posição X", bounds.x, POSITION_MIN, POSITION_MAX, 0.1],
+                            ["y", "Posição Y", bounds.y, POSITION_MIN, POSITION_MAX, 0.1],
+                            ["width", "Largura", bounds.width, 1, 300, 0.1],
+                            ["height", "Altura", bounds.height, 1, 300, 0.1],
+                            ["rotation", "Rotação", bounds.rotation, -180, 180, 1],
+                            ["opacity", "Opacidade", bounds.opacity, 0, 1, 0.05],
+                          ] satisfies Array<[
+                            "x" | "y" | "width" | "height" | "rotation" | "opacity",
+                            string,
+                            number,
+                            number,
+                            number,
+                            number,
+                          ]>
+                        ).map(([key, label, value, min, max, step]) => (
+                          <label key={key} className="text-[0.65rem] text-slate-400">
+                            {label}
+                            <input
+                              type="number"
+                              min={min}
+                              max={max}
+                              step={step}
+                              value={Number(value.toFixed(2))}
+                              onChange={(event) =>
+                                updatePrimaryTransform(key, Number(event.target.value))
+                              }
+                              className="mt-1 h-8 w-full rounded-md border border-slate-700 bg-slate-950 px-2 text-xs text-white outline-none focus:border-primary"
+                            />
+                          </label>
+                        ))}
+                      </div>
+                            ) : bounds ? (
+                              <p className="col-span-full px-1 text-[0.65rem] tabular-nums text-slate-500">
+                                X {bounds.x.toFixed(1)} · Y {bounds.y.toFixed(1)} · L {bounds.width.toFixed(1)} · A {bounds.height.toFixed(1)} · {bounds.rotation.toFixed(0)}° · {Math.round(bounds.opacity * 100)}%
+                                {field ? ` · ${styles[field].fontSize.toFixed(0)}pt` : ""}
+                                {locked ? " · travado" : ""}
+                              </p>
+                            ) : null}
                           </div>
                         )
                       })}
@@ -5178,12 +5391,24 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
                       </div>
                       <Save className="size-4 text-emerald-400" />
                     </div>
+                    <input
+                      type="text"
+                      value={versionName}
+                      maxLength={60}
+                      onChange={(event) => setVersionName(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") void saveVersion()
+                      }}
+                      placeholder="Nome da versão (opcional)"
+                      aria-label="Nome da versão"
+                      className="mt-3 w-full rounded-md border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-100 placeholder:text-slate-500"
+                    />
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="mt-3 w-full border-slate-700 bg-slate-950"
-                      onClick={saveVersion}
+                      className="mt-2 w-full border-slate-700 bg-slate-950"
+                      onClick={() => void saveVersion()}
                       disabled={!activeTemplate}
                     >
                       <Save data-icon="inline-start" />
@@ -5193,20 +5418,77 @@ function PosterEditorWorkspace({ storageScope, organizationId }: { storageScope:
 
                   {savedVersions.length > 0 ? (
                     <section className="rounded-lg border border-slate-800 bg-slate-900 p-3">
-                      <p className="mb-2 text-xs font-semibold text-slate-100">Versões salvas</p>
+                      <p className="mb-2 text-xs font-semibold text-slate-100">
+                        Versões salvas <span className="font-normal text-slate-500">({savedVersions.length}/{MAX_SAVED_VERSIONS})</span>
+                      </p>
                       <div className="space-y-1.5">
                         {savedVersions.map((version) => (
-                          <button
-                            key={version.id}
-                            type="button"
-                            onClick={() => restoreVersion(version)}
-                            className="flex w-full items-center justify-between gap-2 rounded-md border border-slate-800 bg-slate-950 px-2.5 py-2 text-left text-xs text-slate-300 hover:border-slate-600"
-                          >
-                            <span>{new Date(version.createdAt).toLocaleDateString("pt-BR")}</span>
-                            <span className="text-slate-500">
-                              {new Date(version.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
-                            </span>
-                          </button>
+                          <div key={version.id} className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => restoreVersion(version)}
+                              className="flex min-w-0 flex-1 items-center gap-2 rounded-md border border-slate-800 bg-slate-950 px-2 py-2 text-left text-xs text-slate-300 hover:border-slate-600"
+                            >
+                              {version.thumbnail ? (
+                                <img
+                                  src={version.thumbnail}
+                                  alt=""
+                                  className="h-12 w-9 shrink-0 rounded-sm border border-slate-800 bg-white object-contain"
+                                />
+                              ) : null}
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate font-medium text-slate-200">
+                                  {version.name ?? new Date(version.createdAt).toLocaleDateString("pt-BR")}
+                                </span>
+                                <span className="block text-slate-500">
+                                  {new Date(version.createdAt).toLocaleDateString("pt-BR")}{" "}
+                                  {new Date(version.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                                </span>
+                              </span>
+                            </button>
+                            {renamingVersionId === version.id ? (
+                              <input
+                                autoFocus
+                                type="text"
+                                value={renameValue}
+                                maxLength={60}
+                                aria-label="Novo nome da versão"
+                                onChange={(event) => setRenameValue(event.target.value)}
+                                onBlur={commitRenameVersion}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter") commitRenameVersion()
+                                  if (event.key === "Escape") setRenamingVersionId(null)
+                                }}
+                                className="w-28 rounded-md border border-slate-600 bg-slate-950 px-2 py-1.5 text-xs text-slate-100"
+                              />
+                            ) : null}
+                            <button
+                              type="button"
+                              title="Renomear versão"
+                              aria-label="Renomear versão salva"
+                              onMouseDown={(event) => event.preventDefault()}
+                              onClick={() => {
+                                if (renamingVersionId === version.id) {
+                                  commitRenameVersion()
+                                } else {
+                                  setRenameValue(version.name ?? "")
+                                  setRenamingVersionId(version.id)
+                                }
+                              }}
+                              className="rounded-md border border-slate-800 bg-slate-950 p-2 text-slate-400 hover:border-slate-600 hover:text-slate-200"
+                            >
+                              <Pencil className="size-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              title="Excluir versão"
+                              aria-label="Excluir versão salva"
+                              onClick={() => deleteVersion(version)}
+                              className="rounded-md border border-slate-800 bg-slate-950 p-2 text-slate-400 hover:border-red-500/60 hover:text-red-400"
+                            >
+                              <Trash2 className="size-3.5" />
+                            </button>
+                          </div>
                         ))}
                       </div>
                     </section>
